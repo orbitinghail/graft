@@ -16,6 +16,7 @@ Transactional lazy replication to the edge. Optimized for scale and cost over la
   - [Segment Layout](#segment-layout)
   - [Segment Cache](#segment-cache)
   - [API](#api-1)
+  - [PageStore internal dataflow](#pagestore-internal-dataflow)
 - [Control Plane](#control-plane)
   - [Volume Management](#volume-management)
   - [Segment Management](#segment-management)
@@ -212,6 +213,12 @@ Clients may write the same offset multiple times in rare cases. When this happen
 
 Segments must be returned in the order they were written. Thus ensuring that more recent Segments shadow offsets in earlier Segments.
 
+Newly written segments may be cached on disk, but not added to the Segment index. This is because the pagestore doesn't yet know if the Segments have been accepted by the MetaStore, and additionally doesn't know their assigned LSN.
+
+## PageStore internal dataflow
+
+https://app.excalidraw.com/s/65i7nRDHAIV/1GVOEpCLvJ0
+
 # Control Plane
 The Control Plane manages Volumes, Segments, and API Keys. All data is stored in a centralized (but globally available) D1 database and exposed via a Worker based API.
 
@@ -291,13 +298,15 @@ Supporting Lite Clients is desirable to help enable edge serverless workloads wh
 
 # Implementation Details
 
-For simplicity, we may want to write the server side in Go. Rust has the benefit of memory management and correctness, but async is a PITA. If we use Rust we will either need to give in and use Tokio, or double down on a single threaded implementation. Since we want Graft to be HTTP based and ideally use all possible modern features (quic,http3,etc) using frameworks will help accelerate things.
+For the MetaStore and Control Plane we will use Typescript for a more native CloudFlare worker experience.
 
-Rust is a much stronger language to actually handle datastructures however, especially when we want to accelerate reading and writing segments.
+The PageStore will be written in Rust using Tokio. If this proves to be a PITA we can switch to Go.
 
-For the MetaStore and Control Plane we might as well use Typescript for a more native webworker experience.
-
-The Client has to be a Rust library, optimized to use a minimum amount of resources and be embedded into other libraries. The primary targets will be:
+The Client will be a Rust library, optimized to use a minimum amount of resources and be embedded into other libraries. The primary targets will be:
 - shared object to be used with SQLite
 - python library
-- rust library (supporting async, sync, and wasm)
+- rust library (eventually supporting async and wasm)
+
+Networking stack:
+- transport: TCP
+- application: HTTP
