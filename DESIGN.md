@@ -31,6 +31,8 @@ Transactional lazy replication to the edge. Optimized for scale and cost over la
   - [Writing](#writing)
   - [Lite Client](#lite-client)
 - [Implementation Details](#implementation-details)
+  - [Performance](#performance)
+    - [Request Hedging](#request-hedging)
 
 # High Level Architecture
 
@@ -310,3 +312,10 @@ The Client will be a Rust library, optimized to use a minimum amount of resource
 Networking stack:
 - transport: TCP
 - application: HTTP
+
+## Performance
+
+### Request Hedging
+According to the [AnyBlob paper], hedging requests to blob storage can help dramatically reduce tail latency. For S3, the paper suggests hedging if you haven't received the first byte within 200ms. Slightly more aggressive hedging may also be desirable, like hedging if you haven't completly downloaded the file within 600ms. Making this configurable and testing is important.
+
+[AnyBlob paper]: https://www.vldb.org/pvldb/vol16/p2769-durner.pdf
