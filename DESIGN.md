@@ -1,6 +1,6 @@
 # Graft <!-- omit from toc -->
 
-Transactional lazy replication to the edge. Optimized for scale and cost over latency. Heavily leverages object storage for durability.
+Transactional lazy replication to the edge. Optimized for scale and cost over latency. Leverages object storage for durability.
 
 # Outline <!-- omit from toc -->
 
@@ -50,19 +50,21 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
   A fixed-length block of storage. The default size is 4KiB (4096 bytes).
 
 - **Offset**  
-  The position of a page within a volume, starting from 0.
+  The position of a page within a volume, measured in terms of page numbers rather than bytes. The offset represents the index of the page, with the first page in the volume having an offset of 0.
 
 - **LSN**  
   A monotonically increasing number that tracks changes to a Volume. Each transaction results in a new LSN, which is greater than all previous LSNs for the Volume.
+
+  The serialized string representation of a LSN must sort alphanumerically.
 
 - **rLSN**
   A relative LSN used to represent LSNs in Segments. Each Segment may store the same Offset for a Volume multiple times at various LSNs. However, we do not store the absolute LSNs in the Segment to allow the MetaStore to decide on the final commit order. When reading Segments, we thus have to convert rLSNs to absolute LSNs by adding the base LSN for the Volume in this Segment (which is stored in the MetaStore's Segment index).
 
 - **Snapshot**  
-  A tuple (volume id, lsn, max offset) that defines a fixed point in time for the state of a volume.
+  A tuple (volume id, lsn, max offset) that defines a fixed point in time for the state of a volume. Max offset can be used to determine Volume length and calculate the Volume's maximum size (actual size must take sparseness into account).
 
 - **Graft**  
-  The set of Page Offsets which have changed between any two Snapshots.
+  The set of Offsets which have changed between any two Snapshots.
 
 - **MetaStore**  
   A service which stores a log of Snapshots and Grafts for each Volume.
@@ -70,14 +72,14 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
 - **PageStore**  
   A service which stores pages keyed by `[volume id]/[offset]/[lsn]`. It can efficiently retrieve the latest LSN for a given Offset that is less than or equal to a specified LSN, allowing the PageStore to read the state of a Volume at any Snapshot.
 
-- **Replica**  
-  A node that keeps up with changes to a Volume over time. May subscribe the MetaStore to receive Grafts, or periodically poll for updates.
+- **Replica Client**  
+  A node that keeps up with changes to a Volume over time. May subscribe the MetaStore to receive Grafts, or periodically poll for updates. Notably, Graft Replicas lazily retrieve Pages they want rather than downloading all changes.
 
 - **Lite Client**  
-  A node which only reads a Volume at a particular Snapshot.
+  An embedded client optimized for reading or writing to a volume without any state. Generally has a very small (or non-existant) cache and does not subscribe to updates. Used in "fire and forget" workloads.
 
 - **Segment**
-  An object stored in blob storage containing Pages. Also contains an index mapping from (Volume ID, Offset, LSN) to each Page.
+  An object stored in blob storage containing Pages and an index mapping from (Volume ID, Offset, rLSN) to each Page.
 
 - **Segment ID**
   A 16 byte GUID used to uniquely identify a Segment.
@@ -91,17 +93,24 @@ The MetaStore is implemented as a CloudFlare Durable Object per Volume. Each obj
 
 ```
 /log/[lsn]
-  /snapshot -> SnapshotHeader
-  /segments
-    /added -> SegmentList
-    /removed -> SegmentIDList
+  /header -> CommitHeader
+  /overflow_0 -> CommitPart
 
-SnapshotHeader
+CommitHeader
   LSN
   Max Offset in Volume
   Commit Timestamp
-  Offsets 
-    compressed bitmap of offsets changed in this lsn
+  offsets: OffsetSet
+  segments_added: SegmentList
+  segments_removed: SegmentIDList
+
+CommitPart
+  offsets: OffsetSet
+  segments_added: SegmentList
+  segments_removed: SegmentIDList
+
+OffsetSet
+  compressed bitmap of offsets changed in this lsn
 
 SegmentList
   [
@@ -118,11 +127,11 @@ SegmentIDList
   [Segment ID]
 ```
 
-> Note: If Segments or Offsets overflow we can store additional sibling entries. The max size of an entry is 128KiB in CF, so to start we can probably just fail the txn.
+> Note: If Segments or Offsets overflow we can store additional sibling entries. The max size of an entry is 128KiB in CF.
 
 ## Durable Object Initialization
 
-When initializing the DO, we just need to read the latest Snapshot and prepare the next LSN.
+When initializing the DO, we just need to read the latest Commit and prepare the next LSN.
 
 ## API
 
@@ -173,7 +182,7 @@ A Segment is a binary file composed of three sections: Header, Data, Index.
 The Index is only included if it's larger than what can fit in the Header.
 
 ```
-Header (4KiB)
+Header (Page Size)
   magic
   version
   index_offset (if 0, then inline)

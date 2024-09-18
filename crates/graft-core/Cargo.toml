@@ -1,0 +1,14 @@
+[package]
+name = "graft-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1.5.4"
+borsh = { version = "1.5.1", features = ["unstable__schema"] }
+bs58 = "0.5.1"
+bytes = "1.7.1"
+rand = "0.8.5"
+static_assertions = "1.1.0"
+thiserror = "1.0.63"
+zerocopy = { version = "0.7.35", features = ["derive"] }

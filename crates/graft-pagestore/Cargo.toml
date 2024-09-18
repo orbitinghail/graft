@@ -1,0 +1,14 @@
+[package]
+name = "pagestore"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+graft-core = { path = "../graft-core" }
+
+ahash = "0.8.11"
+tokio = { version = "1.40.0", features = ["full"] }
+odht = "0.3.1"
+static_assertions = "1.1.0"
+zerocopy = { version = "0.7.35", features = ["derive"] }
+anyhow = "1.0.89"
