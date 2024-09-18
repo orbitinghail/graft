@@ -260,7 +260,7 @@ Once we can produce one single-volume optimal Segment. The rest of the data is d
 ## Volume History Truncation
 We only need to keep around a certain amount of history for each Volume. This probably should be configurable, but for now we can default it to one week.
 
-Truncation can be handled by taking a checkpoing at the oldest surviving LSN and then removing any older segments from the Volume. GC will handle removing those segments from Storage eventually.
+Truncation can be handled by taking a checkpoint at the oldest surviving LSN and then removing any older segments from the Volume. GC will handle removing those segments from Storage eventually.
 
 ## Garbage Collection
 As the MetaStore informs the Control Plane of removed Segments, once a Segment is not referenced by any Volume it can be deleted. We may want to delay actual deletion via a grace period until we gain confidence in the correctness of the system.
