@@ -20,7 +20,6 @@ Transactional lazy replication to the edge. Optimized for scale and cost over la
 - [Control Plane](#control-plane)
   - [Volume Management](#volume-management)
   - [Segment Management](#segment-management)
-  - [Segment Compaction](#segment-compaction)
   - [Volume History Truncation](#volume-history-truncation)
   - [Garbage Collection](#garbage-collection)
   - [API Keys](#api-keys)
@@ -57,9 +56,6 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
 
   The serialized string representation of a LSN must sort alphanumerically.
 
-- **rLSN**
-  A relative LSN used to represent LSNs in Segments. Each Segment may store the same Offset for a Volume multiple times at various LSNs. However, we do not store the absolute LSNs in the Segment to allow the MetaStore to decide on the final commit order. When reading Segments, we thus have to convert rLSNs to absolute LSNs by adding the base LSN for the Volume in this Segment (which is stored in the MetaStore's Segment index).
-
 - **Snapshot**  
   A tuple (volume id, lsn, max offset) that defines a fixed point in time for the state of a volume. Max offset can be used to determine Volume length and calculate the Volume's maximum size (actual size must take sparseness into account).
 
@@ -79,7 +75,7 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
   An embedded client optimized for reading or writing to a volume without any state. Generally has a very small (or non-existant) cache and does not subscribe to updates. Used in "fire and forget" workloads.
 
 - **Segment**
-  An object stored in blob storage containing Pages and an index mapping from (Volume ID, Offset, rLSN) to each Page.
+  An object stored in blob storage containing Pages and an index mapping from (Volume ID, Offset) to each Page.
 
 - **Segment ID**
   A 16 byte GUID used to uniquely identify a Segment.
@@ -159,7 +155,7 @@ Checkpoint Job Algorithm:
 ```
 1. retrieve metadata of last checkpoint (may be multiple segments)
 2. retrieve metadata of all changes since checkpoint
-3. for any unchanged segments from previous checkpoint, simply re-emit those segments at the checkpoint LSN (yay for rLSNs)
+3. for any unchanged segments from previous checkpoint, simply re-emit those segments at the checkpoint LSN
 4. rewrite any changed segments by merging in offsets
 5. emit changed segments at checkpoint LSN
 6. commit checkpoint to MetaStore
@@ -195,7 +191,7 @@ List of Pages stored back to back immediately after the Header
 **Index**  
 A serialized ODHT (https://docs.rs/odht). Built as a regular in-memory HT while collecting Pages, and then compressed into an on-disk ODHT via from_iterator (max_load_factor=100%).
 
-The Index is a map from `(Volume ID, Offset, rLSN)` to the Page offset in the file. In order to lookup an offset at a particular LSN, one must first retrieve the base LSN for the Segment from the MetaStore and add it to each rLSN.
+The Index is a map from `(Volume ID, Offset)` to the Page offset in the file. 
 
 ## Segment Cache
 The PageStore must cache recently read Segments in order to minimize round trips to Object Storage and improve performance. The disk cache should have a configurable target max size, and remove the least recently accessed Segment to reclaim space.
@@ -218,7 +214,7 @@ If the PageStore encounters missing Segments, it must update the Segment index. 
 **`writePages(Volume ID, [(offset,page)]`**  
 Writes a set of Pages for a Volume. Returns a list of new Segments: `[(segment ID, offset range)]` once they have been flushed to durable storage. Implementations should support streaming writes to the server to improve pipeline performance.
 
-It's critical that this method produces Segments without duplicate offsets. Every offset written by this method will have a rLSN of 0.
+It's critical that this method produces Segments without duplicate offsets.
 
 Clients may write the same offset multiple times in rare cases. When this happens, the PageStore simply needs to ensure that each segment produced contains no duplicate offsets. If the offset already exists in the currently open Segment then overwrite it with the new offset. Otherwise simply write it to the next open Segment.
 
@@ -239,28 +235,14 @@ Volumes are managed through the Control Plane which recusively communicates with
 ## Segment Management
 After the MetaStore commits new segments it's responsible for replicating added and removed segments to the Control Plane. This can be done async on a background timer.
 
-## Segment Compaction
-Compaction is the act of reorganizing segments over time to improve read performance as well as storage cost.
-
-In L0, each Segment contains offsets at one rLSN per Volume. This is the default layer in which Segments are created.
-
-In L1, each Segment contains offsets at multiple rLSNs per Volume. Whenever possible, L1 Segments contain data for a single Volume.
-
-The decision to merge depends on optimal Segment size. Let's say the optimal Segment size is 8 MB (AnyBlob suggests 8-16 MB, while Neon uses 128 MB). In this case we would want to collect Segments which overlap in Volume until we can produce at least one Optimal Segment which only contains data for a single Volume (or we run out of Segments to merge).
-
-Once we can produce one single-volume optimal Segment. The rest of the data is distributed to other Segments. This packing problem can be solved using the following greedy approach:
-
-1. Set min_bucket=8MB and max_bucket=16MB
-2. Collect offsets and rLSNs per Volume from Segments into candidate chunks. Care should be taken to always include all Segments from a Snapshot to handle duplicate offsets. Stop collection once the largest chunk is larger than min_bucket size.
-3. Partition any chunks larger than max_bucket by offset and LSN until all chunks are smaller than max_bucket size.
-4. Iterate through chunks from largest to smallest, emitting Segments as they reach min_bucket size.
-5. Commit added/removed segments to each MetaStore
-6. Delete all removed segments
-
 ## Volume History Truncation
-We only need to keep around a certain amount of history for each Volume. This probably should be configurable, but for now we can default it to one week.
+We only need to keep around a certain amount of history for each Volume. As we produce at least one segment per commit to a Volume, we should focus on the number of commits since the last checkpoint as the main trigger rather than time.
 
 Truncation can be handled by taking a checkpoint at the oldest surviving LSN and then removing any older segments from the Volume. GC will handle removing those segments from Storage eventually.
+
+We can keep around multiple checkpoints for a Volume in order to support some configurable amount of history.
+
+Checkpointing should trigger once we can build single volume segments composed of 8-16 MB of data. A Volume larger than this amount will be split into multiple Segments. The Checkpointer should always attempt to produce single volume segments, only falling back to multi-volume when it overflows. The Checkpointer will need to rollup all segments from the last checkpoint to the history grace period.
 
 ## Garbage Collection
 As the MetaStore informs the Control Plane of removed Segments, once a Segment is not referenced by any Volume it can be deleted. We may want to delay actual deletion via a grace period until we gain confidence in the correctness of the system.

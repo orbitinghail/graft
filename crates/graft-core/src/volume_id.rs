@@ -12,13 +12,14 @@ use crate::guid::{Guid, GuidParseError};
     PartialEq,
     Eq,
     Hash,
+    PartialOrd,
+    Ord,
     BorshSerialize,
     BorshDeserialize,
     BorshSchema,
     zerocopy::AsBytes,
     zerocopy::FromZeroes,
     zerocopy::FromBytes,
-    zerocopy::Unaligned,
 )]
 #[repr(transparent)]
 pub struct VolumeId(Guid<'V'>);

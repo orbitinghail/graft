@@ -11,18 +11,19 @@ use thiserror::Error;
     PartialEq,
     Eq,
     Hash,
+    PartialOrd,
+    Ord,
     BorshSerialize,
     BorshDeserialize,
     BorshSchema,
     zerocopy::AsBytes,
     zerocopy::FromZeroes,
     zerocopy::FromBytes,
-    zerocopy::Unaligned,
 )]
 #[repr(transparent)]
 pub struct Guid<const PREFIX: char>([u8; 16]);
 
-static_assertions::assert_eq_size!(Guid<'P'>, [u8; 16]);
+static_assertions::assert_eq_size!(Guid<'G'>, [u8; 16]);
 
 impl<const P: char> Guid<P> {
     pub fn random() -> Self {
