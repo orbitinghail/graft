@@ -1,6 +1,8 @@
 //! A closed segment is immutable and serialized. It can be directly mapped into
 //! memory and read from in an efficient way.
 
+use std::{error::Error, fmt::Debug};
+
 use anyhow::{anyhow, bail};
 use graft_core::{
     offset::Offset,
@@ -8,17 +10,19 @@ use graft_core::{
     volume_id::VolumeId,
 };
 use odht::FxHashFn;
+use thiserror::Error;
 use zerocopy::{byteorder::little_endian::U32, little_endian::U16, AsBytes, FromBytes, Ref};
 
 pub const SEGMENT_MAGIC: U32 = U32::from_bytes([0xB8, 0x3B, 0x41, 0xC0]);
 pub const SEGMENT_VERSION: u8 = 1;
 
 // segments must be no larger than 16 MB
-pub const SEGMENT_MAX_LEN: u32 = 1024 * 1024 * 16;
+pub const SEGMENT_MAX_LEN: usize = 1024 * 1024 * 16;
 pub const SEGMENT_INLINE_INDEX_SIZE: usize = PAGESIZE - size_of::<SegmentHeader>();
 
-// the maximum number of pages a segment can store
-const SEGMENT_MAX_PAGES: usize = SEGMENT_MAX_LEN as usize / PAGESIZE;
+// the maximum number of pages a segment can store taking into account index/header overhead
+// calculated by hand via inspecting odht and current segment encoding
+pub const SEGMENT_MAX_PAGES: usize = 4071;
 
 // an offset within a segment, in pages
 type LocalOffset = U16;
@@ -170,26 +174,45 @@ impl SegmentIndexBuilder {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum SegmentValidationErr {
+    #[error("segment must be at least {} bytes", PAGESIZE)]
+    TooSmall,
+    #[error("segment must be smaller than {} bytes", SEGMENT_MAX_LEN)]
+    TooLarge,
+    #[error("invalid magic number")]
+    Magic,
+    #[error("invalid version number")]
+    Version,
+    #[error("index size too large")]
+    IndexSize,
+    #[error("invalid index: {source}")]
+    Index { source: Box<dyn Error> },
+    #[error("page storage length must be a multiple of {}", PAGESIZE)]
+    PageStorageSize,
+}
+
 pub struct ClosedSegment<'a> {
     pages: &'a [u8],
     index: odht::HashTable<SegmentIndex, &'a [u8]>,
 }
 
 impl<'a> ClosedSegment<'a> {
-    pub fn from_bytes(data: &'a [u8]) -> anyhow::Result<ClosedSegment<'a>> {
-        assert!(data.len() >= PAGESIZE, "data must be at least one page");
-        assert!(
-            data.len() <= SEGMENT_MAX_LEN as usize,
-            "data must be no larger than SEGMENT_MAX_LEN"
-        );
+    pub fn from_bytes(data: &'a [u8]) -> Result<ClosedSegment<'a>, SegmentValidationErr> {
+        if data.len() < PAGESIZE {
+            return Err(SegmentValidationErr::TooSmall);
+        }
+        if data.len() > SEGMENT_MAX_LEN {
+            return Err(SegmentValidationErr::TooLarge);
+        }
 
         let (header, rest) = Ref::<_, SegmentHeader>::new_from_prefix(data).unwrap();
 
         if header.magic != SEGMENT_MAGIC {
-            bail!("invalid magic");
+            return Err(SegmentValidationErr::Magic);
         }
         if header.version != SEGMENT_VERSION {
-            bail!("invalid version");
+            return Err(SegmentValidationErr::Version);
         }
         let index_size = header.index_size.get() as usize;
         let (pages, index_bytes) = if index_size <= SEGMENT_INLINE_INDEX_SIZE {
@@ -197,21 +220,20 @@ impl<'a> ClosedSegment<'a> {
             let (full_index, data) = rest.split_at(SEGMENT_INLINE_INDEX_SIZE);
             (data, &full_index[..index_size])
         } else {
-            assert!(
-                rest.len() >= index_size,
-                "index_size must be less than or equal to the remaining data"
-            );
-            let (data, index_bytes) = rest.split_at(rest.len() - index_size);
-            let (_, pages) = data.split_at(SEGMENT_INLINE_INDEX_SIZE);
-            (pages, index_bytes)
+            // the index is not inline; it is stored at the end of the segment
+            // start by jumping to the end of the header page
+            let (_, rest) = rest.split_at(SEGMENT_INLINE_INDEX_SIZE);
+            if rest.len() < index_size {
+                return Err(SegmentValidationErr::IndexSize);
+            }
+            rest.split_at(rest.len() - index_size)
         };
         let index = odht::HashTable::<SegmentIndex, _>::from_raw_bytes(index_bytes)
-            .map_err(|err| anyhow!("invalid index: {err}"))?;
+            .map_err(|source| SegmentValidationErr::Index { source })?;
 
-        assert!(
-            pages.len() % PAGESIZE == 0,
-            "page storage length must be a multiple of PAGESIZE"
-        );
+        if pages.len() % PAGESIZE != 0 {
+            return Err(SegmentValidationErr::PageStorageSize);
+        }
 
         Ok(Self { pages, index })
     }
@@ -232,5 +254,112 @@ impl<'a> ClosedSegment<'a> {
             let end = start + PAGESIZE;
             (&self.pages[start..end]).try_into().expect("invalid page")
         })
+    }
+}
+
+impl Debug for ClosedSegment<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClosedSegment")
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, Write};
+
+    use super::*;
+
+    #[test]
+    fn test_segment_validation() {
+        // test an empty segment
+        let buf = io::Cursor::new(vec![0; 0]);
+        assert!(matches!(
+            ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
+            SegmentValidationErr::TooSmall
+        ));
+
+        // test a massive segment
+        let buf = io::Cursor::new(vec![0; SEGMENT_MAX_LEN + 1]);
+        assert!(matches!(
+            ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
+            SegmentValidationErr::TooLarge
+        ));
+
+        // test an all zero segment
+        let buf = io::Cursor::new(vec![0; PAGESIZE]);
+        assert!(matches!(
+            ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
+            SegmentValidationErr::Magic
+        ));
+
+        // test a bad magic number
+        let mut buf = io::Cursor::new(vec![0; PAGESIZE]);
+        buf.write_all(
+            SegmentHeader {
+                magic: U32::new(0),
+                version: SEGMENT_VERSION,
+                index_size: U32::new(0),
+                padding: [0; 7],
+            }
+            .as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
+            SegmentValidationErr::Magic
+        ));
+
+        // test a bad version number
+        let mut buf = io::Cursor::new(vec![0; PAGESIZE]);
+        buf.write_all(
+            SegmentHeader {
+                magic: SEGMENT_MAGIC,
+                version: SEGMENT_VERSION + 1,
+                index_size: U32::new(0),
+                padding: [0; 7],
+            }
+            .as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
+            SegmentValidationErr::Version
+        ));
+
+        // test a bad index size
+        let mut buf = io::Cursor::new(vec![0; PAGESIZE]);
+        buf.write_all(
+            SegmentHeader {
+                magic: SEGMENT_MAGIC,
+                version: SEGMENT_VERSION,
+                index_size: U32::new((SEGMENT_INLINE_INDEX_SIZE as u32) + 1),
+                padding: [0; 7],
+            }
+            .as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
+            SegmentValidationErr::IndexSize
+        ));
+
+        // test a bad index
+        let mut buf = io::Cursor::new(vec![0; PAGESIZE]);
+        buf.write_all(
+            SegmentHeader {
+                magic: SEGMENT_MAGIC,
+                version: SEGMENT_VERSION,
+                index_size: U32::new(SEGMENT_INLINE_INDEX_SIZE as u32),
+                padding: [0; 7],
+            }
+            .as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
+            SegmentValidationErr::Index { .. }
+        ));
     }
 }

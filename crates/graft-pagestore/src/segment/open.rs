@@ -10,9 +10,14 @@ use graft_core::{
     page::{Page, PAGESIZE},
     volume_id::VolumeId,
 };
+use thiserror::Error;
 use zerocopy::AsBytes;
 
-use super::closed::{SegmentHeaderPage, SegmentIndex, SegmentIndexKey};
+use super::closed::{SegmentHeaderPage, SegmentIndex, SegmentIndexKey, SEGMENT_MAX_PAGES};
+
+#[derive(Error, Debug, PartialEq, Eq)]
+#[error("segment is full")]
+pub struct SegmentFullErr;
 
 #[derive(Debug, Default)]
 pub struct OpenSegment {
@@ -20,11 +25,36 @@ pub struct OpenSegment {
 }
 
 impl OpenSegment {
-    pub fn insert(&mut self, vid: VolumeId, offset: Offset, page: Page) {
-        // TODO: need to return an error if we have more pages than will fit in
-        // a maximally sized segment
+    pub fn insert(
+        &mut self,
+        vid: VolumeId,
+        offset: Offset,
+        page: Page,
+    ) -> Result<(), SegmentFullErr> {
+        if self.index.len() >= SEGMENT_MAX_PAGES {
+            return Err(SegmentFullErr);
+        }
 
         self.index.insert((vid, offset), page);
+        Ok(())
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.index.len()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.index.is_empty()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        SEGMENT_MAX_PAGES
     }
 
     pub fn find_page(&self, vid: VolumeId, offset: Offset) -> Option<&Page> {
@@ -61,7 +91,9 @@ impl OpenSegment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment::closed::ClosedSegment;
+    use crate::segment::closed::{
+        ClosedSegment, SegmentValidationErr, SEGMENT_MAGIC, SEGMENT_MAX_LEN, SEGMENT_MAX_PAGES,
+    };
 
     #[test]
     fn test_segment_sanity() {
@@ -71,8 +103,8 @@ mod tests {
         let page0 = Page::from(&[1; PAGESIZE]);
         let page1 = Page::from(&[2; PAGESIZE]);
 
-        open_segment.insert(vid.clone(), 0, page0.clone());
-        open_segment.insert(vid.clone(), 1, page1.clone());
+        open_segment.insert(vid.clone(), 0, page0.clone()).unwrap();
+        open_segment.insert(vid.clone(), 1, page1.clone()).unwrap();
 
         // ensure that we can query pages in the open_segment
         assert_eq!(open_segment.find_page(vid.clone(), 0), Some(&page0));
@@ -122,10 +154,11 @@ mod tests {
         let vid = VolumeId::random();
         let page = Page::from(&[1; PAGESIZE]);
 
-        // calculated by hand via inspecting odht and current segment encoding
-        let num_pages = 4071;
+        let num_pages = SEGMENT_MAX_PAGES as u32;
         for i in 0..num_pages {
-            open_segment.insert(vid.clone(), i * 2, page.clone());
+            open_segment
+                .insert(vid.clone(), i * 2, page.clone())
+                .unwrap();
         }
 
         let mut writer = io::Cursor::new(vec![]);
@@ -135,19 +168,20 @@ mod tests {
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
 
         assert_eq!(closed_segment.len(), num_pages as usize);
+    }
 
-        // now let's try to write one more page - this should fail
+    #[test]
+    fn test_overfull_segment() {
         let mut open_segment = OpenSegment::default();
-        for i in 0..(num_pages + 1) {
-            open_segment.insert(vid.clone(), i * 2, page.clone());
-        }
-        let mut writer = io::Cursor::new(vec![]);
-        open_segment.write_to(&mut writer).unwrap();
 
-        let buf = writer.into_inner();
-        let failure = std::panic::catch_unwind(|| {
-            ClosedSegment::from_bytes(&buf).unwrap();
-        });
-        assert!(failure.is_err());
+        let vid = VolumeId::random();
+        let page = Page::from(&[1; PAGESIZE]);
+
+        let num_pages = SEGMENT_MAX_PAGES as u32 + 1;
+        for i in 0..num_pages {
+            if let Err(err) = open_segment.insert(vid.clone(), i * 2, page.clone()) {
+                assert_eq!(err, SegmentFullErr);
+            }
+        }
     }
 }
