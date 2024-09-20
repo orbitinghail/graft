@@ -23,6 +23,9 @@ use thiserror::Error;
 #[repr(transparent)]
 pub struct Guid<const PREFIX: char>([u8; 16]);
 
+pub type VolumeId = Guid<'V'>;
+pub type SegmentId = Guid<'S'>;
+
 static_assertions::assert_eq_size!(Guid<'G'>, [u8; 16]);
 
 impl<const P: char> Guid<P> {

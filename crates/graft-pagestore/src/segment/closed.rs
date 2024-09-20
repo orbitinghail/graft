@@ -3,11 +3,10 @@
 
 use std::{error::Error, fmt::Debug};
 
-use anyhow::{anyhow, bail};
 use graft_core::{
+    guid::VolumeId,
     offset::Offset,
     page::{PageRef, PAGESIZE},
-    volume_id::VolumeId,
 };
 use odht::FxHashFn;
 use thiserror::Error;
@@ -146,10 +145,14 @@ impl SegmentIndexBuilder {
     fn new(pages: usize) -> Self {
         // we need to add 1 to the number of pages to account for how odht
         // handles slot allocation
-        let data = vec![0; odht::bytes_needed::<SegmentIndex>(pages + 1, 100)];
+        let data = vec![0; Self::size(pages)];
         Self {
             ht: odht::HashTable::init_in_place(data, pages + 1, 100).unwrap(),
         }
+    }
+
+    pub fn size(pages: usize) -> usize {
+        odht::bytes_needed::<SegmentIndex>(pages + 1, 100)
     }
 
     #[inline]
@@ -171,6 +174,15 @@ impl SegmentIndexBuilder {
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         self.ht.raw_bytes()
+    }
+}
+
+pub fn closed_segment_size(pages: usize) -> usize {
+    let index_size = SegmentIndexBuilder::size(pages);
+    if index_size <= SEGMENT_INLINE_INDEX_SIZE {
+        size_of::<SegmentHeaderPage>() + (PAGESIZE * pages)
+    } else {
+        size_of::<SegmentHeaderPage>() + (PAGESIZE * pages) + index_size
     }
 }
 

@@ -1,1 +1,0 @@
-Now that I have segments working, the next step is the Segment Writer task, followed by the Segment Uploader.

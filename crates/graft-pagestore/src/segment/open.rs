@@ -6,14 +6,16 @@ use std::{
 };
 
 use graft_core::{
+    guid::VolumeId,
     offset::Offset,
     page::{Page, PAGESIZE},
-    volume_id::VolumeId,
 };
 use thiserror::Error;
 use zerocopy::AsBytes;
 
-use super::closed::{SegmentHeaderPage, SegmentIndex, SegmentIndexKey, SEGMENT_MAX_PAGES};
+use super::closed::{
+    closed_segment_size, SegmentHeaderPage, SegmentIndex, SegmentIndexKey, SEGMENT_MAX_PAGES,
+};
 
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("segment is full")]
@@ -53,12 +55,16 @@ impl OpenSegment {
 
     #[inline]
     #[must_use]
-    pub fn capacity(&self) -> usize {
-        SEGMENT_MAX_PAGES
+    pub fn is_full(&self) -> bool {
+        self.index.len() >= SEGMENT_MAX_PAGES
     }
 
     pub fn find_page(&self, vid: VolumeId, offset: Offset) -> Option<&Page> {
         self.index.get(&(vid, offset))
+    }
+
+    pub fn encoded_size(&self) -> usize {
+        closed_segment_size(self.index.len())
     }
 
     pub fn write_to(self, mut writer: impl Write + Seek) -> io::Result<()> {
@@ -91,9 +97,7 @@ impl OpenSegment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment::closed::{
-        ClosedSegment, SegmentValidationErr, SEGMENT_MAGIC, SEGMENT_MAX_LEN, SEGMENT_MAX_PAGES,
-    };
+    use crate::segment::closed::{ClosedSegment, SEGMENT_MAX_PAGES};
 
     #[test]
     fn test_segment_sanity() {
@@ -110,12 +114,19 @@ mod tests {
         assert_eq!(open_segment.find_page(vid.clone(), 0), Some(&page0));
         assert_eq!(open_segment.find_page(vid.clone(), 1), Some(&page1));
 
+        let expected_size = open_segment.encoded_size();
+
         let mut writer = io::Cursor::new(vec![]);
         open_segment.write_to(&mut writer).unwrap();
 
         let buf = writer.into_inner();
+
+        assert_eq!(buf.len(), expected_size);
+
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
 
+        assert_eq!(closed_segment.len(), 2);
+        assert!(!closed_segment.is_empty());
         assert_eq!(
             closed_segment.find_page(vid.clone(), 0),
             Some(page0.as_ref())
@@ -129,11 +140,14 @@ mod tests {
     #[test]
     fn test_zero_length_segment() {
         let open_segment = OpenSegment::default();
+        let expected_size = open_segment.encoded_size();
 
         let mut writer = io::Cursor::new(vec![]);
         open_segment.write_to(&mut writer).unwrap();
 
         let buf = writer.into_inner();
+
+        assert_eq!(buf.len(), expected_size);
 
         assert_eq!(
             buf.len(),
@@ -161,10 +175,15 @@ mod tests {
                 .unwrap();
         }
 
+        let expected_size = open_segment.encoded_size();
+
         let mut writer = io::Cursor::new(vec![]);
         open_segment.write_to(&mut writer).unwrap();
 
         let buf = writer.into_inner();
+
+        assert_eq!(buf.len(), expected_size);
+
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
 
         assert_eq!(closed_segment.len(), num_pages as usize);
