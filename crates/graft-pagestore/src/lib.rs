@@ -1,2 +1,3 @@
-pub mod segment;
-pub mod supervisor;
+mod segment;
+mod storage;
+mod supervisor;
