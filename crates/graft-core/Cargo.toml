@@ -12,3 +12,7 @@ rand = "0.8.5"
 static_assertions = "1.1.0"
 thiserror = "1.0.63"
 zerocopy = { version = "0.7.35", features = ["derive"] }
+
+[features]
+default = []
+testutil = []

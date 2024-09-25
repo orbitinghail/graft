@@ -6,6 +6,7 @@ use std::{
 };
 
 use graft_core::{
+    byte_unit::ByteUnit,
     guid::VolumeId,
     offset::Offset,
     page::{Page, PAGESIZE},
@@ -63,7 +64,7 @@ impl OpenSegment {
         self.index.get(&(vid, offset))
     }
 
-    pub fn encoded_size(&self) -> usize {
+    pub fn encoded_size(&self) -> ByteUnit {
         closed_segment_size(self.index.len())
     }
 
@@ -71,7 +72,7 @@ impl OpenSegment {
         let mut index_builder = SegmentIndex::builder(self.index.len());
 
         // seek to the start of the data section
-        writer.seek(io::SeekFrom::Start(PAGESIZE as u64))?;
+        writer.seek(io::SeekFrom::Start(PAGESIZE.as_u64()))?;
 
         for (local_offset, ((vid, off), page)) in (0_u16..).zip(self.index.into_iter()) {
             writer.write_all(&page)?;
@@ -82,7 +83,7 @@ impl OpenSegment {
             SegmentHeaderPage::new_with_inline_index(index_builder)
         } else {
             let index_bytes = index_builder.as_bytes();
-            let index_size: u32 = index_bytes.len().try_into().unwrap();
+            let index_size: ByteUnit = index_bytes.len().into();
             writer.write_all(index_bytes)?;
             SegmentHeaderPage::new(index_size)
         };
@@ -104,8 +105,8 @@ mod tests {
         let mut open_segment = OpenSegment::default();
 
         let vid = VolumeId::random();
-        let page0 = Page::from(&[1; PAGESIZE]);
-        let page1 = Page::from(&[2; PAGESIZE]);
+        let page0 = Page::test_filled(1);
+        let page1 = Page::test_filled(2);
 
         open_segment.insert(vid.clone(), 0, page0.clone()).unwrap();
         open_segment.insert(vid.clone(), 1, page1.clone()).unwrap();
@@ -166,7 +167,7 @@ mod tests {
         let mut open_segment = OpenSegment::default();
 
         let vid = VolumeId::random();
-        let page = Page::from(&[1; PAGESIZE]);
+        let page = Page::test_filled(1);
 
         let num_pages = SEGMENT_MAX_PAGES as u32;
         for i in 0..num_pages {
@@ -194,7 +195,7 @@ mod tests {
         let mut open_segment = OpenSegment::default();
 
         let vid = VolumeId::random();
-        let page = Page::from(&[1; PAGESIZE]);
+        let page = Page::test_filled(1);
 
         let num_pages = SEGMENT_MAX_PAGES as u32 + 1;
         for i in 0..num_pages {

@@ -3,7 +3,7 @@
 //!   - Disk space
 //!   - Maximum open file descriptors (maximum mmap'ed segments)
 
-use graft_core::guid::SegmentId;
+use graft_core::{byte_unit::ByteUnit, guid::SegmentId};
 
 pub trait CacheBackend {}
 
@@ -14,6 +14,12 @@ pub enum CacheEntry {
 
 pub struct Cache<B> {
     backend: B,
+
+    /// The maximum amount of space that the cache can use.
+    space_limit: ByteUnit,
+
+    /// The maximum number of segments that can be mmap'ed at the same time.
+    open_limit: usize,
 }
 
 impl<B: CacheBackend> Cache<B> {

@@ -50,7 +50,7 @@ impl SegmentUploaderTask {
         let segment = req.segment;
         let sid = SegmentId::random();
 
-        let mut buf = io::Cursor::new(Vec::with_capacity(segment.encoded_size()));
+        let mut buf = io::Cursor::new(Vec::with_capacity(segment.encoded_size().as_usize()));
         segment.write_to(&mut buf)?;
         let buf = buf.into_inner();
 
@@ -67,10 +67,7 @@ impl SegmentUploaderTask {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{
-        guid::VolumeId,
-        page::{Page, PAGESIZE},
-    };
+    use graft_core::{guid::VolumeId, page::Page};
     use object_store::memory::InMemory;
 
     use crate::segment::{
@@ -99,8 +96,8 @@ mod tests {
 
         // add a couple pages
         let vid = VolumeId::random();
-        let page0 = Page::from(&[1; PAGESIZE]);
-        let page1 = Page::from(&[2; PAGESIZE]);
+        let page0 = Page::test_filled(1);
+        let page1 = Page::test_filled(2);
         segment.insert(vid.clone(), 0, page0.clone()).unwrap();
         segment.insert(vid.clone(), 1, page1.clone()).unwrap();
 

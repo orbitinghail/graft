@@ -4,6 +4,7 @@
 use std::{error::Error, fmt::Debug};
 
 use graft_core::{
+    byte_unit::ByteUnit,
     guid::VolumeId,
     offset::Offset,
     page::{PageRef, PAGESIZE},
@@ -16,8 +17,8 @@ pub const SEGMENT_MAGIC: U32 = U32::from_bytes([0xB8, 0x3B, 0x41, 0xC0]);
 pub const SEGMENT_VERSION: u8 = 1;
 
 // segments must be no larger than 16 MB
-pub const SEGMENT_MAX_LEN: usize = 1024 * 1024 * 16;
-pub const SEGMENT_INLINE_INDEX_SIZE: usize = PAGESIZE - size_of::<SegmentHeader>();
+pub const SEGMENT_MAX_SIZE: ByteUnit = ByteUnit::from_mb(16);
+pub const SEGMENT_INLINE_INDEX_SIZE: ByteUnit = PAGESIZE.diff(ByteUnit::size_of::<SegmentHeader>());
 
 // the maximum number of pages a segment can store taking into account index/header overhead
 // calculated by hand via inspecting odht and current segment encoding
@@ -47,26 +48,26 @@ pub struct SegmentHeader {
 #[repr(C)]
 pub struct SegmentHeaderPage {
     header: SegmentHeader,
-    index: [u8; SEGMENT_INLINE_INDEX_SIZE],
+    index: [u8; SEGMENT_INLINE_INDEX_SIZE.as_usize()],
 }
 
 static_assertions::const_assert_eq!(size_of::<SegmentHeader>(), 16);
-static_assertions::const_assert_eq!(size_of::<SegmentHeaderPage>(), PAGESIZE);
+static_assertions::const_assert_eq!(size_of::<SegmentHeaderPage>(), PAGESIZE.as_usize());
 
 impl SegmentHeaderPage {
-    pub fn new(index_size: u32) -> Self {
+    pub fn new(index_size: ByteUnit) -> Self {
         assert!(
-            index_size > SEGMENT_INLINE_INDEX_SIZE as u32,
+            index_size > SEGMENT_INLINE_INDEX_SIZE,
             "must use new_with_inline if index fits inline"
         );
         Self {
             header: SegmentHeader {
                 magic: SEGMENT_MAGIC,
                 version: SEGMENT_VERSION,
-                index_size: U32::new(index_size),
+                index_size: U32::new(index_size.as_u32()),
                 padding: [0; 7],
             },
-            index: [0; SEGMENT_INLINE_INDEX_SIZE],
+            index: [0; SEGMENT_INLINE_INDEX_SIZE.as_usize()],
         }
     }
 
@@ -83,7 +84,7 @@ impl SegmentHeaderPage {
                 index_size: U32::new(index_bytes.len().try_into().unwrap()),
                 padding: [0; 7],
             },
-            index: [0; SEGMENT_INLINE_INDEX_SIZE],
+            index: [0; SEGMENT_INLINE_INDEX_SIZE.as_usize()],
         };
         page.index[..index_bytes.len()].copy_from_slice(index_bytes);
         page
@@ -143,16 +144,18 @@ pub struct SegmentIndexBuilder {
 
 impl SegmentIndexBuilder {
     fn new(pages: usize) -> Self {
-        // we need to add 1 to the number of pages to account for how odht
-        // handles slot allocation
-        let data = vec![0; Self::size(pages)];
+        let data = vec![0; Self::size(pages).as_usize()];
         Self {
+            // we need to add 1 to the number of pages to account for how odht
+            // handles slot allocation
             ht: odht::HashTable::init_in_place(data, pages + 1, 100).unwrap(),
         }
     }
 
-    pub fn size(pages: usize) -> usize {
-        odht::bytes_needed::<SegmentIndex>(pages + 1, 100)
+    pub fn size(pages: usize) -> ByteUnit {
+        // we need to add 1 to the number of pages to account for how odht
+        // handles slot allocation
+        odht::bytes_needed::<SegmentIndex>(pages + 1, 100).into()
     }
 
     #[inline]
@@ -177,7 +180,7 @@ impl SegmentIndexBuilder {
     }
 }
 
-pub fn closed_segment_size(pages: usize) -> usize {
+pub fn closed_segment_size(pages: usize) -> ByteUnit {
     let index_size = SegmentIndexBuilder::size(pages);
     if index_size <= SEGMENT_INLINE_INDEX_SIZE {
         size_of::<SegmentHeaderPage>() + (PAGESIZE * pages)
@@ -190,7 +193,7 @@ pub fn closed_segment_size(pages: usize) -> usize {
 pub enum SegmentValidationErr {
     #[error("segment must be at least {} bytes", PAGESIZE)]
     TooSmall,
-    #[error("segment must be smaller than {} bytes", SEGMENT_MAX_LEN)]
+    #[error("segment must be smaller than {} bytes", SEGMENT_MAX_SIZE)]
     TooLarge,
     #[error("invalid magic number")]
     Magic,
@@ -205,7 +208,7 @@ pub enum SegmentValidationErr {
 }
 
 pub struct ClosedSegment<'a> {
-    pages: &'a [u8],
+    page_data: &'a [u8],
     index: odht::HashTable<SegmentIndex, &'a [u8]>,
 }
 
@@ -214,7 +217,7 @@ impl<'a> ClosedSegment<'a> {
         if data.len() < PAGESIZE {
             return Err(SegmentValidationErr::TooSmall);
         }
-        if data.len() > SEGMENT_MAX_LEN {
+        if data.len() > SEGMENT_MAX_SIZE {
             return Err(SegmentValidationErr::TooLarge);
         }
 
@@ -226,28 +229,28 @@ impl<'a> ClosedSegment<'a> {
         if header.version != SEGMENT_VERSION {
             return Err(SegmentValidationErr::Version);
         }
-        let index_size = header.index_size.get() as usize;
-        let (pages, index_bytes) = if index_size <= SEGMENT_INLINE_INDEX_SIZE {
+        let index_size: ByteUnit = header.index_size.get().into();
+        let (page_data, index_bytes) = if index_size <= SEGMENT_INLINE_INDEX_SIZE {
             // index is inline
-            let (full_index, data) = rest.split_at(SEGMENT_INLINE_INDEX_SIZE);
-            (data, &full_index[..index_size])
+            let (full_index, data) = rest.split_at(SEGMENT_INLINE_INDEX_SIZE.as_usize());
+            (data, &full_index[..index_size.as_usize()])
         } else {
             // the index is not inline; it is stored at the end of the segment
             // start by jumping to the end of the header page
-            let (_, rest) = rest.split_at(SEGMENT_INLINE_INDEX_SIZE);
+            let (_, rest) = rest.split_at(SEGMENT_INLINE_INDEX_SIZE.as_usize());
             if rest.len() < index_size {
                 return Err(SegmentValidationErr::IndexSize);
             }
-            rest.split_at(rest.len() - index_size)
+            rest.split_at((rest.len() - index_size).as_usize())
         };
         let index = odht::HashTable::<SegmentIndex, _>::from_raw_bytes(index_bytes)
             .map_err(|source| SegmentValidationErr::Index { source })?;
 
-        if pages.len() % PAGESIZE != 0 {
+        if page_data.len() % PAGESIZE != 0 {
             return Err(SegmentValidationErr::PageStorageSize);
         }
 
-        Ok(Self { pages, index })
+        Ok(Self { page_data, index })
     }
 
     pub fn len(&self) -> usize {
@@ -262,9 +265,11 @@ impl<'a> ClosedSegment<'a> {
     pub fn find_page(&self, vid: VolumeId, offset: Offset) -> Option<PageRef<'_>> {
         let key = SegmentIndexKey::new(vid, offset);
         self.index.get(&key).map(|local_offset| {
-            let start = local_offset.get() as usize * PAGESIZE;
+            let start = local_offset.get() * PAGESIZE;
             let end = start + PAGESIZE;
-            (&self.pages[start..end]).try_into().expect("invalid page")
+            (&self.page_data[start.range(end)])
+                .try_into()
+                .expect("invalid page")
         })
     }
 }
@@ -272,7 +277,7 @@ impl<'a> ClosedSegment<'a> {
 impl Debug for ClosedSegment<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClosedSegment")
-            .field("len", &self.len())
+            .field("pages", &self.len())
             .finish()
     }
 }
@@ -283,31 +288,35 @@ mod tests {
 
     use super::*;
 
+    fn mk_cursor(size: impl Into<ByteUnit>) -> io::Cursor<Vec<u8>> {
+        io::Cursor::new(vec![0; size.into().as_usize()])
+    }
+
     #[test]
     fn test_segment_validation() {
         // test an empty segment
-        let buf = io::Cursor::new(vec![0; 0]);
+        let buf = mk_cursor(0);
         assert!(matches!(
             ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
             SegmentValidationErr::TooSmall
         ));
 
         // test a massive segment
-        let buf = io::Cursor::new(vec![0; SEGMENT_MAX_LEN + 1]);
+        let buf = mk_cursor(SEGMENT_MAX_SIZE + 1);
         assert!(matches!(
             ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
             SegmentValidationErr::TooLarge
         ));
 
         // test an all zero segment
-        let buf = io::Cursor::new(vec![0; PAGESIZE]);
+        let buf = mk_cursor(PAGESIZE);
         assert!(matches!(
             ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
             SegmentValidationErr::Magic
         ));
 
         // test a bad magic number
-        let mut buf = io::Cursor::new(vec![0; PAGESIZE]);
+        let mut buf = mk_cursor(PAGESIZE);
         buf.write_all(
             SegmentHeader {
                 magic: U32::new(0),
@@ -324,7 +333,7 @@ mod tests {
         ));
 
         // test a bad version number
-        let mut buf = io::Cursor::new(vec![0; PAGESIZE]);
+        let mut buf = mk_cursor(PAGESIZE);
         buf.write_all(
             SegmentHeader {
                 magic: SEGMENT_MAGIC,
@@ -341,12 +350,12 @@ mod tests {
         ));
 
         // test a bad index size
-        let mut buf = io::Cursor::new(vec![0; PAGESIZE]);
+        let mut buf = mk_cursor(PAGESIZE);
         buf.write_all(
             SegmentHeader {
                 magic: SEGMENT_MAGIC,
                 version: SEGMENT_VERSION,
-                index_size: U32::new((SEGMENT_INLINE_INDEX_SIZE as u32) + 1),
+                index_size: U32::new((SEGMENT_INLINE_INDEX_SIZE.as_u32()) + 1),
                 padding: [0; 7],
             }
             .as_bytes(),
@@ -358,12 +367,12 @@ mod tests {
         ));
 
         // test a bad index
-        let mut buf = io::Cursor::new(vec![0; PAGESIZE]);
+        let mut buf = mk_cursor(PAGESIZE);
         buf.write_all(
             SegmentHeader {
                 magic: SEGMENT_MAGIC,
                 version: SEGMENT_VERSION,
-                index_size: U32::new(SEGMENT_INLINE_INDEX_SIZE as u32),
+                index_size: U32::new(SEGMENT_INLINE_INDEX_SIZE.as_u32()),
                 padding: [0; 7],
             }
             .as_bytes(),

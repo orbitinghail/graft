@@ -20,3 +20,6 @@ object_store = { version = "0.11.0", features = ["aws"] }
 bytes = "1.7.2"
 memmap2 = "0.9.5"
 rlimit = "0.10.2"
+
+[dev-dependencies]
+graft-core = { path = "../graft-core", features = ["testutil"] }

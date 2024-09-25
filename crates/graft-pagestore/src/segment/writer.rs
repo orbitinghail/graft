@@ -112,10 +112,7 @@ impl SegmentWriterTask {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{
-        guid::VolumeId,
-        page::{Page, PAGESIZE},
-    };
+    use graft_core::{guid::VolumeId, page::Page};
 
     use crate::segment::bus::RequestGroup;
 
@@ -136,8 +133,8 @@ mod tests {
         // add a couple pages
         let vid = VolumeId::random();
         let group = RequestGroup::next();
-        let page0 = Page::from(&[1; PAGESIZE]);
-        let page1 = Page::from(&[2; PAGESIZE]);
+        let page0 = Page::test_filled(1);
+        let page1 = Page::test_filled(2);
 
         input_tx
             .send(WritePageRequest {

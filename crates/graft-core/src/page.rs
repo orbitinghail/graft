@@ -1,10 +1,12 @@
 use std::{array::TryFromSliceError, fmt::Debug, ops::Deref};
 
-pub const PAGESIZE: usize = 4096;
+use crate::byte_unit::ByteUnit;
+
+pub const PAGESIZE: ByteUnit = ByteUnit::from_kb(4);
 static_assertions::const_assert!(PAGESIZE.is_power_of_two());
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct Page([u8; PAGESIZE]);
+pub struct Page([u8; PAGESIZE.as_usize()]);
 
 impl Deref for Page {
     type Target = [u8];
@@ -20,8 +22,8 @@ impl Page {
     }
 }
 
-impl From<&[u8; PAGESIZE]> for Page {
-    fn from(value: &[u8; PAGESIZE]) -> Self {
+impl From<&[u8; PAGESIZE.as_usize()]> for Page {
+    fn from(value: &[u8; PAGESIZE.as_usize()]) -> Self {
         Page(*value)
     }
 }
@@ -33,7 +35,7 @@ impl Debug for Page {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct PageRef<'a>(&'a [u8; PAGESIZE]);
+pub struct PageRef<'a>(&'a [u8; PAGESIZE.as_usize()]);
 
 impl<'a> TryFrom<&'a [u8]> for PageRef<'a> {
     type Error = TryFromSliceError;
@@ -43,8 +45,8 @@ impl<'a> TryFrom<&'a [u8]> for PageRef<'a> {
     }
 }
 
-impl<'a> From<&'a [u8; PAGESIZE]> for PageRef<'a> {
-    fn from(value: &'a [u8; PAGESIZE]) -> Self {
+impl<'a> From<&'a [u8; PAGESIZE.as_usize()]> for PageRef<'a> {
+    fn from(value: &'a [u8; PAGESIZE.as_usize()]) -> Self {
         PageRef(value)
     }
 }

@@ -1,6 +1,6 @@
 use std::{
     fmt::{self, Debug, Display},
-    ops::{Add, Div, Mul, Rem, Shl, Shr, Sub},
+    ops::{Add, Div, Mul, Range, Rem, Shl, Shr, Sub},
 };
 
 struct NamedByteUnit {
@@ -15,7 +15,7 @@ const TB: NamedByteUnit = NamedByteUnit { value: ByteUnit::TB, suffix: "TB" };
 const PB: NamedByteUnit = NamedByteUnit { value: ByteUnit::PB, suffix: "PB" };
 const EB: NamedByteUnit = NamedByteUnit { value: ByteUnit::EB, suffix: "EB" };
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, Ord)]
 pub struct ByteUnit(u64);
 
 impl ByteUnit {
@@ -33,12 +33,28 @@ impl ByteUnit {
         ByteUnit(bytes)
     }
 
+    pub const fn size_of<T>() -> ByteUnit {
+        ByteUnit(std::mem::size_of::<T>() as u64)
+    }
+
     pub const fn as_u64(&self) -> u64 {
         self.0
     }
 
+    pub const fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+
+    pub const fn as_u32(&self) -> u32 {
+        self.0 as u32
+    }
+
     const fn as_f64(&self) -> f64 {
         self.0 as f64
+    }
+
+    pub const fn is_power_of_two(&self) -> bool {
+        self.0.is_power_of_two()
     }
 
     pub const fn from_kb(kb: u64) -> ByteUnit {
@@ -63,6 +79,20 @@ impl ByteUnit {
 
     pub const fn from_eb(eb: u64) -> ByteUnit {
         ByteUnit(eb.saturating_mul(EB.value.0))
+    }
+
+    /// Returns the absolute difference between two `ByteUnit` values.
+    pub const fn diff(self, other: ByteUnit) -> ByteUnit {
+        if self.0 > other.0 {
+            ByteUnit(self.0 - other.0)
+        } else {
+            ByteUnit(other.0 - self.0)
+        }
+    }
+
+    /// Returns a range representing the byte range from `self` to `end`.
+    pub const fn range(self, end: ByteUnit) -> Range<usize> {
+        (self.0 as usize)..(end.0 as usize)
     }
 }
 
@@ -92,6 +122,18 @@ impl Display for ByteUnit {
 impl Debug for ByteUnit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl<T: Into<ByteUnit> + Copy> PartialEq<T> for ByteUnit {
+    fn eq(&self, other: &T) -> bool {
+        self.0 == (*other).into().0
+    }
+}
+
+impl<T: Into<ByteUnit> + Copy> PartialOrd<T> for ByteUnit {
+    fn partial_cmp(&self, other: &T) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&(*other).into().0)
     }
 }
 
@@ -182,6 +224,18 @@ macro_rules! impl_primitive {
             }
         }
 
+        impl PartialEq<ByteUnit> for $T {
+            fn eq(&self, other: &ByteUnit) -> bool {
+                *self as u64 == other.0
+            }
+        }
+
+        impl PartialOrd<ByteUnit> for $T {
+            fn partial_cmp(&self, other: &ByteUnit) -> Option<std::cmp::Ordering> {
+                (*self as u64).partial_cmp(&other.0)
+            }
+        }
+
         impl_arith_op!($T, Mul, mul, *);
         impl_arith_op!($T, Div, div, /);
         impl_arith_op!($T, Rem, rem, %);
@@ -209,6 +263,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_sanity() {
+        assert_eq!(0, ByteUnit::ZERO);
+        assert_eq!(ByteUnit::ZERO, 0);
+        assert_eq!(ByteUnit::ZERO, ByteUnit::ZERO);
+        assert!(0 < ByteUnit::KB);
+        assert!(ByteUnit::KB > 0);
+    }
+
+    #[test]
     fn test_display() {
         assert_eq!(format!("{}", ByteUnit::ZERO), "0 B");
         assert_eq!(format!("{}", ByteUnit::MAX), "16 EB");
@@ -230,5 +293,12 @@ mod tests {
             format!("{}", (7 * ByteUnit::MB) + ((1024 - 1) * ByteUnit::KB)),
             "8 MB"
         );
+    }
+
+    #[test]
+    fn test_const() {
+        const X: ByteUnit = ByteUnit::from_kb(4);
+        let arr: [u8; X.as_usize()] = [0; X.as_usize()];
+        assert_eq!(arr.len(), 4 * 1024);
     }
 }
