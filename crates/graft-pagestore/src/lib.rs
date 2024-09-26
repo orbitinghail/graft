@@ -13,4 +13,8 @@ mod storage {
     pub mod cache;
     pub mod disk;
     pub mod mem;
+    mod resource_pool;
 }
+
+#[cfg(test)]
+pub mod testutil;

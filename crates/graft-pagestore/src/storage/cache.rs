@@ -13,14 +13,17 @@ use graft_core::{
 };
 use tokio::sync::RwLock;
 
+use super::resource_pool::{ResourceHandle, ResourcePool};
+
 pub trait CacheBackend: Send + Sync {}
 
-struct SegmentInfo {
+struct CachedSegment {
     sid: SegmentId,
     size: ByteUnit,
+    slot: Option<ResourceHandle>,
 }
 
-impl HTEntry for SegmentInfo {
+impl HTEntry for CachedSegment {
     type Key = SegmentId;
 
     fn key(&self) -> &Self::Key {
@@ -28,13 +31,7 @@ impl HTEntry for SegmentInfo {
     }
 }
 
-impl SegmentInfo {
-    fn new(sid: SegmentId, size: ByteUnit) -> Self {
-        Self { sid, size }
-    }
-}
-
-pub type CacheRef<B> = Arc<Cache<B>>;
+impl CachedSegment {}
 
 pub struct Cache<B> {
     backend: B,
@@ -42,20 +39,26 @@ pub struct Cache<B> {
     /// The maximum amount of space that the cache can use.
     space_limit: ByteUnit,
 
-    /// The maximum number of segments that can be mmap'ed at the same time.
-    open_limit: usize,
+    /// Index of cached segments.
+    segments: RwLock<HashTable<CachedSegment>>,
 
-    /// In-memory map of cached segments
-    segments: RwLock<HashTable<SegmentInfo>>,
+    /// Pool of mmap'ed segments.
+    mmap_pool: ResourcePool<memmap2::Mmap>,
 }
 
 impl<B: CacheBackend> Cache<B> {
+    /// Create a new cache.
+    ///
+    /// **Parameters:**
+    /// - `backend` The backend to use for storage.
+    /// - `space_limit` The maximum amount of space that the cache can use.
+    /// - `open_limit` The maximum number of mmap'ed segments.
     pub fn new(backend: B, space_limit: ByteUnit, open_limit: usize) -> Self {
         Self {
             backend,
             space_limit,
-            open_limit,
             segments: Default::default(),
+            mmap_pool: ResourcePool::new(open_limit),
         }
     }
 
@@ -78,5 +81,5 @@ impl<B: CacheBackend> Cache<B> {
 }
 
 pub struct CacheWriter {
-    entry: Arc<SegmentInfo>,
+    entry: Arc<CachedSegment>,
 }

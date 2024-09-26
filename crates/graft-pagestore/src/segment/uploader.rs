@@ -5,20 +5,20 @@ use object_store::{path::Path, ObjectStore};
 use tokio::sync::mpsc;
 
 use crate::{
-    storage::cache::{CacheBackend, CacheRef},
+    storage::cache::{Cache, CacheBackend},
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
 };
 
 use super::bus::{CommitSegmentRequest, StoreSegmentRequest};
 
-pub struct SegmentUploaderTask<O, B> {
+pub struct SegmentUploaderTask<O, C> {
     input: mpsc::Receiver<StoreSegmentRequest>,
     output: mpsc::Sender<CommitSegmentRequest>,
     store: Arc<O>,
-    cache: CacheRef<B>,
+    cache: Arc<Cache<C>>,
 }
 
-impl<O: ObjectStore, B: CacheBackend> SupervisedTask for SegmentUploaderTask<O, B> {
+impl<O: ObjectStore, C: CacheBackend> SupervisedTask for SegmentUploaderTask<O, C> {
     fn cfg(&self) -> TaskCfg {
         TaskCfg { name: "segment-uploader" }
     }
@@ -40,12 +40,12 @@ impl<O: ObjectStore, B: CacheBackend> SupervisedTask for SegmentUploaderTask<O, 
     }
 }
 
-impl<O: ObjectStore, B: CacheBackend> SegmentUploaderTask<O, B> {
+impl<O: ObjectStore, C: CacheBackend> SegmentUploaderTask<O, C> {
     pub fn new(
         input: mpsc::Receiver<StoreSegmentRequest>,
         output: mpsc::Sender<CommitSegmentRequest>,
         store: Arc<O>,
-        cache: CacheRef<B>,
+        cache: Arc<Cache<C>>,
     ) -> Self {
         Self { input, output, store, cache }
     }
@@ -95,7 +95,7 @@ mod tests {
         let (output_tx, mut output_rx) = mpsc::channel(1);
 
         let store = Arc::new(InMemory::default());
-        let cache = Arc::new(Cache::new(MemBackend, ByteUnit::from_mb(1), 1024));
+        let cache = Arc::new(Cache::new(MemBackend, 1 * ByteUnit::MB, 8));
 
         let task = SegmentUploaderTask::new(input_rx, output_tx, store.clone(), cache.clone());
         task.testonly_spawn();
