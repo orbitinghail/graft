@@ -30,3 +30,11 @@ Lookup the cache entry corresponding to the segment. This requires some kind of 
 To help limit contention, the caching and pinning layer should be entirely in memory and just return allocated slots. Once a slot is allocated, the actual IO can happen outside of any critical regions.
 
 When instantiating the storage subsystem we need to scan the cache and load any segments into the cache.
+
+# tempfiles and the cache
+
+in order to populate the cache, we need to create temp files, write out the segment, and then atomically move them into the cache
+
+this will require a file descriptor, same as mmap. we either need a separate pool for fds, or we need to generalize the fd pool to be used for more than just mmap.
+
+also, we should investigate using the syscall that persists a tempfile to a fd atomically rather than a rename. need to look it up and check compat, but it seems like a cleaner alternative

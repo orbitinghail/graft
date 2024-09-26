@@ -1,20 +1,24 @@
-use std::{io, sync::Arc};
+use std::sync::Arc;
 
 use graft_core::guid::SegmentId;
 use object_store::{path::Path, ObjectStore};
 use tokio::sync::mpsc;
 
-use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
+use crate::{
+    storage::cache::{CacheBackend, CacheRef},
+    supervisor::{SupervisedTask, TaskCfg, TaskCtx},
+};
 
 use super::bus::{CommitSegmentRequest, StoreSegmentRequest};
 
-pub struct SegmentUploaderTask {
+pub struct SegmentUploaderTask<O, B> {
     input: mpsc::Receiver<StoreSegmentRequest>,
     output: mpsc::Sender<CommitSegmentRequest>,
-    store: Arc<dyn ObjectStore>,
+    store: Arc<O>,
+    cache: CacheRef<B>,
 }
 
-impl SupervisedTask for SegmentUploaderTask {
+impl<O: ObjectStore, B: CacheBackend> SupervisedTask for SegmentUploaderTask<O, B> {
     fn cfg(&self) -> TaskCfg {
         TaskCfg { name: "segment-uploader" }
     }
@@ -36,30 +40,33 @@ impl SupervisedTask for SegmentUploaderTask {
     }
 }
 
-impl SegmentUploaderTask {
+impl<O: ObjectStore, B: CacheBackend> SegmentUploaderTask<O, B> {
     pub fn new(
         input: mpsc::Receiver<StoreSegmentRequest>,
         output: mpsc::Sender<CommitSegmentRequest>,
-        store: Arc<dyn ObjectStore>,
+        store: Arc<O>,
+        cache: CacheRef<B>,
     ) -> Self {
-        Self { input, output, store }
+        Self { input, output, store, cache }
     }
 
     async fn handle_store_request(&mut self, req: StoreSegmentRequest) -> anyhow::Result<()> {
         let groups = req.groups;
         let segment = req.segment;
         let sid = SegmentId::random();
-
-        let mut buf = io::Cursor::new(Vec::with_capacity(segment.encoded_size().as_usize()));
-        segment.write_to(&mut buf)?;
-        let buf = buf.into_inner();
-
         let path = Path::from(sid.pretty());
-        self.store.put(&path, buf.into()).await?;
+        let segment = segment.serialize();
+
+        // get a cache slot first, in order to prevent races
+        // let mut writer = self.cache.writer(sid.clone(), segment.len().into()).await;
+
+        self.store.put(&path, segment.into()).await?;
 
         self.output
             .send(CommitSegmentRequest { groups, sid })
             .await?;
+
+        // write the segment to the cache
 
         Ok(())
     }
@@ -67,13 +74,16 @@ impl SegmentUploaderTask {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{guid::VolumeId, page::Page};
+    use graft_core::{byte_unit::ByteUnit, guid::VolumeId, page::Page};
     use object_store::memory::InMemory;
 
-    use crate::segment::{
-        bus::{RequestGroup, RequestGroupAggregate},
-        closed::ClosedSegment,
-        open::OpenSegment,
+    use crate::{
+        segment::{
+            bus::{RequestGroup, RequestGroupAggregate},
+            closed::ClosedSegment,
+            open::OpenSegment,
+        },
+        storage::{cache::Cache, mem::MemBackend},
     };
 
     use super::*;
@@ -85,8 +95,9 @@ mod tests {
         let (output_tx, mut output_rx) = mpsc::channel(1);
 
         let store = Arc::new(InMemory::default());
+        let cache = Arc::new(Cache::new(MemBackend, ByteUnit::from_mb(1), 1024));
 
-        let task = SegmentUploaderTask::new(input_rx, output_tx, store.clone());
+        let task = SegmentUploaderTask::new(input_rx, output_tx, store.clone(), cache.clone());
         task.testonly_spawn();
 
         let mut segment = OpenSegment::default();

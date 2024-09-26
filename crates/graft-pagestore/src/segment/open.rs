@@ -1,10 +1,8 @@
 //! An open segment is a segment that is currently being written to. It can be serialized into a Closed segment.
 
-use std::{
-    collections::BTreeMap,
-    io::{self, Seek, Write},
-};
+use std::collections::BTreeMap;
 
+use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{
     byte_unit::ByteUnit,
     guid::VolumeId,
@@ -68,30 +66,35 @@ impl OpenSegment {
         closed_segment_size(self.index.len())
     }
 
-    pub fn write_to(self, mut writer: impl Write + Seek) -> io::Result<()> {
+    pub fn serialize(self) -> Bytes {
+        let mut buf = BytesMut::with_capacity(self.encoded_size().as_usize());
         let mut index_builder = SegmentIndex::builder(self.index.len());
 
-        // seek to the start of the data section
-        writer.seek(io::SeekFrom::Start(PAGESIZE.as_u64()))?;
+        // split the buffer into header and data
+        let mut data = buf.split_off(PAGESIZE.as_usize());
 
+        // write pages to buffer while building index
         for (local_offset, ((vid, off), page)) in (0_u16..).zip(self.index.into_iter()) {
-            writer.write_all(&page)?;
+            data.put_slice(&page);
             index_builder.insert(SegmentIndexKey::new(vid, off), local_offset);
         }
 
+        // build the header and write the index if it's not inline
         let header_page = if index_builder.is_inline() {
             SegmentHeaderPage::new_with_inline_index(index_builder)
         } else {
             let index_bytes = index_builder.as_bytes();
             let index_size: ByteUnit = index_bytes.len().into();
-            writer.write_all(index_bytes)?;
+            data.put_slice(index_bytes);
             SegmentHeaderPage::new(index_size)
         };
 
-        writer.seek(io::SeekFrom::Start(0))?;
-        writer.write_all(header_page.as_bytes())?;
+        // write the header
+        buf.put_slice(header_page.as_bytes());
 
-        Ok(())
+        // unsplit the segment and freeze it
+        buf.unsplit(data);
+        buf.freeze()
     }
 }
 
@@ -117,10 +120,7 @@ mod tests {
 
         let expected_size = open_segment.encoded_size();
 
-        let mut writer = io::Cursor::new(vec![]);
-        open_segment.write_to(&mut writer).unwrap();
-
-        let buf = writer.into_inner();
+        let buf = open_segment.serialize();
 
         assert_eq!(buf.len(), expected_size);
 
@@ -143,10 +143,7 @@ mod tests {
         let open_segment = OpenSegment::default();
         let expected_size = open_segment.encoded_size();
 
-        let mut writer = io::Cursor::new(vec![]);
-        open_segment.write_to(&mut writer).unwrap();
-
-        let buf = writer.into_inner();
+        let buf = open_segment.serialize();
 
         assert_eq!(buf.len(), expected_size);
 
@@ -178,10 +175,7 @@ mod tests {
 
         let expected_size = open_segment.encoded_size();
 
-        let mut writer = io::Cursor::new(vec![]);
-        open_segment.write_to(&mut writer).unwrap();
-
-        let buf = writer.into_inner();
+        let buf = open_segment.serialize();
 
         assert_eq!(buf.len(), expected_size);
 
