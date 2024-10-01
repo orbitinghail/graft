@@ -1,4 +1,4 @@
 #[tokio::main]
 async fn main() {
-    println!("hi")
+    println!("hi");
 }

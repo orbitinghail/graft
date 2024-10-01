@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
+use futures::FutureExt;
 use graft_core::guid::SegmentId;
 use object_store::{path::Path, ObjectStore};
 use tokio::sync::mpsc;
 
 use crate::{
-    storage::cache::{Cache, CacheBackend},
+    storage::cache::Cache,
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
 };
 
@@ -15,10 +16,10 @@ pub struct SegmentUploaderTask<O, C> {
     input: mpsc::Receiver<StoreSegmentRequest>,
     output: mpsc::Sender<CommitSegmentRequest>,
     store: Arc<O>,
-    cache: Arc<Cache<C>>,
+    cache: Arc<C>,
 }
 
-impl<O: ObjectStore, C: CacheBackend> SupervisedTask for SegmentUploaderTask<O, C> {
+impl<O: ObjectStore, C: Cache> SupervisedTask for SegmentUploaderTask<O, C> {
     fn cfg(&self) -> TaskCfg {
         TaskCfg { name: "segment-uploader" }
     }
@@ -40,12 +41,12 @@ impl<O: ObjectStore, C: CacheBackend> SupervisedTask for SegmentUploaderTask<O, 
     }
 }
 
-impl<O: ObjectStore, C: CacheBackend> SegmentUploaderTask<O, C> {
+impl<O: ObjectStore, C: Cache> SegmentUploaderTask<O, C> {
     pub fn new(
         input: mpsc::Receiver<StoreSegmentRequest>,
         output: mpsc::Sender<CommitSegmentRequest>,
         store: Arc<O>,
-        cache: Arc<Cache<C>>,
+        cache: Arc<C>,
     ) -> Self {
         Self { input, output, store, cache }
     }
@@ -57,16 +58,20 @@ impl<O: ObjectStore, C: CacheBackend> SegmentUploaderTask<O, C> {
         let path = Path::from(sid.pretty());
         let segment = segment.serialize();
 
-        // get a cache slot first, in order to prevent races
-        // let mut writer = self.cache.writer(sid.clone(), segment.len().into()).await;
+        let upload_task = self
+            .store
+            .put(&path, segment.clone().into())
+            .map(|inner| inner.map_err(|e| anyhow::anyhow!(e)));
+        let cache_task = self
+            .cache
+            .put(&sid, segment)
+            .map(|inner| inner.map_err(|e| anyhow::anyhow!(e)));
 
-        self.store.put(&path, segment.into()).await?;
+        tokio::try_join!(upload_task, cache_task)?;
 
         self.output
             .send(CommitSegmentRequest { groups, sid })
             .await?;
-
-        // write the segment to the cache
 
         Ok(())
     }
@@ -74,7 +79,7 @@ impl<O: ObjectStore, C: CacheBackend> SegmentUploaderTask<O, C> {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{byte_unit::ByteUnit, guid::VolumeId, page::Page};
+    use graft_core::{guid::VolumeId, page::Page};
     use object_store::memory::InMemory;
 
     use crate::{
@@ -83,7 +88,7 @@ mod tests {
             closed::ClosedSegment,
             open::OpenSegment,
         },
-        storage::{cache::Cache, mem::MemBackend},
+        storage::mem::MemCache,
     };
 
     use super::*;
@@ -95,7 +100,7 @@ mod tests {
         let (output_tx, mut output_rx) = mpsc::channel(1);
 
         let store = Arc::new(InMemory::default());
-        let cache = Arc::new(Cache::new(MemBackend, 1 * ByteUnit::MB, 8));
+        let cache = Arc::new(MemCache::default());
 
         let task = SegmentUploaderTask::new(input_rx, output_tx, store.clone(), cache.clone());
         task.testonly_spawn();
@@ -103,14 +108,15 @@ mod tests {
         let mut segment = OpenSegment::default();
         let group = RequestGroup::next();
         let mut groups = RequestGroupAggregate::default();
-        groups.add(group);
 
         // add a couple pages
         let vid = VolumeId::random();
         let page0 = Page::test_filled(1);
         let page1 = Page::test_filled(2);
         segment.insert(vid.clone(), 0, page0.clone()).unwrap();
+        groups.add(group);
         segment.insert(vid.clone(), 1, page1.clone()).unwrap();
+        groups.add(group);
 
         input_tx
             .send(StoreSegmentRequest { groups: groups.clone(), segment })
@@ -122,6 +128,7 @@ mod tests {
         // groups should be unchanged
         assert_eq!(commit.groups, groups);
 
+        // check the stored segment
         let path = Path::from(commit.sid.pretty());
         let obj = store.get(&path).await.unwrap();
         let bytes = obj.bytes().await.unwrap();
@@ -130,5 +137,9 @@ mod tests {
         assert_eq!(segment.len(), 2);
         assert_eq!(segment.find_page(vid.clone(), 0), Some(page0.as_ref()));
         assert_eq!(segment.find_page(vid.clone(), 1), Some(page1.as_ref()));
+
+        // check that the cached and stored segment are identical
+        let cached = cache.get(&commit.sid).await.unwrap().unwrap();
+        assert_eq!(cached, bytes);
     }
 }

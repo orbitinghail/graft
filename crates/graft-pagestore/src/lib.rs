@@ -1,6 +1,6 @@
-mod supervisor;
+pub mod supervisor;
 
-mod segment {
+pub mod segment {
     pub mod bus;
     pub mod closed;
     pub mod open;
@@ -8,12 +8,12 @@ mod segment {
     pub mod writer;
 }
 
-mod storage {
+pub mod storage {
     pub mod atomic_fs;
     pub mod cache;
     pub mod disk;
     pub mod mem;
-    mod resource_pool;
+    pub mod resource_pool;
 }
 
 #[cfg(test)]

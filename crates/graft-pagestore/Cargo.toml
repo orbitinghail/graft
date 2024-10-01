@@ -21,6 +21,9 @@ bytes = "1.7.2"
 memmap2 = "0.9.5"
 rlimit = "0.10.2"
 nix = { version = "0.29.0", features = ["fs"] }
+hashbrown = "0.14.5"
+pin-project = "1.1.5"
+futures = "0.3.30"
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
