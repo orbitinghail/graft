@@ -1,0 +1,8 @@
+syntax = "proto3";
+package graft.pagestore.v1;
+
+message ReadPagesRequest {
+  bytes vid = 1;
+  uint64 lsn = 2;
+  repeated uint32 offsets = 3;
+}

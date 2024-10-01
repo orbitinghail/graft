@@ -1,10 +1,12 @@
-use std::{
-    fmt::{Debug, Display},
-    ops::Deref,
-};
+use std::fmt::{Debug, Display};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
+use bytes::Bytes;
 use thiserror::Error;
+
+use crate::byte_unit::ByteUnit;
+
+const GUID_SIZE: ByteUnit = ByteUnit::new(16);
 
 #[derive(
     Clone,
@@ -21,12 +23,12 @@ use thiserror::Error;
     zerocopy::FromBytes,
 )]
 #[repr(transparent)]
-pub struct Guid<const PREFIX: char>([u8; 16]);
+pub struct Guid<const PREFIX: char>([u8; GUID_SIZE.as_usize()]);
 
 pub type VolumeId = Guid<'V'>;
 pub type SegmentId = Guid<'S'>;
 
-static_assertions::assert_eq_size!(Guid<'G'>, [u8; 16]);
+static_assertions::assert_eq_size!(Guid<'G'>, [u8; GUID_SIZE.as_usize()]);
 
 impl<const P: char> Guid<P> {
     pub fn random() -> Self {
@@ -36,7 +38,9 @@ impl<const P: char> Guid<P> {
     pub fn derive(name: &str) -> Self {
         let mut hasher = blake3::Hasher::default();
         hasher.update(name.as_bytes());
-        let data = hasher.finalize().as_bytes()[..16].try_into().unwrap();
+        let data = hasher.finalize().as_bytes()[..GUID_SIZE.as_usize()]
+            .try_into()
+            .unwrap();
         Self(data)
     }
 
@@ -97,6 +101,19 @@ impl<const P: char> TryFrom<&str> for Guid<P> {
         }
 
         Ok(Guid(bs58::decode(rest.as_bytes()).into_array_const()?))
+    }
+}
+
+impl<const P: char> TryFrom<Bytes> for Guid<P> {
+    type Error = GuidParseError;
+
+    fn try_from(value: Bytes) -> Result<Self, Self::Error> {
+        if value.len() != GUID_SIZE.as_usize() {
+            return Err(GuidParseError::InvalidLength);
+        }
+
+        let raw: [u8; GUID_SIZE.as_usize()] = value.as_ref().try_into().unwrap();
+        Ok(Guid(raw))
     }
 }
 

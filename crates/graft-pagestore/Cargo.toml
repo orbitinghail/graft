@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 graft-core = { path = "../graft-core" }
+graft-proto = { path = "../graft-proto" }
 
 ahash = "0.8.11"
 tokio = { version = "1.40.0", features = ["full", "test-util"] }
@@ -21,9 +22,11 @@ bytes = "1.7.2"
 memmap2 = "0.9.5"
 rlimit = "0.10.2"
 nix = { version = "0.29.0", features = ["fs"] }
-hashbrown = "0.14.5"
+hashbrown = "0.15"
 pin-project = "1.1.5"
 futures = "0.3.30"
+axum = { version = "0.7.7", features = ["ws", "http2"] }
+prost = "0.13.3"
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }

@@ -7,7 +7,7 @@ use graft_core::{
 };
 use tokio::{fs::File, io::AsyncWriteExt, sync::RwLock};
 
-use crate::storage::atomic_fs::AtomicFileWriter;
+use crate::storage::atomic_file::AtomicFileWriter;
 
 use super::{
     cache::Cache,

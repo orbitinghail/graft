@@ -9,11 +9,20 @@ pub mod segment {
 }
 
 pub mod storage {
-    pub mod atomic_fs;
+    pub mod atomic_file;
     pub mod cache;
     pub mod disk;
     pub mod mem;
     pub mod resource_pool;
+}
+
+pub mod api {
+    pub mod error;
+    mod extractors;
+    pub mod read_pages;
+    pub mod router;
+    pub mod state;
+    pub mod write_pages;
 }
 
 #[cfg(test)]
