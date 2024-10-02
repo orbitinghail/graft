@@ -135,8 +135,8 @@ mod tests {
         let segment = ClosedSegment::from_bytes(&bytes).unwrap();
 
         assert_eq!(segment.len(), 2);
-        assert_eq!(segment.find_page(vid.clone(), 0), Some(page0.as_ref()));
-        assert_eq!(segment.find_page(vid.clone(), 1), Some(page1.as_ref()));
+        assert_eq!(segment.find_page(vid.clone(), 0), Some(page0));
+        assert_eq!(segment.find_page(vid.clone(), 1), Some(page1));
 
         // check that the cached and stored segment are identical
         let cached = cache.get(&commit.sid).await.unwrap().unwrap();

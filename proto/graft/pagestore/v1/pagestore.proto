@@ -6,3 +6,13 @@ message ReadPagesRequest {
   uint64 lsn = 2;
   repeated uint32 offsets = 3;
 }
+
+message Page {
+  uint32 offset = 1;
+  bytes data = 2;
+}
+
+message WritePagesRequest {
+  bytes vid = 1;
+  repeated Page pages = 2;
+}

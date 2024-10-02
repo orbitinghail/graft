@@ -22,6 +22,7 @@ pub mod api {
     pub mod read_pages;
     pub mod router;
     pub mod state;
+    pub mod task;
     pub mod write_pages;
 }
 

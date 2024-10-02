@@ -7,7 +7,7 @@ use graft_core::{
     byte_unit::ByteUnit,
     guid::VolumeId,
     offset::Offset,
-    page::{PageRef, PAGESIZE},
+    page::{Page, PAGESIZE},
 };
 use odht::FxHashFn;
 use thiserror::Error;
@@ -22,6 +22,7 @@ pub const SEGMENT_INLINE_INDEX_SIZE: ByteUnit = PAGESIZE.diff(ByteUnit::size_of:
 
 // the maximum number of pages a segment can store taking into account index/header overhead
 // calculated by hand via inspecting odht and current segment encoding
+// This calculation is validated in test_segment_max_pages
 pub const SEGMENT_MAX_PAGES: usize = 4071;
 
 // an offset within a segment, in pages
@@ -169,7 +170,7 @@ impl SegmentIndexBuilder {
     pub fn insert(&mut self, key: SegmentIndexKey, local_offset: u16) {
         assert!(
             (local_offset as usize) < SEGMENT_MAX_PAGES,
-            "local_offset must be a local offset in pages smaller than {SEGMENT_MAX_PAGES}"
+            "local_offset must be in the range 0..{SEGMENT_MAX_PAGES}"
         );
         self.ht.insert(&key, &LocalOffset::new(local_offset));
     }
@@ -262,7 +263,7 @@ impl<'a> ClosedSegment<'a> {
         self.len() == 0
     }
 
-    pub fn find_page(&self, vid: VolumeId, offset: Offset) -> Option<PageRef<'_>> {
+    pub fn find_page(&self, vid: VolumeId, offset: Offset) -> Option<Page> {
         let key = SegmentIndexKey::new(vid, offset);
         self.index.get(&key).map(|local_offset| {
             let start = local_offset.get() * PAGESIZE;
@@ -382,5 +383,22 @@ mod tests {
             ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
             SegmentValidationErr::Index { .. }
         ));
+    }
+
+    #[test]
+    fn test_segment_max_pages() {
+        let index_size = SegmentIndexBuilder::size(SEGMENT_MAX_PAGES);
+        let mut index_pages = (index_size / PAGESIZE).as_usize();
+        if index_size % PAGESIZE > 0 {
+            index_pages += 1;
+        }
+
+        // if we add up the index pages, the header page, and the maximum number
+        // of data pages it should equal the total number of pages that can fix
+        // in a segment
+        assert_eq!(
+            index_pages + 1 + SEGMENT_MAX_PAGES,
+            (SEGMENT_MAX_SIZE / PAGESIZE).as_usize(),
+        );
     }
 }

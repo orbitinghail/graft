@@ -55,7 +55,7 @@ impl SupervisedTask for SegmentWriterTask {
 }
 
 impl SegmentWriterTask {
-    fn new(
+    pub fn new(
         input: mpsc::Receiver<WritePageRequest>,
         output: mpsc::Sender<StoreSegmentRequest>,
         flush_interval: Duration,

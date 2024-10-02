@@ -43,6 +43,12 @@ pub struct WritePageRequest {
     pub(super) page: Page,
 }
 
+impl WritePageRequest {
+    pub fn new(group: RequestGroup, vid: VolumeId, offset: Offset, page: Page) -> Self {
+        Self { group, vid, offset, page }
+    }
+}
+
 #[derive(Debug)]
 pub struct StoreSegmentRequest {
     pub(super) groups: RequestGroupAggregate,

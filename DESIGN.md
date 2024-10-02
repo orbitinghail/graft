@@ -96,12 +96,10 @@ CommitHeader
   LSN
   Max Offset in Volume
   Commit Timestamp
-  offsets: OffsetSet
   segments_added: SegmentList
   segments_removed: SegmentIDList
 
 CommitPart
-  offsets: OffsetSet
   segments_added: SegmentList
   segments_removed: SegmentIDList
 
@@ -112,10 +110,7 @@ SegmentList
   [
     {
       Segment ID
-      Base LSN
-      Max LSN
-      Offset range
-      Num Pages
+      OffsetSet
     }
   ]
 

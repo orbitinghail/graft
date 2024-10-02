@@ -128,14 +128,8 @@ mod tests {
 
         assert_eq!(closed_segment.len(), 2);
         assert!(!closed_segment.is_empty());
-        assert_eq!(
-            closed_segment.find_page(vid.clone(), 0),
-            Some(page0.as_ref())
-        );
-        assert_eq!(
-            closed_segment.find_page(vid.clone(), 1),
-            Some(page1.as_ref())
-        );
+        assert_eq!(closed_segment.find_page(vid.clone(), 0), Some(page0));
+        assert_eq!(closed_segment.find_page(vid.clone(), 1), Some(page1));
     }
 
     #[test]
@@ -191,11 +185,17 @@ mod tests {
         let vid = VolumeId::random();
         let page = Page::test_filled(1);
 
-        let num_pages = SEGMENT_MAX_PAGES as u32 + 1;
+        let num_pages = SEGMENT_MAX_PAGES as u32;
         for i in 0..num_pages {
-            if let Err(err) = open_segment.insert(vid.clone(), i * 2, page.clone()) {
-                assert_eq!(err, SegmentFullErr);
-            }
+            open_segment
+                .insert(vid.clone(), i * 2, page.clone())
+                .unwrap();
         }
+
+        // insert one more page; should fail
+        let err = open_segment
+            .insert(vid.clone(), Offset::MAX, page.clone())
+            .expect_err("expected segment to be full");
+        assert_eq!(err, SegmentFullErr);
     }
 }
