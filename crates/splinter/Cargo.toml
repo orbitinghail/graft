@@ -1,0 +1,8 @@
+[package]
+name = "splinter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytes = "1.7.2"
+zerocopy = { version = "0.7.35", features = ["derive"] }
