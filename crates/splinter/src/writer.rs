@@ -17,7 +17,7 @@ static_assertions::assert_eq_size!(Segment, u8);
 
 type Cardinality = usize;
 
-trait ContainerWriter {
+pub(super) trait ContainerWriter {
     /// Append a segment to the container returning the number of bytes written to the writer
     fn push<W: Write>(&mut self, out: &mut W, segments: &[Segment]) -> io::Result<usize>;
 
@@ -26,7 +26,7 @@ trait ContainerWriter {
     fn flush<W: Write>(&mut self, out: &mut W) -> io::Result<(Cardinality, usize)>;
 }
 
-struct BlockWriter {
+pub(super) struct BlockWriter {
     keys: Vec<Segment>,
 }
 
@@ -39,7 +39,11 @@ impl Default for BlockWriter {
 }
 
 impl BlockWriter {
-    fn push(&mut self, key: Segment) {
+    pub(super) fn push(&mut self, key: Segment) {
+        assert!(
+            self.keys.last().map_or(true, |&last| last < key),
+            "keys must be appended in order"
+        );
         assert!(self.keys.len() < MAX_CARDINALITY, "block overflow");
         self.keys.push(key);
     }
@@ -102,6 +106,7 @@ impl IndexWriter {
         let cardinalities_bytes = self.cardinalities.as_bytes();
         out.write_all(cardinalities_bytes)?;
         n += cardinalities_bytes.len();
+        self.cardinalities.clear();
 
         for offset in self.offsets.drain(..) {
             assert!(offset <= offset_base, "offset out of range");

@@ -1,4 +1,4 @@
-use std::{fmt::Debug, ops::Index};
+use std::fmt::Debug;
 
 use map::{Container, Map};
 use thiserror::Error;
@@ -132,6 +132,7 @@ fn block_key(segment: u8) -> usize {
 }
 
 #[inline]
+/// Return the bit position of the segment in the block
 fn block_bit(segment: u8) -> u8 {
     segment % 8
 }
@@ -144,64 +145,45 @@ fn block_contains(block: &[u8], segment: u8) -> bool {
         block[block_key(segment)] & (1 << block_bit(segment)) != 0
     } else {
         // block is a list of segments
-        assert!(block.len() <= 32, "block too large: {}", block.len());
+        assert!(block.len() < 32, "block too large: {}", block.len());
         block.iter().any(|&x| x == segment)
     }
 }
 
-fn block_rank(block: &[u8], segment: u8) -> usize {
+#[cfg(test)]
+fn block_cardinality(block: &[u8]) -> usize {
     if block.len() == 32 {
         // block is a 32 byte bitmap
-        let key = block_key(segment);
+        block.iter().map(|&x| x.count_ones() as usize).sum()
+    } else {
+        // block is a list of segments
+        assert!(block.len() < 32, "block too large: {}", block.len());
+        block.len()
+    }
+}
+
+/// Count the number of 1-bits in the block up to and including the position `i`
+fn block_rank(block: &[u8], i: u8) -> usize {
+    if block.len() == 32 {
+        // block is a 32 byte bitmap
+        let key = block_key(i);
         assert!(key < 32, "key out of range: {}", key);
 
         // number of bits set up to the key-th byte
         let prefix_bits = block[0..key].iter().map(|&x| x.count_ones()).sum::<u32>();
 
         // number of bits set up to the bit-th bit in the key-th byte
-        let bit = block_bit(segment) as u16;
+        let bit = block_bit(i) as u32;
         let bits = (block[key] << (7 - bit)).count_ones();
 
         (prefix_bits + bits) as usize
     } else {
         // block is a list of segments
         assert!(block.len() < 32, "block too large: {}", block.len());
-        match block.binary_search(&segment) {
+        match block.binary_search(&i) {
             Ok(i) => i + 1,
             Err(i) => i,
         }
-    }
-}
-
-/// select the n-th set bit in the value
-fn byte_select(mut value: u8, n: u16) -> u16 {
-    // reset n of the least significant bits
-    for _ in 0..n {
-        value &= value - 1;
-    }
-    value.trailing_zeros() as u16
-}
-
-/// Select the segment at the given rank in the block
-fn block_select(block: &[u8], rank: usize) -> Option<u8> {
-    assert!(rank < u8::MAX as usize, "rank out of range: {}", rank);
-
-    if block.len() == 32 {
-        // block is a 32 byte bitmap
-        let mut rank = rank as u16;
-        for (i, &value) in block.iter().enumerate() {
-            let len = value.count_ones() as u16;
-            if rank < len {
-                let offset = byte_select(value, rank);
-                return Some(((8 * i as u16) + offset) as u8);
-            }
-            rank -= len;
-        }
-        None
-    } else {
-        // block is a list of segments
-        assert!(block.len() < 32, "block too large: {}", block.len());
-        block.get(rank).copied()
     }
 }
 
@@ -215,12 +197,14 @@ fn index_get_offset<Offset>(index: &[u8], cardinality: usize, rank: usize) -> Of
 where
     Offset: FromBytes + Into<u32> + Unaligned,
 {
-    // calculate the length of the offset section
-    let section_length = cardinality * size_of::<Offset>();
-
-    // calculate the size of the offset and it's position in the section
+    // calculate the size of the offset
     let offset_size = size_of::<Offset>();
-    let offset_position = rank * offset_size;
+
+    // calculate the length of the offset section
+    let section_length = cardinality * offset_size;
+
+    // calculate the offset's position in the section
+    let offset_position = (rank - 1) * offset_size;
 
     let offset_start = index.len() - section_length + offset_position;
     let offset_end = offset_start + offset_size;
@@ -241,6 +225,7 @@ where
         "invalid index size"
     );
     let block_size = block_size(cardinality);
+    assert!(block_size > 0, "index block should never be empty");
 
     let key_block = &index[0..block_size];
     let cardinality_block = &index[block_size..block_size + cardinality];
@@ -260,7 +245,67 @@ mod tests {
     use std::io;
 
     use super::*;
-    use writer::SplinterWriter;
+    use writer::{BlockWriter, ContainerWriter, SplinterWriter};
+
+    fn mkblock(values: impl IntoIterator<Item = u8>) -> Vec<u8> {
+        let mut buf = io::Cursor::new(vec![]);
+        let mut writer = BlockWriter::default();
+        for i in values {
+            writer.push(i);
+        }
+        writer.flush(&mut buf).unwrap();
+        buf.into_inner()
+    }
+
+    fn mksplinter(values: impl IntoIterator<Item = u32>) -> Vec<u8> {
+        let buf = io::Cursor::new(vec![]);
+        let (_, mut writer) = SplinterWriter::new(buf).unwrap();
+        for i in values {
+            writer.push(i).unwrap();
+        }
+        let (_, buf) = writer.finish().unwrap();
+        buf.into_inner()
+    }
+
+    #[test]
+    fn test_block_rank() {
+        // empty block
+        assert_eq!(block_rank(&[], 0), 0);
+        assert_eq!(block_rank(&[], 128), 0);
+        assert_eq!(block_rank(&[], 255), 0);
+
+        // block with 1 element
+        assert_eq!(block_rank(&[0], 0), 1);
+        assert_eq!(block_rank(&[0], 128), 1);
+        assert_eq!(block_rank(&[128], 0), 0);
+
+        // block with 31 elements; stored as a list
+        let block = mkblock(0..31);
+        assert_eq!(block_cardinality(&block), 31);
+        for i in 0..31 {
+            assert_eq!(block_rank(&block, i), (i + 1).into());
+        }
+        for i in 31..255 {
+            assert_eq!(block_rank(&block, i), 31);
+        }
+
+        // block with 32 elements; stored as a bitmap
+        let block = mkblock(0..32);
+        assert_eq!(block_cardinality(&block), 32);
+        for i in 0..32 {
+            assert_eq!(block_rank(&block, i), (i + 1).into());
+        }
+        for i in 32..255 {
+            assert_eq!(block_rank(&block, i), 32);
+        }
+
+        // full block
+        let block = mkblock(0..=255);
+        assert_eq!(block_cardinality(&block), 256);
+        for i in 0..255 {
+            assert_eq!(block_rank(&block, i), (i + 1).into());
+        }
+    }
 
     // sanity test
     #[test]
@@ -284,14 +329,31 @@ mod tests {
 
         // check that all expected keys are present
         for &i in &values {
-            if i == 65279 {
-                println!("here")
+            if !splinter.contains(i) {
+                splinter.contains(i); // break here for debugging
+                panic!("missing key: {}", i);
             }
-            assert!(splinter.contains(i), "missing key: {}", i);
         }
 
         // check that some keys are not present
         assert!(!splinter.contains(65535), "unexpected key: 65535");
         assert!(!splinter.contains(90999), "unexpected key: 90999");
+    }
+
+    #[test]
+    fn test_expected_compression() {
+        let elements = 4096;
+
+        // fully dense splinter
+        let data = mksplinter(0..elements);
+        assert_eq!(data.len(), 590);
+
+        // 1 element per block; dense partitions
+        let data = mksplinter((0..).step_by(256).take(elements as usize));
+        assert_eq!(data.len(), 17000);
+
+        // 1 element per block; sparse partitions
+        let data = mksplinter((0..).step_by(4096).take(elements as usize));
+        assert_eq!(data.len(), 21800);
     }
 }
