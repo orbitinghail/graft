@@ -164,6 +164,8 @@ fn block_cardinality(block: &[u8]) -> usize {
 
 /// Count the number of 1-bits in the block up to and including the position `i`
 fn block_rank(block: &[u8], i: u8) -> usize {
+    // TODO: implement SIMD/AVX versions
+
     if block.len() == 32 {
         // block is a 32 byte bitmap
         let key = block_key(i);

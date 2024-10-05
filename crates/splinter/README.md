@@ -60,3 +60,15 @@ procedure exists(key u24)
 
     return block.contains(segment)
 ```
+
+# TODO
+
+## Missing methods
+- iter -> iterate through all of the elements in the splinter
+- cardinality -> efficiently compute the cardinality from the indexes
+- from_sorted_iter
+
+## Optimization ideas
+
+- implement SIMD/AVX versions of block_contains and block_rank
+  - implement 64-bit versions for non-AVX/SIMD
