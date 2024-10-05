@@ -7,4 +7,4 @@ edition = "2021"
 bytes = "1.7.2"
 static_assertions = "1.1.0"
 thiserror = "1.0.64"
-zerocopy = { version = "0.7.35", features = ["derive"] }
+zerocopy = { version = "0.8.1", features = ["derive"] }

@@ -7,12 +7,12 @@ use crate::{index_lookup, index_size};
 pub trait Container<'a> {
     type Value<'b>;
 
-    fn from_suffix(data: &'a [u8], cardinality: u8) -> Self;
+    fn from_suffix(data: &'a [u8], cardinality: usize) -> Self;
     fn lookup(&self, segment: u8) -> Option<Self::Value<'a>>;
 }
 
 pub struct Map<'a, Offset, V> {
-    cardinality: u8,
+    cardinality: usize,
     values: &'a [u8],
     index: Ref<&'a [u8], [u8]>,
     _phantom: PhantomData<(Offset, V)>,
@@ -25,10 +25,10 @@ where
 {
     type Value<'b> = V;
 
-    fn from_suffix(data: &'a [u8], cardinality: u8) -> Self {
+    fn from_suffix(data: &'a [u8], cardinality: usize) -> Self {
         let index_size = index_size::<Offset>(cardinality);
         assert!(data.len() >= index_size, "data too short");
-        let (values, index) = Ref::new_slice_from_suffix(data, index_size).unwrap();
+        let (values, index) = Ref::from_suffix_with_elems(data, index_size).unwrap();
 
         Self {
             cardinality,

@@ -4,8 +4,8 @@ header (4 bytes)
     unused
 
 footer (4 bytes)
-    partitions (1 byte)
-    unused (3 byte)
+    partitions (2 byte)
+    unused (2 byte)
 
 block (cardinality)
     cardinality < 32
@@ -15,7 +15,7 @@ block (cardinality)
 
 index (cardinality, offset_size: u16|u32)
     keys: block(cardinality)
-    cardinalities: [u8; cardinality]
+    cardinalities: [u8; cardinality] // 1 based
     offsets: [offset_size; cardinality]
 
 partition (cardinality)
