@@ -1166,6 +1166,7 @@ dependencies = [
  "pin-project",
  "prost",
  "rlimit",
+ "splinter",
  "static_assertions",
  "tempfile",
  "thiserror",

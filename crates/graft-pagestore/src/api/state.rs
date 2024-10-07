@@ -1,21 +1,22 @@
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{broadcast, mpsc};
 
-use crate::segment::bus::{CommitSegmentRequest, WritePageRequest};
+use crate::segment::bus::{Bus, CommitSegmentReq, WritePageReq};
 
 pub struct ApiState {
-    page_tx: Sender<WritePageRequest>,
-    commit_rx: Receiver<CommitSegmentRequest>,
+    page_tx: mpsc::Sender<WritePageReq>,
+    commit_bus: Bus<CommitSegmentReq>,
 }
 
 impl ApiState {
-    pub fn new(
-        page_tx: Sender<WritePageRequest>,
-        commit_rx: Receiver<CommitSegmentRequest>,
-    ) -> Self {
-        Self { page_tx, commit_rx }
+    pub fn new(page_tx: mpsc::Sender<WritePageReq>, commit_bus: Bus<CommitSegmentReq>) -> Self {
+        Self { page_tx, commit_bus }
     }
 
-    pub async fn write_page(&self, req: WritePageRequest) {
+    pub async fn write_page(&self, req: WritePageReq) {
         self.page_tx.send(req).await.unwrap();
+    }
+
+    pub async fn subscribe_commits(&self) -> broadcast::Receiver<CommitSegmentReq> {
+        self.commit_bus.subscribe()
     }
 }

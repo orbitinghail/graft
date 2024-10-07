@@ -1,13 +1,9 @@
 use std::sync::Arc;
 
-use tokio::{
-    net::TcpListener,
-    sync::mpsc::{Receiver, Sender},
-};
-use tracing::{info_span, span, Instrument};
+use tokio::{net::TcpListener, sync::mpsc};
 
 use crate::{
-    segment::bus::{CommitSegmentRequest, WritePageRequest},
+    segment::bus::{Bus, CommitSegmentReq, WritePageReq},
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
 };
 
@@ -21,12 +17,12 @@ pub struct ApiServerTask {
 impl ApiServerTask {
     pub fn new(
         listener: TcpListener,
-        page_tx: Sender<WritePageRequest>,
-        commit_rx: Receiver<CommitSegmentRequest>,
+        page_tx: mpsc::Sender<WritePageReq>,
+        commit_bus: Bus<CommitSegmentReq>,
     ) -> Self {
         Self {
             listener,
-            state: Arc::new(ApiState::new(page_tx, commit_rx)),
+            state: Arc::new(ApiState::new(page_tx, commit_bus)),
         }
     }
 }

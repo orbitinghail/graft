@@ -10,11 +10,11 @@ use crate::{
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
 };
 
-use super::bus::{CommitSegmentRequest, StoreSegmentRequest};
+use super::bus::{Bus, CommitSegmentReq, StoreSegmentReq};
 
 pub struct SegmentUploaderTask<O, C> {
-    input: mpsc::Receiver<StoreSegmentRequest>,
-    output: mpsc::Sender<CommitSegmentRequest>,
+    input: mpsc::Receiver<StoreSegmentReq>,
+    output: Bus<CommitSegmentReq>,
     store: Arc<O>,
     cache: Arc<C>,
 }
@@ -43,16 +43,15 @@ impl<O: ObjectStore, C: Cache> SupervisedTask for SegmentUploaderTask<O, C> {
 
 impl<O: ObjectStore, C: Cache> SegmentUploaderTask<O, C> {
     pub fn new(
-        input: mpsc::Receiver<StoreSegmentRequest>,
-        output: mpsc::Sender<CommitSegmentRequest>,
+        input: mpsc::Receiver<StoreSegmentReq>,
+        output: Bus<CommitSegmentReq>,
         store: Arc<O>,
         cache: Arc<C>,
     ) -> Self {
         Self { input, output, store, cache }
     }
 
-    async fn handle_store_request(&mut self, req: StoreSegmentRequest) -> anyhow::Result<()> {
-        let groups = req.groups;
+    async fn handle_store_request(&mut self, req: StoreSegmentReq) -> anyhow::Result<()> {
         let segment = req.segment;
         let sid = SegmentId::random();
         let path = Path::from(sid.pretty());
@@ -69,9 +68,10 @@ impl<O: ObjectStore, C: Cache> SegmentUploaderTask<O, C> {
 
         tokio::try_join!(upload_task, cache_task)?;
 
-        self.output
-            .send(CommitSegmentRequest { groups, sid })
-            .await?;
+        // TODO: build offsets map while serializing the segment
+        let offsets = Default::default();
+
+        self.output.publish(CommitSegmentReq { sid, offsets })?;
 
         Ok(())
     }
@@ -83,11 +83,7 @@ mod tests {
     use object_store::memory::InMemory;
 
     use crate::{
-        segment::{
-            bus::{RequestGroup, RequestGroupAggregate},
-            closed::ClosedSegment,
-            open::OpenSegment,
-        },
+        segment::{closed::ClosedSegment, open::OpenSegment},
         storage::mem::MemCache,
     };
 
@@ -97,36 +93,27 @@ mod tests {
 
     async fn test_uploader_sanity() {
         let (input_tx, input_rx) = mpsc::channel(1);
-        let (output_tx, mut output_rx) = mpsc::channel(1);
+        let commit_bus = Bus::new(1);
+        let mut commit_rx = commit_bus.subscribe();
 
         let store = Arc::new(InMemory::default());
         let cache = Arc::new(MemCache::default());
 
-        let task = SegmentUploaderTask::new(input_rx, output_tx, store.clone(), cache.clone());
+        let task = SegmentUploaderTask::new(input_rx, commit_bus, store.clone(), cache.clone());
         task.testonly_spawn();
 
         let mut segment = OpenSegment::default();
-        let group = RequestGroup::next();
-        let mut groups = RequestGroupAggregate::default();
 
         // add a couple pages
         let vid = VolumeId::random();
         let page0 = Page::test_filled(1);
         let page1 = Page::test_filled(2);
         segment.insert(vid.clone(), 0, page0.clone()).unwrap();
-        groups.add(group);
         segment.insert(vid.clone(), 1, page1.clone()).unwrap();
-        groups.add(group);
 
-        input_tx
-            .send(StoreSegmentRequest { groups: groups.clone(), segment })
-            .await
-            .unwrap();
+        input_tx.send(StoreSegmentReq { segment }).await.unwrap();
 
-        let commit = output_rx.recv().await.unwrap();
-
-        // groups should be unchanged
-        assert_eq!(commit.groups, groups);
+        let commit = commit_rx.recv().await.unwrap();
 
         // check the stored segment
         let path = Path::from(commit.sid.pretty());

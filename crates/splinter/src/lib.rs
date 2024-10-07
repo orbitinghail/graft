@@ -61,12 +61,6 @@ impl<'a> Container<'a> for Block<'a> {
     }
 }
 
-type Partition<'a> = Map<'a, U16, Block<'a>>;
-
-pub struct Splinter<'a> {
-    partitions: Map<'a, U32, Partition<'a>>,
-}
-
 #[derive(Debug, Error)]
 pub enum DecodeErr {
     #[error("Unable to decode {section}")]
@@ -76,36 +70,76 @@ pub enum DecodeErr {
     InvalidMagic,
 }
 
-impl<'a> Splinter<'a> {
-    pub fn from_bytes(data: &'a [u8]) -> Result<Self, DecodeErr> {
+type Partition<'a> = Map<'a, U16, Block<'a>>;
+
+pub struct Splinter<T> {
+    data: T,
+    partitions: usize,
+}
+
+impl<T: Clone> Clone for Splinter<T> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            partitions: self.partitions,
+        }
+    }
+}
+
+impl<T> Splinter<T>
+where
+    T: AsRef<[u8]>,
+{
+    pub fn from_bytes(data: T) -> Result<Self, DecodeErr> {
         use DecodeErr::*;
 
-        let (header, data): (Ref<_, Header>, _) =
-            Ref::from_prefix(data).map_err(|_| InvalidSection { section: "header" })?;
+        let (header, _): (Ref<_, Header>, _) =
+            Ref::from_prefix(data.as_ref()).map_err(|_| InvalidSection { section: "header" })?;
 
         // Check the magic number
         if header.magic != SPLINTER_MAGIC {
             return Err(InvalidMagic);
         }
 
-        let (data, footer): (_, Ref<_, Footer>) =
-            Ref::from_suffix(data).map_err(|_| InvalidSection { section: "footer" })?;
+        let (_, footer): (_, Ref<_, Footer>) =
+            Ref::from_suffix(data.as_ref()).map_err(|_| InvalidSection { section: "footer" })?;
+        let partitions = footer.partitions.get() as usize;
 
-        let partitions = Map::from_suffix(data, footer.partitions.get() as usize);
+        Ok(Splinter { data, partitions })
+    }
 
-        Ok(Splinter { partitions })
+    pub fn into_inner(self) -> T {
+        self.data
+    }
+
+    fn load_partitions(&self) -> Map<'_, U32, Partition<'_>> {
+        let data = self.data.as_ref();
+        let size = data.len();
+        let footer_size = size_of::<Footer>();
+        Map::from_suffix(&data[..size - footer_size], self.partitions)
     }
 
     pub fn contains(&self, key: u32) -> bool {
         let (high, mid, low) = segments(key);
 
-        if let Some(partition) = self.partitions.lookup(high) {
+        if let Some(partition) = self.load_partitions().lookup(high) {
             if let Some(block) = partition.lookup(mid) {
                 return block.lookup(low).is_some();
             }
         }
 
         false
+    }
+}
+
+impl<T> Debug for Splinter<T>
+where
+    T: AsRef<[u8]>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Splinter")
+            .field("num_partitions", &self.partitions)
+            .finish()
     }
 }
 
@@ -327,7 +361,7 @@ mod tests {
 
         // read the splinter using Splinter
         let data = buf.into_inner();
-        let splinter = Splinter::from_bytes(&data).unwrap();
+        let splinter = Splinter::from_bytes(data).unwrap();
 
         // check that all expected keys are present
         for &i in &values {

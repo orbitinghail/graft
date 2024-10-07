@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
+splinter = { path = "../splinter" }
 
 ahash = "0.8.11"
 tokio = { version = "1.40.0", features = ["full", "test-util"] }

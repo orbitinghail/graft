@@ -1,62 +1,55 @@
 //! The bus module contains the messages that are sent between the different
 //! components of the segment writing subsystem.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use ahash::HashMap;
+use bytes::Bytes;
 use graft_core::{guid::SegmentId, guid::VolumeId, offset::Offset, page::Page};
+use splinter::Splinter;
+use tokio::sync::broadcast::{self, error::SendError};
 
 use super::open::OpenSegment;
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub struct RequestGroup(u64);
-
-impl RequestGroup {
-    pub fn next() -> Self {
-        static NEXT_GROUP: AtomicU64 = AtomicU64::new(0);
-        Self(NEXT_GROUP.fetch_add(1, Ordering::Relaxed))
-    }
-}
-
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct RequestGroupAggregate(HashMap<RequestGroup, u32>);
-
-impl RequestGroupAggregate {
-    pub fn add(&mut self, group: RequestGroup) {
-        *self.0.entry(group).or_insert(0) += 1;
-    }
-
-    pub fn count(&self, group: RequestGroup) -> u32 {
-        self.0.get(&group).copied().unwrap_or(0)
-    }
-
-    pub fn total_count(&self) -> u32 {
-        self.0.values().sum()
-    }
-}
-
 #[derive(Debug)]
-pub struct WritePageRequest {
-    pub(super) group: RequestGroup,
+pub struct WritePageReq {
     pub(super) vid: VolumeId,
     pub(super) offset: Offset,
     pub(super) page: Page,
 }
 
-impl WritePageRequest {
-    pub fn new(group: RequestGroup, vid: VolumeId, offset: Offset, page: Page) -> Self {
-        Self { group, vid, offset, page }
+impl WritePageReq {
+    pub fn new(vid: VolumeId, offset: Offset, page: Page) -> Self {
+        Self { vid, offset, page }
     }
 }
 
 #[derive(Debug)]
-pub struct StoreSegmentRequest {
-    pub(super) groups: RequestGroupAggregate,
+pub struct StoreSegmentReq {
     pub(super) segment: OpenSegment,
 }
 
-#[derive(Debug)]
-pub struct CommitSegmentRequest {
-    pub(super) groups: RequestGroupAggregate,
+#[derive(Debug, Clone)]
+pub struct CommitSegmentReq {
     pub(super) sid: SegmentId,
+    pub(super) offsets: HashMap<VolumeId, Splinter<Bytes>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Bus<T> {
+    tx: broadcast::Sender<T>,
+}
+
+impl<T: Clone> Bus<T> {
+    pub fn new(capacity: usize) -> Self {
+        let (tx, _) = broadcast::channel(capacity);
+        Self { tx }
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<T> {
+        self.tx.subscribe()
+    }
+
+    pub fn publish(&self, msg: T) -> Result<(), SendError<T>> {
+        self.tx.send(msg)?;
+        Ok(())
+    }
 }

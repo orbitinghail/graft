@@ -4,7 +4,7 @@ use futures::{select, FutureExt};
 use object_store::memory::InMemory;
 use pagestore::{
     api::task::ApiServerTask,
-    segment::{uploader::SegmentUploaderTask, writer::SegmentWriterTask},
+    segment::{bus::Bus, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
     storage::mem::MemCache,
     supervisor::Supervisor,
 };
@@ -23,7 +23,7 @@ async fn main() {
 
     let (page_tx, page_rx) = mpsc::channel(128);
     let (store_tx, store_rx) = mpsc::channel(8);
-    let (commit_tx, commit_rx) = mpsc::channel(8);
+    let commit_bus = Bus::new(128);
 
     supervisor.spawn(SegmentWriterTask::new(
         page_rx,
@@ -33,7 +33,7 @@ async fn main() {
 
     supervisor.spawn(SegmentUploaderTask::new(
         store_rx,
-        commit_tx,
+        commit_bus.clone(),
         store.clone(),
         cache.clone(),
     ));
@@ -41,7 +41,7 @@ async fn main() {
     supervisor.spawn(ApiServerTask::new(
         TcpListener::bind("0.0.0.0:3000").await.unwrap(),
         page_tx,
-        commit_rx,
+        commit_bus,
     ));
 
     select! {

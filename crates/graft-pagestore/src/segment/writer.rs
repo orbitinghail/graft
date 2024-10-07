@@ -7,15 +7,14 @@ use tokio::{sync::mpsc, time::sleep};
 use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 
 use super::{
-    bus::{RequestGroupAggregate, StoreSegmentRequest, WritePageRequest},
+    bus::{StoreSegmentReq, WritePageReq},
     open::OpenSegment,
 };
 
 pub struct SegmentWriterTask {
-    input: mpsc::Receiver<WritePageRequest>,
-    output: mpsc::Sender<StoreSegmentRequest>,
+    input: mpsc::Receiver<WritePageReq>,
+    output: mpsc::Sender<StoreSegmentReq>,
 
-    groups: RequestGroupAggregate,
     segment: OpenSegment,
     flush_interval: Duration,
     next_flush: Instant,
@@ -56,21 +55,20 @@ impl SupervisedTask for SegmentWriterTask {
 
 impl SegmentWriterTask {
     pub fn new(
-        input: mpsc::Receiver<WritePageRequest>,
-        output: mpsc::Sender<StoreSegmentRequest>,
+        input: mpsc::Receiver<WritePageReq>,
+        output: mpsc::Sender<StoreSegmentReq>,
         flush_interval: Duration,
     ) -> Self {
         Self {
             input,
             output,
-            groups: RequestGroupAggregate::default(),
             segment: Default::default(),
             flush_interval,
             next_flush: Instant::now() + flush_interval,
         }
     }
 
-    async fn handle_page_request(&mut self, req: WritePageRequest) -> anyhow::Result<()> {
+    async fn handle_page_request(&mut self, req: WritePageReq) -> anyhow::Result<()> {
         tracing::debug!("handling request: {:?}", req);
 
         // if the segment is full, flush it and start a new one
@@ -78,7 +76,6 @@ impl SegmentWriterTask {
             self.handle_flush().await?;
         }
 
-        self.groups.add(req.group);
         self.segment.insert(req.vid, req.offset, req.page)?;
 
         Ok(())
@@ -88,16 +85,9 @@ impl SegmentWriterTask {
     async fn handle_flush(&mut self) -> anyhow::Result<()> {
         // only flush non-empty segments
         if !self.segment.is_empty() {
-            debug_assert_eq!(
-                self.groups.total_count() as usize,
-                self.segment.len(),
-                "groups and segment size mismatch"
-            );
-
             // send the current segment to the output
             self.output
-                .send(StoreSegmentRequest {
-                    groups: std::mem::take(&mut self.groups),
+                .send(StoreSegmentReq {
                     segment: std::mem::take(&mut self.segment),
                 })
                 .await?;
@@ -113,8 +103,6 @@ impl SegmentWriterTask {
 #[cfg(test)]
 mod tests {
     use graft_core::{guid::VolumeId, page::Page};
-
-    use crate::segment::bus::RequestGroup;
 
     use super::*;
 
@@ -132,13 +120,11 @@ mod tests {
 
         // add a couple pages
         let vid = VolumeId::random();
-        let group = RequestGroup::next();
         let page0 = Page::test_filled(1);
         let page1 = Page::test_filled(2);
 
         input_tx
-            .send(WritePageRequest {
-                group,
+            .send(WritePageReq {
                 vid: vid.clone(),
                 offset: 0,
                 page: page0.clone(),
@@ -147,8 +133,7 @@ mod tests {
             .unwrap();
 
         input_tx
-            .send(WritePageRequest {
-                group,
+            .send(WritePageReq {
                 vid: vid.clone(),
                 offset: 1,
                 page: page1.clone(),
@@ -159,7 +144,6 @@ mod tests {
         // wait for the flush
         let req = output_rx.recv().await.unwrap();
 
-        assert_eq!(req.groups.count(group), 2);
         assert_eq!(req.segment.find_page(vid.clone(), 0).unwrap(), &page0);
         assert_eq!(req.segment.find_page(vid.clone(), 1).unwrap(), &page1);
     }
