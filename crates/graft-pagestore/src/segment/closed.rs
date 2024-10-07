@@ -11,7 +11,10 @@ use graft_core::{
 };
 use odht::FxHashFn;
 use thiserror::Error;
-use zerocopy::{byteorder::little_endian::U32, little_endian::U16, AsBytes, FromBytes, Ref};
+use zerocopy::{
+    byteorder::little_endian::U32, little_endian::U16, FromBytes, Immutable, IntoBytes,
+    KnownLayout, Ref,
+};
 
 pub const SEGMENT_MAGIC: U32 = U32::from_bytes([0xB8, 0x3B, 0x41, 0xC0]);
 pub const SEGMENT_VERSION: u8 = 1;
@@ -32,7 +35,7 @@ type LocalOffset = U16;
 static_assertions::assert_eq_size!(LocalOffset, u16);
 static_assertions::const_assert!(SEGMENT_MAX_PAGES <= u16::MAX as usize);
 
-#[derive(Clone, zerocopy::AsBytes, zerocopy::FromBytes, zerocopy::FromZeroes)]
+#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct SegmentHeader {
     magic: U32,
@@ -45,7 +48,7 @@ pub struct SegmentHeader {
     padding: [u8; 7],
 }
 
-#[derive(zerocopy::AsBytes, zerocopy::FromBytes, zerocopy::FromZeroes)]
+#[derive(IntoBytes, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct SegmentHeaderPage {
     header: SegmentHeader,
@@ -92,7 +95,7 @@ impl SegmentHeaderPage {
     }
 }
 
-#[derive(zerocopy::AsBytes, zerocopy::FromBytes, zerocopy::FromZeroes)]
+#[derive(IntoBytes, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct SegmentIndexKey {
     vid: VolumeId,
@@ -127,7 +130,7 @@ impl odht::Config for SegmentIndex {
     }
 
     fn decode_key(k: &Self::EncodedKey) -> Self::Key {
-        SegmentIndexKey::read_from(k).expect("invalid key")
+        SegmentIndexKey::read_from_bytes(k).expect("invalid key")
     }
 
     fn encode_value(v: &Self::Value) -> Self::EncodedValue {
@@ -135,7 +138,7 @@ impl odht::Config for SegmentIndex {
     }
 
     fn decode_value(v: &Self::EncodedValue) -> Self::Value {
-        LocalOffset::read_from(v).expect("invalid value")
+        LocalOffset::read_from_bytes(v).expect("invalid value")
     }
 }
 
@@ -222,7 +225,7 @@ impl<'a> ClosedSegment<'a> {
             return Err(SegmentValidationErr::TooLarge);
         }
 
-        let (header, rest) = Ref::<_, SegmentHeader>::new_from_prefix(data).unwrap();
+        let (header, rest) = Ref::<_, SegmentHeader>::from_prefix(data).unwrap();
 
         if header.magic != SEGMENT_MAGIC {
             return Err(SegmentValidationErr::Magic);

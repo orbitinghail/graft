@@ -1,5 +1,5 @@
 use axum::{
-    async_trait, body,
+    async_trait,
     extract::{FromRequest, Request},
     http::{header, StatusCode},
     response::{IntoResponse, Response},

@@ -1,6 +1,6 @@
-use std::{future::Future, marker::Send, panic, sync::Arc, time::Duration};
+use std::{future::Future, marker::Send, panic, time::Duration};
 
-use tokio::{sync::Semaphore, task::JoinSet};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Debug)]

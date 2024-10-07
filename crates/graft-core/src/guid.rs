@@ -18,9 +18,9 @@ const GUID_SIZE: ByteUnit = ByteUnit::new(16);
     BorshSerialize,
     BorshDeserialize,
     BorshSchema,
-    zerocopy::AsBytes,
-    zerocopy::FromZeroes,
+    zerocopy::IntoBytes,
     zerocopy::FromBytes,
+    zerocopy::Immutable,
 )]
 #[repr(transparent)]
 pub struct Guid<const PREFIX: char>([u8; GUID_SIZE.as_usize()]);

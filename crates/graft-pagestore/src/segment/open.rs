@@ -10,7 +10,7 @@ use graft_core::{
     page::{Page, PAGESIZE},
 };
 use thiserror::Error;
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 use super::closed::{
     closed_segment_size, SegmentHeaderPage, SegmentIndex, SegmentIndexKey, SEGMENT_MAX_PAGES,
