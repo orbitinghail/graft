@@ -14,6 +14,9 @@ pub async fn handler(
 ) -> Result<impl IntoResponse, ApiError> {
     let vid: VolumeId = req.vid.try_into()?;
 
+    // subscribe to the broadcast channel
+    // let commit_rx = state.subscribe_commits();
+
     for page in req.pages {
         let offset: Offset = page.offset;
         let page: Page = page.data.try_into()?;
@@ -22,6 +25,9 @@ pub async fn handler(
             .write_page(WritePageReq::new(vid.clone(), offset, page))
             .await;
     }
+
+    // TODO listen for commit messages, buffering up our response to the client
+    // TODO switch to a streaming model
 
     Ok("Write pages request")
 }
