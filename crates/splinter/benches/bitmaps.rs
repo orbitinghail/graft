@@ -1,15 +1,14 @@
+use bytes::{Bytes, BytesMut};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use splinter::{writer::SplinterWriter, Splinter};
-use std::{hint::black_box, io};
+use splinter::{writer::SplinterBuilder, Splinter};
+use std::hint::black_box;
 
-fn mksplinter(values: impl IntoIterator<Item = u32>) -> Vec<u8> {
-    let buf = io::Cursor::new(vec![]);
-    let (_, mut writer) = SplinterWriter::new(buf).unwrap();
+fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter<Bytes> {
+    let mut writer = SplinterBuilder::new(BytesMut::default());
     for i in values {
-        writer.push(i).unwrap();
+        writer.push(i);
     }
-    let (_, buf) = writer.finish().unwrap();
-    buf.into_inner()
+    Splinter::from_bytes(writer.build().freeze()).unwrap()
 }
 
 fn benchmark_contains(c: &mut Criterion) {
@@ -20,8 +19,7 @@ fn benchmark_contains(c: &mut Criterion) {
     for &cardinality in &cardinalities {
         group.throughput(Throughput::Elements(cardinality as u64));
 
-        let data = mksplinter(0..cardinality);
-        let splinter = Splinter::from_bytes(&data).unwrap();
+        let splinter = mksplinter(0..cardinality);
 
         // we want to lookup the cardinality/3th element
         let lookup = cardinality / 3;

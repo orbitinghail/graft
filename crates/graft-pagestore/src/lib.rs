@@ -3,6 +3,7 @@ pub mod supervisor;
 pub mod segment {
     pub mod bus;
     pub mod closed;
+    pub mod offsets_map;
     pub mod open;
     pub mod uploader;
     pub mod writer;

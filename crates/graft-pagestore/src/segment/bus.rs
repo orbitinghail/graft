@@ -1,13 +1,10 @@
 //! The bus module contains the messages that are sent between the different
 //! components of the segment writing subsystem.
 
-use ahash::HashMap;
-use bytes::Bytes;
 use graft_core::{guid::SegmentId, guid::VolumeId, offset::Offset, page::Page};
-use splinter::Splinter;
 use tokio::sync::broadcast::{self, error::SendError};
 
-use super::open::OpenSegment;
+use super::{offsets_map::OffsetsMap, open::OpenSegment};
 
 #[derive(Debug)]
 pub struct WritePageReq {
@@ -30,7 +27,7 @@ pub struct StoreSegmentReq {
 #[derive(Debug, Clone)]
 pub struct CommitSegmentReq {
     pub(super) sid: SegmentId,
-    pub(super) offsets: HashMap<VolumeId, Splinter<Bytes>>,
+    pub(super) offsets: OffsetsMap,
 }
 
 #[derive(Debug, Clone)]

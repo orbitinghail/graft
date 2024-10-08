@@ -12,8 +12,11 @@ use graft_core::{
 use thiserror::Error;
 use zerocopy::IntoBytes;
 
-use super::closed::{
-    closed_segment_size, SegmentHeaderPage, SegmentIndex, SegmentIndexKey, SEGMENT_MAX_PAGES,
+use super::{
+    closed::{
+        closed_segment_size, SegmentHeaderPage, SegmentIndex, SegmentIndexKey, SEGMENT_MAX_PAGES,
+    },
+    offsets_map::OffsetsMap,
 };
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -66,9 +69,10 @@ impl OpenSegment {
         closed_segment_size(self.index.len())
     }
 
-    pub fn serialize(self) -> Bytes {
+    pub fn serialize(self) -> (Bytes, OffsetsMap) {
         let mut buf = BytesMut::with_capacity(self.encoded_size().as_usize());
         let mut index_builder = SegmentIndex::builder(self.index.len());
+        let mut offsets_builder = OffsetsMap::builder();
 
         // split the buffer into header and data
         let mut data = buf.split_off(PAGESIZE.as_usize());
@@ -76,7 +80,8 @@ impl OpenSegment {
         // write pages to buffer while building index
         for (local_offset, ((vid, off), page)) in (0_u16..).zip(self.index.into_iter()) {
             data.put_slice(&page);
-            index_builder.insert(SegmentIndexKey::new(vid, off), local_offset);
+            index_builder.insert(SegmentIndexKey::new(vid.clone(), off), local_offset);
+            offsets_builder.insert(vid, off);
         }
 
         // build the header and write the index if it's not inline
@@ -94,7 +99,7 @@ impl OpenSegment {
 
         // unsplit the segment and freeze it
         buf.unsplit(data);
-        buf.freeze()
+        (buf.freeze(), offsets_builder.build())
     }
 }
 
@@ -120,7 +125,7 @@ mod tests {
 
         let expected_size = open_segment.encoded_size();
 
-        let buf = open_segment.serialize();
+        let (buf, offsets) = open_segment.serialize();
 
         assert_eq!(buf.len(), expected_size);
 
@@ -130,6 +135,13 @@ mod tests {
         assert!(!closed_segment.is_empty());
         assert_eq!(closed_segment.find_page(vid.clone(), 0), Some(page0));
         assert_eq!(closed_segment.find_page(vid.clone(), 1), Some(page1));
+
+        // validate the offsets map
+        assert!(!offsets.is_empty());
+        assert!(offsets.contains(&vid, 0));
+        assert!(offsets.contains(&vid, 1));
+        assert!(!offsets.contains(&vid, 2));
+        assert!(!offsets.contains(&VolumeId::random(), 0));
     }
 
     #[test]
@@ -137,14 +149,15 @@ mod tests {
         let open_segment = OpenSegment::default();
         let expected_size = open_segment.encoded_size();
 
-        let buf = open_segment.serialize();
+        let (buf, offsets) = open_segment.serialize();
 
         assert_eq!(buf.len(), expected_size);
+        assert!(offsets.is_empty());
 
         assert_eq!(
             buf.len(),
             PAGESIZE,
-            "an empty segment should fit in a single page"
+            "an empty segment should fit in the page header"
         );
 
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
@@ -169,9 +182,14 @@ mod tests {
 
         let expected_size = open_segment.encoded_size();
 
-        let buf = open_segment.serialize();
+        let (buf, offsets) = open_segment.serialize();
 
         assert_eq!(buf.len(), expected_size);
+
+        assert!(!offsets.is_empty());
+        for i in 0..num_pages {
+            assert!(offsets.contains(&vid, i * 2));
+        }
 
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
 

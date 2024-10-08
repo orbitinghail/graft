@@ -55,7 +55,7 @@ impl<O: ObjectStore, C: Cache> SegmentUploaderTask<O, C> {
         let segment = req.segment;
         let sid = SegmentId::random();
         let path = Path::from(sid.pretty());
-        let segment = segment.serialize();
+        let (segment, offsets) = segment.serialize();
 
         let upload_task = self
             .store
@@ -67,9 +67,6 @@ impl<O: ObjectStore, C: Cache> SegmentUploaderTask<O, C> {
             .map(|inner| inner.map_err(|e| anyhow::anyhow!(e)));
 
         tokio::try_join!(upload_task, cache_task)?;
-
-        // TODO: build offsets map while serializing the segment
-        let offsets = Default::default();
 
         self.output.publish(CommitSegmentReq { sid, offsets })?;
 

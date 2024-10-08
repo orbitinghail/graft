@@ -108,6 +108,10 @@ where
         Ok(Splinter { data, partitions })
     }
 
+    pub fn size(&self) -> usize {
+        self.data.as_ref().len()
+    }
+
     pub fn into_inner(self) -> T {
         self.data
     }
@@ -278,29 +282,26 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-
     use super::*;
-    use writer::{BlockWriter, ContainerWriter, SplinterWriter};
+    use bytes::{Bytes, BytesMut};
+    use writer::{BlockWriter, ContainerWriter, SplinterBuilder};
 
-    fn mkblock(values: impl IntoIterator<Item = u8>) -> Vec<u8> {
-        let mut buf = io::Cursor::new(vec![]);
+    fn mkblock(values: impl IntoIterator<Item = u8>) -> Bytes {
+        let mut buf = BytesMut::default();
         let mut writer = BlockWriter::default();
         for i in values {
             writer.push(i);
         }
-        writer.flush(&mut buf).unwrap();
-        buf.into_inner()
+        writer.flush(&mut buf);
+        buf.freeze()
     }
 
-    fn mksplinter(values: impl IntoIterator<Item = u32>) -> Vec<u8> {
-        let buf = io::Cursor::new(vec![]);
-        let (_, mut writer) = SplinterWriter::new(buf).unwrap();
+    fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter<Bytes> {
+        let mut builder = SplinterBuilder::new(BytesMut::default());
         for i in values {
-            writer.push(i).unwrap();
+            builder.push(i);
         }
-        let (_, buf) = writer.finish().unwrap();
-        buf.into_inner()
+        Splinter::from_bytes(builder.build().freeze()).unwrap()
     }
 
     #[test]
@@ -351,17 +352,8 @@ mod tests {
             .chain((65536..85222).step_by(7))
             .collect::<Vec<_>>();
 
-        // write a splinter using SplinterWriter
-        let buf = io::Cursor::new(vec![]);
-        let (_, mut writer) = SplinterWriter::new(buf).unwrap();
-        for &i in &values {
-            writer.push(i).unwrap();
-        }
-        let (_, buf) = writer.finish().unwrap();
-
-        // read the splinter using Splinter
-        let data = buf.into_inner();
-        let splinter = Splinter::from_bytes(data).unwrap();
+        // build a splinter from the values
+        let splinter = mksplinter(values.iter().copied());
 
         // check that all expected keys are present
         for &i in &values {
@@ -382,14 +374,14 @@ mod tests {
 
         // fully dense splinter
         let data = mksplinter(0..elements);
-        assert_eq!(data.len(), 590);
+        assert_eq!(data.size(), 590);
 
         // 1 element per block; dense partitions
         let data = mksplinter((0..).step_by(256).take(elements as usize));
-        assert_eq!(data.len(), 17000);
+        assert_eq!(data.size(), 17000);
 
         // 1 element per block; sparse partitions
         let data = mksplinter((0..).step_by(4096).take(elements as usize));
-        assert_eq!(data.len(), 21800);
+        assert_eq!(data.size(), 21800);
     }
 }
