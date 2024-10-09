@@ -112,6 +112,10 @@ where
         self.data.as_ref().len()
     }
 
+    pub fn inner(&self) -> &T {
+        &self.data
+    }
+
     pub fn into_inner(self) -> T {
         self.data
     }

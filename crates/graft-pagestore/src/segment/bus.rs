@@ -8,9 +8,9 @@ use super::{offsets_map::OffsetsMap, open::OpenSegment};
 
 #[derive(Debug)]
 pub struct WritePageReq {
-    pub(super) vid: VolumeId,
-    pub(super) offset: Offset,
-    pub(super) page: Page,
+    pub vid: VolumeId,
+    pub offset: Offset,
+    pub page: Page,
 }
 
 impl WritePageReq {
@@ -21,13 +21,13 @@ impl WritePageReq {
 
 #[derive(Debug)]
 pub struct StoreSegmentReq {
-    pub(super) segment: OpenSegment,
+    pub segment: OpenSegment,
 }
 
 #[derive(Debug, Clone)]
 pub struct CommitSegmentReq {
-    pub(super) sid: SegmentId,
-    pub(super) offsets: OffsetsMap,
+    pub sid: SegmentId,
+    pub offsets: OffsetsMap,
 }
 
 #[derive(Debug, Clone)]

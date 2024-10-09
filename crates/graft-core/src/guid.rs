@@ -117,6 +117,12 @@ impl<const P: char> TryFrom<Bytes> for Guid<P> {
     }
 }
 
+impl<const P: char> AsRef<[u8]> for Guid<P> {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -23,6 +23,10 @@ impl OffsetsMap {
         self.0.is_empty()
     }
 
+    pub fn get(&self, vid: &VolumeId) -> Option<&Splinter<Bytes>> {
+        self.0.get(vid)
+    }
+
     pub fn contains(&self, vid: &VolumeId, offset: Offset) -> bool {
         self.0
             .get(vid)

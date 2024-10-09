@@ -16,7 +16,7 @@ impl ApiState {
         self.page_tx.send(req).await.unwrap();
     }
 
-    pub async fn subscribe_commits(&self) -> broadcast::Receiver<CommitSegmentReq> {
+    pub fn subscribe_commits(&self) -> broadcast::Receiver<CommitSegmentReq> {
         self.commit_bus.subscribe()
     }
 }

@@ -16,3 +16,12 @@ message WritePagesRequest {
   bytes vid = 1;
   repeated Page pages = 2;
 }
+
+message SegmentInfo {
+  bytes sid = 1;
+  bytes offsets = 2;
+}
+
+message WritePagesResponse {
+  repeated SegmentInfo segments = 1;
+}
