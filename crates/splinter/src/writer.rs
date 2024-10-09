@@ -6,7 +6,10 @@ use zerocopy::{
     Immutable, IntoBytes,
 };
 
-use crate::{block_bit, block_key, segments, Footer, Header, MAX_CARDINALITY};
+use crate::{
+    block::{block_bit, block_key},
+    segments, Footer, Header, MAX_CARDINALITY,
+};
 
 type Segment = u8;
 static_assertions::assert_eq_size!(Segment, u8);
