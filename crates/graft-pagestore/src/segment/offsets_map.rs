@@ -1,11 +1,21 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Debug};
 
 use bytes::{Bytes, BytesMut};
 use graft_core::{guid::VolumeId, offset::Offset};
 use splinter::{writer::SplinterBuilder, Splinter};
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Clone)]
 pub struct OffsetsMap(BTreeMap<VolumeId, Splinter<Bytes>>);
+
+impl Debug for OffsetsMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = f.debug_struct("OffsetsMap");
+        for (vid, splinter) in &self.0 {
+            out.field(&vid.short(), &splinter.cardinality());
+        }
+        out.finish()
+    }
+}
 
 #[derive(Default)]
 pub struct OffsetsMapBuilder {
@@ -38,12 +48,12 @@ impl OffsetsMap {
 impl OffsetsMapBuilder {
     pub fn insert(&mut self, vid: VolumeId, offset: Offset) {
         if let Some(current) = &self.vid {
-            if current != &vid {
+            if *current != vid {
                 assert!(vid > *current, "Volumes must be inserted in order by ID");
 
                 let builder = std::mem::take(&mut self.builder);
                 let splinter = Splinter::from_bytes(builder.build().freeze()).unwrap();
-                self.map.0.insert(vid.clone(), splinter);
+                self.map.0.insert(current.clone(), splinter);
                 self.vid = Some(vid);
             }
         } else {

@@ -31,6 +31,12 @@ impl From<&[u8; PAGESIZE.as_usize()]> for Page {
     }
 }
 
+impl From<Page> for Bytes {
+    fn from(value: Page) -> Self {
+        value.0
+    }
+}
+
 impl TryFrom<Bytes> for Page {
     type Error = PageSizeError;
 

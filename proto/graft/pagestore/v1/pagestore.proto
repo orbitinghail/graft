@@ -7,14 +7,14 @@ message ReadPagesRequest {
   repeated uint32 offsets = 3;
 }
 
-message Page {
+message PageAtOffset {
   uint32 offset = 1;
   bytes data = 2;
 }
 
 message WritePagesRequest {
   bytes vid = 1;
-  repeated Page pages = 2;
+  repeated PageAtOffset pages = 2;
 }
 
 message SegmentInfo {

@@ -52,6 +52,8 @@ impl<O: ObjectStore, C: Cache> SegmentUploaderTask<O, C> {
     }
 
     async fn handle_store_request(&mut self, req: StoreSegmentReq) -> anyhow::Result<()> {
+        tracing::debug!("handling request: {:?}", req);
+
         let segment = req.segment;
         let sid = SegmentId::random();
         let path = Path::from(sid.pretty());

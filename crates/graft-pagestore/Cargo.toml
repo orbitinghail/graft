@@ -28,7 +28,10 @@ pin-project = "1.1.5"
 futures = "0.3.30"
 axum = { version = "0.7.7", features = ["ws", "http2"] }
 prost = "0.13.3"
+itertools = "0.13.0"
 
 [dev-dependencies]
+axum-test = "16.2.0"
 graft-core = { path = "../graft-core", features = ["testutil"] }
 tempfile = "3.12.0"
+tracing-test = "0.2.5"

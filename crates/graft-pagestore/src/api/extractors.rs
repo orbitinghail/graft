@@ -1,10 +1,12 @@
 use axum::{
     async_trait,
     extract::{FromRequest, Request},
-    http::{header, StatusCode},
+    http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
+
+pub const CONTENT_TYPE_PROTOBUF: HeaderValue = HeaderValue::from_static("application/x-protobuf");
 
 pub struct Protobuf<T>(pub T);
 
@@ -17,12 +19,11 @@ where
     type Rejection = Response;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let content_type = req
+        let is_protobuf = req
             .headers()
             .get(header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or_default();
-        if content_type != "application/x-protobuf" {
+            .is_some_and(|v| v == CONTENT_TYPE_PROTOBUF);
+        if !is_protobuf {
             return Err(
                 (StatusCode::BAD_REQUEST, "invalid content type".to_string()).into_response(),
             );

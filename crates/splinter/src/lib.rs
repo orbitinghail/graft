@@ -140,6 +140,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Splinter")
             .field("num_partitions", &self.partitions)
+            .field("cardinality", &self.cardinality())
             .finish()
     }
 }

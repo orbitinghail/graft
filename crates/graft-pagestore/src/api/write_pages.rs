@@ -30,11 +30,6 @@ pub async fn handler(
             .await;
     }
 
-    // TODO listen for commit messages, building the response as we go
-    // While we listen to commits and pull out segments relevant to the vid, we
-    // can't terminate until we have seen all written offsets (or some kind of timeout expires)
-    // For now, we will just sum up the cardinality of every matching offset set until we see enough offsets
-
     let mut segments: Vec<SegmentInfo> = vec![];
 
     let mut count = 0;
@@ -45,10 +40,10 @@ pub async fn handler(
             Err(RecvError::Closed) => panic!("commit channel unexpectedly closed"),
         };
 
+        tracing::debug!("write_pages handler received commit: {commit:?} for volume {vid}");
+
         if let Some(offsets) = commit.offsets.get(&vid) {
-            // TODO: calculate Splinter cardinality
-            // expected -= offsets.cardinality();
-            count += expected_pages;
+            count += offsets.cardinality();
 
             // store the segment
             segments.push(SegmentInfo {
@@ -58,11 +53,101 @@ pub async fn handler(
         }
     }
 
+    assert_eq!(
+        count, expected_pages,
+        "expected {} pages, but got {}",
+        expected_pages, count
+    );
+
     let response = WritePagesResponse { segments };
     let mut buf = BytesMut::with_capacity(response.encoded_len());
     response
         .encode(&mut buf)
         .expect("insufficient buffer capacity");
 
-    Ok(buf)
+    Ok(buf.freeze())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use axum::handler::Handler;
+    use axum_test::TestServer;
+    use graft_proto::pagestore::v1::PageAtOffset;
+    use object_store::memory::InMemory;
+    use splinter::Splinter;
+    use tokio::sync::mpsc;
+    use tracing_test::traced_test;
+
+    use crate::{
+        api::extractors::CONTENT_TYPE_PROTOBUF,
+        segment::{bus::Bus, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
+        storage::mem::MemCache,
+        supervisor::SupervisedTask,
+    };
+
+    use super::*;
+
+    #[tokio::test(start_paused = true)]
+    #[traced_test]
+    async fn test_write_pages_sanity() {
+        let store = Arc::new(InMemory::default());
+        let cache = Arc::new(MemCache::default());
+
+        let (page_tx, page_rx) = mpsc::channel(128);
+        let (store_tx, store_rx) = mpsc::channel(8);
+        let commit_bus = Bus::new(128);
+
+        SegmentWriterTask::new(page_rx, store_tx, Duration::from_secs(1)).testonly_spawn();
+
+        SegmentUploaderTask::new(store_rx, commit_bus.clone(), store.clone(), cache.clone())
+            .testonly_spawn();
+
+        let state = Arc::new(ApiState::new(page_tx, commit_bus));
+
+        let server = TestServer::builder()
+            .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())
+            .expect_success_by_default()
+            .build(handler.with_state(state).into_make_service())
+            .unwrap();
+
+        // issue two concurrent writes to different volumes
+        let page: Bytes = Page::test_filled(1).into();
+
+        let req1 = WritePagesRequest {
+            vid: Bytes::copy_from_slice(VolumeId::random().as_ref()),
+            pages: vec![PageAtOffset { offset: 0, data: page.clone() }],
+        };
+        let req1 = server.post("/").bytes(req1.encode_to_vec().into());
+
+        let req2 = WritePagesRequest {
+            vid: Bytes::copy_from_slice(VolumeId::random().as_ref()),
+            pages: vec![
+                PageAtOffset { offset: 0, data: page.clone() },
+                PageAtOffset { offset: 1, data: page.clone() },
+            ],
+        };
+        let req2 = server.post("/").bytes(req2.encode_to_vec().into());
+
+        // wait for both requests to complete
+        let (resp1, resp2) = tokio::join!(req1, req2);
+
+        let resp1 = WritePagesResponse::decode(resp1.into_bytes()).unwrap();
+        assert_eq!(resp1.segments.len(), 1, "expected 1 segment");
+        let offsets = Splinter::from_bytes(resp1.segments[0].offsets.clone()).unwrap();
+        assert_eq!(offsets.cardinality(), 1);
+        assert!(offsets.contains(0));
+
+        let resp2 = WritePagesResponse::decode(resp2.into_bytes()).unwrap();
+        assert_eq!(resp2.segments.len(), 1, "expected 1 segment");
+        assert_eq!(
+            resp2.segments[0].sid, resp1.segments[0].sid,
+            "expected same segment"
+        );
+        let offsets = Splinter::from_bytes(resp2.segments[0].offsets.clone()).unwrap();
+        assert_eq!(offsets.cardinality(), 2);
+        assert!(offsets.contains(0));
+        assert!(offsets.contains(1));
+    }
 }

@@ -1,7 +1,8 @@
 //! An open segment is a segment that is currently being written to. It can be serialized into a Closed segment.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Debug};
 
+use ahash::HashMap;
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{
     byte_unit::ByteUnit,
@@ -9,6 +10,7 @@ use graft_core::{
     offset::Offset,
     page::{Page, PAGESIZE},
 };
+use itertools::Itertools;
 use thiserror::Error;
 use zerocopy::IntoBytes;
 
@@ -23,9 +25,19 @@ use super::{
 #[error("segment is full")]
 pub struct SegmentFullErr;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct OpenSegment {
     index: BTreeMap<(VolumeId, Offset), Page>,
+}
+
+impl Debug for OpenSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = f.debug_struct("OpenSegment");
+        for (count, vid) in self.index.keys().map(|(vid, _)| vid).dedup_with_count() {
+            out.field(&vid.short(), &count);
+        }
+        out.finish()
+    }
 }
 
 impl OpenSegment {
