@@ -1,9 +1,52 @@
 Next tasks:
+- implement volume index
 - implement request limiter
-- implement segment index
-  - may be a good use case for a general purpose kv store
-  - or just sqlite <- this is probably the right choice here
-  - optimized for read_pages queries
+- implement Splinter cut
+- implement segment query
+
+# Volume Index
+Will use Sled for storage. Rationale is that it gives us durability, is fairly lightweight, and is fast.
+
+```
+keyspace:
+volumes/[vid] -> { lsn, last_offset, last_commit }
+segments/[vid]/[lsn]/[sid] -> OffsetSet
+```
+
+Keys and values will be encoded with zerocopy. note that bigendian encoding of numbers is lexographically sortable. So lsn's should be bigendian when stored in a key. An example of using sled in this way is here: https://github.com/spacejam/sled/blob/main/examples/structured.rs
+
+# Find matching segments query
+
+```
+find_segments(vid, lsn, query: OffsetSet)
+
+// this object downloads and memmaps segments in the background
+let loader = SegmentsLoader
+
+// iterate through segments in reverse order of lsn
+for segment in store.segments(vid, lsn) {
+  // cut segment offsets out of the query, returning the cut offsets
+  let cut = query.cut(segment.offsets);
+
+  if !cut.is_empty() {
+    loader.load(segment, cut)
+  }
+
+  if query.is_empty() {
+    break
+  }
+}
+
+let out: Vec<PageOffset>
+for (segment, cut) in loader {
+  for offset in cut {
+    page = segment.get(vid, offset).expect("index out of sync")
+    out.append((page,offset))
+  }
+}
+
+out
+```
 
 # Request limiter
 In the case of downloading segments:

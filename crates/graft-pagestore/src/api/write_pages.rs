@@ -7,6 +7,7 @@ use graft_proto::{
     common::v1::SegmentInfo,
     pagestore::v1::{WritePagesRequest, WritePagesResponse},
 };
+use hashbrown::HashSet;
 use prost::Message;
 use tokio::sync::broadcast::error::RecvError;
 
@@ -24,9 +25,15 @@ pub async fn handler(
     let mut commit_rx = state.subscribe_commits();
 
     let expected_pages = req.pages.len();
+    let mut seen = HashSet::with_capacity(req.pages.len());
     for page in req.pages {
         let offset: Offset = page.offset;
         let page: Page = page.data.try_into()?;
+
+        if seen.contains(&offset) {
+            return Err(ApiError::DuplicatePageOffset(offset));
+        }
+        seen.insert(offset);
 
         state
             .write_page(WritePageReq::new(vid.clone(), offset, page))
@@ -43,9 +50,9 @@ pub async fn handler(
             Err(RecvError::Closed) => panic!("commit channel unexpectedly closed"),
         };
 
-        tracing::debug!("write_pages handler received commit: {commit:?} for volume {vid}");
-
         if let Some(offsets) = commit.offsets.get(&vid) {
+            tracing::debug!("write_pages handler received commit: {commit:?} for volume {vid}");
+
             count += offsets.cardinality();
 
             // store the segment

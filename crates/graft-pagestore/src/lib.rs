@@ -1,3 +1,4 @@
+pub mod resource_pool;
 pub mod supervisor;
 
 pub mod segment {
@@ -14,7 +15,6 @@ pub mod storage {
     pub mod cache;
     pub mod disk;
     pub mod mem;
-    pub mod resource_pool;
 }
 
 pub mod api {
@@ -25,6 +25,10 @@ pub mod api {
     pub mod state;
     pub mod task;
     pub mod write_pages;
+}
+
+pub mod volume {
+    pub mod index;
 }
 
 #[cfg(test)]

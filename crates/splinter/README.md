@@ -63,9 +63,11 @@ procedure exists(key u24)
 
 # TODO
 
+## Cut
+To efficiently support cut, we will need a mutable splinter. The simplest form of this is `HashMap<Segment, HashMap<Segment, Block>>` where Block is an enum storing either a list of Segments or a bitset.
+
 ## Missing methods
 - iter -> iterate through all of the elements in the splinter
-- cardinality -> efficiently compute the cardinality from the indexes
 - from_sorted_iter
 
 ## Optimization ideas

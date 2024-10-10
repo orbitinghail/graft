@@ -2,7 +2,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use graft_core::{guid::GuidParseError, page::PageSizeError};
+use graft_core::{guid::GuidParseError, offset::Offset, page::PageSizeError};
 use splinter::DecodeErr;
 use thiserror::Error;
 
@@ -13,6 +13,9 @@ pub enum ApiError {
 
     #[error(transparent)]
     PageSizeError(#[from] PageSizeError),
+
+    #[error("duplicate page offset detected: {0}")]
+    DuplicatePageOffset(Offset),
 
     #[error("failed to parse offsets: {0}")]
     OffsetsDecodeError(#[from] DecodeErr),
