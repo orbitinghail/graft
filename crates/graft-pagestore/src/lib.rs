@@ -19,7 +19,7 @@ pub mod storage {
 
 pub mod api {
     pub mod error;
-    mod extractors;
+    pub mod extractors;
     pub mod read_pages;
     pub mod router;
     pub mod state;

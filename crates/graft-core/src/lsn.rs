@@ -1,3 +1,1 @@
-pub struct LSN {
-    n: u64,
-}
+pub type LSN = u64;

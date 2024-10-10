@@ -3,6 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use graft_core::{guid::GuidParseError, page::PageSizeError};
+use splinter::DecodeErr;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -12,16 +13,13 @@ pub enum ApiError {
 
     #[error(transparent)]
     PageSizeError(#[from] PageSizeError),
+
+    #[error("failed to parse offsets: {0}")]
+    OffsetsDecodeError(#[from] DecodeErr),
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        use ApiError::*;
-
-        let status = match self {
-            GuidParseError(..) => StatusCode::BAD_REQUEST,
-            PageSizeError(..) => StatusCode::BAD_REQUEST,
-        };
-        (status, self.to_string()).into_response()
+        (StatusCode::BAD_REQUEST, self.to_string()).into_response()
     }
 }

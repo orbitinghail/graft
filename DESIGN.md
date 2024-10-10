@@ -54,8 +54,6 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
 - **LSN**  
   A monotonically increasing number that tracks changes to a Volume. Each transaction results in a new LSN, which is greater than all previous LSNs for the Volume.
 
-  The serialized string representation of a LSN must sort alphanumerically.
-
 - **Snapshot**  
   A tuple (volume id, lsn, max offset) that defines a fixed point in time for the state of a volume. Max offset can be used to determine Volume length and calculate the Volume's maximum size (actual size must take sparseness into account).
 
