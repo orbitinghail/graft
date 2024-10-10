@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 prost = "0.13.3"
+prost-types = "0.13.3"

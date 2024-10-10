@@ -3,7 +3,10 @@ use std::{sync::Arc, vec};
 use axum::{extract::State, response::IntoResponse};
 use bytes::{Bytes, BytesMut};
 use graft_core::{guid::VolumeId, offset::Offset, page::Page};
-use graft_proto::pagestore::v1::{SegmentInfo, WritePagesRequest, WritePagesResponse};
+use graft_proto::{
+    common::v1::SegmentInfo,
+    pagestore::v1::{WritePagesRequest, WritePagesResponse},
+};
 use prost::Message;
 use tokio::sync::broadcast::error::RecvError;
 

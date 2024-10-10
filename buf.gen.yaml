@@ -4,7 +4,6 @@ plugins:
     out: crates/graft-proto/src/
     opt:
       - bytes=.
-      - compile_well_known_types
       - file_descriptor_set
   - remote: buf.build/community/neoeinstein-prost-crate:v0.4.1
     out: crates/graft-proto/src/

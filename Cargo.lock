@@ -749,6 +749,7 @@ name = "graft-proto"
 version = "0.1.0"
 dependencies = [
  "prost",
+ "prost-types",
 ]
 
 [[package]]
@@ -1458,6 +1459,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4759aa0d3a6232fb8dbdb97b61de2c20047c68aca932c7ed76da9d788508d670"
+dependencies = [
+ "prost",
 ]
 
 [[package]]

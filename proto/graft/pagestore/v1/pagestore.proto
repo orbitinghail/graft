@@ -1,6 +1,8 @@
 syntax = "proto3";
 package graft.pagestore.v1;
 
+import "graft/common/v1/common.proto";
+
 message ReadPagesRequest {
   bytes vid = 1;
   uint64 lsn = 2;
@@ -17,11 +19,6 @@ message WritePagesRequest {
   repeated PageAtOffset pages = 2;
 }
 
-message SegmentInfo {
-  bytes sid = 1;
-  bytes offsets = 2;
-}
-
 message WritePagesResponse {
-  repeated SegmentInfo segments = 1;
+  repeated graft.common.v1.SegmentInfo segments = 1;
 }

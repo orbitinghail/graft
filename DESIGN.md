@@ -125,18 +125,18 @@ When initializing the DO, we just need to read the latest Commit and prepare the
 ## API
 
 **`getSnapshotMetadata(LSN)`**  
-Returns Snapshot metadata for a particular LSN (or the latest if null). Does not include Offsets or Segments.
+Returns Snapshot metadata for a particular LSN (or the latest if null). Does not include Segments.
 
-**`getChangedOffsets(LSN A, [LSN B])`**  
-Returns a compressed bitmap of changed offsets between LSN A (exclusive) and LSN B (inclusive). LSN B can be null, in which case it defaults to the latest Snapshot. This method will also return the Snapshot at LSN B.
+**`pullOffsets(LSN A)`**  
+Returns a compressed bitmap of changed offsets between LSN A (exclusive) and the latest LSN (inclusive). This method will also return the Snapshot at LSN B.
 
-**`getNewSegments(LSN A, [LSN B])`**  
-Returns a list of segments added between LSN A (exclusive) and LSN B (inclusive). LSN B can be null, in which case it defaults to the latest Snapshot. This method will also return the Snapshot at LSN B.
+**`pullSegments(LSN A)`**  
+Returns a list of segments added or removed between LSN A (exclusive) and the latest LSN (inclusive). This method will also return the Snapshot at LSN B.
 
-**`commit(Snapshot LSN, new max offset, offsets, segments)`**  
+**`commit(Snapshot LSN, segments)`**  
 Commit a new Snapshot to the Volume at the next LSN. Returns the committed Snapshot metadata or an error.
 
-**`compact(Snapshot LSN, added segments, removed segments)`**  
+**`checkpoint(Snapshot LSN, added segments, removed segments)`**  
 Inform the MetaStore that a new checkpoint has been created at a particular LSN. If multiple segments are generated, they will represent non-overlapping offset ranges. Will be stored in the log at the next LSN.
 
 ## Checkpointing
@@ -247,10 +247,10 @@ For now we will proceed without authentication. Eventually, the Control Plane wi
 Graft Clients support reading and writing to Volumes.
 
 ## Initialization
-To start, a Client must open a Volume at either a specific or the latest LSN. This entails sending a `getSnapshotMetadata` request to the MetaStore. If the Client has cached state for this Volume, it can also run `getChangedOffsets(last LSN, new LSN)` to become aware of changed offsets.
+To start, a Client must open a Volume at either a specific or the latest LSN. This entails sending a `getSnapshotMetadata` request to the MetaStore. If the Client has cached state for this Volume, it can instead run `pullOffsets(last LSN)` to become aware of changed offsets while retrieving the snapshot.
 
 ## Local Storage
-Clients will cache Pages keyed by `[volume id]/[offset]/[LSN]`. Pages which are known of (via `getChangedOffsets`) but not yet retrieved will point at a 'missing token'.
+Clients will cache Pages keyed by `[volume id]/[offset]/[LSN]`. Pages which are known of (via `pullOffsets`) but not yet retrieved will point at a 'missing token'.
 
 Maintaining and compacting the cache is highly platform dependent. We will likely need to implement a checkpointing mechanism on each platform that can roll up all downloaded offsets to a particular LSN in order to free space. Depending on the KV store used, this may be easier or harder to do. On the plus side, we can always re-download any accidentally deleted pages assuming the client has an internet connection.
 

@@ -1,0 +1,7 @@
+syntax = "proto3";
+package graft.common.v1;
+
+message SegmentInfo {
+  bytes sid = 1;
+  bytes offsets = 2;
+}

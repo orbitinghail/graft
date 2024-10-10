@@ -1,0 +1,39 @@
+syntax = "proto3";
+package graft.metastore.v1;
+
+import "google/protobuf/timestamp.proto";
+import "graft/common/v1/common.proto";
+
+message SnapshotMetadata {
+  uint64 lsn = 1;
+  uint32 last_offset = 2;
+  google.protobuf.Timestamp last_commit = 3;
+}
+
+message PullOffsetsRequest {
+  uint64 since_lsn = 1;
+}
+
+message PullOffsetsResponse {
+  SnapshotMetadata snapshot = 1;
+  bytes offsets = 2;
+}
+
+message PullSegmentsRequest {
+  uint64 since_lsn = 1;
+}
+
+message PullSegmentsResponse {
+  SnapshotMetadata snapshot = 1;
+  repeated graft.common.v1.SegmentInfo added = 2;
+  repeated bytes removed = 3;
+}
+
+message CommitRequest {
+  uint64 base_lsn = 1;
+  repeated graft.common.v1.SegmentInfo segments = 2;
+}
+
+message CommitResponse {
+  SnapshotMetadata snapshot = 1;
+}
