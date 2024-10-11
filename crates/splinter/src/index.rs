@@ -25,11 +25,11 @@ where
     }
 
     fn from_bytes(index: &'a [u8], cardinality: usize) -> Self {
-        let (keys, index) = Block::from_prefix(&index, cardinality);
+        let (keys, index) = Block::from_prefix(index, cardinality);
         let (cardinalities, index) = index.split_at(cardinality);
         let (index, offsets) = Ref::from_suffix_with_elems(index, cardinality).unwrap();
 
-        assert!(index.is_empty(), "index should be fully consumed");
+        assert!(index.is_empty(), "index should be fully loaded");
 
         Self { keys, cardinalities, offsets }
     }

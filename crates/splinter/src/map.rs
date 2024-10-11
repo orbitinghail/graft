@@ -12,7 +12,6 @@ pub trait Container<'a> {
 }
 
 pub struct Map<'a, Offset, V> {
-    cardinality: usize,
     values: &'a [u8],
     index: Index<'a, Offset>,
     _phantom: PhantomData<V>,
@@ -27,13 +26,7 @@ where
 
     fn from_suffix(data: &'a [u8], cardinality: usize) -> Self {
         let (values, index) = Index::from_suffix(data, cardinality);
-
-        Self {
-            cardinality,
-            values,
-            index,
-            _phantom: PhantomData,
-        }
+        Self { values, index, _phantom: PhantomData }
     }
 
     fn lookup(&self, segment: u8) -> Option<V> {

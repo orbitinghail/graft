@@ -10,6 +10,7 @@ impl<'a> Block<&'a [u8]> {
     pub fn from_prefix(data: &'a [u8], cardinality: usize) -> (Self, &'a [u8]) {
         let size = block_size(cardinality);
         assert!(data.len() >= size, "data too short");
+        assert!(size > 0, "empty block");
         let (data, rest) = data.split_at(size);
         (Self { data }, rest)
     }
@@ -19,10 +20,12 @@ impl<T> Block<T>
 where
     T: Deref<Target = [u8]>,
 {
+    #[cfg(test)]
     pub fn new(data: T) -> Self {
         Self { data }
     }
 
+    #[cfg(test)]
     #[inline]
     pub fn len(&self) -> usize {
         if self.data.len() == 32 {
@@ -30,25 +33,17 @@ where
             self.data.iter().map(|&x| x.count_ones() as usize).sum()
         } else {
             // block is a list of segments
-            assert!(self.data.len() < 32, "block too large: {}", self.data.len());
             self.data.len()
         }
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     #[inline]
     /// Count the number of 1-bits in the block up to and including the position `i`
     pub fn rank(&self, i: u8) -> usize {
         // TODO: implement SIMD/AVX versions
-
         if self.data.len() == 32 {
             // block is a 32 byte bitmap
             let key = block_key(i);
-            assert!(key < 32, "key out of range: {}", key);
 
             // number of bits set up to the key-th byte
             let prefix_bits = self.data[0..key]
@@ -63,7 +58,6 @@ where
             (prefix_bits + bits) as usize
         } else {
             // block is a list of segments
-            assert!(self.data.len() < 32, "block too large: {}", self.data.len());
             match self.data.binary_search(&i) {
                 Ok(i) => i + 1,
                 Err(i) => i,
@@ -80,7 +74,6 @@ where
             self.data[block_key(segment)] & (1 << block_bit(segment)) != 0
         } else {
             // block is a list of segments
-            assert!(self.data.len() < 32, "block too large: {}", self.data.len());
             self.data.iter().any(|&x| x == segment)
         }
     }
@@ -92,6 +85,7 @@ impl<'a> Container<'a> for Block<&'a [u8]> {
     fn from_suffix(data: &'a [u8], cardinality: usize) -> Self {
         let size = block_size(cardinality);
         assert!(data.len() >= size, "data too short");
+        assert!(size > 0, "empty block");
         Self { data: &data[data.len() - size..] }
     }
 
