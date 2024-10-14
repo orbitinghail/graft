@@ -9,15 +9,20 @@ use splinter::Splinter;
 use super::{error::ApiError, extractors::Protobuf, state::ApiState};
 
 pub async fn handler(
-    State(_state): State<Arc<ApiState>>,
+    State(state): State<Arc<ApiState>>,
     Protobuf(req): Protobuf<ReadPagesRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsn: LSN = req.lsn;
     let offsets: Splinter<Bytes> = Splinter::from_bytes(req.offsets)?;
 
-    // read_pages dataflow:
-    // 1. have we seen this vid/lsn before? if not update the segment index
+    let snapshot = state.catalog().snapshot(&vid)?;
+    let needs_update = snapshot.is_none() || snapshot.is_some_and(|s| s.lsn() < lsn);
+
+    if needs_update {
+        // TODO: update the segment index
+    }
+
     // 2. query the segment index for relevant segments
     //    -> this query is perfect as the index contains offset maps for every segment
     // 3. prefetch missing segments

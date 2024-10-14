@@ -95,6 +95,7 @@ mod tests {
         segment::{bus::Bus, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
         storage::mem::MemCache,
         supervisor::SupervisedTask,
+        volume::catalog::VolumeCatalog,
     };
 
     use super::*;
@@ -104,6 +105,7 @@ mod tests {
     async fn test_write_pages_sanity() {
         let store = Arc::new(InMemory::default());
         let cache = Arc::new(MemCache::default());
+        let catalog = VolumeCatalog::open_temporary().unwrap();
 
         let (page_tx, page_rx) = mpsc::channel(128);
         let (store_tx, store_rx) = mpsc::channel(8);
@@ -114,7 +116,7 @@ mod tests {
         SegmentUploaderTask::new(store_rx, commit_bus.clone(), store.clone(), cache.clone())
             .testonly_spawn();
 
-        let state = Arc::new(ApiState::new(page_tx, commit_bus));
+        let state = Arc::new(ApiState::new(page_tx, commit_bus, catalog));
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())

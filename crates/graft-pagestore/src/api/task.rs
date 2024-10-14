@@ -5,6 +5,7 @@ use tokio::{net::TcpListener, sync::mpsc};
 use crate::{
     segment::bus::{Bus, CommitSegmentReq, WritePageReq},
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
+    volume::catalog::VolumeCatalog,
 };
 
 use super::{router::router, state::ApiState};
@@ -19,10 +20,11 @@ impl ApiServerTask {
         listener: TcpListener,
         page_tx: mpsc::Sender<WritePageReq>,
         commit_bus: Bus<CommitSegmentReq>,
+        catalog: VolumeCatalog,
     ) -> Self {
         Self {
             listener,
-            state: Arc::new(ApiState::new(page_tx, commit_bus)),
+            state: Arc::new(ApiState::new(page_tx, commit_bus, catalog)),
         }
     }
 }

@@ -26,7 +26,6 @@ message PullSegmentsRequest {
 message PullSegmentsResponse {
   SnapshotMetadata snapshot = 1;
   repeated graft.common.v1.SegmentInfo added = 2;
-  repeated bytes removed = 3;
 }
 
 message CommitRequest {

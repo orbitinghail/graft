@@ -28,7 +28,8 @@ pub mod api {
 }
 
 pub mod volume {
-    pub mod index;
+    pub mod catalog;
+    pub mod kv;
 }
 
 #[cfg(test)]

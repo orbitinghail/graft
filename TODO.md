@@ -1,15 +1,15 @@
 Next tasks:
-- implement volume index
+- implement volume catalog
 - implement request limiter
 - implement Splinter cut
 - implement segment query
 
-# Volume Index
-Will use Sled for storage. Rationale is that it gives us durability, is fairly lightweight, and is fast.
+# Volume Catalog
+Will use an embedded kv store for storage.
 
 ```
 keyspace:
-volumes/[vid] -> { lsn, last_offset, last_commit }
+volumes/[vid] -> { lsn, last_offset }
 segments/[vid]/[lsn]/[sid] -> OffsetSet
 ```
 
@@ -40,7 +40,7 @@ for segment in store.segments(vid, lsn) {
 let out: Vec<PageOffset>
 for (segment, cut) in loader {
   for offset in cut {
-    page = segment.get(vid, offset).expect("index out of sync")
+    page = segment.get(vid, offset).expect("catalog out of sync")
     out.append((page,offset))
   }
 }

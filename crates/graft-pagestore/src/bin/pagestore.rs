@@ -7,6 +7,7 @@ use pagestore::{
     segment::{bus::Bus, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
     storage::mem::MemCache,
     supervisor::Supervisor,
+    volume::catalog::VolumeCatalog,
 };
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
 
@@ -20,6 +21,7 @@ async fn main() {
 
     let store = Arc::new(InMemory::default());
     let cache = Arc::new(MemCache::default());
+    let catalog = VolumeCatalog::open_temporary().unwrap();
 
     let (page_tx, page_rx) = mpsc::channel(128);
     let (store_tx, store_rx) = mpsc::channel(8);
@@ -42,6 +44,7 @@ async fn main() {
         TcpListener::bind("0.0.0.0:3000").await.unwrap(),
         page_tx,
         commit_bus,
+        catalog,
     ));
 
     select! {
