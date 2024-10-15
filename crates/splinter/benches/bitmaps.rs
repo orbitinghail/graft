@@ -1,9 +1,9 @@
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use splinter::{writer::SplinterBuilder, Splinter};
 use std::hint::black_box;
 
-fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter<Bytes> {
+fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
     let mut writer = SplinterBuilder::new(BytesMut::default());
     for i in values {
         writer.push(i);

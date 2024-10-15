@@ -2,7 +2,6 @@
 
 use std::{collections::BTreeMap, fmt::Debug};
 
-use ahash::HashMap;
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{
     byte_unit::ByteUnit,

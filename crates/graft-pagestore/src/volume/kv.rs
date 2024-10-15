@@ -1,4 +1,4 @@
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 
 use graft_core::{
     guid::{SegmentId, VolumeId},

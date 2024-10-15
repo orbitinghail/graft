@@ -1,11 +1,11 @@
 use std::{collections::BTreeMap, fmt::Debug};
 
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use graft_core::{guid::VolumeId, offset::Offset};
 use splinter::{writer::SplinterBuilder, Splinter};
 
 #[derive(Default, Clone)]
-pub struct OffsetsMap(BTreeMap<VolumeId, Splinter<Bytes>>);
+pub struct OffsetsMap(BTreeMap<VolumeId, Splinter>);
 
 impl Debug for OffsetsMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -33,7 +33,7 @@ impl OffsetsMap {
         self.0.is_empty()
     }
 
-    pub fn get(&self, vid: &VolumeId) -> Option<&Splinter<Bytes>> {
+    pub fn get(&self, vid: &VolumeId) -> Option<&Splinter> {
         self.0.get(vid)
     }
 

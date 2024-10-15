@@ -12,16 +12,16 @@ impl<'a, Offset> Index<'a, Offset>
 where
     Offset: FromBytes + Immutable + Copy + Into<u32>,
 {
-    pub fn size(cardinality: usize) -> usize {
-        let block_size = block_size(cardinality);
-        block_size + cardinality + (size_of::<Offset>() * cardinality)
-    }
-
     pub fn from_suffix(data: &'a [u8], cardinality: usize) -> (&'a [u8], Self) {
         let index_size = Self::size(cardinality);
         assert!(data.len() >= index_size, "data too short");
         let (data, index) = data.split_at(data.len() - index_size);
         (data, Self::from_bytes(index, cardinality))
+    }
+
+    fn size(cardinality: usize) -> usize {
+        let block_size = block_size(cardinality);
+        block_size + cardinality + (size_of::<Offset>() * cardinality)
     }
 
     fn from_bytes(index: &'a [u8], cardinality: usize) -> Self {
@@ -38,7 +38,7 @@ where
         self.cardinalities.len()
     }
 
-    /// returns the total cardinality of the index by summing all of
+    /// returns the cardinality of the index by summing all of
     /// the index's entry cardinalities
     pub fn cardinality(&self) -> usize {
         self.cardinalities.iter().map(|&x| x as usize + 1).sum()
