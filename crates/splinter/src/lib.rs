@@ -1,16 +1,14 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, mem::size_of};
 
 use bytes::Bytes;
-use decode::Ref;
 use map::{Container, Map};
 use thiserror::Error;
 use zerocopy::{
     little_endian::{U16, U32},
-    FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned,
+    FromBytes, Immutable, IntoBytes, KnownLayout, Ref, Unaligned,
 };
 
 mod block;
-mod decode;
 mod index;
 mod map;
 
@@ -60,49 +58,40 @@ pub enum DecodeErr {
 
 type Partition<'a> = Map<'a, U16, block::Block<&'a [u8]>>;
 
+#[derive(Clone)]
 pub struct Splinter {
     data: Bytes,
     partitions: usize,
 }
 
-impl Clone for Splinter {
-    fn clone(&self) -> Self {
-        Self {
-            data: self.data.clone(),
-            partitions: self.partitions,
-        }
-    }
-}
-
 impl Splinter {
-    pub fn from_bytes(mut data: Bytes) -> Result<Self, DecodeErr> {
+    pub fn from_bytes(data: Bytes) -> Result<Self, DecodeErr> {
         use DecodeErr::*;
 
-        let header: Ref<Header> = Ref::from_prefix(&mut data)?;
+        let (header, _) = Ref::<_, Header>::from_prefix(data.as_ref())
+            .map_err(|_| InvalidLength { ty: "Header", size: size_of::<Header>() })?;
         if header.magic != SPLINTER_MAGIC {
             return Err(InvalidMagic);
         }
 
-        let footer: Ref<Footer> = Ref::from_suffix(&mut data)?;
+        let (_, footer) = Ref::<_, Footer>::from_suffix(data.as_ref())
+            .map_err(|_| InvalidLength { ty: "Footer", size: size_of::<Footer>() })?;
         let partitions = footer.partitions.get() as usize;
 
         Ok(Splinter { data, partitions })
     }
 
     pub fn size(&self) -> usize {
-        self.data.as_ref().len() + size_of::<Header>() + size_of::<Footer>()
+        self.data.len()
     }
 
     pub fn inner(&self) -> &Bytes {
         &self.data
     }
 
-    pub fn into_inner(self) -> Bytes {
-        self.data
-    }
-
     fn load_partitions(&self) -> Map<'_, U32, Partition<'_>> {
-        Map::from_suffix(&self.data, self.partitions)
+        let slice = &self.data[..self.data.len() - size_of::<Footer>()];
+        Map::from_suffix(slice, self.partitions)
     }
 
     pub fn contains(&self, key: u32) -> bool {
