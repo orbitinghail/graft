@@ -2,10 +2,11 @@ use crate::Segment;
 
 pub const BITMAP_SIZE: usize = 32;
 
-pub type OwnedBitmap = [u8; BITMAP_SIZE];
+pub type Bitmap = [u8; BITMAP_SIZE];
 
-pub trait Bitmap {
-    fn as_ref(&self) -> &[u8; BITMAP_SIZE];
+pub trait BitmapExt {
+    fn as_ref(&self) -> &Bitmap;
+    fn as_mut(&mut self) -> &mut Bitmap;
 
     #[inline]
     fn cardinality(&self) -> usize {
@@ -52,55 +53,36 @@ pub trait Bitmap {
     fn contains(&self, segment: Segment) -> bool {
         self.as_ref()[bitmap_key(segment)] & (1 << bitmap_bit(segment)) != 0
     }
-}
 
-pub trait BitmapMut {
-    fn as_mut(&mut self) -> &mut [u8; BITMAP_SIZE];
-
+    /// Insert a segment into the bitmap, returning true if a bit was set
     #[inline]
-    fn insert(&mut self, segment: Segment) {
+    fn insert(&mut self, segment: Segment) -> bool {
         let key = bitmap_key(segment);
         let bit = bitmap_bit(segment);
+        let was_missing = !self.contains(segment);
         self.as_mut()[key] |= 1 << bit;
+        was_missing
     }
 
     #[inline]
     fn clear(&mut self) {
         self.as_mut().fill(0);
     }
-}
 
-impl Bitmap for OwnedBitmap {
     #[inline]
-    fn as_ref(&self) -> &[u8; BITMAP_SIZE] {
-        self
+    fn segments(&self) -> impl Iterator<Item = Segment> {
+        BitmapIter::new(self.as_ref())
     }
 }
 
-impl BitmapMut for OwnedBitmap {
+impl BitmapExt for Bitmap {
     #[inline]
-    fn as_mut(&mut self) -> &mut [u8; BITMAP_SIZE] {
+    fn as_ref(&self) -> &Bitmap {
         self
     }
-}
 
-impl Bitmap for &[u8; BITMAP_SIZE] {
     #[inline]
-    fn as_ref(&self) -> &[u8; BITMAP_SIZE] {
-        self
-    }
-}
-
-impl Bitmap for &mut [u8; BITMAP_SIZE] {
-    #[inline]
-    fn as_ref(&self) -> &[u8; BITMAP_SIZE] {
-        self
-    }
-}
-
-impl BitmapMut for &mut [u8; BITMAP_SIZE] {
-    #[inline]
-    fn as_mut(&mut self) -> &mut [u8; BITMAP_SIZE] {
+    fn as_mut(&mut self) -> &mut Bitmap {
         self
     }
 }
@@ -115,4 +97,33 @@ fn bitmap_key(segment: u8) -> usize {
 #[inline]
 fn bitmap_bit(segment: u8) -> u8 {
     segment % 8
+}
+
+pub struct BitmapIter<'a> {
+    bitmap: &'a Bitmap,
+    cursor: usize,
+    current: u8,
+}
+
+impl<'a> BitmapIter<'a> {
+    fn new(bitmap: &'a Bitmap) -> Self {
+        Self { bitmap, cursor: 0, current: 0 }
+    }
+}
+
+impl<'a> Iterator for BitmapIter<'a> {
+    type Item = Segment;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current == 0 {
+            if self.cursor == BITMAP_SIZE {
+                return None;
+            }
+            self.current = self.bitmap[self.cursor];
+            self.cursor += 1;
+        }
+        let segment = (self.current.trailing_zeros() + (8 * self.cursor as u32)) as Segment;
+        self.current &= self.current - 1;
+        Some(segment)
+    }
 }

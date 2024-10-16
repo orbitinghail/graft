@@ -8,3 +8,11 @@ bytes = "1.7"
 static_assertions = "1"
 thiserror = "1.0"
 zerocopy = { version = "0.8", features = ["derive"] }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+roaring = "0.10"
+
+[[bench]]
+name = "bitmaps"
+harness = false

@@ -3,18 +3,18 @@ use std::{array::TryFromSliceError, ops::Deref};
 use bytes::BufMut;
 
 use crate::{
-    bitmap::{Bitmap, BitmapMut, OwnedBitmap, BITMAP_SIZE},
-    partition::{CopyToOwned, FromSuffix},
+    bitmap::{Bitmap, BitmapExt, BITMAP_SIZE},
+    util::{CopyToOwned, FromSuffix, Serialize},
     Segment,
 };
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Block {
-    bitmap: OwnedBitmap,
+    bitmap: Bitmap,
 }
 
-impl From<OwnedBitmap> for Block {
-    fn from(bitmap: OwnedBitmap) -> Self {
+impl From<Bitmap> for Block {
+    fn from(bitmap: Bitmap) -> Self {
         Self { bitmap }
     }
 }
@@ -29,37 +29,29 @@ impl TryFrom<&[u8]> for Block {
     type Error = TryFromSliceError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let bitmap: OwnedBitmap = value.try_into()?;
+        let bitmap: Bitmap = value.try_into()?;
         Ok(Self { bitmap })
     }
 }
 
-impl Bitmap for Block {
-    fn as_ref(&self) -> &[u8; BITMAP_SIZE] {
+impl BitmapExt for Block {
+    fn as_ref(&self) -> &Bitmap {
         &self.bitmap
     }
-}
-
-impl BitmapMut for Block {
-    fn as_mut(&mut self) -> &mut [u8; BITMAP_SIZE] {
+    fn as_mut(&mut self) -> &mut Bitmap {
         &mut self.bitmap
     }
 }
 
-impl Block {
-    /// Flush the block to the output buffer returning the block's cardinality
-    /// and number of bytes written. The block is cleared after flushing for reuse.
-    #[inline]
-    pub fn flush<B: BufMut>(&mut self, out: &mut B) -> (usize, usize) {
+impl Serialize for Block {
+    /// Serialize the block to the output buffer returning the block's cardinality
+    /// and number of bytes written.
+    fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
         let cardinality = self.cardinality();
 
         let bytes_written = if cardinality < 32 {
-            // write out the segments
-            for (index, mut byte) in self.bitmap.iter().copied().enumerate() {
-                while byte != 0 {
-                    out.put_u8((byte.trailing_zeros() + (8 * index as u32)) as u8);
-                    byte &= byte - 1;
-                }
+            for segment in self.bitmap.segments() {
+                out.put_u8(segment);
             }
             cardinality
         } else {
@@ -67,9 +59,6 @@ impl Block {
             out.put_slice(&self.bitmap);
             BITMAP_SIZE
         };
-
-        // reset the bitmap
-        self.bitmap.clear();
 
         (cardinality, bytes_written)
     }
@@ -166,21 +155,37 @@ pub fn block_size(cardinality: usize) -> usize {
     cardinality.min(BITMAP_SIZE)
 }
 
+// Equality operations
+
+impl<T: Deref<Target = [Segment]>> Eq for BlockRef<T> {}
+impl<T: Deref<Target = [Segment]>> PartialEq<BlockRef<T>> for BlockRef<T> {
+    fn eq(&self, other: &BlockRef<T>) -> bool {
+        self.segments.deref() == other.segments.deref()
+    }
+}
+
+impl<T: Deref<Target = [Segment]>> PartialEq<Block> for BlockRef<T> {
+    fn eq(&self, other: &Block) -> bool {
+        if let Some(bitmap) = self.bitmap() {
+            bitmap == &other.bitmap
+        } else {
+            self.segments.iter().copied().eq(other.bitmap.segments())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use bytes::{Bytes, BytesMut};
+    use bytes::Bytes;
 
     use super::*;
 
     fn mkblock(values: impl IntoIterator<Item = u8>) -> BlockRef<Bytes> {
-        let mut buf = BytesMut::default();
         let mut block = Block::default();
         for i in values {
             block.insert(i);
         }
-        block.flush(&mut buf);
-        assert_eq!(block.cardinality(), 0, "block should reset after flush");
-        BlockRef::from_bytes(buf.freeze())
+        BlockRef::from_bytes(block.serialize_to_bytes())
     }
 
     #[test]

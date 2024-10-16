@@ -5,6 +5,9 @@ mod block;
 mod index;
 mod partition;
 mod splinter;
+mod util;
+
+pub use splinter::{Splinter, SplinterRef};
 
 type Segment = u8;
 

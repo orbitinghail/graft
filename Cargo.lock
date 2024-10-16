@@ -2196,6 +2196,8 @@ name = "splinter2"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "criterion",
+ "roaring",
  "static_assertions",
  "thiserror",
  "zerocopy 0.8.1",
