@@ -36,6 +36,11 @@ impl<O, V> Partition<O, V> {
     pub fn len(&self) -> usize {
         self.values.len()
     }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
 }
 
 impl<O, V> Partition<O, V>

@@ -1,11 +1,11 @@
 use std::{collections::BTreeMap, fmt::Debug};
 
-use bytes::BytesMut;
+use bytes::Bytes;
 use graft_core::{guid::VolumeId, offset::Offset};
-use splinter::{writer::SplinterBuilder, Splinter};
+use splinter::{Splinter, SplinterRef};
 
-#[derive(Default, Clone)]
-pub struct OffsetsMap(BTreeMap<VolumeId, Splinter>);
+#[derive(Default)]
+pub struct OffsetsMap(BTreeMap<VolumeId, SplinterRef<Bytes>>);
 
 impl Debug for OffsetsMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -21,7 +21,7 @@ impl Debug for OffsetsMap {
 pub struct OffsetsMapBuilder {
     map: OffsetsMap,
     vid: Option<VolumeId>,
-    builder: SplinterBuilder<BytesMut>,
+    splinter: Splinter,
 }
 
 impl OffsetsMap {
@@ -33,7 +33,7 @@ impl OffsetsMap {
         self.0.is_empty()
     }
 
-    pub fn get(&self, vid: &VolumeId) -> Option<&Splinter> {
+    pub fn get(&self, vid: &VolumeId) -> Option<&SplinterRef<Bytes>> {
         self.0.get(vid)
     }
 
@@ -51,25 +51,26 @@ impl OffsetsMapBuilder {
             if *current != vid {
                 assert!(vid > *current, "Volumes must be inserted in order by ID");
 
-                let builder = std::mem::take(&mut self.builder);
-                let splinter = Splinter::from_bytes(builder.build().freeze()).unwrap();
-                self.map.0.insert(current.clone(), splinter);
+                let splinter = std::mem::take(&mut self.splinter);
+                self.map
+                    .0
+                    .insert(current.clone(), splinter.serialize_to_splinter_ref());
                 self.vid = Some(vid);
             }
         } else {
             self.vid = Some(vid);
         }
 
-        self.builder.push(offset)
+        self.splinter.insert(offset)
     }
 
     pub fn build(self) -> OffsetsMap {
-        let Self { mut map, vid, builder } = self;
+        let Self { mut map, vid, splinter } = self;
 
-        if !builder.is_empty() {
+        if !splinter.is_empty() {
             assert!(vid.is_some(), "Non-empty builder must have a volume ID");
-            let splinter = Splinter::from_bytes(builder.build().freeze()).unwrap();
-            map.0.insert(vid.unwrap(), splinter);
+            map.0
+                .insert(vid.unwrap(), splinter.serialize_to_splinter_ref());
         }
 
         map

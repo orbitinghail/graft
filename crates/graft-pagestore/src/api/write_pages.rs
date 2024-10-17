@@ -86,7 +86,7 @@ mod tests {
     use axum_test::TestServer;
     use graft_proto::pagestore::v1::PageAtOffset;
     use object_store::memory::InMemory;
-    use splinter::Splinter;
+    use splinter::SplinterRef;
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
 
@@ -147,7 +147,7 @@ mod tests {
 
         let resp1 = WritePagesResponse::decode(resp1.into_bytes()).unwrap();
         assert_eq!(resp1.segments.len(), 1, "expected 1 segment");
-        let offsets = Splinter::from_bytes(resp1.segments[0].offsets.clone()).unwrap();
+        let offsets = SplinterRef::from_bytes(resp1.segments[0].offsets.clone()).unwrap();
         assert_eq!(offsets.cardinality(), 1);
         assert!(offsets.contains(0));
 
@@ -157,7 +157,7 @@ mod tests {
             resp2.segments[0].sid, resp1.segments[0].sid,
             "expected same segment"
         );
-        let offsets = Splinter::from_bytes(resp2.segments[0].offsets.clone()).unwrap();
+        let offsets = SplinterRef::from_bytes(resp2.segments[0].offsets.clone()).unwrap();
         assert_eq!(offsets.cardinality(), 2);
         assert!(offsets.contains(0));
         assert!(offsets.contains(1));

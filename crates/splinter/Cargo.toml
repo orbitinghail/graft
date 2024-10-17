@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytes = "1.7.2"
-static_assertions = "1.1.0"
-thiserror = "1.0.64"
-zerocopy = { version = "0.8.1", features = ["derive"] }
+bytes = "1.7"
+static_assertions = "1"
+thiserror = "1.0"
+zerocopy = { version = "0.8", features = ["derive"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

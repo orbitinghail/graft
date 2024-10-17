@@ -58,6 +58,11 @@ pub struct Splinter {
 }
 
 impl Splinter {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.partitions.is_empty()
+    }
+
     pub fn contains(&self, key: u32) -> bool {
         let (high, mid, low) = segments(key);
 
@@ -99,6 +104,10 @@ impl Splinter {
         self.serialize(&mut buf);
         buf.freeze()
     }
+
+    pub fn serialize_to_splinter_ref(&self) -> SplinterRef<Bytes> {
+        SplinterRef::from_bytes(self.serialize_to_bytes()).expect("serialization roundtrip failed")
+    }
 }
 
 impl Debug for Splinter {
@@ -110,6 +119,7 @@ impl Debug for Splinter {
     }
 }
 
+#[derive(Clone)]
 pub struct SplinterRef<T> {
     data: T,
     partitions: usize,
@@ -171,6 +181,11 @@ where
     pub fn cardinality(&self) -> usize {
         self.load_partitions().iter().map(|p| p.cardinality()).sum()
     }
+
+    fn into_splinter(self) -> Splinter {
+        let partitions = self.load_partitions().copy_to_owned();
+        Splinter { partitions }
+    }
 }
 
 impl<T: AsRef<[u8]>> Debug for SplinterRef<T> {
@@ -179,15 +194,6 @@ impl<T: AsRef<[u8]>> Debug for SplinterRef<T> {
             .field("num_partitions", &self.partitions)
             .field("cardinality", &self.cardinality())
             .finish()
-    }
-}
-
-impl<T: AsRef<[u8]>> CopyToOwned for SplinterRef<T> {
-    type Owned = Splinter;
-
-    fn copy_to_owned(&self) -> Self::Owned {
-        let partitions = self.load_partitions().copy_to_owned();
-        Splinter { partitions }
     }
 }
 
@@ -288,11 +294,11 @@ mod tests {
             assert_eq!(splinter, splinter_ref, "Splinter == SplinterRef");
             assert_eq!(
                 splinter,
-                splinter_ref.copy_to_owned(),
+                splinter_ref.clone().into_splinter(),
                 "Splinter == Splinter"
             );
             assert_eq!(
-                splinter_ref.copy_to_owned().serialize_to_bytes(),
+                splinter_ref.clone().into_splinter().serialize_to_bytes(),
                 splinter.serialize_to_bytes(),
                 "deterministic serialization"
             );

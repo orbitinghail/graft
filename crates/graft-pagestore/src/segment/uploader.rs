@@ -70,7 +70,8 @@ impl<O: ObjectStore, C: Cache> SegmentUploaderTask<O, C> {
 
         tokio::try_join!(upload_task, cache_task)?;
 
-        self.output.publish(CommitSegmentReq { sid, offsets })?;
+        self.output
+            .publish(CommitSegmentReq { sid, offsets: Arc::new(offsets) })?;
 
         Ok(())
     }

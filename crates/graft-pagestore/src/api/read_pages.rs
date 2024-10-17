@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{extract::State, response::IntoResponse};
 use graft_core::{guid::VolumeId, lsn::LSN};
 use graft_proto::pagestore::v1::ReadPagesRequest;
-use splinter::Splinter;
+use splinter::SplinterRef;
 
 use super::{error::ApiError, extractors::Protobuf, state::ApiState};
 
@@ -13,7 +13,7 @@ pub async fn handler(
 ) -> Result<impl IntoResponse, ApiError> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsn: LSN = req.lsn;
-    let offsets = Splinter::from_bytes(req.offsets)?;
+    let offsets = SplinterRef::from_bytes(req.offsets)?;
 
     let snapshot = state.catalog().snapshot(&vid)?;
     let needs_update = snapshot.is_none() || snapshot.is_some_and(|s| s.lsn() < lsn);

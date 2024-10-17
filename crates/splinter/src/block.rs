@@ -1,64 +1,113 @@
-use std::ops::Deref;
+use std::{array::TryFromSliceError, ops::Deref};
 
-use crate::map::Container;
+use bytes::BufMut;
 
-pub struct Block<T> {
-    data: T,
+use crate::{
+    bitmap::{Bitmap, BitmapExt, BITMAP_SIZE},
+    util::{CopyToOwned, FromSuffix, SerializeContainer},
+    Segment,
+};
+
+#[derive(Clone)]
+pub struct Block {
+    bitmap: Bitmap,
 }
 
-impl<'a> Block<&'a [u8]> {
-    pub fn from_prefix(data: &'a [u8], cardinality: usize) -> (Self, &'a [u8]) {
-        let size = block_size(cardinality);
-        assert!(data.len() >= size, "data too short");
-        assert!(size > 0, "empty block");
-        let (data, rest) = data.split_at(size);
-        (Self { data }, rest)
+impl From<Bitmap> for Block {
+    fn from(bitmap: Bitmap) -> Self {
+        Self { bitmap }
     }
 }
 
-impl<T> Block<T>
-where
-    T: Deref<Target = [u8]>,
-{
-    #[cfg(test)]
-    pub fn new(data: T) -> Self {
-        Self { data }
+impl Default for Block {
+    fn default() -> Self {
+        Self { bitmap: [0; BITMAP_SIZE] }
+    }
+}
+
+impl TryFrom<&[u8]> for Block {
+    type Error = TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let bitmap: Bitmap = value.try_into()?;
+        Ok(Self { bitmap })
+    }
+}
+
+impl BitmapExt for Block {
+    fn as_ref(&self) -> &Bitmap {
+        &self.bitmap
+    }
+    fn as_mut(&mut self) -> &mut Bitmap {
+        &mut self.bitmap
+    }
+}
+
+impl SerializeContainer for Block {
+    /// Serialize the block to the output buffer returning the block's cardinality
+    /// and number of bytes written.
+    fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
+        let cardinality = self.cardinality();
+
+        let bytes_written = if cardinality < 32 {
+            for segment in self.bitmap.segments() {
+                out.put_u8(segment);
+            }
+            cardinality
+        } else {
+            // write out the bitmap verbatim
+            out.put_slice(&self.bitmap);
+            BITMAP_SIZE
+        };
+
+        (cardinality, bytes_written)
+    }
+}
+
+#[derive(Clone)]
+pub struct BlockRef<T> {
+    segments: T,
+}
+
+impl<T: Deref<Target = [Segment]>> BlockRef<T> {
+    #[inline]
+    pub fn from_bytes(segments: T) -> Self {
+        assert!(segments.len() <= 32, "segments overflow");
+        Self { segments }
+    }
+
+    /// If this block is a bitmap, return the bitmap, otherwise return None
+    #[inline]
+    fn bitmap(&self) -> Option<&[u8; BITMAP_SIZE]> {
+        (*self.segments).try_into().ok()
     }
 
     #[cfg(test)]
     #[inline]
-    pub fn len(&self) -> usize {
-        if self.data.len() == 32 {
-            // block is a 32 byte bitmap
-            self.data.iter().map(|&x| x.count_ones() as usize).sum()
+    pub fn cardinality(&self) -> usize {
+        if let Some(bitmap) = self.bitmap() {
+            bitmap.cardinality()
         } else {
-            // block is a list of segments
-            self.data.len()
+            self.segments.len()
         }
     }
 
+    #[cfg(test)]
     #[inline]
-    /// Count the number of 1-bits in the block up to and including the position `i`
-    pub fn rank(&self, i: u8) -> usize {
-        // TODO: implement SIMD/AVX versions
-        if self.data.len() == 32 {
-            // block is a 32 byte bitmap
-            let key = block_key(i);
-
-            // number of bits set up to the key-th byte
-            let prefix_bits = self.data[0..key]
-                .iter()
-                .map(|&x| x.count_ones())
-                .sum::<u32>();
-
-            // number of bits set up to the bit-th bit in the key-th byte
-            let bit = block_bit(i) as u32;
-            let bits = (self.data[key] << (7 - bit)).count_ones();
-
-            (prefix_bits + bits) as usize
+    pub fn last(&self) -> Option<Segment> {
+        if let Some(bitmap) = self.bitmap() {
+            bitmap.last()
         } else {
-            // block is a list of segments
-            match self.data.binary_search(&i) {
+            self.segments.last().copied()
+        }
+    }
+
+    /// Count the number of 1-bits in the block up to and including the `position``
+    pub fn rank(&self, position: u8) -> usize {
+        if let Some(bitmap) = self.bitmap() {
+            bitmap.rank(position)
+        } else {
+            match self.segments.binary_search(&position) {
                 Ok(i) => i + 1,
                 Err(i) => i,
             }
@@ -66,66 +115,125 @@ where
     }
 
     #[inline]
-    pub fn contains(&self, segment: u8) -> bool {
-        // TODO: implement SIMD/AVX versions
-
-        if self.data.len() == 32 {
-            // block is a 32 byte bitmap
-            self.data[block_key(segment)] & (1 << block_bit(segment)) != 0
+    pub fn contains(&self, segment: Segment) -> bool {
+        if let Some(bitmap) = self.bitmap() {
+            bitmap.contains(segment)
         } else {
-            // block is a list of segments
-            self.data.iter().any(|&x| x == segment)
+            self.segments.iter().any(|&x| x == segment)
         }
     }
 }
 
-impl<'a> Container<'a> for Block<&'a [u8]> {
-    type Value<'b> = ();
+impl<T> CopyToOwned for BlockRef<T>
+where
+    T: Deref<Target = [Segment]>,
+{
+    type Owned = Block;
 
+    fn copy_to_owned(&self) -> Self::Owned {
+        if let Some(bitmap) = self.bitmap() {
+            bitmap.to_owned().into()
+        } else {
+            let mut block = Block::default();
+            for &segment in self.segments.iter() {
+                block.insert(segment);
+            }
+            block
+        }
+    }
+}
+
+impl<'a> FromSuffix<'a> for BlockRef<&'a [u8]> {
     fn from_suffix(data: &'a [u8], cardinality: usize) -> Self {
         let size = block_size(cardinality);
         assert!(data.len() >= size, "data too short");
-        assert!(size > 0, "empty block");
-        Self { data: &data[data.len() - size..] }
-    }
-
-    fn lookup(&self, segment: u8) -> Option<Self::Value<'a>> {
-        self.contains(segment).then_some(())
+        let (_, block) = data.split_at(data.len() - size);
+        Self::from_bytes(block)
     }
 }
 
 #[inline]
 pub fn block_size(cardinality: usize) -> usize {
-    cardinality.min(32)
+    cardinality.min(BITMAP_SIZE)
 }
 
-#[inline]
-pub fn block_key(segment: u8) -> usize {
-    segment as usize / 8
+// Equality operations
+
+// Block == Block
+impl PartialEq<Block> for Block {
+    fn eq(&self, other: &Block) -> bool {
+        self.bitmap == other.bitmap
+    }
 }
 
-#[inline]
-/// Return the bit position of the segment in the block
-pub fn block_bit(segment: u8) -> u8 {
-    segment % 8
+// BlockRef == BlockRef
+impl<T1, T2> PartialEq<BlockRef<T2>> for BlockRef<T1>
+where
+    T1: Deref<Target = [Segment]>,
+    T2: Deref<Target = [Segment]>,
+{
+    fn eq(&self, other: &BlockRef<T2>) -> bool {
+        self.segments.deref() == other.segments.deref()
+    }
+}
+
+// BlockRef == Block
+impl<T: Deref<Target = [Segment]>> PartialEq<Block> for BlockRef<T> {
+    fn eq(&self, other: &Block) -> bool {
+        if let Some(bitmap) = self.bitmap() {
+            bitmap == &other.bitmap
+        } else {
+            self.segments.iter().copied().eq(other.bitmap.segments())
+        }
+    }
+}
+
+// Block == BlockRef
+impl<T: Deref<Target = [Segment]>> PartialEq<BlockRef<T>> for Block {
+    #[inline]
+    fn eq(&self, other: &BlockRef<T>) -> bool {
+        other == self
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use bytes::{Bytes, BytesMut};
 
-    use crate::writer::{BlockWriter, ContainerWriter};
-
     use super::*;
 
-    fn mkblock(values: impl IntoIterator<Item = u8>) -> Block<Bytes> {
-        let mut buf = BytesMut::default();
-        let mut writer = BlockWriter::default();
+    fn mkblock(values: impl IntoIterator<Item = u8>) -> BlockRef<Bytes> {
+        let mut block = Block::default();
         for i in values {
-            writer.push(i);
+            block.insert(i);
         }
-        writer.flush(&mut buf);
-        Block::new(buf.freeze())
+        let mut buf = BytesMut::new();
+        block.serialize(&mut buf);
+        BlockRef::from_bytes(buf.freeze())
+    }
+
+    #[test]
+    fn test_block_last() {
+        // empty block
+        assert_eq!(mkblock(0..0).last(), None);
+        assert_eq!(mkblock(0..0).last(), None);
+        assert_eq!(mkblock(0..0).last(), None);
+
+        // block with 1 element
+        assert_eq!(mkblock(0..1).last(), Some(0));
+        assert_eq!(mkblock(33..34).last(), Some(33));
+        assert_eq!(mkblock(128..129).last(), Some(128));
+
+        // block with 31 elements; stored as a list
+        assert_eq!(mkblock(0..31).last(), Some(30));
+        assert_eq!(mkblock(1..32).last(), Some(31));
+        assert_eq!(mkblock(100..131).last(), Some(130));
+
+        // block with > 32 elements; stored as a bitmap
+        assert_eq!(mkblock(0..32).last(), Some(31));
+        assert_eq!(mkblock(1..33).last(), Some(32));
+        assert_eq!(mkblock(21..131).last(), Some(130));
+        assert_eq!(mkblock(0..=255).last(), Some(255));
     }
 
     #[test]
@@ -142,7 +250,7 @@ mod tests {
 
         // block with 31 elements; stored as a list
         let block = mkblock(0..31);
-        assert_eq!(block.len(), 31);
+        assert_eq!(block.cardinality(), 31);
         for i in 0..31 {
             assert_eq!(block.rank(i), (i + 1).into());
         }
@@ -152,7 +260,7 @@ mod tests {
 
         // block with 32 elements; stored as a bitmap
         let block = mkblock(0..32);
-        assert_eq!(block.len(), 32);
+        assert_eq!(block.cardinality(), 32);
         for i in 0..32 {
             assert_eq!(block.rank(i), (i + 1).into());
         }
@@ -162,9 +270,49 @@ mod tests {
 
         // full block
         let block = mkblock(0..=255);
-        assert_eq!(block.len(), 256);
+        assert_eq!(block.cardinality(), 256);
         for i in 0..255 {
             assert_eq!(block.rank(i), (i + 1).into());
+        }
+    }
+
+    #[test]
+    fn test_block_contains() {
+        // empty block
+        assert!(!mkblock(0..0).contains(0));
+        assert!(!mkblock(0..0).contains(128));
+        assert!(!mkblock(0..0).contains(255));
+
+        // block with 1 element
+        assert!(mkblock(0..1).contains(0));
+        assert!(!mkblock(0..1).contains(128));
+        assert!(!mkblock(128..129).contains(0));
+
+        // block with 31 elements; stored as a list
+        let block = mkblock(0..31);
+        assert_eq!(block.cardinality(), 31);
+        for i in 0..31 {
+            assert!(block.contains(i));
+        }
+        for i in 31..255 {
+            assert!(!block.contains(i));
+        }
+
+        // block with 32 elements; stored as a bitmap
+        let block = mkblock(0..32);
+        assert_eq!(block.cardinality(), 32);
+        for i in 0..32 {
+            assert!(block.contains(i));
+        }
+        for i in 32..255 {
+            assert!(!block.contains(i));
+        }
+
+        // full block
+        let block = mkblock(0..=255);
+        assert_eq!(block.cardinality(), 256);
+        for i in 0..255 {
+            assert!(block.contains(i));
         }
     }
 }

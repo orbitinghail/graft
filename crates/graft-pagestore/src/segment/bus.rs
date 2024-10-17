@@ -1,6 +1,8 @@
 //! The bus module contains the messages that are sent between the different
 //! components of the segment writing subsystem.
 
+use std::sync::Arc;
+
 use graft_core::{guid::SegmentId, guid::VolumeId, offset::Offset, page::Page};
 use tokio::sync::broadcast::{self, error::SendError};
 
@@ -27,7 +29,7 @@ pub struct StoreSegmentReq {
 #[derive(Debug, Clone)]
 pub struct CommitSegmentReq {
     pub sid: SegmentId,
-    pub offsets: OffsetsMap,
+    pub offsets: Arc<OffsetsMap>,
 }
 
 #[derive(Debug, Clone)]
