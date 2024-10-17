@@ -9,7 +9,7 @@ use crate::{
     bitmap::BitmapExt,
     block::{Block, BlockRef},
     partition::{Partition, PartitionRef},
-    util::{CopyToOwned, FromSuffix, Serialize},
+    util::{CopyToOwned, FromSuffix, SerializeContainer},
     DecodeErr,
 };
 
@@ -101,6 +101,15 @@ impl Splinter {
     }
 }
 
+impl Debug for Splinter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Splinter")
+            .field("num_partitions", &self.partitions.len())
+            .field("cardinality", &self.cardinality())
+            .finish()
+    }
+}
+
 pub struct SplinterRef<T> {
     data: T,
     partitions: usize,
@@ -166,7 +175,7 @@ where
 
 impl<T: AsRef<[u8]>> Debug for SplinterRef<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Splinter")
+        f.debug_struct("SplinterRef")
             .field("num_partitions", &self.partitions)
             .field("cardinality", &self.cardinality())
             .finish()
@@ -217,10 +226,20 @@ impl<T: AsRef<[u8]>> PartialEq<Splinter> for SplinterRef<T> {
     }
 }
 
+// SplinterRef == SplinterRef
+impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> PartialEq<SplinterRef<T2>> for SplinterRef<T1> {
+    fn eq(&self, other: &SplinterRef<T2>) -> bool {
+        self.load_partitions() == other.load_partitions()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io;
+
     use super::*;
     use bytes::Bytes;
+    use roaring::RoaringBitmap;
 
     fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
         let mut splinter = Splinter::default();
@@ -259,14 +278,33 @@ mod tests {
 
     #[test]
     fn test_roundtrip_sanity() {
-        let splinter = mksplinter_ref(0..0).copy_to_owned();
-        assert_eq!(splinter.cardinality(), 0);
+        let assert_round_trip = |splinter: Splinter| {
+            let splinter_ref = SplinterRef::from_bytes(splinter.serialize_to_bytes()).unwrap();
+            assert_eq!(
+                splinter.cardinality(),
+                splinter_ref.cardinality(),
+                "cardinality equal"
+            );
+            assert_eq!(splinter, splinter_ref, "Splinter == SplinterRef");
+            assert_eq!(
+                splinter,
+                splinter_ref.copy_to_owned(),
+                "Splinter == Splinter"
+            );
+            assert_eq!(
+                splinter_ref.copy_to_owned().serialize_to_bytes(),
+                splinter.serialize_to_bytes(),
+                "deterministic serialization"
+            );
+        };
 
-        let splinter = mksplinter_ref(0..10).copy_to_owned();
-        assert_eq!(splinter.cardinality(), 10);
-        for i in 0..10 {
-            assert!(splinter.contains(i));
-        }
+        assert_round_trip(mksplinter(0..0));
+        assert_round_trip(mksplinter(0..10));
+        assert_round_trip(mksplinter(0..=255));
+        assert_round_trip(mksplinter(0..=4096));
+        assert_round_trip(mksplinter(0..=16384));
+        assert_round_trip(mksplinter(1512..=3258));
+        assert_round_trip(mksplinter((0..=16384).step_by(7)));
     }
 
     #[test]
@@ -294,18 +332,119 @@ mod tests {
 
     #[test]
     fn test_expected_compression() {
+        let roaring_size = |set: Vec<u32>| {
+            let mut buf = io::Cursor::new(Vec::new());
+            RoaringBitmap::from_sorted_iter(set)
+                .unwrap()
+                .serialize_into(&mut buf)
+                .unwrap();
+            buf.into_inner().len()
+        };
+
+        struct Report {
+            name: &'static str,
+            ty: &'static str,
+            size: usize,
+            expected: usize,
+        }
+
+        let mut reports = vec![];
+
+        let mut run_test = |name: &'static str,
+                            set: Vec<u32>,
+                            expected_splinter: usize,
+                            expected_roaring: usize| {
+            let data = mksplinter(set.clone()).serialize_to_bytes();
+            reports.push(Report {
+                name,
+                ty: "Splinter",
+                size: data.len(),
+                expected: expected_splinter,
+            });
+            reports.push(Report {
+                name,
+                ty: "Roaring",
+                size: roaring_size(set),
+                expected: expected_roaring,
+            });
+        };
+
+        // 1 element in set
+        let set = (0..=0).collect::<Vec<_>>();
+        run_test("1 element", set, 19, 18);
+
+        // 1 fully dense block
+        let set = (0..=255).collect::<Vec<_>>();
+        run_test("1 dense block", set, 50, 528);
+
+        // 8 sparse blocks
+        let set = (0..=1024).skip(128).collect::<Vec<_>>();
+        run_test("8 sparse blocks", set, 163, 1810);
+
+        // 16 sparse blocks
+        let set = (0..=2048).skip(128).collect::<Vec<_>>();
+        run_test("16 sparse blocks", set, 307, 3858);
+
+        // 128 sparse blocks
+        let set = (0..=16384).skip(128).collect::<Vec<_>>();
+        run_test("128 sparse blocks", set, 2290, 8208);
+
+        // the rest of the compression tests use 4k elements
         let elements = 4096;
 
         // fully dense splinter
-        let data = mksplinter(0..elements).serialize_to_bytes();
-        assert_eq!(data.len(), 590);
+        let set = (0..elements).collect::<Vec<_>>();
+        run_test("fully dense", set, 590, 8208);
+
+        // 32 elements per block; dense partitions
+        let set = (0..).step_by(8).take(elements as usize).collect::<Vec<_>>();
+        run_test("32/block; dense", set, 4526, 8208);
+
+        // 16 elements per block; dense partitions
+        let set = (0..)
+            .step_by(16)
+            .take(elements as usize)
+            .collect::<Vec<_>>();
+        run_test("16/block; dense", set, 4910, 8208);
 
         // 1 element per block; dense partitions
-        let data = mksplinter((0..).step_by(256).take(elements as usize)).serialize_to_bytes();
-        assert_eq!(data.len(), 17000);
+        // second worse case scenario
+        let set = (0..)
+            .step_by(256)
+            .take(elements as usize)
+            .collect::<Vec<_>>();
+        run_test("1/block; dense", set, 17000, 8328);
 
         // 1 element per block; sparse partitions
-        let data = mksplinter((0..).step_by(4096).take(elements as usize)).serialize_to_bytes();
-        assert_eq!(data.len(), 21800);
+        // worse case scenario
+        let set = (0..)
+            .step_by(4096)
+            .take(elements as usize)
+            .collect::<Vec<_>>();
+        run_test("1/block; sparse", set, 21800, 10248);
+
+        let mut fail_test = false;
+
+        println!(
+            "{:20} {:12} {:>6} {:>10} {:>10}",
+            "distribution", "bitmap", "size", "expected", "result"
+        );
+        for report in reports {
+            println!(
+                "{:20} {:12} {:6} {:10} {:>10}",
+                report.name,
+                report.ty,
+                report.size,
+                report.expected,
+                if report.size == report.expected {
+                    "ok"
+                } else {
+                    fail_test = true;
+                    "FAIL"
+                }
+            );
+        }
+
+        assert!(!fail_test, "compression test failed");
     }
 }

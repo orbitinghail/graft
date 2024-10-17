@@ -4,11 +4,11 @@ use bytes::BufMut;
 
 use crate::{
     bitmap::{Bitmap, BitmapExt, BITMAP_SIZE},
-    util::{CopyToOwned, FromSuffix, Serialize},
+    util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
 };
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct Block {
     bitmap: Bitmap,
 }
@@ -43,7 +43,7 @@ impl BitmapExt for Block {
     }
 }
 
-impl Serialize for Block {
+impl SerializeContainer for Block {
     /// Serialize the block to the output buffer returning the block's cardinality
     /// and number of bytes written.
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
@@ -82,6 +82,7 @@ impl<T: Deref<Target = [Segment]>> BlockRef<T> {
         (*self.segments).try_into().ok()
     }
 
+    #[cfg(test)]
     #[inline]
     pub fn cardinality(&self) -> usize {
         if let Some(bitmap) = self.bitmap() {
@@ -91,6 +92,7 @@ impl<T: Deref<Target = [Segment]>> BlockRef<T> {
         }
     }
 
+    #[cfg(test)]
     #[inline]
     pub fn last(&self) -> Option<Segment> {
         if let Some(bitmap) = self.bitmap() {
@@ -157,13 +159,25 @@ pub fn block_size(cardinality: usize) -> usize {
 
 // Equality operations
 
-impl<T: Deref<Target = [Segment]>> Eq for BlockRef<T> {}
-impl<T: Deref<Target = [Segment]>> PartialEq<BlockRef<T>> for BlockRef<T> {
-    fn eq(&self, other: &BlockRef<T>) -> bool {
+// Block == Block
+impl PartialEq<Block> for Block {
+    fn eq(&self, other: &Block) -> bool {
+        self.bitmap == other.bitmap
+    }
+}
+
+// BlockRef == BlockRef
+impl<T1, T2> PartialEq<BlockRef<T2>> for BlockRef<T1>
+where
+    T1: Deref<Target = [Segment]>,
+    T2: Deref<Target = [Segment]>,
+{
+    fn eq(&self, other: &BlockRef<T2>) -> bool {
         self.segments.deref() == other.segments.deref()
     }
 }
 
+// BlockRef == Block
 impl<T: Deref<Target = [Segment]>> PartialEq<Block> for BlockRef<T> {
     fn eq(&self, other: &Block) -> bool {
         if let Some(bitmap) = self.bitmap() {
@@ -174,9 +188,17 @@ impl<T: Deref<Target = [Segment]>> PartialEq<Block> for BlockRef<T> {
     }
 }
 
+// Block == BlockRef
+impl<T: Deref<Target = [Segment]>> PartialEq<BlockRef<T>> for Block {
+    #[inline]
+    fn eq(&self, other: &BlockRef<T>) -> bool {
+        other == self
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
+    use bytes::{Bytes, BytesMut};
 
     use super::*;
 
@@ -185,7 +207,9 @@ mod tests {
         for i in values {
             block.insert(i);
         }
-        BlockRef::from_bytes(block.serialize_to_bytes())
+        let mut buf = BytesMut::new();
+        block.serialize(&mut buf);
+        BlockRef::from_bytes(buf.freeze())
     }
 
     #[test]

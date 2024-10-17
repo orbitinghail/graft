@@ -14,6 +14,7 @@ pub trait BitmapExt {
     }
 
     /// Return the last segment in the bitmap
+    #[cfg(test)]
     #[inline]
     fn last(&self) -> Option<Segment> {
         // Traverse the bitmap from the last byte to the first
@@ -65,13 +66,8 @@ pub trait BitmapExt {
     }
 
     #[inline]
-    fn clear(&mut self) {
-        self.as_mut().fill(0);
-    }
-
-    #[inline]
     fn segments(&self) -> impl Iterator<Item = Segment> {
-        BitmapIter::new(self.as_ref())
+        BitmapSegmentsIter::new(self.as_ref())
     }
 }
 
@@ -99,31 +95,64 @@ fn bitmap_bit(segment: u8) -> u8 {
     segment % 8
 }
 
-pub struct BitmapIter<'a> {
+pub struct BitmapSegmentsIter<'a> {
     bitmap: &'a Bitmap,
     cursor: usize,
     current: u8,
 }
 
-impl<'a> BitmapIter<'a> {
+impl<'a> BitmapSegmentsIter<'a> {
     fn new(bitmap: &'a Bitmap) -> Self {
-        Self { bitmap, cursor: 0, current: 0 }
+        Self { bitmap, cursor: 0, current: bitmap[0] }
     }
 }
 
-impl<'a> Iterator for BitmapIter<'a> {
+impl<'a> Iterator for BitmapSegmentsIter<'a> {
     type Item = Segment;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current == 0 {
-            if self.cursor == BITMAP_SIZE {
+        while self.current == 0 {
+            if self.cursor == BITMAP_SIZE - 1 {
                 return None;
             }
-            self.current = self.bitmap[self.cursor];
             self.cursor += 1;
+            self.current = self.bitmap[self.cursor];
         }
         let segment = (self.current.trailing_zeros() + (8 * self.cursor as u32)) as Segment;
         self.current &= self.current - 1;
         Some(segment)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bitmap_segments() {
+        let mut bmp = Bitmap::default();
+        assert!(bmp.segments().next().is_none());
+
+        bmp.insert(0);
+        assert!(bmp.segments().eq(0..=0));
+
+        bmp.insert(1);
+        assert!(bmp.segments().eq(0..=1));
+
+        for i in 0..=10 {
+            bmp.insert(i);
+        }
+        assert!(bmp.segments().eq(0..=10));
+
+        let mut bmp = Bitmap::default();
+        for i in 250..=255 {
+            bmp.insert(i);
+        }
+        assert!(bmp.segments().eq(250..=255));
+
+        for i in 0..=255 {
+            bmp.insert(i);
+        }
+        assert!(bmp.segments().eq(0..=255));
     }
 }

@@ -7,7 +7,7 @@ use crate::{
     bitmap::BitmapExt,
     block::Block,
     index::IndexRef,
-    util::{CopyToOwned, FromSuffix, Serialize},
+    util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
 };
 
@@ -29,6 +29,12 @@ impl<O, V> Partition<O, V> {
         } else {
             None
         }
+    }
+
+    /// returns the number of entries in the partition
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.values.len()
     }
 }
 
@@ -56,9 +62,9 @@ impl<O, V> Default for Partition<O, V> {
     }
 }
 
-impl<O, V> Serialize for Partition<O, V>
+impl<O, V> SerializeContainer for Partition<O, V>
 where
-    V: Serialize,
+    V: SerializeContainer,
     O: TryFrom<u32, Error: Debug> + IntoBytes + Immutable,
 {
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
@@ -233,5 +239,16 @@ where
             }
         }
         true
+    }
+}
+
+// Partition == PartitionRef
+impl<'a, O, V, V2> PartialEq<PartitionRef<'a, O, V>> for Partition<O, V2>
+where
+    O: FromBytes + Immutable + Copy + Into<u32>,
+    V: FromSuffix<'a> + PartialEq<V2>,
+{
+    fn eq(&self, other: &PartitionRef<'a, O, V>) -> bool {
+        other == self
     }
 }

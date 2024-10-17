@@ -1,4 +1,4 @@
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::BufMut;
 
 pub trait FromSuffix<'a> {
     fn from_suffix(data: &'a [u8], cardinality: usize) -> Self;
@@ -12,14 +12,8 @@ pub trait CopyToOwned {
     fn copy_to_owned(&self) -> Self::Owned;
 }
 
-pub trait Serialize {
+pub trait SerializeContainer {
     /// Serialize the object into the given buffer; returning the cardinality of
     /// the object and number of bytes written
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize);
-
-    fn serialize_to_bytes(&self) -> Bytes {
-        let mut buf = BytesMut::new();
-        self.serialize(&mut buf);
-        buf.freeze()
-    }
 }
