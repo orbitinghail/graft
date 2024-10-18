@@ -13,6 +13,9 @@ pub trait CopyToOwned {
 }
 
 pub trait SerializeContainer {
+    /// Returns true if the object should be serialized
+    fn should_serialize(&self) -> bool;
+
     /// Serialize the object into the given buffer; returning the cardinality of
     /// the object and number of bytes written
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize);

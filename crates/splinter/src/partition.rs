@@ -7,6 +7,7 @@ use crate::{
     bitmap::BitmapExt,
     block::Block,
     index::IndexRef,
+    relational::{Relation, RelationMut},
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
 };
@@ -17,29 +18,13 @@ pub struct Partition<Offset, V> {
     _phantom: PhantomData<Offset>,
 }
 
-impl<O, V> Partition<O, V> {
-    pub fn iter(&self) -> impl Iterator<Item = &V> {
-        self.values.iter()
-    }
-
-    pub fn get(&self, segment: Segment) -> Option<&V> {
-        if self.index.contains(segment) {
-            let rank = self.index.rank(segment);
-            self.values.get(rank - 1)
-        } else {
-            None
+impl<O, V> Default for Partition<O, V> {
+    fn default() -> Self {
+        Self {
+            index: Default::default(),
+            values: Default::default(),
+            _phantom: Default::default(),
         }
-    }
-
-    /// returns the number of entries in the partition
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
     }
 }
 
@@ -55,15 +40,49 @@ where
         }
         &mut self.values[index]
     }
+
+    // insert a value into the partition; panics if the segment is already present
+    pub fn insert(&mut self, segment: Segment, value: V) {
+        let was_missing = self.index.insert(segment);
+        assert!(was_missing, "segment already present in partition");
+        let index = self.index.rank(segment) - 1;
+        self.values.insert(index, value);
+    }
 }
 
-impl<O, V> Default for Partition<O, V> {
-    fn default() -> Self {
-        Self {
-            index: Default::default(),
-            values: Default::default(),
-            _phantom: Default::default(),
+impl<O, V> Relation for Partition<O, V> {
+    type ValueRef<'a> = &'a V
+    where
+        Self: 'a;
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValueRef<'_>)> {
+        self.index.segments().zip(self.values.iter())
+    }
+
+    fn sorted_values(&self) -> impl Iterator<Item = Self::ValueRef<'_>> {
+        self.values.iter()
+    }
+
+    fn get(&self, key: Segment) -> Option<Self::ValueRef<'_>> {
+        if self.index.contains(key) {
+            let rank = self.index.rank(key);
+            self.values.get(rank - 1)
+        } else {
+            None
         }
+    }
+}
+
+impl<O, V> RelationMut for Partition<O, V> {
+    type Value = V;
+
+    fn sorted_iter_mut(&mut self) -> impl Iterator<Item = (Segment, &mut Self::Value)> {
+        self.index.segments().zip(self.values.iter_mut())
     }
 }
 
@@ -72,13 +91,17 @@ where
     V: SerializeContainer,
     O: TryFrom<u32, Error: Debug> + IntoBytes + Immutable,
 {
+    fn should_serialize(&self) -> bool {
+        self.values.iter().any(|v| v.should_serialize())
+    }
+
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
         // keep track of cardinalities and offsets for each flushed value
         let mut cardinalities: Vec<u8> = Vec::with_capacity(self.values.len());
         let mut offsets = Vec::with_capacity(self.values.len());
         let mut offset: u32 = 0;
 
-        for value in &self.values {
+        for value in self.values.iter().filter(|v| v.should_serialize()) {
             let (cardinality, n) = value.serialize(out);
             cardinalities.push((cardinality - 1).try_into().expect("cardinality overflow"));
             offset += TryInto::<u32>::try_into(n).expect("offset overflow");
@@ -132,8 +155,11 @@ where
     type Owned = Partition<Offset, V::Owned>;
 
     fn copy_to_owned(&self) -> Self::Owned {
-        let index = self.index.keys().copy_to_owned();
-        let values = self.iter().map(|v| v.copy_to_owned()).collect::<Vec<_>>();
+        let index = self.index.key_block().copy_to_owned();
+        let values = self
+            .sorted_values()
+            .map(|v| v.copy_to_owned())
+            .collect::<Vec<_>>();
         Partition { index, values, _phantom: PhantomData }
     }
 }
@@ -143,17 +169,7 @@ where
     Offset: FromBytes + Immutable + Copy + Into<u32>,
     V: FromSuffix<'a>,
 {
-    pub fn lookup(&self, segment: Segment) -> Option<V> {
-        if let Some((cardinality, offset)) = self.index.lookup(segment) {
-            assert!(self.values.len() >= offset, "offset out of range");
-            let data = &self.values[..(self.values.len() - offset)];
-            Some(V::from_suffix(data, cardinality))
-        } else {
-            None
-        }
-    }
-
-    fn get(&self, index: usize) -> Option<V> {
+    fn get_by_index(&self, index: usize) -> Option<V> {
         if let Some((cardinality, offset)) = self.index.get(index) {
             assert!(self.values.len() >= offset, "offset out of range");
             let data = &self.values[..(self.values.len() - offset)];
@@ -163,46 +179,51 @@ where
         }
     }
 
-    /// returns the number of entries in the partition
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.index.len()
-    }
-
     /// returns the cardinality of the partition by summing the cardinalities
     /// stored in the partition's index
     #[inline]
     pub fn cardinality(&self) -> usize {
         self.index.cardinality()
     }
+}
+
+impl<'a, Offset, V> Relation for PartitionRef<'a, Offset, V>
+where
+    Offset: FromBytes + Immutable + Copy + Into<u32>,
+    V: FromSuffix<'a>,
+{
+    type ValueRef<'b> = V
+    where
+        Self: 'b;
 
     #[inline]
-    pub fn iter(&self) -> PartitionRefIter<'_, 'a, Offset, V> {
-        PartitionRefIter { inner: self, cursor: 0 }
-    }
-}
-
-pub struct PartitionRefIter<'p, 'a, Offset, V> {
-    inner: &'p PartitionRef<'a, Offset, V>,
-    cursor: usize,
-}
-
-impl<'p, 'a, Offset, V> Iterator for PartitionRefIter<'p, 'a, Offset, V>
-where
-    V: FromSuffix<'a>,
-    Offset: FromBytes + Immutable + Copy + Into<u32>,
-{
-    type Item = V;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let result = self.inner.get(self.cursor);
-        self.cursor += 1;
-        result
+    fn len(&self) -> usize {
+        self.index.len()
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = self.inner.len().saturating_sub(self.cursor);
-        (remaining, Some(remaining))
+    #[inline]
+    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValueRef<'_>)> {
+        self.index.segments().zip(self.sorted_values())
+    }
+
+    #[inline]
+    fn sorted_values(&self) -> impl Iterator<Item = Self::ValueRef<'_>> {
+        let mut cursor = 0;
+        std::iter::from_fn(move || {
+            let result = self.get(cursor);
+            cursor += 1;
+            result
+        })
+    }
+
+    fn get(&self, key: Segment) -> Option<Self::ValueRef<'_>> {
+        if let Some((cardinality, offset)) = self.index.lookup(key) {
+            assert!(self.values.len() >= offset, "offset out of range");
+            let data = &self.values[..(self.values.len() - offset)];
+            Some(V::from_suffix(data, cardinality))
+        } else {
+            None
+        }
     }
 }
 
@@ -222,9 +243,9 @@ where
     V: FromSuffix<'a> + PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.index.keys() == other.index.keys()
+        self.index.key_block() == other.index.key_block()
             && self.len() == other.len()
-            && self.iter().eq(other.iter())
+            && self.sorted_values().eq(other.sorted_values())
     }
 }
 
@@ -235,10 +256,10 @@ where
     V: FromSuffix<'a> + PartialEq<V2>,
 {
     fn eq(&self, other: &Partition<O, V2>) -> bool {
-        if self.index.keys() != other.index || self.len() != other.values.len() {
+        if self.index.key_block() != other.index || self.len() != other.values.len() {
             return false;
         }
-        for (a, b) in self.iter().zip(other.values.iter()) {
+        for (a, b) in self.sorted_values().zip(other.values.iter()) {
             if a != *b {
                 return false;
             }

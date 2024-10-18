@@ -1,4 +1,6 @@
-use crate::Segment;
+use std::ops::BitAnd;
+
+use crate::{ops::Cut, Segment};
 
 pub const BITMAP_SIZE: usize = 32;
 
@@ -7,6 +9,11 @@ pub type Bitmap = [u8; BITMAP_SIZE];
 pub trait BitmapExt {
     fn as_ref(&self) -> &Bitmap;
     fn as_mut(&mut self) -> &mut Bitmap;
+
+    #[inline]
+    fn has_bits_set(&self) -> bool {
+        self.as_ref().iter().any(|&x| x != 0)
+    }
 
     #[inline]
     fn cardinality(&self) -> usize {
@@ -66,7 +73,7 @@ pub trait BitmapExt {
     }
 
     #[inline]
-    fn segments(&self) -> impl Iterator<Item = Segment> {
+    fn segments(&self) -> BitmapSegmentsIter<'_> {
         BitmapSegmentsIter::new(self.as_ref())
     }
 }
@@ -80,6 +87,21 @@ impl BitmapExt for Bitmap {
     #[inline]
     fn as_mut(&mut self) -> &mut Bitmap {
         self
+    }
+}
+
+impl Cut for Bitmap {
+    type Output = Bitmap;
+
+    /// Returns the intersection between self and other while removing the
+    /// intersection from self
+    fn cut(&mut self, rhs: &Self) -> Self::Output {
+        let mut intersection = [0u8; BITMAP_SIZE];
+        for i in 0..BITMAP_SIZE {
+            intersection[i] = self[i] & rhs[i];
+            self[i] &= !rhs[i];
+        }
+        intersection
     }
 }
 

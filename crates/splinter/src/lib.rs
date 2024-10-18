@@ -3,7 +3,9 @@ use thiserror::Error;
 mod bitmap;
 mod block;
 mod index;
+mod ops;
 mod partition;
+mod relational;
 mod splinter;
 mod util;
 

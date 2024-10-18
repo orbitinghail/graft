@@ -1,6 +1,9 @@
 use zerocopy::{FromBytes, Immutable, Ref};
 
-use crate::block::{block_size, BlockRef};
+use crate::{
+    block::{block_size, BlockRef},
+    Segment,
+};
 
 pub struct IndexRef<'a, Offset> {
     keys: BlockRef<&'a [u8]>,
@@ -40,8 +43,13 @@ where
     }
 
     #[inline]
-    pub fn keys(&self) -> BlockRef<&'_ [u8]> {
+    pub fn key_block(&self) -> BlockRef<&'_ [u8]> {
         self.keys.clone()
+    }
+
+    #[inline]
+    pub fn segments(&self) -> impl Iterator<Item = Segment> + '_ {
+        self.keys.segments()
     }
 
     #[inline]

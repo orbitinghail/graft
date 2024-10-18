@@ -1,5 +1,5 @@
 use bytes::{Bytes, BytesMut};
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::BitAnd};
 use zerocopy::{
     little_endian::{U16, U32},
     FromBytes, Immutable, IntoBytes, KnownLayout, Ref, Unaligned,
@@ -8,7 +8,9 @@ use zerocopy::{
 use crate::{
     bitmap::BitmapExt,
     block::{Block, BlockRef},
+    ops::{Cut, Intersection},
     partition::{Partition, PartitionRef},
+    relational::{Relation, RelationMut},
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     DecodeErr,
 };
@@ -58,6 +60,10 @@ pub struct Splinter {
 }
 
 impl Splinter {
+    pub fn from_bytes<T: AsRef<[u8]>>(data: T) -> Result<Self, DecodeErr> {
+        SplinterRef::from_bytes(data).map(SplinterRef::into_splinter)
+    }
+
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.partitions.is_empty()
@@ -78,8 +84,8 @@ impl Splinter {
     /// calculates the total number of values stored in the set
     pub fn cardinality(&self) -> usize {
         self.partitions
-            .iter()
-            .flat_map(|p| p.iter())
+            .sorted_values()
+            .flat_map(|p| p.sorted_values())
             .map(|b| b.cardinality())
             .sum()
     }
@@ -89,6 +95,52 @@ impl Splinter {
         let partition = self.partitions.get_or_init(high);
         let block = partition.get_or_init(mid);
         block.insert(low);
+    }
+
+    fn insert_block(&mut self, high: u8, mid: u8, block: Block) {
+        let partition = self.partitions.get_or_init(high);
+        partition.insert(mid, block);
+    }
+
+    /// Returns the intersection between self and other while removing the
+    /// intersection from self
+    pub fn cut<T: AsRef<[u8]>>(&mut self, other: SplinterRef<T>) -> Splinter {
+        let mut out = Splinter::default();
+        for (high, left, right) in self.partitions.inner_join_mut(&other.load_partitions()) {
+            for (mid, left, right) in left.inner_join_mut(&right) {
+                out.insert_block(high, mid, left.cut(&right));
+            }
+        }
+        out
+    }
+
+    /// Returns the intersection between self and other
+    pub fn intersection<T: AsRef<[u8]>>(&mut self, other: SplinterRef<T>) -> Splinter {
+        let mut out = Splinter::default();
+        for (high, left, right) in self.partitions.inner_join(&other.load_partitions()) {
+            for (mid, left, right) in left.inner_join(&right) {
+                out.insert_block(high, mid, left.intersection(&right));
+            }
+        }
+        out
+    }
+
+    pub fn union(&mut self, other: ()) -> Splinter {
+        // returns the union of self and other
+
+        /*
+        let mut out = Splinter::default();
+        for (high, left, right) in self.partitions.full_outer_join(other.partitions) {
+            match (left, right) {
+                (Some(left), None) => out.partitions.insert(high, left.clone()),
+                (None, Some(right)) => out.partitions.insert(high, right.clone()),
+                (Some(left), Some(right)) => todo!("insert union..."),
+            }
+        }
+        out
+        */
+
+        todo!()
     }
 
     pub fn serialize<B: bytes::BufMut>(&self, out: &mut B) -> usize {
@@ -168,8 +220,8 @@ where
     pub fn contains(&self, key: u32) -> bool {
         let (high, mid, low) = segments(key);
 
-        if let Some(partition) = self.load_partitions().lookup(high) {
-            if let Some(block) = partition.lookup(mid) {
+        if let Some(partition) = self.load_partitions().get(high) {
+            if let Some(block) = partition.get(mid) {
                 return block.contains(low);
             }
         }
@@ -179,10 +231,13 @@ where
 
     /// calculates the total number of values stored in the set
     pub fn cardinality(&self) -> usize {
-        self.load_partitions().iter().map(|p| p.cardinality()).sum()
+        self.load_partitions()
+            .sorted_values()
+            .map(|p| p.cardinality())
+            .sum()
     }
 
-    fn into_splinter(self) -> Splinter {
+    pub fn into_splinter(self) -> Splinter {
         let partitions = self.load_partitions().copy_to_owned();
         Splinter { partitions }
     }

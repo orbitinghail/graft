@@ -1,9 +1,16 @@
-use std::{array::TryFromSliceError, ops::Deref};
+use core::slice;
+use std::{
+    array::TryFromSliceError,
+    iter::Copied,
+    ops::{BitAnd, Deref},
+};
 
 use bytes::BufMut;
+use either::Either;
 
 use crate::{
-    bitmap::{Bitmap, BitmapExt, BITMAP_SIZE},
+    bitmap::{Bitmap, BitmapExt, BitmapSegmentsIter, BITMAP_SIZE},
+    ops::{Cut, Intersection},
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
 };
@@ -43,7 +50,49 @@ impl BitmapExt for Block {
     }
 }
 
+impl Cut for Block {
+    type Output = Block;
+
+    fn cut(&mut self, rhs: &Self) -> Self::Output {
+        self.bitmap.cut(&rhs.bitmap).into()
+    }
+}
+
+impl<T: Deref<Target = [Segment]>> Cut<BlockRef<T>> for Block {
+    type Output = Block;
+
+    fn cut(&mut self, rhs: &BlockRef<T>) -> Self::Output {
+        let rhs = rhs.copy_to_owned();
+        self.cut(&rhs)
+    }
+}
+
+impl Intersection for Block {
+    type Output = Block;
+
+    fn intersection(&self, rhs: &Self) -> Self::Output {
+        let mut out = Block::default();
+        for i in 0..BITMAP_SIZE {
+            out.bitmap[i] = self.bitmap[i] & rhs.bitmap[i];
+        }
+        out
+    }
+}
+
+impl<T: Deref<Target = [Segment]>> Intersection<BlockRef<T>> for Block {
+    type Output = Block;
+
+    fn intersection(&self, rhs: &BlockRef<T>) -> Self::Output {
+        let rhs = rhs.copy_to_owned();
+        self.intersection(&rhs)
+    }
+}
+
 impl SerializeContainer for Block {
+    fn should_serialize(&self) -> bool {
+        self.bitmap.has_bits_set()
+    }
+
     /// Serialize the block to the output buffer returning the block's cardinality
     /// and number of bytes written.
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
@@ -80,6 +129,15 @@ impl<T: Deref<Target = [Segment]>> BlockRef<T> {
     #[inline]
     fn bitmap(&self) -> Option<&[u8; BITMAP_SIZE]> {
         (*self.segments).try_into().ok()
+    }
+
+    #[inline]
+    pub fn segments(&self) -> Either<BitmapSegmentsIter<'_>, Copied<slice::Iter<'_, Segment>>> {
+        if let Some(bitmap) = self.bitmap() {
+            Either::Left(bitmap.segments())
+        } else {
+            Either::Right(self.segments.iter().copied())
+        }
     }
 
     #[cfg(test)]
