@@ -177,6 +177,33 @@ pub struct SplinterRef<T> {
     partitions: usize,
 }
 
+// CARL:
+// ok so we have a fundamental incompat between two goals
+// the ideal Relation trait uses a concrete Value with references
+// the ideal Ref Relation trait uses a concrete Value without references
+// this delta is the issue preventing a more generic codebase
+
+/*
+
+ideas:
+1. implement two relation types... maybe this makes things easier? doubtful
+2. stick with the ideal Ref relation, and figure out how to make it work with
+partition
+
+3. implement a Join type that is generic over A,B, then implement it over each pair
+    partition <> partition
+    partition <> partition ref
+    partition ref <> partition
+    partition ref <> partition ref
+
+this will result in a lot more codepaths that need to be tested... but maybe is
+the fastest solution. maybe macros can be used to reduce the risk of errors
+
+I think 3 is fairly promising, as it can be implemented over concrete types
+the type sigs will be gnarly, but that's to be somewhat expected
+
+*/
+
 impl<T> SplinterRef<T>
 where
     T: AsRef<[u8]>,
@@ -249,6 +276,28 @@ impl<T: AsRef<[u8]>> Debug for SplinterRef<T> {
             .field("num_partitions", &self.partitions)
             .field("cardinality", &self.cardinality())
             .finish()
+    }
+}
+
+impl<T: AsRef<[u8]>> Relation for SplinterRef<T> {
+    type ValueRef<'a> = PartitionRef<'a, U16, BlockRef<&'a [u8]>>
+    where
+        Self: 'a;
+
+    fn len(&self) -> usize {
+        self.partitions
+    }
+
+    fn sorted_iter(&self) -> impl Iterator<Item = (crate::Segment, Self::ValueRef<'_>)> {
+        self.load_partitions().sorted_iter()
+    }
+
+    fn sorted_values(&self) -> impl Iterator<Item = Self::ValueRef<'_>> {
+        todo!()
+    }
+
+    fn get(&self, key: crate::Segment) -> Option<Self::ValueRef<'_>> {
+        todo!()
     }
 }
 
