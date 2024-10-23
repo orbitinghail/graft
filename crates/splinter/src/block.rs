@@ -1,9 +1,5 @@
 use core::slice;
-use std::{
-    array::TryFromSliceError,
-    iter::Copied,
-    ops::{BitAnd, Deref},
-};
+use std::{array::TryFromSliceError, iter::Copied, ops::Deref};
 
 use bytes::BufMut;
 use either::Either;
@@ -67,7 +63,7 @@ impl<T: Deref<Target = [Segment]>> Cut<BlockRef<T>> for Block {
     }
 }
 
-impl Intersection for Block {
+impl Intersection for &Block {
     type Output = Block;
 
     fn intersection(&self, rhs: &Self) -> Self::Output {
@@ -79,12 +75,12 @@ impl Intersection for Block {
     }
 }
 
-impl<T: Deref<Target = [Segment]>> Intersection<BlockRef<T>> for Block {
+impl<T: Deref<Target = [Segment]>> Intersection<&BlockRef<T>> for &Block {
     type Output = Block;
 
-    fn intersection(&self, rhs: &BlockRef<T>) -> Self::Output {
+    fn intersection(&self, rhs: &&BlockRef<T>) -> Self::Output {
         let rhs = rhs.copy_to_owned();
-        self.intersection(&rhs)
+        (*self).intersection(&&rhs)
     }
 }
 

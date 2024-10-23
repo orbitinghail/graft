@@ -4,6 +4,31 @@ Next tasks:
 - implement Splinter cut
 - implement segment query
 
+# Splinter Relation
+
+ok so we have a fundamental incompat between two goals
+the ideal Relation trait uses a concrete Value with references
+the ideal Ref Relation trait uses a concrete Value without references
+this delta is the issue preventing a more generic codebase
+
+ideas:
+1. implement two relation types... maybe this makes things easier? doubtful
+2. stick with the ideal Ref relation, and figure out how to make it work with
+partition
+
+3. implement a Join type that is generic over A,B, then implement it over each pair
+    partition <> partition
+    partition <> partition ref
+    partition ref <> partition
+    partition ref <> partition ref
+
+this will result in a lot more codepaths that need to be tested... but maybe is
+the fastest solution. maybe macros can be used to reduce the risk of errors
+
+I think 3 is fairly promising, as it can be implemented over concrete types
+the type sigs will be gnarly, but that's to be somewhat expected
+
+
 # Volume Catalog
 Will use an embedded kv store for storage.
 

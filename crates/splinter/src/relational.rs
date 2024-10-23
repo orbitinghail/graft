@@ -1,7 +1,7 @@
-use crate::Segment;
+use crate::{ops::Intersection, Segment};
 
 pub trait Relation {
-    type ValueRef<'a>
+    type ValRef<'a>
     where
         Self: 'a;
 
@@ -14,29 +14,32 @@ pub trait Relation {
         self.len() == 0
     }
 
+    /// Returns the value associated with the given key.
+    fn get(&self, key: Segment) -> Option<Self::ValRef<'_>>;
+
     /// Returns an iterator over the key-value pairs of the relation sorted by key.
-    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValueRef<'_>)>;
+    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)>;
 
     /// Returns an iterator over the values of the relation sorted by key.
-    fn sorted_values(&self) -> impl Iterator<Item = Self::ValueRef<'_>>;
-
-    /// Returns the value associated with the given key.
-    fn get(&self, key: Segment) -> Option<Self::ValueRef<'_>>;
+    fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>>;
 
     /// Returns an iterator over the inner join of two relations.
-    fn inner_join<'r, R: Relation>(
-        &self,
-        right: &'r R,
-    ) -> impl Iterator<Item = (Segment, Self::ValueRef<'_>, R::ValueRef<'r>)> {
+    fn inner_join<'a, R>(
+        &'a self,
+        right: &'a R,
+    ) -> impl Iterator<Item = (Segment, Self::ValRef<'a>, R::ValRef<'a>)>
+    where
+        R: Relation,
+    {
         self.sorted_iter()
             .filter_map(|(k, l)| right.get(k).map(|r| (k, l, r)))
     }
 
     /// Returns an iterator over the outer join of two relations.
-    fn outer_join<'r, R: Relation>(
-        &self,
-        right: &'r R,
-    ) -> impl Iterator<Item = (Segment, Option<Self::ValueRef<'_>>, Option<R::ValueRef<'r>>)> {
+    fn outer_join<'a, R: Relation>(
+        &'a self,
+        right: &'a R,
+    ) -> impl Iterator<Item = (Segment, Option<Self::ValRef<'a>>, Option<R::ValRef<'a>>)> {
         let mut left = self.sorted_iter().peekable();
         let mut right = right.sorted_iter().peekable();
 
@@ -69,22 +72,35 @@ pub trait Relation {
 }
 
 pub trait RelationMut: Relation {
-    type Value;
+    type Val;
 
     /// Returns an iterator over the key-value pairs of the relation sorted by key.
     /// The values are mutable
-    fn sorted_iter_mut(&mut self) -> impl Iterator<Item = (Segment, &mut Self::Value)>;
+    fn sorted_iter_mut(&mut self) -> impl Iterator<Item = (Segment, &mut Self::Val)>;
 
     /// Returns an iterator over the inner join of two relations.
     /// The left values are mutable.
-    fn inner_join_mut<'r, R: Relation>(
-        &mut self,
-        right: &'r R,
-    ) -> impl Iterator<Item = (Segment, &mut Self::Value, R::ValueRef<'r>)> {
+    fn inner_join_mut<'a, R: Relation>(
+        &'a mut self,
+        right: &'a R,
+    ) -> impl Iterator<Item = (Segment, &mut Self::Val, R::ValRef<'a>)> {
         self.sorted_iter_mut()
             .filter_map(|(k, l)| right.get(k).map(|r| (k, l, r)))
     }
 }
+
+// impl<R, L> Intersection<R> for L
+// where
+//     R: Relation,
+//     L: Relation,
+//     for<'a> L::ValRef<'a>: Intersection<R::ValRef<'a>>,
+// {
+//     type Output = <<L as Relation>::ValRef<'_> as Intersection<R::ValRef<'_>>>::Output<'a> where Self: 'a;
+
+//     fn intersection(&self, rhs: &R) -> Self::Output<'_> {
+//         todo!()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -99,7 +115,7 @@ mod tests {
     }
 
     impl<T> Relation for TestRelation<T> {
-        type ValueRef<'a> = &'a T
+        type ValRef<'a> = &'a T
         where
             Self: 'a;
 
@@ -107,15 +123,15 @@ mod tests {
             self.data.len()
         }
 
-        fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValueRef<'_>)> {
+        fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
             self.data.iter().map(|(k, v)| (*k, v))
         }
 
-        fn sorted_values(&self) -> impl Iterator<Item = Self::ValueRef<'_>> {
+        fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
             self.data.values()
         }
 
-        fn get(&self, key: Segment) -> Option<Self::ValueRef<'_>> {
+        fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
             self.data.get(&key)
         }
     }

@@ -7,6 +7,7 @@ use crate::{
     bitmap::BitmapExt,
     block::Block,
     index::IndexRef,
+    ops::Intersection,
     relational::{Relation, RelationMut},
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
@@ -40,7 +41,9 @@ where
         }
         &mut self.values[index]
     }
+}
 
+impl<O, V> Partition<O, V> {
     // insert a value into the partition; panics if the segment is already present
     pub fn insert(&mut self, segment: Segment, value: V) {
         let was_missing = self.index.insert(segment);
@@ -51,7 +54,7 @@ where
 }
 
 impl<O, V> Relation for Partition<O, V> {
-    type ValueRef<'a> = &'a V
+    type ValRef<'a> = &'a V
     where
         Self: 'a;
 
@@ -60,15 +63,15 @@ impl<O, V> Relation for Partition<O, V> {
         self.values.len()
     }
 
-    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValueRef<'_>)> {
+    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
         self.index.segments().zip(self.values.iter())
     }
 
-    fn sorted_values(&self) -> impl Iterator<Item = Self::ValueRef<'_>> {
+    fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
         self.values.iter()
     }
 
-    fn get(&self, key: Segment) -> Option<Self::ValueRef<'_>> {
+    fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
         if self.index.contains(key) {
             let rank = self.index.rank(key);
             self.values.get(rank - 1)
@@ -79,10 +82,52 @@ impl<O, V> Relation for Partition<O, V> {
 }
 
 impl<O, V> RelationMut for Partition<O, V> {
-    type Value = V;
+    type Val = V;
 
-    fn sorted_iter_mut(&mut self) -> impl Iterator<Item = (Segment, &mut Self::Value)> {
+    fn sorted_iter_mut(&mut self) -> impl Iterator<Item = (Segment, &mut Self::Val)> {
         self.index.segments().zip(self.values.iter_mut())
+    }
+}
+
+// CARL:
+// while the below approach works, we will likely end up with 3-4
+// implementations of every binary operation to cover the various pairings
+// ... this is not great
+// we keep getting roadblocked on generically implementing Intersection/other
+// ops on (Relation, Relation) due to lifetimes.
+// the key complexity stems from PartitionRef returning owned values rather than
+// references, even though the owned values are just wrappers around refs. If we
+// can use real refs instead it would be much easier I think.
+
+impl<O, V> Intersection for Partition<O, V>
+where
+    V: Intersection,
+{
+    type Output = Partition<O, V::Output>;
+
+    fn intersection(&self, rhs: &Self) -> Self::Output {
+        let mut out = Partition::default();
+        for (key, l, r) in self.inner_join(rhs) {
+            out.insert(key, l.intersection(r));
+        }
+        out
+    }
+}
+
+impl<'a, O, V, R> Intersection<PartitionRef<'a, O, R>> for Partition<O, V>
+where
+    O: FromBytes + Immutable + Copy + Into<u32>,
+    R: FromSuffix<'a>,
+    V: Intersection<R>,
+{
+    type Output = Partition<O, V::Output>;
+
+    fn intersection(&self, rhs: &PartitionRef<'a, O, R>) -> Self::Output {
+        let mut out = Partition::default();
+        for (key, l, r) in self.inner_join(rhs) {
+            out.insert(key, l.intersection(&r));
+        }
+        out
     }
 }
 
@@ -192,7 +237,7 @@ where
     Offset: FromBytes + Immutable + Copy + Into<u32>,
     V: FromSuffix<'a>,
 {
-    type ValueRef<'b> = V
+    type ValRef<'b> = V
     where
         Self: 'b;
 
@@ -202,12 +247,12 @@ where
     }
 
     #[inline]
-    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValueRef<'_>)> {
+    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
         self.index.segments().zip(self.sorted_values())
     }
 
     #[inline]
-    fn sorted_values(&self) -> impl Iterator<Item = Self::ValueRef<'_>> {
+    fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
         let mut cursor = 0;
         std::iter::from_fn(move || {
             let result = self.get(cursor);
@@ -216,7 +261,7 @@ where
         })
     }
 
-    fn get(&self, key: Segment) -> Option<Self::ValueRef<'_>> {
+    fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
         if let Some((cardinality, offset)) = self.index.lookup(key) {
             assert!(self.values.len() >= offset, "offset out of range");
             let data = &self.values[..(self.values.len() - offset)];
