@@ -17,6 +17,7 @@ use crate::{
 mod cmp;
 mod cut;
 mod intersection;
+mod union;
 
 pub const SPLINTER_MAGIC: [u8; 2] = [0x57, 0x16];
 

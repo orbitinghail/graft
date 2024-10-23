@@ -13,6 +13,7 @@ use crate::{
 mod cmp;
 mod cut;
 mod intersection;
+mod union;
 
 #[derive(Clone)]
 pub struct Block {

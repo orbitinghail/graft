@@ -12,3 +12,10 @@ pub trait Intersection<Rhs = Self> {
     /// Returns the intersection between self and other
     fn intersection(&self, rhs: &Rhs) -> Self::Output;
 }
+
+pub trait Union<Rhs = Self> {
+    type Output;
+
+    /// Returns the intersection between self and other
+    fn union(&self, rhs: &Rhs) -> Self::Output;
+}
