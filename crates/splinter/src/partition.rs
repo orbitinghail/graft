@@ -7,12 +7,12 @@ use crate::{
     bitmap::BitmapExt,
     block::Block,
     index::IndexRef,
-    ops::Intersection,
-    relational::{Relation, RelationMut},
+    relational::Relation,
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
 };
 
+#[derive(Clone)]
 pub struct Partition<Offset, V> {
     index: Block,
     values: Vec<V>,
@@ -51,6 +51,16 @@ impl<O, V> Partition<O, V> {
         let index = self.index.rank(segment) - 1;
         self.values.insert(index, value);
     }
+
+    pub fn inner_join_mut<'a, R: Relation>(
+        &'a mut self,
+        right: &'a R,
+    ) -> impl Iterator<Item = (Segment, &mut V, R::ValRef<'a>)> {
+        self.index
+            .segments()
+            .zip(self.values.iter_mut())
+            .filter_map(|(k, l)| right.get(k).map(|r| (k, l, r)))
+    }
 }
 
 impl<O, V> Relation for Partition<O, V> {
@@ -78,56 +88,6 @@ impl<O, V> Relation for Partition<O, V> {
         } else {
             None
         }
-    }
-}
-
-impl<O, V> RelationMut for Partition<O, V> {
-    type Val = V;
-
-    fn sorted_iter_mut(&mut self) -> impl Iterator<Item = (Segment, &mut Self::Val)> {
-        self.index.segments().zip(self.values.iter_mut())
-    }
-}
-
-// CARL:
-// while the below approach works, we will likely end up with 3-4
-// implementations of every binary operation to cover the various pairings
-// ... this is not great
-// we keep getting roadblocked on generically implementing Intersection/other
-// ops on (Relation, Relation) due to lifetimes.
-// the key complexity stems from PartitionRef returning owned values rather than
-// references, even though the owned values are just wrappers around refs. If we
-// can use real refs instead it would be much easier I think.
-
-impl<O, V> Intersection for Partition<O, V>
-where
-    V: Intersection,
-{
-    type Output = Partition<O, V::Output>;
-
-    fn intersection(&self, rhs: &Self) -> Self::Output {
-        let mut out = Partition::default();
-        for (key, l, r) in self.inner_join(rhs) {
-            out.insert(key, l.intersection(r));
-        }
-        out
-    }
-}
-
-impl<'a, O, V, R> Intersection<PartitionRef<'a, O, R>> for Partition<O, V>
-where
-    O: FromBytes + Immutable + Copy + Into<u32>,
-    R: FromSuffix<'a>,
-    V: Intersection<R>,
-{
-    type Output = Partition<O, V::Output>;
-
-    fn intersection(&self, rhs: &PartitionRef<'a, O, R>) -> Self::Output {
-        let mut out = Partition::default();
-        for (key, l, r) in self.inner_join(rhs) {
-            out.insert(key, l.intersection(&r));
-        }
-        out
     }
 }
 
@@ -232,6 +192,30 @@ where
     }
 }
 
+struct PartitionRefValuesIter<'a, 'b, O, V> {
+    inner: &'a PartitionRef<'b, O, V>,
+    cursor: usize,
+}
+
+impl<'a, 'b, O, V> Iterator for PartitionRefValuesIter<'a, 'b, O, V>
+where
+    O: FromBytes + Immutable + Copy + Into<u32>,
+    V: FromSuffix<'b>,
+{
+    type Item = V;
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.inner.len() - self.cursor;
+        (remaining, Some(remaining))
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = self.inner.get_by_index(self.cursor);
+        self.cursor += 1;
+        result
+    }
+}
+
 impl<'a, Offset, V> Relation for PartitionRef<'a, Offset, V>
 where
     Offset: FromBytes + Immutable + Copy + Into<u32>,
@@ -253,12 +237,7 @@ where
 
     #[inline]
     fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
-        let mut cursor = 0;
-        std::iter::from_fn(move || {
-            let result = self.get(cursor);
-            cursor += 1;
-            result
-        })
+        PartitionRefValuesIter { inner: self, cursor: 0 }
     }
 
     fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {

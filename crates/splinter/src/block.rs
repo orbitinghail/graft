@@ -6,10 +6,13 @@ use either::Either;
 
 use crate::{
     bitmap::{Bitmap, BitmapExt, BitmapSegmentsIter, BITMAP_SIZE},
-    ops::{Cut, Intersection},
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
 };
+
+mod cmp;
+mod cut;
+mod intersection;
 
 #[derive(Clone)]
 pub struct Block {
@@ -43,44 +46,6 @@ impl BitmapExt for Block {
     }
     fn as_mut(&mut self) -> &mut Bitmap {
         &mut self.bitmap
-    }
-}
-
-impl Cut for Block {
-    type Output = Block;
-
-    fn cut(&mut self, rhs: &Self) -> Self::Output {
-        self.bitmap.cut(&rhs.bitmap).into()
-    }
-}
-
-impl<T: Deref<Target = [Segment]>> Cut<BlockRef<T>> for Block {
-    type Output = Block;
-
-    fn cut(&mut self, rhs: &BlockRef<T>) -> Self::Output {
-        let rhs = rhs.copy_to_owned();
-        self.cut(&rhs)
-    }
-}
-
-impl Intersection for &Block {
-    type Output = Block;
-
-    fn intersection(&self, rhs: &Self) -> Self::Output {
-        let mut out = Block::default();
-        for i in 0..BITMAP_SIZE {
-            out.bitmap[i] = self.bitmap[i] & rhs.bitmap[i];
-        }
-        out
-    }
-}
-
-impl<T: Deref<Target = [Segment]>> Intersection<&BlockRef<T>> for &Block {
-    type Output = Block;
-
-    fn intersection(&self, rhs: &&BlockRef<T>) -> Self::Output {
-        let rhs = rhs.copy_to_owned();
-        (*self).intersection(&&rhs)
     }
 }
 
@@ -209,45 +174,6 @@ impl<'a> FromSuffix<'a> for BlockRef<&'a [u8]> {
 #[inline]
 pub fn block_size(cardinality: usize) -> usize {
     cardinality.min(BITMAP_SIZE)
-}
-
-// Equality operations
-
-// Block == Block
-impl PartialEq<Block> for Block {
-    fn eq(&self, other: &Block) -> bool {
-        self.bitmap == other.bitmap
-    }
-}
-
-// BlockRef == BlockRef
-impl<T1, T2> PartialEq<BlockRef<T2>> for BlockRef<T1>
-where
-    T1: Deref<Target = [Segment]>,
-    T2: Deref<Target = [Segment]>,
-{
-    fn eq(&self, other: &BlockRef<T2>) -> bool {
-        self.segments.deref() == other.segments.deref()
-    }
-}
-
-// BlockRef == Block
-impl<T: Deref<Target = [Segment]>> PartialEq<Block> for BlockRef<T> {
-    fn eq(&self, other: &Block) -> bool {
-        if let Some(bitmap) = self.bitmap() {
-            bitmap == &other.bitmap
-        } else {
-            self.segments.iter().copied().eq(other.bitmap.segments())
-        }
-    }
-}
-
-// Block == BlockRef
-impl<T: Deref<Target = [Segment]>> PartialEq<BlockRef<T>> for Block {
-    #[inline]
-    fn eq(&self, other: &BlockRef<T>) -> bool {
-        other == self
-    }
 }
 
 #[cfg(test)]

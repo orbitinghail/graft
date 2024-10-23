@@ -8,12 +8,15 @@ use zerocopy::{
 use crate::{
     bitmap::BitmapExt,
     block::{Block, BlockRef},
-    ops::{Cut, Intersection},
     partition::{Partition, PartitionRef},
-    relational::{Relation, RelationMut},
+    relational::Relation,
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     DecodeErr,
 };
+
+mod cmp;
+mod cut;
+mod intersection;
 
 pub const SPLINTER_MAGIC: [u8; 2] = [0x57, 0x16];
 
@@ -54,7 +57,7 @@ impl Footer {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Splinter {
     partitions: Partition<U32, Partition<U16, Block>>,
 }
@@ -90,6 +93,13 @@ impl Splinter {
             .sum()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+        self.partitions
+            .sorted_iter()
+            .flat_map(|(h, p)| p.sorted_iter().map(move |(m, b)| (h, m, b)))
+            .flat_map(|(h, m, b)| b.segments().map(move |l| combine_segments(h, m, l)))
+    }
+
     pub fn insert(&mut self, key: u32) {
         let (high, mid, low) = segments(key);
         let partition = self.partitions.get_or_init(high);
@@ -100,47 +110,6 @@ impl Splinter {
     fn insert_block(&mut self, high: u8, mid: u8, block: Block) {
         let partition = self.partitions.get_or_init(high);
         partition.insert(mid, block);
-    }
-
-    /// Returns the intersection between self and other while removing the
-    /// intersection from self
-    // pub fn cut<T: AsRef<[u8]>>(&mut self, other: SplinterRef<T>) -> Splinter {
-    //     let mut out = Splinter::default();
-    //     for (high, left, right) in self.partitions.inner_join_mut(&other.load_partitions()) {
-    //         for (mid, left, right) in left.inner_join_mut(&right) {
-    //             out.insert_block(high, mid, left.cut(&right));
-    //         }
-    //     }
-    //     out
-    // }
-
-    /// Returns the intersection between self and other
-    // pub fn intersection<T: AsRef<[u8]>>(&mut self, other: SplinterRef<T>) -> Splinter {
-    //     let mut out = Splinter::default();
-    //     for (high, left, right) in self.partitions.inner_join(&other.load_partitions()) {
-    //         for (mid, left, right) in left.inner_join(&right) {
-    //             out.insert_block(high, mid, left.intersection(&right));
-    //         }
-    //     }
-    //     out
-    // }
-
-    pub fn union(&mut self, other: ()) -> Splinter {
-        // returns the union of self and other
-
-        /*
-        let mut out = Splinter::default();
-        for (high, left, right) in self.partitions.full_outer_join(other.partitions) {
-            match (left, right) {
-                (Some(left), None) => out.partitions.insert(high, left.clone()),
-                (None, Some(right)) => out.partitions.insert(high, right.clone()),
-                (Some(left), Some(right)) => todo!("insert union..."),
-            }
-        }
-        out
-        */
-
-        todo!()
     }
 
     pub fn serialize<B: bytes::BufMut>(&self, out: &mut B) -> usize {
@@ -264,55 +233,19 @@ fn segments(key: u32) -> (u8, u8, u8) {
     (high, mid, low)
 }
 
-// Equality Operations
-
-// Splinter == Splinter
-impl PartialEq for Splinter {
-    fn eq(&self, other: &Self) -> bool {
-        self.partitions == other.partitions
-    }
-}
-
-// SplinterRef == Splinter
-impl<T: AsRef<[u8]>> PartialEq<SplinterRef<T>> for Splinter {
-    fn eq(&self, other: &SplinterRef<T>) -> bool {
-        other.load_partitions() == self.partitions
-    }
-}
-
-// Splinter == SplinterRef
-impl<T: AsRef<[u8]>> PartialEq<Splinter> for SplinterRef<T> {
-    fn eq(&self, other: &Splinter) -> bool {
-        self.load_partitions() == other.partitions
-    }
-}
-
-// SplinterRef == SplinterRef
-impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> PartialEq<SplinterRef<T2>> for SplinterRef<T1> {
-    fn eq(&self, other: &SplinterRef<T2>) -> bool {
-        self.load_partitions() == other.load_partitions()
-    }
+#[inline]
+fn combine_segments(high: u8, mid: u8, low: u8) -> u32 {
+    (high as u32) << 16 | (mid as u32) << 8 | low as u32
 }
 
 #[cfg(test)]
 mod tests {
     use std::io;
 
+    use crate::testutil::{mksplinter, mksplinter_ref};
+
     use super::*;
-    use bytes::Bytes;
     use roaring::RoaringBitmap;
-
-    fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
-        let mut splinter = Splinter::default();
-        for i in values {
-            splinter.insert(i);
-        }
-        splinter
-    }
-
-    fn mksplinter_ref(values: impl IntoIterator<Item = u32>) -> SplinterRef<Bytes> {
-        SplinterRef::from_bytes(mksplinter(values).serialize_to_bytes()).unwrap()
-    }
 
     #[test]
     fn test_splinter_sanity() {
@@ -439,16 +372,16 @@ mod tests {
         run_test("1 dense block", set, 50, 528);
 
         // 8 sparse blocks
-        let set = (0..=1024).skip(128).collect::<Vec<_>>();
-        run_test("8 sparse blocks", set, 163, 1810);
-
-        // 16 sparse blocks
-        let set = (0..=2048).skip(128).collect::<Vec<_>>();
-        run_test("16 sparse blocks", set, 307, 3858);
+        let set = (0..=1024).step_by(128).collect::<Vec<_>>();
+        run_test("8 sparse blocks", set, 43, 34);
 
         // 128 sparse blocks
-        let set = (0..=16384).skip(128).collect::<Vec<_>>();
-        run_test("128 sparse blocks", set, 2290, 8208);
+        let set = (0..=16384).step_by(128).collect::<Vec<_>>();
+        run_test("128 sparse blocks", set, 370, 274);
+
+        // 512 sparse blocks
+        let set = (0..=65536).step_by(128).collect::<Vec<_>>();
+        run_test("512 sparse blocks", set, 1337, 1050);
 
         // the rest of the compression tests use 4k elements
         let elements = 4096;

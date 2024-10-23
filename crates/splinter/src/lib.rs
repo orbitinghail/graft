@@ -3,11 +3,14 @@ use thiserror::Error;
 mod bitmap;
 mod block;
 mod index;
-mod ops;
+pub mod ops;
 mod partition;
 mod relational;
 mod splinter;
 mod util;
+
+#[cfg(test)]
+mod testutil;
 
 pub use splinter::{Splinter, SplinterRef};
 

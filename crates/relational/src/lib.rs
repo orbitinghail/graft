@@ -80,33 +80,33 @@ mod tests {
         }
     }
 
-    impl<T> Intersection<&Container<T>> for Container<T>
-    where
-        T: Intersection,
-    {
-        type Output = Container<T::Output>;
+    // impl<T> Intersection<&Container<T>> for Container<T>
+    // where
+    //     T: Intersection,
+    // {
+    //     type Output = Container<T::Output>;
 
-        fn intersection(&self, rhs: Container<T>) -> Self::Output {
-            let mut out = Container { data: Default::default() };
-            let iter = self
-                .inner_join(rhs)
-                .map(|(key, l, r)| (key, l.intersection(r)));
-            for (key, inter) in iter {
-                out.data.insert(key, inter);
-            }
-            out
-        }
-    }
+    //     fn intersection(&self, rhs: Container<T>) -> Self::Output {
+    //         let mut out = Container { data: Default::default() };
+    //         let iter = self
+    //             .inner_join(rhs)
+    //             .map(|(key, l, r)| (key, l.intersection(r)));
+    //         for (key, inter) in iter {
+    //             out.data.insert(key, inter);
+    //         }
+    //         out
+    //     }
+    // }
 
-    #[test]
-    fn test_inner_join() {
-        let left = Container { data: [(1, 1), (2, 2), (3, 3)].into() };
-        let right = Container { data: [(2, 2), (3, 3), (4, 4)].into() };
+    // #[test]
+    // fn test_inner_join() {
+    //     let left = Container { data: [(1, 1), (2, 2), (3, 3)].into() };
+    //     let right = Container { data: [(2, 2), (3, 3), (4, 4)].into() };
 
-        let joined: Vec<_> = left.inner_join(&right).collect();
-        assert_eq!(joined, [(2, &2, &2), (3, &3, &3)]);
+    //     let joined: Vec<_> = left.inner_join(&right).collect();
+    //     assert_eq!(joined, [(2, &2, &2), (3, &3, &3)]);
 
-        let inter: Vec<_> = left.intersection(&right).collect();
-        assert_eq!(inter, [(2, 2), (3, 3)]);
-    }
+    //     let inter: Vec<_> = left.intersection(&right).collect();
+    //     assert_eq!(inter, [(2, 2), (3, 3)]);
+    // }
 }

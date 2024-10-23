@@ -1,4 +1,4 @@
-use crate::{ops::Intersection, Segment};
+use crate::Segment;
 
 pub trait Relation {
     type ValRef<'a>
@@ -71,36 +71,28 @@ pub trait Relation {
     }
 }
 
-pub trait RelationMut: Relation {
-    type Val;
+impl<T> Relation for &T
+where
+    T: Relation,
+{
+    type ValRef<'a> = T::ValRef<'a> where Self: 'a;
 
-    /// Returns an iterator over the key-value pairs of the relation sorted by key.
-    /// The values are mutable
-    fn sorted_iter_mut(&mut self) -> impl Iterator<Item = (Segment, &mut Self::Val)>;
+    fn len(&self) -> usize {
+        (**self).len()
+    }
 
-    /// Returns an iterator over the inner join of two relations.
-    /// The left values are mutable.
-    fn inner_join_mut<'a, R: Relation>(
-        &'a mut self,
-        right: &'a R,
-    ) -> impl Iterator<Item = (Segment, &mut Self::Val, R::ValRef<'a>)> {
-        self.sorted_iter_mut()
-            .filter_map(|(k, l)| right.get(k).map(|r| (k, l, r)))
+    fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
+        (**self).get(key)
+    }
+
+    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
+        (**self).sorted_iter()
+    }
+
+    fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
+        (**self).sorted_values()
     }
 }
-
-// impl<R, L> Intersection<R> for L
-// where
-//     R: Relation,
-//     L: Relation,
-//     for<'a> L::ValRef<'a>: Intersection<R::ValRef<'a>>,
-// {
-//     type Output = <<L as Relation>::ValRef<'_> as Intersection<R::ValRef<'_>>>::Output<'a> where Self: 'a;
-
-//     fn intersection(&self, rhs: &R) -> Self::Output<'_> {
-//         todo!()
-//     }
-// }
 
 #[cfg(test)]
 mod tests {

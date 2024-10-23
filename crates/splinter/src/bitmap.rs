@@ -1,6 +1,4 @@
-use std::ops::BitAnd;
-
-use crate::{ops::Cut, Segment};
+use crate::Segment;
 
 pub const BITMAP_SIZE: usize = 32;
 
@@ -87,21 +85,6 @@ impl BitmapExt for Bitmap {
     #[inline]
     fn as_mut(&mut self) -> &mut Bitmap {
         self
-    }
-}
-
-impl Cut for Bitmap {
-    type Output = Bitmap;
-
-    /// Returns the intersection between self and other while removing the
-    /// intersection from self
-    fn cut(&mut self, rhs: &Self) -> Self::Output {
-        let mut intersection = [0u8; BITMAP_SIZE];
-        for i in 0..BITMAP_SIZE {
-            intersection[i] = self[i] & rhs[i];
-            self[i] &= !rhs[i];
-        }
-        intersection
     }
 }
 
