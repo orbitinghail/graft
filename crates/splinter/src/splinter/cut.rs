@@ -1,4 +1,4 @@
-use crate::ops::Cut;
+use crate::{bitmap::BitmapExt, ops::Cut, relational::Relation};
 
 use super::{Splinter, SplinterRef};
 
@@ -7,13 +7,24 @@ impl Cut for Splinter {
 
     fn cut(&mut self, rhs: &Self) -> Self::Output {
         let mut out = Splinter::default();
-        for (high, left, right) in self.partitions.inner_join_mut(&rhs.partitions) {
-            for (mid, left, right) in left.inner_join_mut(right) {
-                out.insert_block(high, mid, left.cut(right));
-            }
-        }
 
-        // TODO: clean up empty partitions and blocks
+        let rhs = &rhs.partitions;
+        self.partitions.retain(|&high, left| {
+            if let Some(right) = rhs.get(high) {
+                // we need to cut right out of left
+                left.retain(|&mid, left| {
+                    if let Some(right) = right.get(mid) {
+                        out.insert_block(high, mid, left.cut(right));
+                        left.has_bits_set()
+                    } else {
+                        true
+                    }
+                });
+                !left.is_empty()
+            } else {
+                true
+            }
+        });
 
         out
     }
@@ -24,13 +35,24 @@ impl<T: AsRef<[u8]>> Cut<SplinterRef<T>> for Splinter {
 
     fn cut(&mut self, rhs: &SplinterRef<T>) -> Self::Output {
         let mut out = Splinter::default();
-        for (high, left, right) in self.partitions.inner_join_mut(&rhs.load_partitions()) {
-            for (mid, left, right) in left.inner_join_mut(&right) {
-                out.insert_block(high, mid, left.cut(&right));
-            }
-        }
 
-        // TODO: clean up empty partitions and blocks
+        let rhs = rhs.load_partitions();
+        self.partitions.retain(|&high, left| {
+            if let Some(right) = rhs.get(high) {
+                // we need to cut right out of left
+                left.retain(|&mid, left| {
+                    if let Some(right) = right.get(mid) {
+                        out.insert_block(high, mid, left.cut(&right));
+                        left.has_bits_set()
+                    } else {
+                        true
+                    }
+                });
+                !left.is_empty()
+            } else {
+                true
+            }
+        });
 
         out
     }
@@ -40,7 +62,7 @@ impl<T: AsRef<[u8]>> Cut<SplinterRef<T>> for Splinter {
 mod tests {
     use crate::{
         ops::Cut,
-        testutil::{mksplinter, mksplinter_ref, mksplinters, TestSplinter},
+        testutil::{mksplinter, mksplinters, TestSplinter},
         Splinter,
     };
 
@@ -82,6 +104,6 @@ mod tests {
         check_cut(0..10, 0..5, 5..10, 0..5);
 
         // this test is pending cleanup
-        // check_cut(0..10, 0..10, 0..0, 0..10);
+        check_cut(0..10, 0..10, 0..0, 0..10);
     }
 }

@@ -1,4 +1,4 @@
-use std::{convert::TryInto, fmt::Debug, marker::PhantomData, mem::size_of};
+use std::{collections::BTreeMap, convert::TryInto, fmt::Debug, marker::PhantomData, mem::size_of};
 
 use bytes::BufMut;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -14,15 +14,13 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Partition<Offset, V> {
-    index: Block,
-    values: Vec<V>,
+    values: BTreeMap<Segment, V>,
     _phantom: PhantomData<Offset>,
 }
 
 impl<O, V> Default for Partition<O, V> {
     fn default() -> Self {
         Self {
-            index: Default::default(),
             values: Default::default(),
             _phantom: Default::default(),
         }
@@ -34,32 +32,21 @@ where
     V: Default,
 {
     pub fn get_or_init(&mut self, segment: Segment) -> &mut V {
-        let needs_init = self.index.insert(segment);
-        let index = self.index.rank(segment) - 1;
-        if needs_init {
-            self.values.insert(index, V::default());
-        }
-        &mut self.values[index]
+        self.values.entry(segment).or_default()
     }
 }
 
 impl<O, V> Partition<O, V> {
     // insert a value into the partition; panics if the segment is already present
     pub fn insert(&mut self, segment: Segment, value: V) {
-        let was_missing = self.index.insert(segment);
-        assert!(was_missing, "segment already present in partition");
-        let index = self.index.rank(segment) - 1;
-        self.values.insert(index, value);
+        assert!(
+            self.values.insert(segment, value).is_none(),
+            "segment already present in partition"
+        );
     }
 
-    pub fn inner_join_mut<'a, R: Relation>(
-        &'a mut self,
-        right: &'a R,
-    ) -> impl Iterator<Item = (Segment, &mut V, R::ValRef<'a>)> {
-        self.index
-            .segments()
-            .zip(self.values.iter_mut())
-            .filter_map(|(k, l)| right.get(k).map(|r| (k, l, r)))
+    pub fn retain(&mut self, f: impl FnMut(&Segment, &mut V) -> bool) {
+        self.values.retain(f);
     }
 }
 
@@ -74,20 +61,16 @@ impl<O, V> Relation for Partition<O, V> {
     }
 
     fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
-        self.index.segments().zip(self.values.iter())
+        // self.index.segments().zip(self.values.iter())
+        self.values.iter().map(|(k, v)| (*k, v))
     }
 
     fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
-        self.values.iter()
+        self.values.values()
     }
 
     fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
-        if self.index.contains(key) {
-            let rank = self.index.rank(key);
-            self.values.get(rank - 1)
-        } else {
-            None
-        }
+        self.values.get(&key)
     }
 }
 
@@ -97,17 +80,19 @@ where
     O: TryFrom<u32, Error: Debug> + IntoBytes + Immutable,
 {
     fn should_serialize(&self) -> bool {
-        self.values.iter().any(|v| v.should_serialize())
+        self.values.values().any(|v| v.should_serialize())
     }
 
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
-        // keep track of cardinalities and offsets for each flushed value
+        // keep track of segments, cardinalities, and offsets as we flush values
+        let mut index = Block::default();
         let mut cardinalities: Vec<u8> = Vec::with_capacity(self.values.len());
         let mut offsets = Vec::with_capacity(self.values.len());
         let mut offset: u32 = 0;
 
-        for value in self.values.iter().filter(|v| v.should_serialize()) {
+        for (&segment, value) in self.values.iter().filter(|(_, v)| v.should_serialize()) {
             let (cardinality, n) = value.serialize(out);
+            index.insert(segment);
             cardinalities.push((cardinality - 1).try_into().expect("cardinality overflow"));
             offset += TryInto::<u32>::try_into(n).expect("offset overflow");
             offsets.push(offset);
@@ -115,7 +100,7 @@ where
 
         // write out the index
         // index keys
-        let (cardinality, keys_size) = self.index.serialize(out);
+        let (cardinality, keys_size) = index.serialize(out);
         assert_eq!(cardinality, self.values.len(), "cardinality mismatch");
 
         // index cardinalities
@@ -160,12 +145,13 @@ where
     type Owned = Partition<Offset, V::Owned>;
 
     fn copy_to_owned(&self) -> Self::Owned {
-        let index = self.index.key_block().copy_to_owned();
-        let values = self
-            .sorted_values()
-            .map(|v| v.copy_to_owned())
-            .collect::<Vec<_>>();
-        Partition { index, values, _phantom: PhantomData }
+        let values: BTreeMap<Segment, V::Owned> = self
+            .index
+            .key_block()
+            .segments()
+            .zip(self.sorted_values().map(|v| v.copy_to_owned()))
+            .collect();
+        Partition { values, _phantom: PhantomData }
     }
 }
 
@@ -256,7 +242,7 @@ where
 // Partition == Partition
 impl<O, V: PartialEq> PartialEq for Partition<O, V> {
     fn eq(&self, other: &Self) -> bool {
-        self.index == other.index && self.values == other.values
+        self.values == other.values
     }
 }
 
@@ -280,11 +266,11 @@ where
     V: FromSuffix<'a> + PartialEq<V2>,
 {
     fn eq(&self, other: &Partition<O, V2>) -> bool {
-        if self.index.key_block() != other.index || self.len() != other.values.len() {
+        if self.len() != other.values.len() {
             return false;
         }
-        for (a, b) in self.sorted_values().zip(other.values.iter()) {
-            if a != *b {
+        for ((k1, v1), (k2, v2)) in self.sorted_iter().zip(other.sorted_iter()) {
+            if k1 != k2 || v1 != *v2 {
                 return false;
             }
         }
