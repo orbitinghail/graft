@@ -18,19 +18,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
 
 [[package]]
-name = "ahash"
-version = "0.8.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e89da841a80418a9b391ebaea17f5c112ffaaa96f621d2c285b5174da76b9011"
-dependencies = [
- "cfg-if",
- "getrandom",
- "once_cell",
- "version_check",
- "zerocopy 0.7.35",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -790,11 +777,11 @@ checksum = "32085ea23f3234fc7846555e85283ba4de91e21016dc0455a16286d87a292d64"
 name = "graft-core"
 version = "0.1.0"
 dependencies = [
- "ahash",
  "blake3",
  "borsh",
  "bs58",
  "bytes",
+ "foldhash",
  "hashbrown 0.15.0",
  "rand",
  "static_assertions",
@@ -1357,12 +1344,12 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 name = "pagestore"
 version = "0.1.0"
 dependencies = [
- "ahash",
  "anyhow",
  "axum",
  "axum-test",
  "bytes",
  "fjall",
+ "foldhash",
  "futures",
  "graft-core",
  "graft-proto",

@@ -1,6 +1,9 @@
-use ahash::RandomState;
+use foldhash::fast::RandomState;
 use hashbrown::hash_table::{AbsentEntry, Entry, IntoIter, Iter, IterMut, OccupiedEntry};
-use std::{borrow::Borrow, hash::Hash};
+use std::{
+    borrow::Borrow,
+    hash::{BuildHasher, Hash},
+};
 
 pub trait HTEntry {
     type Key: Hash + Clone + PartialEq + Eq;
@@ -21,7 +24,7 @@ impl<T: HTEntry> Default for HashTable<T> {
     fn default() -> Self {
         Self {
             table: Default::default(),
-            hash_builder: RandomState::new(),
+            hash_builder: RandomState::default(),
         }
     }
 }

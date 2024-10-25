@@ -169,10 +169,12 @@ mod tests {
             println!("response: {:?}", data);
             panic!("unexpected response status: {}", resp.status_code());
         }
-        let resp = ReadPagesResponse::decode(resp.into_bytes()).unwrap();
+        let mut resp = ReadPagesResponse::decode(resp.into_bytes()).unwrap();
 
         // we expect to see all 5 pages here
         assert_eq!(resp.pages.len(), 5);
+        // sort by offset to make the test deterministic
+        resp.pages.sort_by_key(|p| p.offset);
         for (PageAtOffset { offset, data }, expected) in resp.pages.into_iter().zip(0..) {
             assert_eq!(offset, expected);
             assert_eq!(

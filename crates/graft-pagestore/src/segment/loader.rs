@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
+use foldhash::fast::RandomState;
 use graft_core::guid::SegmentId;
 use object_store::{path::Path, ObjectStore};
-use tokio::sync::Semaphore;
 
-use crate::storage::cache::Cache;
+use crate::{limiter::Limiter, storage::cache::Cache};
 
 pub struct Loader<O, C> {
     store: Arc<O>,
     cache: Arc<C>,
 
-    download_limiter: Semaphore,
+    download_limiter: Limiter<SegmentId, RandomState>,
 }
 
 impl<O: ObjectStore, C: Cache> Loader<O, C> {
@@ -18,7 +18,7 @@ impl<O: ObjectStore, C: Cache> Loader<O, C> {
         Self {
             store,
             cache,
-            download_limiter: Semaphore::new(download_concurrency),
+            download_limiter: Limiter::new(download_concurrency),
         }
     }
 
@@ -28,10 +28,8 @@ impl<O: ObjectStore, C: Cache> Loader<O, C> {
             return Ok(segment);
         }
 
-        // TODO: acquire some kind of lock ensuring we are the only one downloading this segment
-
-        // acquire a download permit
-        let _permit = self.download_limiter.acquire().await;
+        // acquire a download permit for the segment
+        let _permit = self.download_limiter.acquire(&sid).await;
 
         // check the cache again in case another task has downloaded the segment
         if let Some(segment) = self.cache.get(&sid).await? {

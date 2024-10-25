@@ -1,12 +1,8 @@
 Next tasks:
-- loader needs to ensure that two reads don't try to concurrently download a segment
 - merge control plane and metastore in DESIGN.md
 - implement control plane server and client
 - connect the page store to the catalog, finish read pages
 - consider switching pagestore to websockets or http streaming bodies
-
-# Loader concurrency
-Currently two concurrent reads can download the same segment twice. The loader should prevent this somehow. Ideally without keeping around segment ids forever.
 
 # Merge control plane and metastore
 Currently DESIGN establishes that the metastore and control plane are separate services. The rational for this was to leverage durable objects to more easily scale the metastore around the world. However, it does add an additional layer of complexity in the implementation.

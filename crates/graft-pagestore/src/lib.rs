@@ -1,3 +1,4 @@
+pub mod limiter;
 pub mod resource_pool;
 pub mod supervisor;
 
