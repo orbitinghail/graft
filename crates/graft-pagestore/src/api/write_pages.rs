@@ -15,8 +15,8 @@ use crate::segment::bus::WritePageReq;
 
 use super::{error::ApiError, extractors::Protobuf, state::ApiState};
 
-pub async fn handler(
-    State(state): State<Arc<ApiState>>,
+pub async fn handler<O, C>(
+    State(state): State<Arc<ApiState<O, C>>>,
     Protobuf(req): Protobuf<WritePagesRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let vid: VolumeId = req.vid.try_into()?;
@@ -92,7 +92,9 @@ mod tests {
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
-        segment::{bus::Bus, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
+        segment::{
+            bus::Bus, loader::Loader, uploader::SegmentUploaderTask, writer::SegmentWriterTask,
+        },
         storage::mem::MemCache,
         supervisor::SupervisedTask,
         volume::catalog::VolumeCatalog,
@@ -106,6 +108,7 @@ mod tests {
         let store = Arc::new(InMemory::default());
         let cache = Arc::new(MemCache::default());
         let catalog = VolumeCatalog::open_temporary().unwrap();
+        let loader = Loader::new(store.clone(), cache.clone(), 8);
 
         let (page_tx, page_rx) = mpsc::channel(128);
         let (store_tx, store_rx) = mpsc::channel(8);
@@ -116,7 +119,7 @@ mod tests {
         SegmentUploaderTask::new(store_rx, commit_bus.clone(), store.clone(), cache.clone())
             .testonly_spawn();
 
-        let state = Arc::new(ApiState::new(page_tx, commit_bus, catalog));
+        let state = Arc::new(ApiState::new(page_tx, commit_bus, catalog, loader));
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())

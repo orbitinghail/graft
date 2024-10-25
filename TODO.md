@@ -1,101 +1,16 @@
 Next tasks:
-- implement volume catalog
-- implement request limiter
-- implement Splinter cut
-- implement segment query
+- merge control plane and metastore in DESIGN.md
+- implement control plane server and client
+- connect the page store to the catalog, finish read pages
+- consider switching pagestore to websockets or http streaming bodies
 
-# Volume Catalog
-Will use an embedded kv store for storage.
+# Merge control plane and metastore
+Currently DESIGN establishes that the metastore and control plane are separate services. The rational for this was to leverage durable objects to more easily scale the metastore around the world. However, it does add an additional layer of complexity in the implementation.
 
-```
-keyspace:
-volumes/[vid] -> { lsn, last_offset }
-segments/[vid]/[lsn]/[sid] -> OffsetSet
-```
+An easier solution is to merge the metastore into the Control Plane and scale the Control Plane world wide. To do this we will need to shard volume metadata into region-local control planes. We can do this by providing a globally centralized lookup service for locating VolumeIds. This information can be perma-cached in each datacenter, and fly-redirects + smart clients can be used to route meta-traffic to the right location.
 
-Keys and values will be encoded with zerocopy. note that bigendian encoding of numbers is lexographically sortable. So lsn's should be bigendian when stored in a key. An example of using sled in this way is here: https://github.com/spacejam/sled/blob/main/examples/structured.rs
+To start though, we can just have a single control plane instance and shard all volumes to it. This will be fine for initial deployment.
 
-# Find matching segments query
+We are planning on using Neon as the storage layer for the control plane.
 
-```
-find_segments(vid, lsn, query: OffsetSet)
-
-// this object downloads and memmaps segments in the background
-let loader = SegmentsLoader
-
-// iterate through segments in reverse order of lsn
-for segment in store.segments(vid, lsn) {
-  // cut segment offsets out of the query, returning the cut offsets
-  let cut = query.cut(segment.offsets);
-
-  if !cut.is_empty() {
-    loader.load(segment, cut)
-  }
-
-  if query.is_empty() {
-    break
-  }
-}
-
-let out: Vec<PageOffset>
-for (segment, cut) in loader {
-  for offset in cut {
-    page = segment.get(vid, offset).expect("catalog out of sync")
-    out.append((page,offset))
-  }
-}
-
-out
-```
-
-# Request limiter
-In the case of downloading segments:
-
-```
-# optimistically retrieve segment from cache
-if Some(segment) = cache.get(sid) {
-  return segment
-}
-
-# retrieve a permit; this may block
-permit = limiter.get(sid)
-
-# check if someone else already got the segment
-if Some(segment) = cache.get(sid) {
-  return segment
-}
-
-# get the segment
-segment = store.get(sid)
-cache.put(sid, segment)
-
-# return the segment; releasing the permit
-segment
-
-```
-
-And getting segment metadata
-
-```
-# check to see if we have metadata up to the required lsn
-if meta.has(vid, lsn) {
-  return meta.query(vid, lsn, offsets)
-}
-
-# retrieve a permit; this may block
-permit = limiter.get(vid)
-
-# check if someone else retrieved the required lsn
-if meta.has(vid, lsn) {
-  return meta.query(vid, lsn, offsets)
-}
-
-# update metadata to latest
-meta.update_latest(vid)
-
-# release the permit to unblock other tasks
-drop(permit)
-
-# query metadata
-return meta.query(vid, lsn, offsets)
-```
+I think the only part of the control plane that may need to be centralized is authn/authz. But for now we are just going to use static auth.

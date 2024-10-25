@@ -4,6 +4,7 @@ pub mod supervisor;
 pub mod segment {
     pub mod bus;
     pub mod closed;
+    pub mod loader;
     pub mod offsets_map;
     pub mod open;
     pub mod uploader;
@@ -21,6 +22,7 @@ pub mod api {
     pub mod error;
     pub mod extractors;
     pub mod read_pages;
+    pub mod response;
     pub mod router;
     pub mod state;
     pub mod task;

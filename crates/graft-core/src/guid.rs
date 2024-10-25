@@ -21,6 +21,7 @@ const GUID_SIZE: ByteUnit = ByteUnit::new(16);
     zerocopy::IntoBytes,
     zerocopy::FromBytes,
     zerocopy::Immutable,
+    zerocopy::KnownLayout,
 )]
 #[repr(transparent)]
 pub struct Guid<const PREFIX: char>([u8; GUID_SIZE.as_usize()]);
@@ -120,6 +121,12 @@ impl<const P: char> TryFrom<Bytes> for Guid<P> {
 impl<const P: char> AsRef<[u8]> for Guid<P> {
     fn as_ref(&self) -> &[u8] {
         &self.0
+    }
+}
+
+impl<const P: char> From<Guid<P>> for Bytes {
+    fn from(val: Guid<P>) -> Self {
+        Bytes::copy_from_slice(&val.0)
     }
 }
 

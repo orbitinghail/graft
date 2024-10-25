@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fmt::Debug, path::Path};
 
 use fjall::{Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice};
 use graft_core::{
@@ -6,6 +6,7 @@ use graft_core::{
     lsn::LSN,
 };
 use graft_proto::common::v1::SegmentInfo;
+use splinter::SplinterRef;
 use zerocopy::FromBytes;
 
 use super::kv::{SegmentKey, SegmentKeyPrefix, Snapshot};
@@ -23,10 +24,14 @@ pub enum VolumeCatalogError {
 
     #[error("Failed to decode entry into type {target}")]
     DecodeError { target: &'static str },
+
+    #[error(transparent)]
+    SplinterError(#[from] splinter::DecodeErr),
 }
 
 type Result<T> = std::result::Result<T, VolumeCatalogError>;
 
+#[derive(Clone)]
 pub struct VolumeCatalog {
     keyspace: Keyspace,
 
@@ -92,35 +97,36 @@ impl VolumeCatalog {
     }
 
     /// Query the catalog for segments in the specified Volume. Segments are
-    /// scanned in reverse order starting from the specified LSN. Segments are
-    /// filtered by the provided offsets.
-    pub fn query_segments<F>(
+    /// scanned in reverse order starting from the specified LSN.
+    pub fn query_segments(
         &self,
         vid: VolumeId,
         lsn: LSN,
-        offsets: (),
-    ) -> impl Iterator<Item = Result<(SegmentId, ())>> {
+    ) -> impl Iterator<Item = Result<(SegmentId, SplinterRef<Slice>)>> {
         let scan = self.segments.range(SegmentKeyPrefix::range(vid, lsn)).rev();
-        SegmentsQueryIter { scan, offsets }
+        SegmentsQueryIter { scan }
     }
 }
 
 pub struct SegmentsQueryIter<I> {
     scan: I,
-    offsets: (),
 }
 
 impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> SegmentsQueryIter<I> {
-    fn next_inner(&mut self, entry: fjall::Result<(Slice, Slice)>) -> Result<(SegmentId, ())> {
-        let (key, _value) = entry?;
+    fn next_inner(
+        &mut self,
+        entry: fjall::Result<(Slice, Slice)>,
+    ) -> Result<(SegmentId, SplinterRef<Slice>)> {
+        let (key, value) = entry?;
         let key = SegmentKey::read_from_bytes(&key)
             .map_err(|_| VolumeCatalogError::DecodeError { target: "SegmentKey" })?;
-        Ok((key.sid().clone(), ()))
+        let val = SplinterRef::from_bytes(value)?;
+        Ok((key.sid().clone(), val))
     }
 }
 
 impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> Iterator for SegmentsQueryIter<I> {
-    type Item = Result<(SegmentId, ())>;
+    type Item = Result<(SegmentId, SplinterRef<Slice>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.scan.next().map(|entry| self.next_inner(entry))

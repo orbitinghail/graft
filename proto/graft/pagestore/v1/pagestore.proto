@@ -9,6 +9,10 @@ message ReadPagesRequest {
   bytes offsets = 3;
 }
 
+message ReadPagesResponse {
+  repeated PageAtOffset pages = 1;
+}
+
 message PageAtOffset {
   uint32 offset = 1;
   bytes data = 2;

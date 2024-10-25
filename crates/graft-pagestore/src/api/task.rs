@@ -1,35 +1,45 @@
 use std::sync::Arc;
 
+use object_store::ObjectStore;
 use tokio::{net::TcpListener, sync::mpsc};
 
 use crate::{
-    segment::bus::{Bus, CommitSegmentReq, WritePageReq},
+    segment::{
+        bus::{Bus, CommitSegmentReq, WritePageReq},
+        loader::Loader,
+    },
+    storage::cache::Cache,
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
     volume::catalog::VolumeCatalog,
 };
 
 use super::{router::router, state::ApiState};
 
-pub struct ApiServerTask {
+pub struct ApiServerTask<O, C> {
     listener: TcpListener,
-    state: Arc<ApiState>,
+    state: Arc<ApiState<O, C>>,
 }
 
-impl ApiServerTask {
+impl<O, C> ApiServerTask<O, C> {
     pub fn new(
         listener: TcpListener,
         page_tx: mpsc::Sender<WritePageReq>,
         commit_bus: Bus<CommitSegmentReq>,
         catalog: VolumeCatalog,
+        loader: Loader<O, C>,
     ) -> Self {
         Self {
             listener,
-            state: Arc::new(ApiState::new(page_tx, commit_bus, catalog)),
+            state: Arc::new(ApiState::new(page_tx, commit_bus, catalog, loader)),
         }
     }
 }
 
-impl SupervisedTask for ApiServerTask {
+impl<O, C> SupervisedTask for ApiServerTask<O, C>
+where
+    O: ObjectStore + Sync + Send + 'static,
+    C: Cache + Sync + Send + 'static,
+{
     fn cfg(&self) -> TaskCfg {
         TaskCfg { name: "api-server" }
     }

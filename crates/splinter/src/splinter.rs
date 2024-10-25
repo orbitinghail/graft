@@ -141,6 +141,16 @@ impl Debug for Splinter {
     }
 }
 
+impl<K: Into<u32>> FromIterator<K> for Splinter {
+    fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
+        let mut splinter = Self::default();
+        for key in iter {
+            splinter.insert(key.into());
+        }
+        splinter
+    }
+}
+
 #[derive(Clone)]
 pub struct SplinterRef<T> {
     data: T,
@@ -219,6 +229,12 @@ impl<T: AsRef<[u8]>> Debug for SplinterRef<T> {
             .field("num_partitions", &self.partitions)
             .field("cardinality", &self.cardinality())
             .finish()
+    }
+}
+
+impl<T: AsRef<[u8]>> From<SplinterRef<T>> for Splinter {
+    fn from(value: SplinterRef<T>) -> Self {
+        value.into_splinter()
     }
 }
 

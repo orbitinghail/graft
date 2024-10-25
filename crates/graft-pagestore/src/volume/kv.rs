@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{fmt::Debug, ops::Range};
 
 use graft_core::{
     guid::{SegmentId, VolumeId},
@@ -37,6 +37,7 @@ impl AsRef<[u8]> for Snapshot {
 }
 
 #[derive(KnownLayout, Immutable, FromBytes, IntoBytes)]
+#[repr(C, packed)]
 pub struct SegmentKeyPrefix {
     vid: VolumeId,
     lsn: U64<BE>,
@@ -47,10 +48,10 @@ impl SegmentKeyPrefix {
         Self { vid, lsn: U64::new(lsn) }
     }
 
-    pub fn range(vid: VolumeId, end_lsn: LSN) -> RangeInclusive<Self> {
+    pub fn range(vid: VolumeId, end_lsn: LSN) -> Range<Self> {
         let start = Self::new(vid.clone(), 0);
-        let end = Self::new(vid, end_lsn);
-        start..=end
+        let end = Self::new(vid, end_lsn + 1);
+        start..end
     }
 }
 
@@ -61,6 +62,7 @@ impl AsRef<[u8]> for SegmentKeyPrefix {
 }
 
 #[derive(KnownLayout, Immutable, FromBytes, IntoBytes)]
+#[repr(C, packed)]
 pub struct SegmentKey {
     prefix: SegmentKeyPrefix,
     sid: SegmentId,
@@ -90,5 +92,11 @@ impl SegmentKey {
 impl AsRef<[u8]> for SegmentKey {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+impl Debug for SegmentKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}/{}", self.prefix.vid, self.prefix.lsn, self.sid)
     }
 }

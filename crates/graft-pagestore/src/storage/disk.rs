@@ -100,6 +100,7 @@ impl Cache for DiskCache {
                 .get(&segment.mmap_handle, || async {
                     let path = PathBuf::from(sid.pretty());
                     let file = File::open(&path).await?;
+                    // SAFETY: This is safe as long as no other process or thread modifies the file while it is mapped.
                     let mmap = unsafe { memmap2::MmapOptions::new().map(&file) }?;
                     Ok::<_, std::io::Error>(mmap)
                 })

@@ -4,7 +4,7 @@ use futures::{select, FutureExt};
 use object_store::memory::InMemory;
 use pagestore::{
     api::task::ApiServerTask,
-    segment::{bus::Bus, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
+    segment::{bus::Bus, loader::Loader, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
     storage::mem::MemCache,
     supervisor::Supervisor,
     volume::catalog::VolumeCatalog,
@@ -22,6 +22,7 @@ async fn main() {
     let store = Arc::new(InMemory::default());
     let cache = Arc::new(MemCache::default());
     let catalog = VolumeCatalog::open_temporary().unwrap();
+    let loader = Loader::new(store.clone(), cache.clone(), 8);
 
     let (page_tx, page_rx) = mpsc::channel(128);
     let (store_tx, store_rx) = mpsc::channel(8);
@@ -45,6 +46,7 @@ async fn main() {
         page_tx,
         commit_bus,
         catalog,
+        loader,
     ));
 
     select! {

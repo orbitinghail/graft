@@ -2,11 +2,15 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use graft_core::{guid::GuidParseError, offset::Offset, page::PageSizeError};
+use graft_core::{
+    guid::{GuidParseError, VolumeId},
+    offset::Offset,
+    page::PageSizeError,
+};
 use splinter::DecodeErr;
 use thiserror::Error;
 
-use crate::volume::catalog::VolumeCatalogError;
+use crate::{segment::closed::SegmentValidationErr, volume::catalog::VolumeCatalogError};
 
 #[derive(Debug, Error)]
 pub enum ApiError {
@@ -24,6 +28,15 @@ pub enum ApiError {
 
     #[error(transparent)]
     CatalogError(#[from] VolumeCatalogError),
+
+    #[error("failed to load snapshot for volume: {0}")]
+    SnapshotMissing(VolumeId),
+
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+
+    #[error("failed to load segment: {0}")]
+    SegmentValidationError(#[from] SegmentValidationErr),
 }
 
 impl IntoResponse for ApiError {
