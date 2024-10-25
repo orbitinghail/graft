@@ -28,6 +28,8 @@ impl<O: ObjectStore, C: Cache> Loader<O, C> {
             return Ok(segment);
         }
 
+        // TODO: acquire some kind of lock ensuring we are the only one downloading this segment
+
         // acquire a download permit
         let _permit = self.download_limiter.acquire().await;
 
@@ -43,6 +45,9 @@ impl<O: ObjectStore, C: Cache> Loader<O, C> {
 
         // insert the segment into the cache
         self.cache.put(&sid, data).await?;
+
+        // drop the permit; allowing other downloads to proceed
+        drop(_permit);
 
         // return the segment
         Ok(self
