@@ -13,10 +13,12 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::segment::bus::WritePageReq;
 
-use super::{error::ApiError, extractors::Protobuf, state::ApiState};
+use crate::api::{error::ApiError, extractors::Protobuf};
+
+use super::PagestoreApiState;
 
 pub async fn handler<O, C>(
-    State(state): State<Arc<ApiState<O, C>>>,
+    State(state): State<Arc<PagestoreApiState<O, C>>>,
     Protobuf(req): Protobuf<WritePagesRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let vid: VolumeId = req.vid.try_into()?;
@@ -84,7 +86,6 @@ mod tests {
 
     use axum::handler::Handler;
     use axum_test::TestServer;
-    use graft_core::supervisor::SupervisedTask;
     use graft_proto::pagestore::v1::PageAtOffset;
     use object_store::memory::InMemory;
     use splinter::SplinterRef;
@@ -97,6 +98,7 @@ mod tests {
             bus::Bus, loader::Loader, uploader::SegmentUploaderTask, writer::SegmentWriterTask,
         },
         storage::mem::MemCache,
+        supervisor::SupervisedTask,
         volume::catalog::VolumeCatalog,
     };
 
@@ -119,7 +121,7 @@ mod tests {
         SegmentUploaderTask::new(store_rx, commit_bus.clone(), store.clone(), cache.clone())
             .testonly_spawn();
 
-        let state = Arc::new(ApiState::new(page_tx, commit_bus, catalog, loader));
+        let state = Arc::new(PagestoreApiState::new(page_tx, commit_bus, catalog, loader));
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())

@@ -2,13 +2,13 @@
 
 use std::time::{Duration, Instant};
 
-use graft_core::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 use tokio::{sync::mpsc, time::sleep};
 
 use super::{
     bus::{StoreSegmentReq, WritePageReq},
     open::OpenSegment,
 };
+use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 
 pub struct SegmentWriterTask {
     input: mpsc::Receiver<WritePageReq>,

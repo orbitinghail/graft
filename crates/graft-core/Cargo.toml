@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.91"
 blake3 = "1.5.4"
-borsh = { version = "1.5.1", features = ["unstable__schema"] }
 bs58 = "0.5.1"
 bytes = "1.7.1"
 foldhash = "0.1.3"
@@ -14,9 +13,6 @@ hashbrown = "0.15"
 rand = "0.8.5"
 static_assertions = "1.1.0"
 thiserror = "1.0.63"
-tokio = "1.41.0"
-tokio-util = "0.7.12"
-tracing = "0.1.40"
 zerocopy = { version = "0.8", features = ["derive"] }
 
 [features]

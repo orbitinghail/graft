@@ -29,6 +29,7 @@ itertools = "0.13.0"
 fjall = "2.1.1"
 tempfile = "3.12.0"
 foldhash = "0.1.3"
+tokio-util = "0.7.12"
 
 [dev-dependencies]
 axum-test = "16.2.0"

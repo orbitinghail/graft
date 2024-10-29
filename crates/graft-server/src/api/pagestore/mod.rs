@@ -1,21 +1,29 @@
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
+
+use axum::{routing::post, Router};
+use object_store::ObjectStore;
 
 use crate::{
     segment::{
         bus::{Bus, CommitSegmentReq, WritePageReq},
         loader::Loader,
     },
+    storage::cache::Cache,
     volume::catalog::VolumeCatalog,
 };
 
-pub struct ApiState<O, C> {
+mod read_pages;
+mod write_pages;
+
+pub struct PagestoreApiState<O, C> {
     page_tx: mpsc::Sender<WritePageReq>,
     commit_bus: Bus<CommitSegmentReq>,
     catalog: VolumeCatalog,
     loader: Loader<O, C>,
 }
 
-impl<O, C> ApiState<O, C> {
+impl<O, C> PagestoreApiState<O, C> {
     pub fn new(
         page_tx: mpsc::Sender<WritePageReq>,
         commit_bus: Bus<CommitSegmentReq>,
@@ -40,4 +48,14 @@ impl<O, C> ApiState<O, C> {
     pub fn loader(&self) -> &Loader<O, C> {
         &self.loader
     }
+}
+
+pub fn pagestore_router<O, C>() -> Router<Arc<PagestoreApiState<O, C>>>
+where
+    O: ObjectStore + Sync + Send + 'static,
+    C: Cache + Sync + Send + 'static,
+{
+    Router::new()
+        .route("/api/v1/pages/read", post(read_pages::handler))
+        .route("/api/v1/pages/write", post(write_pages::handler))
 }

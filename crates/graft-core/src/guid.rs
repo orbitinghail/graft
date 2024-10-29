@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Display};
 
-use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use bytes::Bytes;
 use thiserror::Error;
 
@@ -15,9 +14,6 @@ const GUID_SIZE: ByteUnit = ByteUnit::new(16);
     Hash,
     PartialOrd,
     Ord,
-    BorshSerialize,
-    BorshDeserialize,
-    BorshSchema,
     zerocopy::IntoBytes,
     zerocopy::FromBytes,
     zerocopy::Immutable,

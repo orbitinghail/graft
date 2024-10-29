@@ -18,15 +18,19 @@ pub mod storage {
 pub mod api {
     pub mod error;
     pub mod extractors;
-    pub mod read_pages;
+    pub mod pagestore;
     pub mod response;
-    pub mod router;
-    pub mod state;
     pub mod task;
-    pub mod write_pages;
 }
 
 pub mod volume {
     pub mod catalog;
     pub mod kv;
 }
+
+pub mod limiter;
+pub mod resource_pool;
+pub mod supervisor;
+
+#[cfg(test)]
+pub mod testutil;

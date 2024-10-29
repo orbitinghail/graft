@@ -1,12 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
 use futures::{select, FutureExt};
-use graft_core::supervisor::Supervisor;
 use object_store::memory::InMemory;
 use pagestore::{
-    api::task::ApiServerTask,
+    api::{
+        pagestore::{pagestore_router, PagestoreApiState},
+        task::ApiServerTask,
+    },
     segment::{bus::Bus, loader::Loader, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
     storage::mem::MemCache,
+    supervisor::Supervisor,
     volume::catalog::VolumeCatalog,
 };
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
@@ -28,25 +31,25 @@ async fn main() {
     let (store_tx, store_rx) = mpsc::channel(8);
     let commit_bus = Bus::new(128);
 
+    let api_state = Arc::new(PagestoreApiState::new(
+        page_tx,
+        commit_bus.clone(),
+        catalog.clone(),
+        loader,
+    ));
+    let router = pagestore_router().with_state(api_state);
+
     supervisor.spawn(SegmentWriterTask::new(
         page_rx,
         store_tx,
         Duration::from_secs(1),
     ));
 
-    supervisor.spawn(SegmentUploaderTask::new(
-        store_rx,
-        commit_bus.clone(),
-        store.clone(),
-        cache.clone(),
-    ));
+    supervisor.spawn(SegmentUploaderTask::new(store_rx, commit_bus, store, cache));
 
     supervisor.spawn(ApiServerTask::new(
         TcpListener::bind("0.0.0.0:3000").await.unwrap(),
-        page_tx,
-        commit_bus,
-        catalog,
-        loader,
+        router,
     ));
 
     select! {

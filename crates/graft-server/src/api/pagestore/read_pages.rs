@@ -9,10 +9,12 @@ use splinter::{ops::Cut, Splinter};
 
 use crate::{segment::closed::ClosedSegment, storage::cache::Cache};
 
-use super::{error::ApiError, extractors::Protobuf, response::ProtoResponse, state::ApiState};
+use crate::api::{error::ApiError, extractors::Protobuf, response::ProtoResponse};
+
+use super::PagestoreApiState;
 
 pub async fn handler<O: ObjectStore, C: Cache>(
-    State(state): State<Arc<ApiState<O, C>>>,
+    State(state): State<Arc<PagestoreApiState<O, C>>>,
     Protobuf(req): Protobuf<ReadPagesRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let vid: VolumeId = req.vid.try_into()?;
@@ -107,7 +109,12 @@ mod tests {
         let (page_tx, _) = mpsc::channel(128);
         let commit_bus = Bus::new(128);
 
-        let state = Arc::new(ApiState::new(page_tx, commit_bus, catalog.clone(), loader));
+        let state = Arc::new(PagestoreApiState::new(
+            page_tx,
+            commit_bus,
+            catalog.clone(),
+            loader,
+        ));
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())
