@@ -1,5 +1,6 @@
 use std::{ops::Deref, path::PathBuf};
 
+use graft_core::resource_pool::{ResourceHandle, ResourcePool, ResourcePoolGuard};
 use graft_core::{
     byte_unit::ByteUnit,
     guid::SegmentId,
@@ -7,7 +8,6 @@ use graft_core::{
 };
 use tokio::{fs::File, io::AsyncWriteExt, sync::RwLock};
 
-use crate::resource_pool::{ResourceHandle, ResourcePool, ResourcePoolGuard};
 use crate::storage::atomic_file::AtomicFileWriter;
 
 use super::cache::Cache;

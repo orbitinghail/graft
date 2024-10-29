@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use bytes::Bytes;
 
-use crate::{bitmap::BitmapExt, splinter, Splinter, SplinterRef};
+use crate::{Splinter, SplinterRef};
 use itertools::Itertools;
 
 pub fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {

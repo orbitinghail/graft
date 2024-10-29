@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use foldhash::fast::RandomState;
-use graft_core::guid::SegmentId;
+use graft_core::{guid::SegmentId, limiter::Limiter};
 use object_store::{path::Path, ObjectStore};
 
-use crate::{limiter::Limiter, storage::cache::Cache};
+use crate::storage::cache::Cache;
 
 pub struct Loader<O, C> {
     store: Arc<O>,

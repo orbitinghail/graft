@@ -7,6 +7,8 @@ This file documents future work that has been punted to help accelerate Graft to
 - [Time-Travel and Point in Time Restore](#time-travel-and-point-in-time-restore)
   - [Segment Compaction](#segment-compaction)
 - [Page deltas](#page-deltas)
+- [Low-latency writes](#low-latency-writes)
+- [Request Hedging](#request-hedging)
 
 # Time-Travel and Point in Time Restore
 
@@ -49,3 +51,18 @@ This also adds complexity to GC, as a base page can't be deleted until all delta
 One solution to these issues is to always base XOR deltas off the last checkpoint. Thus a writer only needs to retrieve one segment (the portion of the checkpoint containing the page offset in question) and can quickly decide if storing a XOR delta is worthwhile (i.e. 0s out X% of the bytes). GC thus knows that a checkpoint can't be deleted until no snapshots exist between the checkpoint and the subsequent one.
 
 For XOR delta compression to work we also need to remove the runs of zeros in the resulting segment. We can either leverage a generic compression library when uploading/downloading the segment, or we can employ RLE/Sparse compression on each page to simply strip out all the zeros. Or compress each page with something like LZ to strip out patterns. Notably this will affect read performance as well as potentially affecting our ability to read pages directly via content-range requests.
+
+# Low-latency writes
+
+Currently Graft provides high-latency writes at low cost. For some workloads, it may be desirable to tweak this relationship and pay higher cost for lower latency. To do this we will need a durable storage layer with lower latency than object storage.
+
+One way to build this is by combining a consensus replication layer with semi-durable storage. Fly.io offers non-replicated nvme drives. We only need to buffer around 1 second of writes per active volume while we wait for those writes to be committed to object storage. We also can aggressively coalesce transactions with the current txn model offered by graft, which means we may not need the full lsn based infrastructure used by the page store.
+
+**insight:** the absolute simplest thing we can do is simply return the segment id a write *will be written to* before committing the segment to object storage. One way to provide durability for this operation is to have the pageserver simply coordinate with one or two other pageservers on a per in-progress segment basis. Each of the page servers can commit to object storage independently, and let object storage handle deduplication (since they are all committing to the same key with the same contents, we don't care who wins and object store will either reject or overwrite accordingly). This increases the costs linearly based on the number of additional writers, but the absolute costs are still very small.
+
+Technically, the above write protocol can be coordinated entirely by the client if the pageservers simply had an optimistic write mode. The only difference being that the client would have to handle offsets being stored in potentially multiple potentially overlapping segments which would have to be deduplicated later at query time. Letting the pageserver coordinate this process makes things easier for the rest of the system.
+
+# Request Hedging
+According to the [AnyBlob paper], hedging requests to blob storage can help dramatically reduce tail latency. For S3, the paper suggests hedging if you haven't received the first byte within 200ms. Slightly more aggressive hedging may also be desirable, like hedging if you haven't completly downloaded the file within 600ms. Making this configurable and testing is important.
+
+[AnyBlob paper]: https://www.vldb.org/pvldb/vol16/p2769-durner.pdf

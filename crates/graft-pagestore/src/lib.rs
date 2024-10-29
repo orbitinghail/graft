@@ -1,7 +1,3 @@
-pub mod limiter;
-pub mod resource_pool;
-pub mod supervisor;
-
 pub mod segment {
     pub mod bus;
     pub mod closed;
@@ -34,6 +30,3 @@ pub mod volume {
     pub mod catalog;
     pub mod kv;
 }
-
-#[cfg(test)]
-pub mod testutil;

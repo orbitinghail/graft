@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use graft_core::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 use object_store::ObjectStore;
 use tokio::{net::TcpListener, sync::mpsc};
 
@@ -9,7 +10,6 @@ use crate::{
         loader::Loader,
     },
     storage::cache::Cache,
-    supervisor::{SupervisedTask, TaskCfg, TaskCtx},
     volume::catalog::VolumeCatalog,
 };
 

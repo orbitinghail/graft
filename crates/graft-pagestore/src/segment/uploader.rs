@@ -2,13 +2,11 @@ use std::sync::Arc;
 
 use futures::FutureExt;
 use graft_core::guid::SegmentId;
+use graft_core::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 use object_store::{path::Path, ObjectStore};
 use tokio::sync::mpsc;
 
-use crate::{
-    storage::cache::Cache,
-    supervisor::{SupervisedTask, TaskCfg, TaskCtx},
-};
+use crate::storage::cache::Cache;
 
 use super::bus::{Bus, CommitSegmentReq, StoreSegmentReq};
 

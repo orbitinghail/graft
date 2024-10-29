@@ -1,12 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
 use futures::{select, FutureExt};
+use graft_core::supervisor::Supervisor;
 use object_store::memory::InMemory;
 use pagestore::{
     api::task::ApiServerTask,
     segment::{bus::Bus, loader::Loader, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
     storage::mem::MemCache,
-    supervisor::Supervisor,
     volume::catalog::VolumeCatalog,
 };
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};

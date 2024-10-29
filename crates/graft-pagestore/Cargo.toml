@@ -13,7 +13,6 @@ static_assertions = "1.1.0"
 zerocopy = { version = "0.8", features = ["derive"] }
 anyhow = "1.0.89"
 thiserror = "1.0.63"
-tokio-util = "0.7.12"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
 object_store = { version = "0.11.0", features = ["aws"] }

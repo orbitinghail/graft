@@ -7,22 +7,19 @@ Transactional lazy replication to the edge. Optimized for scale and cost over la
 - [High Level Architecture](#high-level-architecture)
 - [Glossary](#glossary)
 - [MetaStore](#metastore)
+  - [MetaStore Storage](#metastore-storage)
   - [Storage Layout](#storage-layout)
-  - [Durable Object Initialization](#durable-object-initialization)
   - [API](#api)
   - [Checkpointing](#checkpointing)
+  - [Garbage Collection](#garbage-collection)
+  - [API Keys](#api-keys)
 - [PageStore](#pagestore)
   - [Storage Layout](#storage-layout-1)
   - [Segment Layout](#segment-layout)
   - [Segment Cache](#segment-cache)
   - [API](#api-1)
   - [PageStore internal dataflow](#pagestore-internal-dataflow)
-- [Control Plane](#control-plane)
-  - [Volume Management](#volume-management)
-  - [Segment Management](#segment-management)
-  - [Checkpointing](#checkpointing-1)
-  - [Garbage Collection](#garbage-collection)
-  - [API Keys](#api-keys)
+- [Volume Router](#volume-router)
 - [Client](#client)
   - [Initialization](#initialization)
   - [Local Storage](#local-storage)
@@ -30,8 +27,6 @@ Transactional lazy replication to the edge. Optimized for scale and cost over la
   - [Writing](#writing)
   - [Lite Client](#lite-client)
 - [Implementation Details](#implementation-details)
-  - [Performance](#performance)
-    - [Request Hedging](#request-hedging)
 
 # High Level Architecture
 
@@ -61,7 +56,7 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
   The set of Offsets which have changed between any two Snapshots.
 
 - **MetaStore**  
-  A service which stores a log of Snapshots and Grafts for each Volume.
+  A service which stores Volume metadata including the log of segments per Volume. This service is also responsible for coordinating GC, authn, authz, and background tasks.
 
 - **PageStore**  
   A service which stores pages keyed by `[volume id]/[offset]/[lsn]`. It can efficiently retrieve the latest LSN for a given Offset that is less than or equal to a specified LSN, allowing the PageStore to read the state of a Volume at any Snapshot.
@@ -80,42 +75,44 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
 
 
 # MetaStore
+A service which stores Volume metadata including the log of segments per Volume. This service is also responsible for coordinating GC, authn, authz, and background tasks.
 
-The MetaStore is implemented as a CloudFlare Durable Object per Volume. Each object maintains the Volume's log using transactional storage.
+## MetaStore Storage
+
+The MetaStore requires durable storage optimized for metadata. Eventually it would be nice to use SQLite + Graft, but for now we will use Postgres for production and SQLite locally. The goal of the codebase is to be somewhat storage layer agnostic so as to not depend heavily on specific features as well as enable a transition to Graft in the future. That transition is somewhat blocked until we can offer a solution for low write latency.
 
 ## Storage Layout
 
+```sql
+--- cache the last committed lsn per volume
+--- static volume metadata will eventually live here
+create table volumes (
+  id VolumeId,
+  lsn bigint,
+);
+
+--- one row per volume commit; check volume_segments for associated segments
+create table volume_log (
+  id VolumeId,
+  lsn bigint,
+  max_offset int,
+  ts timestamp,
+);
+
+--- main segment table for static or cached metadata
+create table segments (
+  id SegmentId,
+  created_at timestamp,
+);
+
+--- assign segments to volume lsns
+create table volume_segments (
+  volume_id VolumeId,
+  segment_id SegmentId,
+  lsn bigint,
+  offsets blob
+);
 ```
-/log/[lsn]
-  /header -> CommitHeader
-  /overflow_0 -> CommitPart
-
-CommitHeader
-  LSN
-  Max Offset in Volume
-  Commit Timestamp
-  segments: SegmentList
-
-CommitPart
-  segments: SegmentList
-
-OffsetSet
-  compressed bitmap of offsets changed in this lsn
-
-SegmentList
-  [
-    {
-      Segment ID
-      OffsetSet
-    }
-  ]
-```
-
-> Note: If Segments or Offsets overflow we can store additional sibling entries. The max size of an entry is 128KiB in CF.
-
-## Durable Object Initialization
-
-When initializing the DO, we just need to read the latest Commit and prepare the next LSN.
 
 ## API
 
@@ -137,17 +134,25 @@ Inform the MetaStore that a new checkpoint has been created at a particular LSN.
 ## Checkpointing
 Checkpointing a Volume involves picking a LSN to checkpoint at and producing a complete image of the Volume at that LSN. It replaces any single-LSN segments at the specified LSN for the Volume.
 
-Checkpoints are created whenever a configurable amount of data has changed since the last checkpoint. The MetaStore issues and monitors checkpoint jobs. The jobs run in the background on the PageStore.
+Checkpoints are created whenever a configurable amount of data has changed since the last checkpoint. The MetaStore issues and monitors checkpoint jobs.
 
 Checkpoint Job Algorithm:
 ```
 1. retrieve metadata of last checkpoint (may be multiple segments)
 2. retrieve metadata of all changes since checkpoint
 3. for any unchanged segments from previous checkpoint, simply re-emit those segments at the checkpoint LSN
-4. rewrite any changed segments by merging in offsets
+4. rewrite any changed segments by merging in new offsets
 5. emit changed segments at checkpoint LSN
 6. commit checkpoint to MetaStore
 ```
+
+We will keep around multiple checkpoints for a Volume in order to support some configurable amount of history. The Metastore is responsible for truncating history based on each volume's configuration.
+
+## Garbage Collection
+Once a segment is no longer referenced by any commit it can be deleted. A grace period will be used to provide safety while we gain confidence in the correctness of the system. To do this we can mark a segment for deletion with a timestamp, and then only delete it once the grace period has elapsed.
+
+## API Keys
+For now we will proceed without authentication. Eventually, the MetaStore will manage API keys, and associate them with Organizations. Authentication across the distributed system will be handled via Signed Tokens to ensure that the PageStore and MetaStore can validate tokens without centralized communication.
 
 # PageStore
 
@@ -210,27 +215,16 @@ Newly written segments may be cached on disk, but not added to the Segment index
 
 https://app.excalidraw.com/s/65i7nRDHAIV/1GVOEpCLvJ0
 
-# Control Plane
-The Control Plane manages Volumes, Segments, and API Keys. All data is stored in a centralized (but globally available) D1 database and exposed via a Worker based API.
+# Volume Router
 
-## Volume Management
-Volumes are managed through the Control Plane which recusively communicates with the Volume's Durable Object as needed. The Control Plane stores information about every volume in its database.
+In order to scale the MetaStore around the world, we need a globally available routing system to determine where each Volume lives. This allows the MetaStore to be entirely region local which is simpler, faster, and cheaper than backing it with some kind of globally available database.
 
-## Segment Management
-After the MetaStore commits new segments it's responsible for replicating added segments to the Control Plane. This can be done async on a background timer.
+The only data we will need to make globally available is where each Volume lives. We can solve this in a number of ways:
 
-## Checkpointing
-We only need to keep around a certain amount of history for each Volume.
+1. Add region namespacing to Volume Ids. This permanently pins each Volume to a region (or at least a namespace) allowing clients to send traffic to the right location without any additional communication. The downside is a lack of flexibility.
+2. A globally available volume registry service. Cloudflare might be the ideal place for this. They provide multiple storage and caching services that would fairly efficiently keep this routing data highly available globally.
 
-Checkpointing should trigger once we can build single volume segments composed of 8-16 MB of data or when we have enough commits. A Volume larger than this amount will be split into multiple Segments.
-
-We can keep around multiple checkpoints for a Volume in order to support some configurable amount of history. The Metastore is responsible for truncating its history based on the volume configuration. It will inform the control plane of removed segments to allow GC to eventually trigger once the segments have no references.
-
-## Garbage Collection
-As the MetaStore informs the Control Plane of removed Segments, once a Segment is not referenced by any Volume it can be deleted. We may want to delay actual deletion via a grace period until we gain confidence in the correctness of the system.
-
-## API Keys
-For now we will proceed without authentication. Eventually, the Control Plane will manage API keys, and associate them with Organizations. Authentication across the distributed system will be handled via Signed Tokens to ensure that the PageStore and MetaStore can validate tokens without centralized communication.
+I'm still undecided, but leaning towards using CF as a volume registry to increase flexiblity in volume placement (and more importantly the ability to move volumes).
 
 # Client
 Graft Clients support reading and writing to Volumes.
@@ -273,9 +267,7 @@ Supporting Lite Clients is desirable to help enable edge serverless workloads wh
 
 # Implementation Details
 
-For the MetaStore and Control Plane we will use Typescript for a more native CloudFlare worker experience.
-
-The PageStore will be written in Rust using Tokio. If this proves to be a PITA we can switch to Go.
+The MetaStore and PageStore will be written in Rust using Tokio.
 
 The Client will be a Rust library, optimized to use a minimum amount of resources and be embedded into other libraries. The primary targets will be:
 - shared object to be used with SQLite
@@ -284,11 +276,4 @@ The Client will be a Rust library, optimized to use a minimum amount of resource
 
 Networking stack:
 - transport: TCP
-- application: HTTP
-
-## Performance
-
-### Request Hedging
-According to the [AnyBlob paper], hedging requests to blob storage can help dramatically reduce tail latency. For S3, the paper suggests hedging if you haven't received the first byte within 200ms. Slightly more aggressive hedging may also be desirable, like hedging if you haven't completly downloaded the file within 600ms. Making this configurable and testing is important.
-
-[AnyBlob paper]: https://www.vldb.org/pvldb/vol16/p2769-durner.pdf
+- application: HTTP(s)

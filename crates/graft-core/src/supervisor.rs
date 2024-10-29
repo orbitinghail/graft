@@ -29,7 +29,7 @@ pub trait SupervisedTask {
     fn cfg(&self) -> TaskCfg;
     fn run(self, ctx: TaskCtx) -> impl Future<Output = anyhow::Result<()>> + Send;
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testutil"))]
     fn testonly_spawn(self)
     where
         Self: Sized + Send + 'static,

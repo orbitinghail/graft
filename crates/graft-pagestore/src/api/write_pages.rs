@@ -84,6 +84,7 @@ mod tests {
 
     use axum::handler::Handler;
     use axum_test::TestServer;
+    use graft_core::supervisor::SupervisedTask;
     use graft_proto::pagestore::v1::PageAtOffset;
     use object_store::memory::InMemory;
     use splinter::SplinterRef;
@@ -96,7 +97,6 @@ mod tests {
             bus::Bus, loader::Loader, uploader::SegmentUploaderTask, writer::SegmentWriterTask,
         },
         storage::mem::MemCache,
-        supervisor::SupervisedTask,
         volume::catalog::VolumeCatalog,
     };
 
