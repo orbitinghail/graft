@@ -1,11 +1,11 @@
 use std::{fmt::Debug, ops::Range};
 
 use graft_core::{
-    guid::{SegmentId, VolumeId},
     lsn::LSN,
     offset::Offset,
+    {SegmentId, VolumeId},
 };
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, BE, LE, U32, U64};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, BE, LE, U32, U64};
 
 #[derive(KnownLayout, Immutable, FromBytes, IntoBytes)]
 pub struct Snapshot {
@@ -36,7 +36,7 @@ impl AsRef<[u8]> for Snapshot {
     }
 }
 
-#[derive(KnownLayout, Immutable, FromBytes, IntoBytes)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
 #[repr(C, packed)]
 pub struct SegmentKeyPrefix {
     vid: VolumeId,
@@ -61,7 +61,7 @@ impl AsRef<[u8]> for SegmentKeyPrefix {
     }
 }
 
-#[derive(KnownLayout, Immutable, FromBytes, IntoBytes)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
 #[repr(C, packed)]
 pub struct SegmentKey {
     prefix: SegmentKeyPrefix,

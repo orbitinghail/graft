@@ -2,8 +2,8 @@ use std::{ops::Deref, path::PathBuf};
 
 use graft_core::{
     byte_unit::ByteUnit,
-    guid::SegmentId,
     hash_table::{HTEntry, HashTable},
+    SegmentId,
 };
 use tokio::{fs::File, io::AsyncWriteExt, sync::RwLock};
 

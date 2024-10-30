@@ -775,6 +775,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "graft-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-test",
+ "bytes",
+ "fjall",
+ "foldhash",
+ "futures",
+ "graft-core",
+ "graft-proto",
+ "hashbrown 0.15.0",
+ "itertools 0.13.0",
+ "memmap2",
+ "nix",
+ "object_store",
+ "odht",
+ "pin-project",
+ "prost",
+ "rlimit",
+ "splinter",
+ "static_assertions",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test",
+ "zerocopy 0.8.1",
+]
+
+[[package]]
 name = "guardian"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1316,40 +1350,6 @@ name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
-
-[[package]]
-name = "pagestore"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "axum-test",
- "bytes",
- "fjall",
- "foldhash",
- "futures",
- "graft-core",
- "graft-proto",
- "hashbrown 0.15.0",
- "itertools 0.13.0",
- "memmap2",
- "nix",
- "object_store",
- "odht",
- "pin-project",
- "prost",
- "rlimit",
- "splinter",
- "static_assertions",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "tracing-test",
- "zerocopy 0.8.1",
-]
 
 [[package]]
 name = "parking_lot"

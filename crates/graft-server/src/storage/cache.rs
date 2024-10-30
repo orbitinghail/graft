@@ -6,7 +6,7 @@
 use std::{future::Future, io, ops::Deref};
 
 use bytes::Bytes;
-use graft_core::guid::SegmentId;
+use graft_core::SegmentId;
 
 pub trait Cache: Send + Sync {
     type Item<'a>: Deref<Target = [u8]>

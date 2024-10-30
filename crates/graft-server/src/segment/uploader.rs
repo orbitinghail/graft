@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use futures::FutureExt;
-use graft_core::guid::SegmentId;
+use graft_core::SegmentId;
 use object_store::{path::Path, ObjectStore};
 use tokio::sync::mpsc;
 
@@ -77,7 +77,7 @@ impl<O: ObjectStore, C: Cache> SegmentUploaderTask<O, C> {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{guid::VolumeId, page::Page};
+    use graft_core::{gid::VolumeId, page::Page};
     use object_store::memory::InMemory;
 
     use crate::{

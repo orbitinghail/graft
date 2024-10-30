@@ -56,6 +56,6 @@ where
     C: Cache + Sync + Send + 'static,
 {
     Router::new()
-        .route("/api/v1/pages/read", post(read_pages::handler))
-        .route("/api/v1/pages/write", post(write_pages::handler))
+        .route("/api/v1/read_pages", post(read_pages::handler))
+        .route("/api/v1/write_pages", post(write_pages::handler))
 }

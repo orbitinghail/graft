@@ -2,19 +2,19 @@ use std::{fmt::Debug, path::Path};
 
 use fjall::{Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice};
 use graft_core::{
-    guid::{SegmentId, VolumeId},
+    gid::{SegmentId, VolumeId},
     lsn::LSN,
 };
 use graft_proto::common::v1::SegmentInfo;
 use splinter::SplinterRef;
-use zerocopy::FromBytes;
+use zerocopy::{FromBytes, TryFromBytes};
 
 use super::kv::{SegmentKey, SegmentKeyPrefix, Snapshot};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VolumeCatalogError {
     #[error(transparent)]
-    GuidParseError(#[from] graft_core::guid::GuidParseError),
+    GidParseError(#[from] graft_core::gid::GidParseError),
 
     #[error(transparent)]
     FjallError(#[from] fjall::Error),
@@ -118,7 +118,7 @@ impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> SegmentsQueryIter<I> {
         entry: fjall::Result<(Slice, Slice)>,
     ) -> Result<(SegmentId, SplinterRef<Slice>)> {
         let (key, value) = entry?;
-        let key = SegmentKey::read_from_bytes(&key)
+        let key = SegmentKey::try_read_from_bytes(&key)
             .map_err(|_| VolumeCatalogError::DecodeError { target: "SegmentKey" })?;
         let val = SplinterRef::from_bytes(value)?;
         Ok((key.sid().clone(), val))

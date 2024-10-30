@@ -101,7 +101,7 @@ impl SegmentWriterTask {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{guid::VolumeId, page::Page};
+    use graft_core::{page::Page, VolumeId};
 
     use super::*;
 

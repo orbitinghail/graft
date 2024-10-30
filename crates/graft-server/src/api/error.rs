@@ -3,7 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use graft_core::{
-    guid::{GuidParseError, VolumeId},
+    gid::{GidParseError, VolumeId},
     offset::Offset,
     page::PageSizeError,
 };
@@ -14,8 +14,8 @@ use crate::{segment::closed::SegmentValidationErr, volume::catalog::VolumeCatalo
 
 #[derive(Debug, Error)]
 pub enum ApiError {
-    #[error("failed to parse GUID: {0}")]
-    GuidParseError(#[from] GuidParseError),
+    #[error("failed to parse id: {0}")]
+    GidParseError(#[from] GidParseError),
 
     #[error(transparent)]
     PageSizeError(#[from] PageSizeError),
@@ -29,7 +29,7 @@ pub enum ApiError {
     #[error(transparent)]
     CatalogError(#[from] VolumeCatalogError),
 
-    #[error("failed to load snapshot for volume: {0}")]
+    #[error("failed to load latest snapshot for volume: {0}")]
     SnapshotMissing(VolumeId),
 
     #[error(transparent)]
@@ -41,6 +41,13 @@ pub enum ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (StatusCode::BAD_REQUEST, self.to_string()).into_response()
+        use ApiError::*;
+        let status = match self {
+            GidParseError(_) => StatusCode::BAD_REQUEST,
+            DuplicatePageOffset(_) => StatusCode::BAD_REQUEST,
+            OffsetsDecodeError(_) => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        (status, self.to_string()).into_response()
     }
 }

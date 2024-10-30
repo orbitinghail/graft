@@ -5,9 +5,9 @@ use std::{collections::BTreeMap, fmt::Debug};
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{
     byte_unit::ByteUnit,
-    guid::VolumeId,
     offset::Offset,
     page::{Page, PAGESIZE},
+    VolumeId,
 };
 use itertools::Itertools;
 use thiserror::Error;

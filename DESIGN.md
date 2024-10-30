@@ -6,6 +6,7 @@ Transactional lazy replication to the edge. Optimized for scale and cost over la
 
 - [High Level Architecture](#high-level-architecture)
 - [Glossary](#glossary)
+- [GIDs](#gids)
 - [MetaStore](#metastore)
   - [MetaStore Storage](#metastore-storage)
   - [Storage Layout](#storage-layout)
@@ -34,11 +35,14 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
 
 # Glossary
 
+- **GID**
+  A 128 bit Graft Identifier. See [GIDs](#gids) for details.
+
 - **Volume**  
   A sparse data object consisting of Pages located at Offsets starting from 0. Volumes are referred to primarily by a Volume ID.
 
 - **Volume ID**  
-  A 16 byte GUID used to uniquely identify a Volume.
+  A 16 byte GID used to uniquely identify a Volume.
 
 - **Page**  
   A fixed-length block of storage. The default size is 4KiB (4096 bytes).
@@ -71,48 +75,67 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
   An object stored in blob storage containing Pages and an index mapping from (Volume ID, Offset) to each Page.
 
 - **Segment ID**
-  A 16 byte GUID used to uniquely identify a Segment.
+  A 16 byte GID used to uniquely identify a Segment.
 
+# GIDs
+
+Graft uses a 16 byte identifier called a Graft Identifier (GID) to identify Segments and Volumes. GIDs are based on ULIDs with a prefix byte.
+
+The primary goals of GIDs are:
+- 128 bits in size
+- they are alphanumerically sortable by time
+- they are "typed" such that equality takes the type into account
+- collisions have close to zero probability assuming that less than 10k GIDs are created per second
+
+GIDs have the following layout:
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|     prefix    |                   timestamp                   |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                   timestamp                   |     random    |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                             random                            |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                             random                            |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+Every GID has a 1 byte prefix which encodes it's type. There are currently two known GID types: Volume and Segment. The prefix may contain other types or namespace metadata in the future.
+
+Following the prefix is a 48 bit timestamp encoding milliseconds since the unix epoch and stored in network byte order (MSB first).
+
+Finally there are 72 bits of random noise allowing up to `2^72` Gids to be generated per millisecond.
 
 # MetaStore
 A service which stores Volume metadata including the log of segments per Volume. This service is also responsible for coordinating GC, authn, authz, and background tasks.
 
 ## MetaStore Storage
 
-The MetaStore requires durable storage optimized for metadata. Eventually it would be nice to use SQLite + Graft, but for now we will use Postgres for production and SQLite locally. The goal of the codebase is to be somewhat storage layer agnostic so as to not depend heavily on specific features as well as enable a transition to Graft in the future. That transition is somewhat blocked until we can offer a solution for low write latency.
+The MetaStore will store it's data in a key value store. For now we will use object storage directly. Each commit to a volume will be a separate file, stored in a way that makes it easy for downstream consumers to quickly get up to date.
 
 ## Storage Layout
 
-```sql
---- cache the last committed lsn per volume
---- static volume metadata will eventually live here
-create table volumes (
-  id VolumeId,
-  lsn bigint,
-);
-
---- one row per volume commit; check volume_segments for associated segments
-create table volume_log (
-  id VolumeId,
-  lsn bigint,
-  max_offset int,
-  ts timestamp,
-);
-
---- main segment table for static or cached metadata
-create table segments (
-  id SegmentId,
-  created_at timestamp,
-);
-
---- assign segments to volume lsns
-create table volume_segments (
-  volume_id VolumeId,
-  segment_id SegmentId,
-  lsn bigint,
-  offsets blob
-);
 ```
+/volumes/[VolumeId]/[LSN]
+  CommitHeader
+  list of Segment
+
+CommitHeader (36 bytes)
+  vid: VolumeId (16 bytes)
+  lsn: LSN (8 bytes)
+  ts: Unix timestamp in milliseconds (8 bytes)
+  num_segments: u32 (4 bytes)
+
+Segment
+  sid: SegmentId (16 bytes)
+  offsets_size: u32 (4 bytes)
+  offsets: Splinter (offsets_size bytes)
+```
+
+To ensure that each volume log sorts correctly, LSNs will need to be fixed length and encoded in a sortable way. The easiest solution is to use 0 padded decimal numbers. However the key size can be compressed if more characters are used. It appears that base58 should sort correctly as long as the resulting string is padded to a consistent length.
 
 ## API
 

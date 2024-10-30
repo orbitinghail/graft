@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{extract::State, response::IntoResponse};
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
-use graft_core::{guid::VolumeId, lsn::LSN};
+use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesResponse};
 use object_store::ObjectStore;
 use splinter::{ops::Cut, Splinter};
@@ -74,7 +74,7 @@ mod tests {
     use axum::handler::Handler;
     use axum_test::TestServer;
     use bytes::Bytes;
-    use graft_core::{guid::SegmentId, offset::Offset, page::Page};
+    use graft_core::{gid::SegmentId, offset::Offset, page::Page};
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{memory::InMemory, path::Path};
     use prost::Message;
@@ -166,7 +166,7 @@ mod tests {
 
         // we are finally able to test read_pages :)
         let req = ReadPagesRequest {
-            vid: Bytes::copy_from_slice(vid.as_ref()),
+            vid: vid.into(),
             lsn,
             offsets: (0u32..=4).collect::<Splinter>().serialize_to_bytes(),
         };

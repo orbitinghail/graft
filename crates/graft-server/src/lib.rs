@@ -18,6 +18,7 @@ pub mod storage {
 pub mod api {
     pub mod error;
     pub mod extractors;
+    pub mod metastore;
     pub mod pagestore;
     pub mod response;
     pub mod task;

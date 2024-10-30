@@ -1,8 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use futures::{select, FutureExt};
-use object_store::memory::InMemory;
-use pagestore::{
+use graft_server::{
     api::{
         pagestore::{pagestore_router, PagestoreApiState},
         task::ApiServerTask,
@@ -12,6 +11,7 @@ use pagestore::{
     supervisor::Supervisor,
     volume::catalog::VolumeCatalog,
 };
+use object_store::memory::InMemory;
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
 
 #[tokio::main]

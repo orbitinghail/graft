@@ -1,8 +1,8 @@
 use std::{sync::Arc, vec};
 
 use axum::{extract::State, response::IntoResponse};
-use bytes::{Bytes, BytesMut};
-use graft_core::{guid::VolumeId, offset::Offset, page::Page};
+use bytes::BytesMut;
+use graft_core::{offset::Offset, page::Page, VolumeId};
 use graft_proto::{
     common::v1::SegmentInfo,
     pagestore::v1::{WritePagesRequest, WritePagesResponse},
@@ -59,7 +59,7 @@ pub async fn handler<O, C>(
 
             // store the segment
             segments.push(SegmentInfo {
-                sid: Bytes::copy_from_slice(commit.sid.as_ref()),
+                sid: commit.sid.into(),
                 offsets: offsets.inner().clone(),
             });
         }
@@ -86,6 +86,7 @@ mod tests {
 
     use axum::handler::Handler;
     use axum_test::TestServer;
+    use bytes::Bytes;
     use graft_proto::pagestore::v1::PageAtOffset;
     use object_store::memory::InMemory;
     use splinter::SplinterRef;
@@ -133,13 +134,13 @@ mod tests {
         let page: Bytes = Page::test_filled(1).into();
 
         let req1 = WritePagesRequest {
-            vid: Bytes::copy_from_slice(VolumeId::random().as_ref()),
+            vid: VolumeId::random().into(),
             pages: vec![PageAtOffset { offset: 0, data: page.clone() }],
         };
         let req1 = server.post("/").bytes(req1.encode_to_vec().into());
 
         let req2 = WritePagesRequest {
-            vid: Bytes::copy_from_slice(VolumeId::random().as_ref()),
+            vid: VolumeId::random().into(),
             pages: vec![
                 PageAtOffset { offset: 0, data: page.clone() },
                 PageAtOffset { offset: 1, data: page.clone() },

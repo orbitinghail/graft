@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use graft_core::{guid::SegmentId, guid::VolumeId, offset::Offset, page::Page};
+use graft_core::{offset::Offset, page::Page, SegmentId, VolumeId};
 use tokio::sync::broadcast::{self, error::SendError};
 
 use super::{offsets_map::OffsetsMap, open::OpenSegment};

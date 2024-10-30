@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fmt::Debug};
 
 use bytes::Bytes;
-use graft_core::{guid::VolumeId, offset::Offset};
+use graft_core::{offset::Offset, VolumeId};
 use splinter::{Splinter, SplinterRef};
 
 #[derive(Default)]

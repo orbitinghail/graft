@@ -5,15 +5,15 @@ use std::{error::Error, fmt::Debug};
 
 use graft_core::{
     byte_unit::ByteUnit,
-    guid::VolumeId,
     offset::Offset,
     page::{Page, PAGESIZE},
+    VolumeId,
 };
 use odht::FxHashFn;
 use thiserror::Error;
 use zerocopy::{
     byteorder::little_endian::U32, little_endian::U16, FromBytes, Immutable, IntoBytes,
-    KnownLayout, Ref,
+    KnownLayout, Ref, TryFromBytes,
 };
 
 pub const SEGMENT_MAGIC: U32 = U32::from_bytes([0xB8, 0x3B, 0x41, 0xC0]);
@@ -95,7 +95,7 @@ impl SegmentHeaderPage {
     }
 }
 
-#[derive(IntoBytes, FromBytes, Immutable, KnownLayout)]
+#[derive(IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct SegmentIndexKey {
     vid: VolumeId,
@@ -130,7 +130,7 @@ impl odht::Config for SegmentIndex {
     }
 
     fn decode_key(k: &Self::EncodedKey) -> Self::Key {
-        SegmentIndexKey::read_from_bytes(k).expect("invalid key")
+        SegmentIndexKey::try_read_from_bytes(k).expect("invalid key")
     }
 
     fn encode_value(v: &Self::Value) -> Self::EncodedValue {

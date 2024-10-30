@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use foldhash::fast::RandomState;
-use graft_core::guid::SegmentId;
+use graft_core::SegmentId;
 use object_store::{path::Path, ObjectStore};
 
 use crate::limiter::Limiter;
