@@ -17,27 +17,27 @@ use super::{
 };
 
 #[derive(Debug, thiserror::Error)]
-pub enum VolumeCatalogError {
+pub enum VolumeCatalogErr {
     #[error(transparent)]
-    GidParseError(#[from] graft_core::gid::GidParseError),
+    GidParseErr(#[from] graft_core::gid::GidParseErr),
 
     #[error(transparent)]
-    FjallError(#[from] fjall::Error),
+    FjallErr(#[from] fjall::Error),
 
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    IoErr(#[from] std::io::Error),
 
     #[error("Failed to decode entry into type {target}")]
-    DecodeError { target: &'static str },
+    DecodeErr { target: &'static str },
 
     #[error(transparent)]
-    SplinterError(#[from] splinter::DecodeErr),
+    SplinterErr(#[from] splinter::DecodeErr),
 
     #[error(transparent)]
-    OffsetsValidationError(#[from] OffsetsValidationErr),
+    OffsetsValidationErr(#[from] OffsetsValidationErr),
 }
 
-type Result<T> = std::result::Result<T, VolumeCatalogError>;
+type Result<T> = std::result::Result<T, VolumeCatalogErr>;
 
 #[derive(Clone)]
 pub struct VolumeCatalog {
@@ -87,7 +87,7 @@ impl VolumeCatalog {
             .get(vid)?
             .map(|bytes| {
                 Snapshot::read_from_bytes(&bytes)
-                    .map_err(|_| VolumeCatalogError::DecodeError { target: "Snapshot" })
+                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "Snapshot" })
             })
             .transpose()
     }
@@ -158,7 +158,7 @@ impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> SegmentsQueryIter<I> {
     ) -> Result<(SegmentId, SplinterRef<Slice>)> {
         let (key, value) = entry?;
         let key = SegmentKey::try_read_from_bytes(&key)
-            .map_err(|_| VolumeCatalogError::DecodeError { target: "SegmentKey" })?;
+            .map_err(|_| VolumeCatalogErr::DecodeErr { target: "SegmentKey" })?;
         let val = SplinterRef::from_bytes(value)?;
         Ok((key.sid().clone(), val))
     }

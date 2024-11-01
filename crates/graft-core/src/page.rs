@@ -21,7 +21,7 @@ impl Deref for Page {
 
 #[derive(Debug, Error)]
 #[error("invalid page size: {size}; expected: {PAGESIZE}")]
-pub struct PageSizeError {
+pub struct PageSizeErr {
     size: ByteUnit,
 }
 
@@ -38,11 +38,11 @@ impl From<Page> for Bytes {
 }
 
 impl TryFrom<Bytes> for Page {
-    type Error = PageSizeError;
+    type Error = PageSizeErr;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if value.len() != PAGESIZE.as_usize() {
-            return Err(PageSizeError { size: ByteUnit::new(value.len() as u64) });
+            return Err(PageSizeErr { size: ByteUnit::new(value.len() as u64) });
         }
 
         Ok(Page(value))
@@ -50,11 +50,11 @@ impl TryFrom<Bytes> for Page {
 }
 
 impl TryFrom<&[u8]> for Page {
-    type Error = PageSizeError;
+    type Error = PageSizeErr;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() != PAGESIZE.as_usize() {
-            return Err(PageSizeError { size: ByteUnit::new(value.len() as u64) });
+            return Err(PageSizeErr { size: ByteUnit::new(value.len() as u64) });
         }
 
         Ok(Page(Bytes::copy_from_slice(value)))

@@ -1,4 +1,5 @@
 use std::{
+    fs::canonicalize,
     ops::Deref,
     path::{Path, PathBuf},
 };
@@ -61,9 +62,10 @@ impl DiskCache {
     /// - `space_limit` The maximum amount of space that the cache can use.
     /// - `open_limit` The maximum number of mmap'ed segments.
     pub fn new<P: AsRef<Path>>(dir: P, space_limit: ByteUnit, open_limit: usize) -> Self {
-        tracing::info!("Opening disk cache at {:?}", dir.as_ref());
+        let dir = canonicalize(dir).expect("failed to canonicalize cache directory");
+        tracing::info!("Opening disk cache at {:?}", dir);
         Self {
-            dir: dir.as_ref().to_path_buf(),
+            dir,
             space_limit,
             segments: Default::default(),
             mmap_pool: ResourcePool::new(open_limit),
@@ -75,7 +77,7 @@ impl Cache for DiskCache {
     type Item<'a> = MappedSegment<'a>;
 
     async fn put(&self, sid: &SegmentId, data: bytes::Bytes) -> std::io::Result<()> {
-        let path = PathBuf::from(sid.pretty());
+        let path = self.dir.join(sid.pretty());
 
         // write the data to disk
         let mut file = AtomicFileWriter::open(&path).await?;
@@ -105,7 +107,7 @@ impl Cache for DiskCache {
             let mmap = self
                 .mmap_pool
                 .get(&segment.mmap_handle, || async {
-                    let path = PathBuf::from(sid.pretty());
+                    let path = self.dir.join(sid.pretty());
                     let file = File::open(&path).await?;
                     // SAFETY: This is safe as long as no other process or thread modifies the file while it is mapped.
                     let mmap = unsafe { memmap2::MmapOptions::new().map(&file) }?;

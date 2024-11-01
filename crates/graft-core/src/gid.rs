@@ -73,9 +73,9 @@ impl<const P: u8> AsRef<[u8]> for Gid<P> {
 }
 
 #[derive(Debug, Error, PartialEq)]
-pub enum GidParseError {
+pub enum GidParseErr {
     #[error("invalid base58 encoding")]
-    DecodeError(#[from] bs58::decode::Error),
+    Base58DecodeErr(#[from] bs58::decode::Error),
 
     #[error("invalid length")]
     InvalidLength,
@@ -85,15 +85,15 @@ pub enum GidParseError {
 }
 
 impl<const P: u8> TryFrom<[u8; GID_SIZE.as_usize()]> for Gid<P> {
-    type Error = GidParseError;
+    type Error = GidParseErr;
 
     fn try_from(value: [u8; GID_SIZE.as_usize()]) -> Result<Self, Self::Error> {
-        try_transmute!(value).map_err(|_| GidParseError::InvalidLayout)
+        try_transmute!(value).map_err(|_| GidParseErr::InvalidLayout)
     }
 }
 
 impl<const P: u8> TryFrom<&str> for Gid<P> {
-    type Error = GidParseError;
+    type Error = GidParseErr;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         // To calculate this compute ceil(16 * (log2(256) / log2(58))) + 1
@@ -106,7 +106,7 @@ impl<const P: u8> TryFrom<&str> for Gid<P> {
 
         // verify the length
         if value.len() != MAX_ENCODED_LEN {
-            return Err(GidParseError::InvalidLength);
+            return Err(GidParseErr::InvalidLength);
         }
 
         // parse from base58
@@ -116,11 +116,11 @@ impl<const P: u8> TryFrom<&str> for Gid<P> {
 }
 
 impl<const P: u8> TryFrom<Bytes> for Gid<P> {
-    type Error = GidParseError;
+    type Error = GidParseErr;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if value.len() != GID_SIZE.as_usize() {
-            return Err(GidParseError::InvalidLength);
+            return Err(GidParseErr::InvalidLength);
         }
 
         let bytes: [u8; GID_SIZE.as_usize()] = value.as_ref().try_into().unwrap();
@@ -195,21 +195,21 @@ mod tests {
 
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.try_into();
-            assert_eq!(result, Err(GidParseError::InvalidLength));
+            assert_eq!(result, Err(GidParseErr::InvalidLength));
         }
 
         // bad encoding
         let cases = ["GontbnaXtUE3!BbafyDiJt", "zzzzzzzzzzzzzzzzzzzzzz"];
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.try_into();
-            assert!(matches!(result, Err(GidParseError::DecodeError(_))));
+            assert!(matches!(result, Err(GidParseErr::Base58DecodeErr(_))));
         }
 
         // bad layout
         let cases = ["GGGGGGGGGGGGGGGGGGGGGG"];
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.try_into();
-            assert_eq!(result, Err(GidParseError::InvalidLayout));
+            assert_eq!(result, Err(GidParseErr::InvalidLayout));
         }
 
         // bad layout, direct from binary repr
@@ -219,7 +219,7 @@ mod tests {
         ];
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.try_into();
-            assert_eq!(result, Err(GidParseError::InvalidLayout));
+            assert_eq!(result, Err(GidParseErr::InvalidLayout));
         }
     }
 }

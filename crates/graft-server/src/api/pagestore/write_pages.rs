@@ -13,14 +13,14 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::segment::bus::WritePageReq;
 
-use crate::api::{error::ApiError, extractors::Protobuf};
+use crate::api::{error::ApiErr, extractors::Protobuf};
 
 use super::PagestoreApiState;
 
 pub async fn handler<O, C>(
     State(state): State<Arc<PagestoreApiState<O, C>>>,
     Protobuf(req): Protobuf<WritePagesRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
 
     // subscribe to the broadcast channel
@@ -33,7 +33,7 @@ pub async fn handler<O, C>(
         let page: Page = page.data.try_into()?;
 
         if seen.contains(&offset) {
-            return Err(ApiError::DuplicatePageOffset(offset));
+            return Err(ApiErr::DuplicatePageOffset(offset));
         }
         seen.insert(offset);
 

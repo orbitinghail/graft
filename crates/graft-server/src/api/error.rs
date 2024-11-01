@@ -3,22 +3,22 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use graft_core::{
-    gid::{GidParseError, VolumeId},
+    gid::{GidParseErr, VolumeId},
     offset::Offset,
-    page::PageSizeError,
+    page::PageSizeErr,
 };
 use splinter::DecodeErr;
 use thiserror::Error;
 
-use crate::{segment::closed::SegmentValidationErr, volume::catalog::VolumeCatalogError};
+use crate::{segment::closed::SegmentValidationErr, volume::catalog::VolumeCatalogErr};
 
 #[derive(Debug, Error)]
-pub enum ApiError {
+pub enum ApiErr {
     #[error("failed to parse id: {0}")]
-    GidParseError(#[from] GidParseError),
+    GidParseError(#[from] GidParseErr),
 
     #[error(transparent)]
-    PageSizeError(#[from] PageSizeError),
+    PageSizeError(#[from] PageSizeErr),
 
     #[error("duplicate page offset detected: {0}")]
     DuplicatePageOffset(Offset),
@@ -27,7 +27,7 @@ pub enum ApiError {
     OffsetsDecodeError(#[from] DecodeErr),
 
     #[error(transparent)]
-    CatalogError(#[from] VolumeCatalogError),
+    CatalogError(#[from] VolumeCatalogErr),
 
     #[error("failed to load latest snapshot for volume: {0}")]
     SnapshotMissing(VolumeId),
@@ -39,9 +39,9 @@ pub enum ApiError {
     SegmentValidationError(#[from] SegmentValidationErr),
 }
 
-impl IntoResponse for ApiError {
+impl IntoResponse for ApiErr {
     fn into_response(self) -> Response {
-        use ApiError::*;
+        use ApiErr::*;
         let status = match self {
             GidParseError(_) => StatusCode::BAD_REQUEST,
             DuplicatePageOffset(_) => StatusCode::BAD_REQUEST,

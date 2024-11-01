@@ -10,14 +10,14 @@ use splinter::{ops::Cut, Splinter};
 use crate::segment::cache::Cache;
 use crate::segment::closed::ClosedSegment;
 
-use crate::api::{error::ApiError, extractors::Protobuf, response::ProtoResponse};
+use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
 use super::PagestoreApiState;
 
 pub async fn handler<O: ObjectStore, C: Cache>(
     State(state): State<Arc<PagestoreApiState<O, C>>>,
     Protobuf(req): Protobuf<ReadPagesRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsn: LSN = req.lsn;
     let mut offsets = Splinter::from_bytes(req.offsets)?;
