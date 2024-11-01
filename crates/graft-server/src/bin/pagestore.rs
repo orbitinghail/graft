@@ -1,17 +1,21 @@
 use std::{sync::Arc, time::Duration};
 
 use futures::{select, FutureExt};
+use graft_core::byte_unit::ByteUnit;
 use graft_server::{
     api::{
         pagestore::{pagestore_router, PagestoreApiState},
         task::ApiServerTask,
     },
-    segment::{bus::Bus, loader::Loader, uploader::SegmentUploaderTask, writer::SegmentWriterTask},
-    storage::mem::MemCache,
+    segment::{
+        bus::Bus, cache::disk::DiskCache, loader::Loader, uploader::SegmentUploaderTask,
+        writer::SegmentWriterTask,
+    },
     supervisor::Supervisor,
     volume::catalog::VolumeCatalog,
 };
 use object_store::memory::InMemory;
+use rlimit::Resource;
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
 
 #[tokio::main]
@@ -20,10 +24,20 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
+    // eventually make these configurable and persistent
+    let cache_dir = tempfile::tempdir().expect("failed to create temporary directory");
+    let cache_size = ByteUnit::from_gb(1);
+    let cache_open_limit = rlimit::getrlimit(Resource::NOFILE)
+        .expect("failed to get nofile limit")
+        .0 as usize
+        / 2;
+
+    assert!(cache_open_limit > 128, "cache_open_limit is too low");
+
     let mut supervisor = Supervisor::default();
 
     let store = Arc::new(InMemory::default());
-    let cache = Arc::new(MemCache::default());
+    let cache = Arc::new(DiskCache::new(cache_dir, cache_size, cache_open_limit));
     let catalog = VolumeCatalog::open_temporary().unwrap();
     let loader = Loader::new(store.clone(), cache.clone(), 8);
 

@@ -8,6 +8,10 @@ use std::{future::Future, io, ops::Deref};
 use bytes::Bytes;
 use graft_core::SegmentId;
 
+pub mod atomic_file;
+pub mod disk;
+pub mod mem;
+
 pub trait Cache: Send + Sync {
     type Item<'a>: Deref<Target = [u8]>
     where

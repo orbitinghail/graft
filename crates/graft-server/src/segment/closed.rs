@@ -13,11 +13,11 @@ use odht::FxHashFn;
 use thiserror::Error;
 use zerocopy::{
     byteorder::little_endian::U32, little_endian::U16, FromBytes, Immutable, IntoBytes,
-    KnownLayout, Ref, TryFromBytes,
+    KnownLayout, TryFromBytes,
 };
 
 pub const SEGMENT_MAGIC: U32 = U32::from_bytes([0xB8, 0x3B, 0x41, 0xC0]);
-pub const SEGMENT_VERSION: u8 = 1;
+pub const SEGMENT_FORMAT_VERSION: u8 = 1;
 
 // segments must be no larger than 16 MB
 pub const SEGMENT_MAX_SIZE: ByteUnit = ByteUnit::from_mb(16);
@@ -39,13 +39,13 @@ static_assertions::const_assert!(SEGMENT_MAX_PAGES <= u16::MAX as usize);
 #[repr(C)]
 pub struct SegmentHeader {
     magic: U32,
-    version: u8,
+    format_version: u8,
     // size of the index in bytes, if <= SEGMENT_INLINE_INDEX_SIZE the
     // index is stored inline
     index_size: U32,
 
     // pad to 16 bytes for nicer alignment (not required for safety)
-    padding: [u8; 7],
+    _padding: [u8; 7],
 }
 
 #[derive(IntoBytes, FromBytes, Immutable, KnownLayout)]
@@ -67,9 +67,9 @@ impl SegmentHeaderPage {
         Self {
             header: SegmentHeader {
                 magic: SEGMENT_MAGIC,
-                version: SEGMENT_VERSION,
+                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new(index_size.as_u32()),
-                padding: [0; 7],
+                _padding: [0; 7],
             },
             index: [0; SEGMENT_INLINE_INDEX_SIZE.as_usize()],
         }
@@ -84,9 +84,9 @@ impl SegmentHeaderPage {
         let mut page = Self {
             header: SegmentHeader {
                 magic: SEGMENT_MAGIC,
-                version: SEGMENT_VERSION,
+                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new(index_bytes.len().try_into().unwrap()),
-                padding: [0; 7],
+                _padding: [0; 7],
             },
             index: [0; SEGMENT_INLINE_INDEX_SIZE.as_usize()],
         };
@@ -201,8 +201,8 @@ pub enum SegmentValidationErr {
     TooLarge,
     #[error("invalid magic number")]
     Magic,
-    #[error("invalid version number")]
-    Version,
+    #[error("invalid format version number")]
+    FormatVersion,
     #[error("index size too large")]
     IndexSize,
     #[error("invalid index: {source}")]
@@ -217,7 +217,7 @@ pub struct ClosedSegment<'a> {
 }
 
 impl<'a> ClosedSegment<'a> {
-    pub fn from_bytes(data: &'a [u8]) -> Result<ClosedSegment<'a>, SegmentValidationErr> {
+    pub fn from_bytes(data: &'a [u8]) -> Result<Self, SegmentValidationErr> {
         if data.len() < PAGESIZE {
             return Err(SegmentValidationErr::TooSmall);
         }
@@ -225,13 +225,13 @@ impl<'a> ClosedSegment<'a> {
             return Err(SegmentValidationErr::TooLarge);
         }
 
-        let (header, rest) = Ref::<_, SegmentHeader>::from_prefix(data).unwrap();
+        let (header, rest) = SegmentHeader::try_ref_from_prefix(data).unwrap();
 
         if header.magic != SEGMENT_MAGIC {
             return Err(SegmentValidationErr::Magic);
         }
-        if header.version != SEGMENT_VERSION {
-            return Err(SegmentValidationErr::Version);
+        if header.format_version != SEGMENT_FORMAT_VERSION {
+            return Err(SegmentValidationErr::FormatVersion);
         }
         let index_size: ByteUnit = header.index_size.get().into();
         let (page_data, index_bytes) = if index_size <= SEGMENT_INLINE_INDEX_SIZE {
@@ -324,9 +324,9 @@ mod tests {
         buf.write_all(
             SegmentHeader {
                 magic: U32::new(0),
-                version: SEGMENT_VERSION,
+                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new(0),
-                padding: [0; 7],
+                _padding: [0; 7],
             }
             .as_bytes(),
         )
@@ -336,21 +336,21 @@ mod tests {
             SegmentValidationErr::Magic
         ));
 
-        // test a bad version number
+        // test a bad format version number
         let mut buf = mk_cursor(PAGESIZE);
         buf.write_all(
             SegmentHeader {
                 magic: SEGMENT_MAGIC,
-                version: SEGMENT_VERSION + 1,
+                format_version: SEGMENT_FORMAT_VERSION + 1,
                 index_size: U32::new(0),
-                padding: [0; 7],
+                _padding: [0; 7],
             }
             .as_bytes(),
         )
         .unwrap();
         assert!(matches!(
             ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
-            SegmentValidationErr::Version
+            SegmentValidationErr::FormatVersion
         ));
 
         // test a bad index size
@@ -358,9 +358,9 @@ mod tests {
         buf.write_all(
             SegmentHeader {
                 magic: SEGMENT_MAGIC,
-                version: SEGMENT_VERSION,
+                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new((SEGMENT_INLINE_INDEX_SIZE.as_u32()) + 1),
-                padding: [0; 7],
+                _padding: [0; 7],
             }
             .as_bytes(),
         )
@@ -375,9 +375,9 @@ mod tests {
         buf.write_all(
             SegmentHeader {
                 magic: SEGMENT_MAGIC,
-                version: SEGMENT_VERSION,
+                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new(SEGMENT_INLINE_INDEX_SIZE.as_u32()),
-                padding: [0; 7],
+                _padding: [0; 7],
             }
             .as_bytes(),
         )

@@ -96,9 +96,9 @@ mod tests {
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
         segment::{
-            bus::Bus, loader::Loader, uploader::SegmentUploaderTask, writer::SegmentWriterTask,
+            bus::Bus, cache::mem::MemCache, loader::Loader, uploader::SegmentUploaderTask,
+            writer::SegmentWriterTask,
         },
-        storage::mem::MemCache,
         supervisor::SupervisedTask,
         volume::catalog::VolumeCatalog,
     };

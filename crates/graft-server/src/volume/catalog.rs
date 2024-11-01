@@ -47,6 +47,10 @@ impl VolumeCatalog {
         Self::open_config(Config::new(path))
     }
 
+    pub fn open_temporary() -> Result<Self> {
+        Self::open_config(Config::new(tempfile::tempdir()?).temporary(true))
+    }
+
     pub fn open_config(config: Config) -> Result<Self> {
         let keyspace = config.open()?;
 
@@ -58,10 +62,6 @@ impl VolumeCatalog {
         )?;
 
         Ok(Self { keyspace, volumes, segments })
-    }
-
-    pub fn open_temporary() -> Result<Self> {
-        Self::open_config(Config::new(tempfile::tempdir()?).temporary(true))
     }
 
     pub fn update_volume(

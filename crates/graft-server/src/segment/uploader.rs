@@ -5,10 +5,12 @@ use graft_core::SegmentId;
 use object_store::{path::Path, ObjectStore};
 use tokio::sync::mpsc;
 
-use crate::storage::cache::Cache;
 use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 
-use super::bus::{Bus, CommitSegmentReq, StoreSegmentReq};
+use super::{
+    bus::{Bus, CommitSegmentReq, StoreSegmentReq},
+    cache::Cache,
+};
 
 pub struct SegmentUploaderTask<O, C> {
     input: mpsc::Receiver<StoreSegmentReq>,
@@ -80,10 +82,7 @@ mod tests {
     use graft_core::{gid::VolumeId, page::Page};
     use object_store::memory::InMemory;
 
-    use crate::{
-        segment::{closed::ClosedSegment, open::OpenSegment},
-        storage::mem::MemCache,
-    };
+    use crate::segment::{cache::mem::MemCache, closed::ClosedSegment, open::OpenSegment};
 
     use super::*;
 

@@ -17,8 +17,8 @@ use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 )]
 #[repr(u8)]
 pub enum Prefix {
-    Volume = 0,
-    Segment = 1,
+    Volume = 0b1000_0000,
+    Segment = 0b0100_0000,
 }
 
 impl Prefix {
@@ -28,8 +28,8 @@ impl Prefix {
 
     pub fn from_u8(value: u8) -> Self {
         match value {
-            0 => Self::Volume,
-            1 => Self::Segment,
+            0b1000_0000 => Self::Volume,
+            0b0100_0000 => Self::Segment,
             _ => panic!("Invalid prefix: {}", value),
         }
     }

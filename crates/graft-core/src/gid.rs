@@ -98,12 +98,14 @@ impl<const P: u8> TryFrom<&str> for Gid<P> {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         // To calculate this compute ceil(16 * (log2(256) / log2(58))) + 1
         // The format is the prefix byte followed by up to 22 base58 characters
-        static MAX_ENCODED_LEN: usize = 23;
-        // the minimum length is 17 bytes
-        static MIN_ENCODED_LEN: usize = 17;
+        static MAX_ENCODED_LEN: usize = 22;
+
+        // Note: we require that Gid's always are their maximum length
+        // This is currently guaranteed for well-constructed Gid's due to the
+        // prefix byte always occupying the high bits.
 
         // verify the length
-        if value.len() < MIN_ENCODED_LEN || value.len() > MAX_ENCODED_LEN {
+        if value.len() != MAX_ENCODED_LEN {
             return Err(GidParseError::InvalidLength);
         }
 
@@ -146,6 +148,25 @@ mod tests {
     }
 
     #[test]
+    fn test_size() {
+        let g = SegmentId {
+            prefix: Prefix::Segment,
+            ts: GidTimestamp::now(),
+            random: [0x00; 9],
+        };
+        println!("gid: {}", g.pretty());
+        assert_eq!(g.pretty().len(), 22);
+
+        let g = VolumeId {
+            prefix: Prefix::Volume,
+            ts: GidTimestamp::now(),
+            random: [0xff; 9],
+        };
+        println!("gid: {}", g.pretty());
+        assert_eq!(g.pretty().len(), 22);
+    }
+
+    #[test]
     fn test_round_trip() {
         let id = SegmentId::random();
 
@@ -178,14 +199,14 @@ mod tests {
         }
 
         // bad encoding
-        let cases = ["Xasdfasdfas!dfasdf"];
+        let cases = ["GontbnaXtUE3!BbafyDiJt", "zzzzzzzzzzzzzzzzzzzzzz"];
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.try_into();
             assert!(matches!(result, Err(GidParseError::DecodeError(_))));
         }
 
         // bad layout
-        let cases = ["x118bvrWsDaSxNd5t3m3", "r118bvrWsDaSxNd5t3m"];
+        let cases = ["GGGGGGGGGGGGGGGGGGGGGG"];
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.try_into();
             assert_eq!(result, Err(GidParseError::InvalidLayout));

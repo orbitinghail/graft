@@ -4,8 +4,8 @@ use foldhash::fast::RandomState;
 use graft_core::SegmentId;
 use object_store::{path::Path, ObjectStore};
 
+use super::cache::Cache;
 use crate::limiter::Limiter;
-use crate::storage::cache::Cache;
 
 pub struct Loader<O, C> {
     store: Arc<O>,

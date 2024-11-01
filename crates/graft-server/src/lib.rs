@@ -1,18 +1,12 @@
 pub mod segment {
     pub mod bus;
+    pub mod cache;
     pub mod closed;
     pub mod loader;
     pub mod offsets_map;
     pub mod open;
     pub mod uploader;
     pub mod writer;
-}
-
-pub mod storage {
-    pub mod atomic_file;
-    pub mod cache;
-    pub mod disk;
-    pub mod mem;
 }
 
 pub mod api {
@@ -26,7 +20,9 @@ pub mod api {
 
 pub mod volume {
     pub mod catalog;
+    pub mod commit;
     pub mod kv;
+    pub mod store;
 }
 
 pub mod limiter;

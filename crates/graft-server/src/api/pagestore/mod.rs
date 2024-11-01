@@ -7,9 +7,9 @@ use object_store::ObjectStore;
 use crate::{
     segment::{
         bus::{Bus, CommitSegmentReq, WritePageReq},
+        cache::Cache,
         loader::Loader,
     },
-    storage::cache::Cache,
     volume::catalog::VolumeCatalog,
 };
 

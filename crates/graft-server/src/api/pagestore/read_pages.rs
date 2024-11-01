@@ -7,7 +7,8 @@ use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesRespon
 use object_store::ObjectStore;
 use splinter::{ops::Cut, Splinter};
 
-use crate::{segment::closed::ClosedSegment, storage::cache::Cache};
+use crate::segment::cache::Cache;
+use crate::segment::closed::ClosedSegment;
 
 use crate::api::{error::ApiError, extractors::Protobuf, response::ProtoResponse};
 
@@ -83,8 +84,10 @@ mod tests {
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
-        segment::{bus::Bus, loader::Loader, offsets_map::OffsetsMap, open::OpenSegment},
-        storage::mem::MemCache,
+        segment::{
+            bus::Bus, cache::mem::MemCache, loader::Loader, offsets_map::OffsetsMap,
+            open::OpenSegment,
+        },
         volume::{catalog::VolumeCatalog, kv::Snapshot},
     };
 

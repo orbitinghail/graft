@@ -5,7 +5,7 @@ use graft_core::{
 };
 use tokio::sync::RwLock;
 
-use super::cache::Cache;
+use super::Cache;
 
 struct Segment {
     sid: SegmentId,

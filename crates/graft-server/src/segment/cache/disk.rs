@@ -1,4 +1,7 @@
-use std::{ops::Deref, path::PathBuf};
+use std::{
+    ops::Deref,
+    path::{Path, PathBuf},
+};
 
 use graft_core::{
     byte_unit::ByteUnit,
@@ -7,10 +10,10 @@ use graft_core::{
 };
 use tokio::{fs::File, io::AsyncWriteExt, sync::RwLock};
 
+use super::atomic_file::AtomicFileWriter;
 use crate::resource_pool::{ResourceHandle, ResourcePool, ResourcePoolGuard};
-use crate::storage::atomic_file::AtomicFileWriter;
 
-use super::cache::Cache;
+use super::Cache;
 
 struct Segment {
     sid: SegmentId,
@@ -39,6 +42,8 @@ impl Deref for MappedSegment<'_> {
 }
 
 pub struct DiskCache {
+    dir: PathBuf,
+
     /// The maximum amount of space that the cache can use.
     space_limit: ByteUnit,
 
@@ -55,8 +60,10 @@ impl DiskCache {
     /// **Parameters:**
     /// - `space_limit` The maximum amount of space that the cache can use.
     /// - `open_limit` The maximum number of mmap'ed segments.
-    pub fn new(space_limit: ByteUnit, open_limit: usize) -> Self {
+    pub fn new<P: AsRef<Path>>(dir: P, space_limit: ByteUnit, open_limit: usize) -> Self {
+        tracing::info!("Opening disk cache at {:?}", dir.as_ref());
         Self {
+            dir: dir.as_ref().to_path_buf(),
             space_limit,
             segments: Default::default(),
             mmap_pool: ResourcePool::new(open_limit),
