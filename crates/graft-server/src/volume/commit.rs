@@ -1,11 +1,20 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{lsn::LSN, SegmentId, VolumeId};
+use object_store::path::Path;
 use splinter::SplinterRef;
 use thiserror::Error;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32, U64};
 
 pub const COMMIT_MAGIC: U32<LittleEndian> = U32::from_bytes([0x31, 0x99, 0xBF, 0x8D]);
 pub const COMMIT_FORMAT: u8 = 1;
+
+pub fn commit_key_prefix(vid: &VolumeId) -> Path {
+    format!("volumes/{}/", vid.pretty()).into()
+}
+
+pub fn commit_key(vid: &VolumeId, lsn: LSN) -> Path {
+    format!("{}/{:0>18x}", commit_key_prefix(vid), lsn).into()
+}
 
 #[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[repr(C)]
@@ -70,15 +79,16 @@ pub enum CommitValidationErr {
     FormatVersion,
 }
 
-pub struct CommitRef<'a> {
-    header: &'a CommitHeader,
-    offsets: &'a [u8],
+pub struct Commit {
+    header: CommitHeader,
+    offsets: Bytes,
 }
 
-impl<'a> CommitRef<'a> {
-    pub fn from_bytes(data: &'a [u8]) -> Result<Self, CommitValidationErr> {
-        let (header, offsets) =
-            CommitHeader::try_ref_from_prefix(data).map_err(|_| CommitValidationErr::TooSmall)?;
+impl Commit {
+    pub fn from_bytes(mut data: Bytes) -> Result<Self, CommitValidationErr> {
+        let header = data.split_to(size_of::<CommitHeader>());
+        let header = CommitHeader::try_read_from_bytes(&header)
+            .map_err(|_| CommitValidationErr::TooSmall)?;
 
         if header.magic != COMMIT_MAGIC {
             return Err(CommitValidationErr::Magic);
@@ -87,7 +97,7 @@ impl<'a> CommitRef<'a> {
             return Err(CommitValidationErr::FormatVersion);
         }
 
-        Ok(Self { header, offsets })
+        Ok(Self { header, offsets: data })
     }
 
     pub fn vid(&self) -> &VolumeId {
@@ -106,8 +116,8 @@ impl<'a> CommitRef<'a> {
         self.header.timestamp.get()
     }
 
-    pub fn iter_offsets(&self) -> OffsetsIter<'a> {
-        OffsetsIter { offsets: self.offsets }
+    pub fn iter_offsets(&self) -> OffsetsIter<'_> {
+        OffsetsIter { offsets: &self.offsets }
     }
 }
 

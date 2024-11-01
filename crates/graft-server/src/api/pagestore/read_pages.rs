@@ -150,8 +150,9 @@ mod tests {
         cache.put(&sid2, segment).await.unwrap();
 
         // notify the catalog about the segments
-        catalog
-            .update_volume(
+        let mut batch = catalog.batch_insert();
+        batch
+            .insert_snapshot(
                 vid.clone(),
                 Snapshot::new(lsn, 2),
                 vec![
@@ -166,6 +167,7 @@ mod tests {
                 ],
             )
             .unwrap();
+        batch.commit().unwrap();
 
         // we are finally able to test read_pages :)
         let req = ReadPagesRequest {

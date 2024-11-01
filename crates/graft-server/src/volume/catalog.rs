@@ -1,6 +1,8 @@
 use std::{fmt::Debug, path::Path};
 
-use fjall::{Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice};
+use fjall::{
+    Batch, Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice,
+};
 use graft_core::{
     gid::{SegmentId, VolumeId},
     lsn::LSN,
@@ -9,7 +11,10 @@ use graft_proto::common::v1::SegmentInfo;
 use splinter::SplinterRef;
 use zerocopy::{FromBytes, TryFromBytes};
 
-use super::kv::{SegmentKey, SegmentKeyPrefix, Snapshot};
+use super::{
+    commit::{Commit, OffsetsValidationErr},
+    kv::{SegmentKey, SegmentKeyPrefix, Snapshot},
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VolumeCatalogError {
@@ -27,6 +32,9 @@ pub enum VolumeCatalogError {
 
     #[error(transparent)]
     SplinterError(#[from] splinter::DecodeErr),
+
+    #[error(transparent)]
+    OffsetsValidationError(#[from] OffsetsValidationErr),
 }
 
 type Result<T> = std::result::Result<T, VolumeCatalogError>;
@@ -64,24 +72,12 @@ impl VolumeCatalog {
         Ok(Self { keyspace, volumes, segments })
     }
 
-    pub fn update_volume(
-        &self,
-        vid: VolumeId,
-        snapshot: Snapshot,
-        segments: Vec<SegmentInfo>,
-    ) -> Result<()> {
-        let mut batch = self.keyspace.batch();
-
-        batch.insert(&self.volumes, &vid, &snapshot);
-
-        for segment in segments {
-            let key = SegmentKey::new(vid.clone(), snapshot.lsn(), segment.sid.try_into()?);
-            batch.insert(&self.segments, key, segment.offsets);
+    pub fn batch_insert(&self) -> VolumeCatalogBatch {
+        VolumeCatalogBatch {
+            batch: self.keyspace.batch(),
+            volumes: self.volumes.clone(),
+            segments: self.segments.clone(),
         }
-
-        batch.commit()?;
-
-        Ok(())
     }
 
     /// Return the latest snapshot for the specified Volume.
@@ -105,6 +101,49 @@ impl VolumeCatalog {
     ) -> impl Iterator<Item = Result<(SegmentId, SplinterRef<Slice>)>> {
         let scan = self.segments.range(SegmentKeyPrefix::range(vid, lsn)).rev();
         SegmentsQueryIter { scan }
+    }
+}
+
+pub struct VolumeCatalogBatch {
+    batch: Batch,
+    volumes: Partition,
+    segments: Partition,
+}
+
+impl VolumeCatalogBatch {
+    pub fn insert_commit(&mut self, commit: Commit) -> Result<()> {
+        self.batch.insert(
+            &self.volumes,
+            commit.vid(),
+            Snapshot::new(commit.lsn(), commit.last_offset()),
+        );
+
+        let mut iter = commit.iter_offsets();
+        while let Some((sid, offsets)) = iter.next().transpose()? {
+            let key = SegmentKey::new(commit.vid().clone(), commit.lsn(), sid.clone());
+            self.batch.insert(&self.segments, key, offsets.inner());
+        }
+
+        Ok(())
+    }
+
+    pub fn insert_snapshot(
+        &mut self,
+        vid: VolumeId,
+        snapshot: Snapshot,
+        segments: Vec<SegmentInfo>,
+    ) -> Result<()> {
+        self.batch.insert(&self.volumes, &vid, &snapshot);
+        for segment in segments {
+            let key = SegmentKey::new(vid.clone(), snapshot.lsn(), segment.sid.try_into()?);
+            self.batch.insert(&self.segments, key, segment.offsets);
+        }
+        Ok(())
+    }
+
+    pub fn commit(self) -> Result<()> {
+        self.batch.commit()?;
+        Ok(())
     }
 }
 

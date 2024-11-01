@@ -1,13 +1,21 @@
 use std::{sync::Arc, time::SystemTime};
 
-use bytes::Bytes;
-use graft_core::{
-    lsn::{self, LSN},
-    VolumeId,
-};
+use futures::{Stream, TryStreamExt};
+use graft_core::{lsn::LSN, VolumeId};
 use object_store::{path::Path, ObjectStore};
 
-use super::commit::CommitBuilder;
+use crate::volume::commit::{commit_key_prefix, CommitValidationErr};
+
+use super::commit::{commit_key, Commit, CommitBuilder};
+
+#[derive(Debug, thiserror::Error)]
+pub enum VolumeStoreError {
+    #[error(transparent)]
+    ObjectStoreError(#[from] object_store::Error),
+
+    #[error(transparent)]
+    CommitValidationError(#[from] CommitValidationErr),
+}
 
 pub struct VolumeStore<O> {
     store: Arc<O>,
@@ -26,18 +34,26 @@ impl<O: ObjectStore> VolumeStore<O> {
         CommitBuilder::new(vid, lsn, last_offset, timestamp)
     }
 
-    pub async fn commit(&self, commit: CommitBuilder) -> anyhow::Result<()> {
+    pub async fn commit(&self, commit: CommitBuilder) -> Result<(), VolumeStoreError> {
         let (vid, lsn, commit) = commit.freeze();
-        let path = Path::from(format!("volumes/{}/{}", vid.pretty(), encode_lsn(lsn)));
-        self.store.put(&path, commit.into()).await?;
+        let key = commit_key(&vid, lsn);
+        self.store.put(&key, commit.into()).await?;
         Ok(())
     }
 
-    pub fn replay(&self, vid: VolumeId) {
-        todo!("returns a stream of commits")
+    pub fn replay(
+        &self,
+        vid: VolumeId,
+    ) -> impl Stream<Item = Result<Commit, VolumeStoreError>> + '_ {
+        self.store
+            .list(Some(&commit_key_prefix(&vid)))
+            .map_err(|err| err.into())
+            .and_then(|meta| self.get_commit(meta.location))
     }
-}
 
-fn encode_lsn(lsn: LSN) -> String {
-    format!("{:0>18x}", lsn)
+    async fn get_commit(&self, path: Path) -> Result<Commit, VolumeStoreError> {
+        let commit = self.store.get(&path).await?;
+        let data = commit.bytes().await?;
+        Ok(Commit::from_bytes(data)?)
+    }
 }
