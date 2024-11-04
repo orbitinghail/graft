@@ -23,6 +23,7 @@ pub mod volume {
     pub mod commit;
     pub mod kv;
     pub mod store;
+    pub mod updater;
 }
 
 pub mod limiter;

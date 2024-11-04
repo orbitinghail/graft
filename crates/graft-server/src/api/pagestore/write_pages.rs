@@ -96,7 +96,7 @@ mod tests {
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
         segment::{
-            bus::Bus, cache::mem::MemCache, loader::Loader, uploader::SegmentUploaderTask,
+            bus::Bus, cache::mem::MemCache, loader::SegmentLoader, uploader::SegmentUploaderTask,
             writer::SegmentWriterTask,
         },
         supervisor::SupervisedTask,
@@ -111,7 +111,7 @@ mod tests {
         let store = Arc::new(InMemory::default());
         let cache = Arc::new(MemCache::default());
         let catalog = VolumeCatalog::open_temporary().unwrap();
-        let loader = Loader::new(store.clone(), cache.clone(), 8);
+        let loader = SegmentLoader::new(store.clone(), cache.clone(), 8);
 
         let (page_tx, page_rx) = mpsc::channel(128);
         let (store_tx, store_rx) = mpsc::channel(8);

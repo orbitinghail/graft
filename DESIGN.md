@@ -139,20 +139,23 @@ To ensure that each volume log sorts correctly, LSNs will need to be fixed lengt
 
 ## API
 
-**`getSnapshotMetadata(LSN)`**  
+**`snapshot(VolumeId, LSN)`**  
 Returns Snapshot metadata for a particular LSN (or the latest if null). Does not include Segments.
 
-**`pullOffsets(LSN A)`**  
-Returns a compressed bitmap of changed offsets between LSN A (exclusive) and the latest LSN (inclusive). This method will also return the Snapshot at LSN B.
+**`pullOffsets(VolumeId, LSN)`**  
+Returns a compressed bitmap of changed offsets between the provided LSN (exclusive) and the latest LSN (inclusive). This method will also return the latest Snapshot of the Volume.
 
-**`pullSegments(LSN A)`**  
-Returns a list of segments added between LSN A (exclusive) and the latest LSN (inclusive). This method will also return the Snapshot at LSN B.
+This method will return 304 Not Modified if the Volume has not changed.
 
-**`commit(Snapshot LSN, segments)`**  
-Commit a new Snapshot to the Volume at the next LSN. Returns the committed Snapshot metadata or an error.
+**`pullSegments(VolumeId, LSN)`**  
+Returns a list of segments added between the provided LSN (exclusive) and the latest LSN (inclusive). This method will also return the latest Snapshot of the Volume.
 
-**`checkpoint(Snapshot LSN, added segments)`**  
-Inform the MetaStore that a new checkpoint has been created at a particular LSN. If multiple segments are generated, they will represent non-overlapping offset ranges. Will be stored in the log at the next LSN.
+This method will return 304 Not Modified if the Volume has not changed.
+
+**`commit(VolumeId, Snapshot LSN, last_offset, segments)`**  
+Commit changes to a Volume if it is safe to do so. The provided Snapshot LSN is the snapshot the commit was based on. Returns the newly committed Snapshot metadata on success.
+
+A checkpoint may be created by issuing a commit that covers the entire offset range of the volume.
 
 ## Checkpointing
 Checkpointing a Volume involves picking a LSN to checkpoint at and producing a complete image of the Volume at that LSN. It replaces any single-LSN segments at the specified LSN for the Volume.

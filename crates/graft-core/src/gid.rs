@@ -75,7 +75,7 @@ impl<const P: u8> AsRef<[u8]> for Gid<P> {
 #[derive(Debug, Error, PartialEq)]
 pub enum GidParseErr {
     #[error("invalid base58 encoding")]
-    Base58DecodeErr(#[from] bs58::decode::Error),
+    DecodeErr(#[from] bs58::decode::Error),
 
     #[error("invalid length")]
     InvalidLength,
@@ -202,7 +202,7 @@ mod tests {
         let cases = ["GontbnaXtUE3!BbafyDiJt", "zzzzzzzzzzzzzzzzzzzzzz"];
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.try_into();
-            assert!(matches!(result, Err(GidParseErr::Base58DecodeErr(_))));
+            assert!(matches!(result, Err(GidParseErr::DecodeErr(_))));
         }
 
         // bad layout

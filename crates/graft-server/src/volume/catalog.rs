@@ -12,8 +12,8 @@ use splinter::SplinterRef;
 use zerocopy::{FromBytes, TryFromBytes};
 
 use super::{
-    commit::{Commit, OffsetsValidationErr},
-    kv::{SegmentKey, SegmentKeyPrefix, Snapshot},
+    commit::{Commit, CommitMeta, OffsetsValidationErr},
+    kv::{CommitKey, SegmentKey},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -43,10 +43,10 @@ type Result<T> = std::result::Result<T, VolumeCatalogErr>;
 pub struct VolumeCatalog {
     keyspace: Keyspace,
 
-    /// maps VolumeId to kv::Snapshot { lsn, last_offset }
+    /// maps kv::CommitKey { vid, lsn } to CommitMeta { lsn, last_offset, timestamp }
     volumes: Partition,
 
-    /// maps kv::SegmentKey { vid, lsn, sid} to OffsetSet
+    /// maps kv::SegmentKey { CommitKey { vid, lsn }, sid} to OffsetSet
     segments: Partition,
 }
 
@@ -80,14 +80,28 @@ impl VolumeCatalog {
         }
     }
 
+    /// Return the snapshot for the specified Volume at the provided LSN.
+    /// Returns None if no snapshot is found, or the snapshot is corrupt.
+    pub fn snapshot(&self, vid: VolumeId, lsn: LSN) -> Result<Option<CommitMeta>> {
+        self.volumes
+            .get(CommitKey::new(vid, lsn))?
+            .map(|bytes| {
+                CommitMeta::read_from_bytes(&bytes)
+                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitMeta" })
+            })
+            .transpose()
+    }
+
     /// Return the latest snapshot for the specified Volume.
     /// Returns None if no snapshot is found, or the snapshot is corrupt.
-    pub fn snapshot(&self, vid: &VolumeId) -> Result<Option<Snapshot>> {
+    pub fn latest_snapshot(&self, vid: VolumeId) -> Result<Option<CommitMeta>> {
         self.volumes
-            .get(vid)?
-            .map(|bytes| {
-                Snapshot::read_from_bytes(&bytes)
-                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "Snapshot" })
+            .prefix(&vid)
+            .next_back()
+            .transpose()?
+            .map(|(_, bytes)| {
+                CommitMeta::read_from_bytes(&bytes)
+                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitMeta" })
             })
             .transpose()
     }
@@ -99,7 +113,7 @@ impl VolumeCatalog {
         vid: VolumeId,
         lsn: LSN,
     ) -> impl Iterator<Item = Result<(SegmentId, SplinterRef<Slice>)>> {
-        let scan = self.segments.range(SegmentKeyPrefix::range(vid, lsn)).rev();
+        let scan = self.segments.range(CommitKey::range(vid, lsn)).rev();
         SegmentsQueryIter { scan }
     }
 }
@@ -112,15 +126,13 @@ pub struct VolumeCatalogBatch {
 
 impl VolumeCatalogBatch {
     pub fn insert_commit(&mut self, commit: Commit) -> Result<()> {
-        self.batch.insert(
-            &self.volumes,
-            commit.vid(),
-            Snapshot::new(commit.lsn(), commit.last_offset()),
-        );
+        let commit_key = CommitKey::new(commit.vid().clone(), commit.meta().lsn());
+
+        self.batch.insert(&self.volumes, &commit_key, commit.meta());
 
         let mut iter = commit.iter_offsets();
         while let Some((sid, offsets)) = iter.next().transpose()? {
-            let key = SegmentKey::new(commit.vid().clone(), commit.lsn(), sid.clone());
+            let key = SegmentKey::new(commit_key.clone(), sid.clone());
             self.batch.insert(&self.segments, key, offsets.inner());
         }
 
@@ -130,12 +142,14 @@ impl VolumeCatalogBatch {
     pub fn insert_snapshot(
         &mut self,
         vid: VolumeId,
-        snapshot: Snapshot,
+        snapshot: CommitMeta,
         segments: Vec<SegmentInfo>,
     ) -> Result<()> {
-        self.batch.insert(&self.volumes, &vid, &snapshot);
+        let commit_key = CommitKey::new(vid, snapshot.lsn());
+
+        self.batch.insert(&self.volumes, &commit_key, &snapshot);
         for segment in segments {
-            let key = SegmentKey::new(vid.clone(), snapshot.lsn(), segment.sid.try_into()?);
+            let key = SegmentKey::new(commit_key.clone(), segment.sid.try_into()?);
             self.batch.insert(&self.segments, key, segment.offsets);
         }
         Ok(())

@@ -7,14 +7,14 @@ use object_store::{path::Path, ObjectStore};
 use super::cache::Cache;
 use crate::limiter::Limiter;
 
-pub struct Loader<O, C> {
+pub struct SegmentLoader<O, C> {
     store: Arc<O>,
     cache: Arc<C>,
 
     download_limiter: Limiter<SegmentId, RandomState>,
 }
 
-impl<O: ObjectStore, C: Cache> Loader<O, C> {
+impl<O: ObjectStore, C: Cache> SegmentLoader<O, C> {
     pub fn new(store: Arc<O>, cache: Arc<C>, download_concurrency: usize) -> Self {
         Self {
             store,

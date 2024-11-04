@@ -8,7 +8,7 @@ use graft_server::{
         task::ApiServerTask,
     },
     segment::{
-        bus::Bus, cache::disk::DiskCache, loader::Loader, uploader::SegmentUploaderTask,
+        bus::Bus, cache::disk::DiskCache, loader::SegmentLoader, uploader::SegmentUploaderTask,
         writer::SegmentWriterTask,
     },
     supervisor::Supervisor,
@@ -21,7 +21,6 @@ use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
-
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
     // eventually make these configurable and persistent
@@ -39,7 +38,7 @@ async fn main() {
     let store = Arc::new(InMemory::default());
     let cache = Arc::new(DiskCache::new(cache_dir, cache_size, cache_open_limit));
     let catalog = VolumeCatalog::open_temporary().unwrap();
-    let loader = Loader::new(store.clone(), cache.clone(), 8);
+    let loader = SegmentLoader::new(store.clone(), cache.clone(), 8);
 
     let (page_tx, page_rx) = mpsc::channel(128);
     let (store_tx, store_rx) = mpsc::channel(8);

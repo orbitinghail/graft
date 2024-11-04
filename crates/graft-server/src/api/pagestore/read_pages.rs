@@ -23,7 +23,7 @@ pub async fn handler<O: ObjectStore, C: Cache>(
     let mut offsets = Splinter::from_bytes(req.offsets)?;
     let num_offsets = offsets.cardinality();
 
-    let snapshot = state.catalog().snapshot(&vid)?;
+    let snapshot = state.catalog().latest_snapshot(vid.clone())?;
     let needs_update = snapshot.is_none() || snapshot.as_ref().is_some_and(|s| s.lsn() < lsn);
 
     if needs_update {
@@ -85,10 +85,10 @@ mod tests {
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
         segment::{
-            bus::Bus, cache::mem::MemCache, loader::Loader, offsets_map::OffsetsMap,
+            bus::Bus, cache::mem::MemCache, loader::SegmentLoader, offsets_map::OffsetsMap,
             open::OpenSegment,
         },
-        volume::{catalog::VolumeCatalog, kv::Snapshot},
+        volume::{catalog::VolumeCatalog, commit::CommitMeta},
     };
 
     use super::*;
@@ -107,7 +107,7 @@ mod tests {
         let store = Arc::new(InMemory::default());
         let cache = Arc::new(MemCache::default());
         let catalog = VolumeCatalog::open_temporary().unwrap();
-        let loader = Loader::new(store.clone(), cache.clone(), 8);
+        let loader = SegmentLoader::new(store.clone(), cache.clone(), 8);
 
         let (page_tx, _) = mpsc::channel(128);
         let commit_bus = Bus::new(128);
@@ -154,7 +154,7 @@ mod tests {
         batch
             .insert_snapshot(
                 vid.clone(),
-                Snapshot::new(lsn, 2),
+                CommitMeta::new(lsn, 2, 0),
                 vec![
                     SegmentInfo {
                         sid: sid1.into(),

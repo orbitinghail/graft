@@ -3,7 +3,9 @@ use graft_core::{lsn::LSN, SegmentId, VolumeId};
 use object_store::path::Path;
 use splinter::SplinterRef;
 use thiserror::Error;
-use zerocopy::{Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32, U64};
+use zerocopy::{
+    FromBytes, Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32, U64,
+};
 
 pub const COMMIT_MAGIC: U32<LittleEndian> = U32::from_bytes([0x31, 0x99, 0xBF, 0x8D]);
 pub const COMMIT_FORMAT: u8 = 1;
@@ -22,9 +24,46 @@ pub struct CommitHeader {
     magic: U32<LittleEndian>,
     format: u8,
     vid: VolumeId,
+    meta: CommitMeta,
+}
+
+#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout)]
+#[repr(C)]
+pub struct CommitMeta {
     lsn: U64<LittleEndian>,
     last_offset: U32<LittleEndian>,
     timestamp: U64<LittleEndian>,
+}
+
+impl CommitMeta {
+    pub fn new(lsn: LSN, last_offset: u32, timestamp: u64) -> Self {
+        Self {
+            lsn: lsn.into(),
+            last_offset: last_offset.into(),
+            timestamp: timestamp.into(),
+        }
+    }
+
+    #[inline]
+    pub fn lsn(&self) -> u64 {
+        self.lsn.get()
+    }
+
+    #[inline]
+    pub fn last_offset(&self) -> u32 {
+        self.last_offset.get()
+    }
+
+    #[inline]
+    pub fn timestamp(&self) -> u64 {
+        self.timestamp.get()
+    }
+}
+
+impl AsRef<[u8]> for CommitMeta {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
 }
 
 #[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
@@ -47,9 +86,11 @@ impl CommitBuilder {
             magic: COMMIT_MAGIC,
             format: COMMIT_FORMAT,
             vid: vid.clone(),
-            lsn: lsn.into(),
-            last_offset: last_offset.into(),
-            timestamp: timestamp.into(),
+            meta: CommitMeta {
+                lsn: lsn.into(),
+                last_offset: last_offset.into(),
+                timestamp: timestamp.into(),
+            },
         };
         buffer.put_slice(header.as_bytes());
         Self { vid, lsn, buffer }
@@ -100,20 +141,14 @@ impl Commit {
         Ok(Self { header, offsets: data })
     }
 
+    #[inline]
     pub fn vid(&self) -> &VolumeId {
         &self.header.vid
     }
 
-    pub fn lsn(&self) -> u64 {
-        self.header.lsn.get()
-    }
-
-    pub fn last_offset(&self) -> u32 {
-        self.header.last_offset.get()
-    }
-
-    pub fn timestamp(&self) -> u64 {
-        self.header.timestamp.get()
+    #[inline]
+    pub fn meta(&self) -> &CommitMeta {
+        &self.header.meta
     }
 
     pub fn iter_offsets(&self) -> OffsetsIter<'_> {

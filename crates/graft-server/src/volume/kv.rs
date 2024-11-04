@@ -1,49 +1,22 @@
-use std::{fmt::Debug, ops::Range};
+use std::{
+    fmt::{Debug, Display},
+    ops::Range,
+};
 
 use graft_core::{
     lsn::LSN,
-    offset::Offset,
     {SegmentId, VolumeId},
 };
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, BE, LE, U32, U64};
-
-#[derive(KnownLayout, Immutable, FromBytes, IntoBytes)]
-pub struct Snapshot {
-    lsn: U64<LE>,
-    last_offset: U32<LE>,
-}
-
-impl Snapshot {
-    pub fn new(lsn: LSN, last_offset: Offset) -> Self {
-        Self {
-            lsn: U64::new(lsn),
-            last_offset: U32::new(last_offset),
-        }
-    }
-
-    pub fn lsn(&self) -> LSN {
-        self.lsn.get()
-    }
-
-    pub fn last_offset(&self) -> Offset {
-        self.last_offset.get()
-    }
-}
-
-impl AsRef<[u8]> for Snapshot {
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, BE, U64};
 
 #[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
 #[repr(C, packed)]
-pub struct SegmentKeyPrefix {
+pub struct CommitKey {
     vid: VolumeId,
     lsn: U64<BE>,
 }
 
-impl SegmentKeyPrefix {
+impl CommitKey {
     pub fn new(vid: VolumeId, lsn: LSN) -> Self {
         Self { vid, lsn: U64::new(lsn) }
     }
@@ -55,33 +28,51 @@ impl SegmentKeyPrefix {
     }
 }
 
-impl AsRef<[u8]> for SegmentKeyPrefix {
+impl AsRef<[u8]> for CommitKey {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+impl Display for CommitKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.vid, self.lsn)
+    }
+}
+
+impl Debug for CommitKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+impl Clone for CommitKey {
+    fn clone(&self) -> Self {
+        Self {
+            vid: self.vid.clone(),
+            lsn: self.lsn.clone(),
+        }
     }
 }
 
 #[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
 #[repr(C, packed)]
 pub struct SegmentKey {
-    prefix: SegmentKeyPrefix,
+    commit: CommitKey,
     sid: SegmentId,
 }
 
 impl SegmentKey {
-    pub fn new(vid: VolumeId, lsn: LSN, sid: SegmentId) -> Self {
-        Self {
-            prefix: SegmentKeyPrefix::new(vid, lsn),
-            sid,
-        }
+    pub fn new(commit: CommitKey, sid: SegmentId) -> Self {
+        Self { commit, sid }
     }
 
     pub fn vid(&self) -> &VolumeId {
-        &self.prefix.vid
+        &self.commit.vid
     }
 
     pub fn lsn(&self) -> LSN {
-        self.prefix.lsn.get()
+        self.commit.lsn.get()
     }
 
     pub fn sid(&self) -> &SegmentId {
@@ -95,8 +86,23 @@ impl AsRef<[u8]> for SegmentKey {
     }
 }
 
+impl Display for SegmentKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.commit, self.sid)
+    }
+}
+
 impl Debug for SegmentKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}/{}", self.prefix.vid, self.prefix.lsn, self.sid)
+        Display::fmt(self, f)
+    }
+}
+
+impl Clone for SegmentKey {
+    fn clone(&self) -> Self {
+        Self {
+            commit: self.commit.clone(),
+            sid: self.sid.clone(),
+        }
     }
 }

@@ -1,38 +1,55 @@
 syntax = "proto3";
 package graft.metastore.v1;
 
-import "google/protobuf/timestamp.proto";
 import "graft/common/v1/common.proto";
 
-message SnapshotMetadata {
-  uint64 lsn = 1;
-  uint32 last_offset = 2;
-  google.protobuf.Timestamp last_commit = 3;
+// Request a snapshot of the volume at the given LSN (or latest).
+// Returns: graft.metastore.v1.SnapshotResponse
+message SnapshotRequest {
+  bytes vid = 1;
+  optional uint64 lsn = 2;
 }
 
+message SnapshotResponse {
+  graft.common.v1.Snapshot snapshot = 1;
+}
+
+// Retrieve the latest snapshot along with a Splinter containing all changed
+// offsets between the given LSN (exclusive) and the latest LSN (inclusive).
+// Returns: graft.metastore.v1.PullOffsetsResponse
 message PullOffsetsRequest {
-  uint64 since_lsn = 1;
+  bytes vid = 1;
+  uint64 lsn = 2;
 }
 
 message PullOffsetsResponse {
-  SnapshotMetadata snapshot = 1;
+  graft.common.v1.Snapshot snapshot = 1;
   bytes offsets = 2;
 }
 
+// Returns a list of segments added between the provided LSN (exclusive) and the
+// latest LSN (inclusive). This method will also return the latest Snapshot of
+// the Volume.
+// Returns: graft.metastore.v1.PullSegmentsResponse
 message PullSegmentsRequest {
-  uint64 since_lsn = 1;
+  bytes vid = 1;
+  uint64 lsn = 2;
 }
 
 message PullSegmentsResponse {
-  SnapshotMetadata snapshot = 1;
-  repeated graft.common.v1.SegmentInfo added = 2;
-}
-
-message CommitRequest {
-  uint64 base_lsn = 1;
+  graft.common.v1.Snapshot snapshot = 1;
   repeated graft.common.v1.SegmentInfo segments = 2;
 }
 
+// Commit changes to a Volume if it is safe to do so. The provided Snapshot LSN
+// is the snapshot the commit was based on. Returns the newly committed Snapshot
+// metadata on success.
+message CommitRequest {
+  uint64 snapshot_lsn = 1;
+  uint32 last_offset = 2;
+  repeated graft.common.v1.SegmentInfo segments = 3;
+}
+
 message CommitResponse {
-  SnapshotMetadata snapshot = 1;
+  graft.common.v1.Snapshot snapshot = 1;
 }

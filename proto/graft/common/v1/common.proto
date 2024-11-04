@@ -1,7 +1,17 @@
 syntax = "proto3";
 package graft.common.v1;
 
+import "google/protobuf/timestamp.proto";
+
 message SegmentInfo {
   bytes sid = 1;
   bytes offsets = 2;
+}
+
+// A snapshot contains the metadata of a volume at a given LSN.
+message Snapshot {
+  bytes vid = 1;
+  uint64 lsn = 2;
+  uint32 last_offset = 3;
+  google.protobuf.Timestamp timestamp = 4;
 }

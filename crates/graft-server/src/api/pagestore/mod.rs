@@ -8,7 +8,7 @@ use crate::{
     segment::{
         bus::{Bus, CommitSegmentReq, WritePageReq},
         cache::Cache,
-        loader::Loader,
+        loader::SegmentLoader,
     },
     volume::catalog::VolumeCatalog,
 };
@@ -20,7 +20,7 @@ pub struct PagestoreApiState<O, C> {
     page_tx: mpsc::Sender<WritePageReq>,
     commit_bus: Bus<CommitSegmentReq>,
     catalog: VolumeCatalog,
-    loader: Loader<O, C>,
+    loader: SegmentLoader<O, C>,
 }
 
 impl<O, C> PagestoreApiState<O, C> {
@@ -28,7 +28,7 @@ impl<O, C> PagestoreApiState<O, C> {
         page_tx: mpsc::Sender<WritePageReq>,
         commit_bus: Bus<CommitSegmentReq>,
         catalog: VolumeCatalog,
-        loader: Loader<O, C>,
+        loader: SegmentLoader<O, C>,
     ) -> Self {
         Self { page_tx, commit_bus, catalog, loader }
     }
@@ -45,7 +45,7 @@ impl<O, C> PagestoreApiState<O, C> {
         &self.catalog
     }
 
-    pub fn loader(&self) -> &Loader<O, C> {
+    pub fn loader(&self) -> &SegmentLoader<O, C> {
         &self.loader
     }
 }
@@ -56,6 +56,6 @@ where
     C: Cache + Sync + Send + 'static,
 {
     Router::new()
-        .route("/api/v1/read_pages", post(read_pages::handler))
-        .route("/api/v1/write_pages", post(write_pages::handler))
+        .route("/pagestore/v1/read_pages", post(read_pages::handler))
+        .route("/pagestore/v1/write_pages", post(write_pages::handler))
 }
