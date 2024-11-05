@@ -1,3 +1,5 @@
+use std::time::{Duration, SystemTime};
+
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{lsn::LSN, SegmentId, VolumeId};
 use object_store::path::Path;
@@ -57,6 +59,11 @@ impl CommitMeta {
     #[inline]
     pub fn timestamp(&self) -> u64 {
         self.timestamp.get()
+    }
+
+    #[inline]
+    pub fn system_time(&self) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_millis(self.timestamp())
     }
 }
 
@@ -174,6 +181,10 @@ impl<'a> OffsetsIter<'a> {
     fn next_inner(
         &mut self,
     ) -> Result<Option<(&'a SegmentId, SplinterRef<&'a [u8]>)>, OffsetsValidationErr> {
+        if self.offsets.is_empty() {
+            return Ok(None);
+        }
+
         // read the next header
         let (header, rest) = OffsetsHeader::try_ref_from_prefix(self.offsets)
             .map_err(|_| OffsetsValidationErr::TooSmall)?;

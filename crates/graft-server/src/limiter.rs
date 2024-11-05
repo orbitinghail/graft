@@ -39,7 +39,6 @@ impl<K: Hash, H: BuildHasher> Limiter<K, H> {
 
     pub async fn acquire(&self, key: &K) -> LimiterPermit<'_> {
         let idx = self.hasher.hash_one(key) % self.permits.len() as u64;
-        println!("acquiring permit index {idx}");
         let _permit = self.permits[idx as usize].lock().await;
         LimiterPermit { _permit }
     }

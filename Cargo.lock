@@ -281,9 +281,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.7.2"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "428d9aa8fbc0670b7b8d6030a7fadd0f86151cae55e4dbbece15f3780a3dfaf3"
+checksum = "9ac0150caa2ae65ca5bd83f25c7de183dea78d4d366469f148435e2acfbad0da"
 
 [[package]]
 name = "cast"
@@ -763,15 +763,18 @@ dependencies = [
  "rand",
  "static_assertions",
  "thiserror",
- "zerocopy 0.8.1",
+ "zerocopy 0.8.9",
 ]
 
 [[package]]
 name = "graft-proto"
 version = "0.1.0"
 dependencies = [
+ "bytes",
+ "graft-core",
  "prost",
  "prost-types",
+ "zerocopy 0.8.9",
 ]
 
 [[package]]
@@ -805,7 +808,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
- "zerocopy 0.8.1",
+ "zerocopy 0.8.9",
 ]
 
 [[package]]
@@ -2122,7 +2125,7 @@ dependencies = [
  "roaring",
  "static_assertions",
  "thiserror",
- "zerocopy 0.8.1",
+ "zerocopy 0.8.9",
 ]
 
 [[package]]
@@ -2877,11 +2880,11 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.1"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd2e5ce961dea177d282ec084dca2aa411b7411199a68d79eb1beacb305a6cd9"
+checksum = "f49e690f8f352f4a9ee8679a8c5921f42ffd0d6d6413a0a66b8e81cf524e109c"
 dependencies = [
- "zerocopy-derive 0.8.1",
+ "zerocopy-derive 0.8.9",
 ]
 
 [[package]]
@@ -2897,9 +2900,9 @@ dependencies = [
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.1"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b06304eeddb6081af98ac59db08c868ac197e586086b996d15a86ed70e09a754"
+checksum = "fa732fcc881df7a6fbe8e3ed17baadece53b379ad58fe2633396b1a2b108a7b1"
 dependencies = [
  "proc-macro2",
  "quote",

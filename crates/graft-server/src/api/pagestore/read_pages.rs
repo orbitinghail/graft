@@ -23,7 +23,7 @@ pub async fn handler<O: ObjectStore, C: Cache>(
     let mut offsets = Splinter::from_bytes(req.offsets)?;
     let num_offsets = offsets.cardinality();
 
-    let snapshot = state.catalog().latest_snapshot(vid.clone())?;
+    let snapshot = state.catalog().latest_snapshot(&vid)?;
     let needs_update = snapshot.is_none() || snapshot.as_ref().is_some_and(|s| s.lsn() < lsn);
 
     if needs_update {

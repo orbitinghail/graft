@@ -128,6 +128,18 @@ impl<const P: u8> TryFrom<Bytes> for Gid<P> {
     }
 }
 
+impl<'a, const P: u8> TryFrom<&'a [u8]> for &'a Gid<P> {
+    type Error = GidParseErr;
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        if value.len() != GID_SIZE.as_usize() {
+            return Err(GidParseErr::InvalidLength);
+        }
+
+        Gid::<P>::try_ref_from_bytes(value).map_err(|_| GidParseErr::InvalidLayout)
+    }
+}
+
 impl<const P: u8> From<Gid<P>> for Bytes {
     fn from(val: Gid<P>) -> Self {
         Bytes::copy_from_slice(val.as_bytes())

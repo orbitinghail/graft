@@ -94,9 +94,9 @@ impl VolumeCatalog {
 
     /// Return the latest snapshot for the specified Volume.
     /// Returns None if no snapshot is found, or the snapshot is corrupt.
-    pub fn latest_snapshot(&self, vid: VolumeId) -> Result<Option<CommitMeta>> {
+    pub fn latest_snapshot(&self, vid: &VolumeId) -> Result<Option<CommitMeta>> {
         self.volumes
-            .prefix(&vid)
+            .prefix(vid)
             .next_back()
             .transpose()?
             .map(|(_, bytes)| {

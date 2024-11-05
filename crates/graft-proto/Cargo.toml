@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bytes = "1.8.0"
+graft-core = { path = "../graft-core" }
 prost = "0.13.3"
 prost-types = "0.13.3"
+zerocopy = "0.8.9"
