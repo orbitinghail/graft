@@ -45,9 +45,10 @@ message PullSegmentsResponse {
 // is the snapshot the commit was based on. Returns the newly committed Snapshot
 // metadata on success.
 message CommitRequest {
-  uint64 snapshot_lsn = 1;
-  uint32 last_offset = 2;
-  repeated graft.common.v1.SegmentInfo segments = 3;
+  bytes vid = 1;
+  uint64 snapshot_lsn = 2;
+  uint32 last_offset = 3;
+  repeated graft.common.v1.SegmentInfo segments = 4;
 }
 
 message CommitResponse {

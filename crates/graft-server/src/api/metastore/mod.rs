@@ -5,6 +5,9 @@ use object_store::ObjectStore;
 
 use crate::volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater};
 
+mod commit;
+mod pull_offsets;
+mod pull_segments;
 mod snapshot;
 
 pub struct MetastoreApiState<O> {
@@ -39,8 +42,9 @@ pub fn metastore_router<O>() -> Router<Arc<MetastoreApiState<O>>>
 where
     O: ObjectStore + Sync + Send + 'static,
 {
-    Router::new().route("/metastore/v1/snapshot", post(snapshot::handler))
-    // .route("/metastore/v1/pull_offsets", post(pull_offsets::handler))
-    // .route("/metastore/v1/pull_segments", post(pull_segments::handler))
-    // .route("/metastore/v1/commit", post(commit::handler))
+    Router::new()
+        .route("/metastore/v1/snapshot", post(snapshot::handler))
+        .route("/metastore/v1/pull_offsets", post(pull_offsets::handler))
+        .route("/metastore/v1/pull_segments", post(pull_segments::handler))
+        .route("/metastore/v1/commit", post(commit::handler))
 }

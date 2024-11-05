@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{extract::State, response::IntoResponse};
+use axum::extract::State;
 use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::{
     common::v1::Snapshot,
@@ -15,7 +15,7 @@ use super::MetastoreApiState;
 pub async fn handler<O: ObjectStore>(
     State(state): State<Arc<MetastoreApiState<O>>>,
     Protobuf(req): Protobuf<SnapshotRequest>,
-) -> Result<impl IntoResponse, ApiErr> {
+) -> Result<ProtoResponse<SnapshotResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsn: Option<LSN> = req.lsn;
 
