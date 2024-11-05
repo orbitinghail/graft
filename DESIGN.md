@@ -148,7 +148,7 @@ Returns a compressed bitmap of changed offsets between the provided LSN (exclusi
 This method will return 304 Not Modified if the Volume has not changed.
 
 **`pullSegments(VolumeId, LSN)`**  
-Returns a list of segments added between the provided LSN (exclusive) and the latest LSN (inclusive). This method will also return the latest Snapshot of the Volume.
+Returns a list of segments added between the provided LSN (exclusive) and the latest LSN (inclusive). This method will also return the latest Snapshot of the Volume. If the provided LSN is missing or before the last checkpoint, only segments starting at the last checkpoint will be returned.
 
 This method will return 304 Not Modified if the Volume has not changed.
 
@@ -160,7 +160,7 @@ A checkpoint may be created by issuing a commit that covers the entire offset ra
 ## Checkpointing
 Checkpointing a Volume involves picking a LSN to checkpoint at and producing a complete image of the Volume at that LSN. It replaces any single-LSN segments at the specified LSN for the Volume.
 
-Checkpoints are created whenever a configurable amount of data has changed since the last checkpoint. The MetaStore issues and monitors checkpoint jobs.
+Checkpoints are created whenever a configurable amount of data has changed since the last checkpoint and when the checkpoint would be of an acceptable size. The MetaStore issues and monitors checkpoint jobs.
 
 Checkpoint Job Algorithm:
 ```
@@ -171,6 +171,8 @@ Checkpoint Job Algorithm:
 5. emit changed segments at checkpoint LSN
 6. commit checkpoint to MetaStore
 ```
+
+We should have a special Segment type which is optimized for storing checkpoints. A checkpoint segment contains a single contiguous range of offsets for a single volume. It may be desirable to separate them from regular segments in storage to make them more efficient to find.
 
 We will keep around multiple checkpoints for a Volume in order to support some configurable amount of history. The Metastore is responsible for truncating history based on each volume's configuration.
 

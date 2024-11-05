@@ -16,8 +16,7 @@ use zerocopy::{
     KnownLayout, TryFromBytes,
 };
 
-pub const SEGMENT_MAGIC: U32 = U32::from_bytes([0xB8, 0x3B, 0x41, 0xC0]);
-pub const SEGMENT_FORMAT_VERSION: u8 = 1;
+pub const SEGMENT_MAGIC: U32 = U32::from_bytes([0xB8, 0x3B, 0x41, 0x00]);
 
 // segments must be no larger than 16 MB
 pub const SEGMENT_MAX_SIZE: ByteUnit = ByteUnit::from_mb(16);
@@ -39,13 +38,12 @@ static_assertions::const_assert!(SEGMENT_MAX_PAGES <= u16::MAX as usize);
 #[repr(C)]
 pub struct SegmentHeader {
     magic: U32,
-    format_version: u8,
     // size of the index in bytes, if <= SEGMENT_INLINE_INDEX_SIZE the
     // index is stored inline
     index_size: U32,
 
     // pad to 16 bytes for nicer alignment (not required for safety)
-    _padding: [u8; 7],
+    _padding: [u8; 8],
 }
 
 #[derive(IntoBytes, FromBytes, Immutable, KnownLayout)]
@@ -67,9 +65,8 @@ impl SegmentHeaderPage {
         Self {
             header: SegmentHeader {
                 magic: SEGMENT_MAGIC,
-                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new(index_size.as_u32()),
-                _padding: [0; 7],
+                _padding: Default::default(),
             },
             index: [0; SEGMENT_INLINE_INDEX_SIZE.as_usize()],
         }
@@ -84,9 +81,8 @@ impl SegmentHeaderPage {
         let mut page = Self {
             header: SegmentHeader {
                 magic: SEGMENT_MAGIC,
-                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new(index_bytes.len().try_into().unwrap()),
-                _padding: [0; 7],
+                _padding: Default::default(),
             },
             index: [0; SEGMENT_INLINE_INDEX_SIZE.as_usize()],
         };
@@ -201,8 +197,6 @@ pub enum SegmentValidationErr {
     TooLarge,
     #[error("invalid magic number")]
     Magic,
-    #[error("invalid format version number")]
-    FormatVersion,
     #[error("index size too large")]
     IndexSize,
     #[error("invalid index: {source}")]
@@ -229,9 +223,6 @@ impl<'a> ClosedSegment<'a> {
 
         if header.magic != SEGMENT_MAGIC {
             return Err(SegmentValidationErr::Magic);
-        }
-        if header.format_version != SEGMENT_FORMAT_VERSION {
-            return Err(SegmentValidationErr::FormatVersion);
         }
         let index_size: ByteUnit = header.index_size.get().into();
         let (page_data, index_bytes) = if index_size <= SEGMENT_INLINE_INDEX_SIZE {
@@ -324,9 +315,8 @@ mod tests {
         buf.write_all(
             SegmentHeader {
                 magic: U32::new(0),
-                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new(0),
-                _padding: [0; 7],
+                _padding: Default::default(),
             }
             .as_bytes(),
         )
@@ -336,31 +326,13 @@ mod tests {
             SegmentValidationErr::Magic
         ));
 
-        // test a bad format version number
-        let mut buf = mk_cursor(PAGESIZE);
-        buf.write_all(
-            SegmentHeader {
-                magic: SEGMENT_MAGIC,
-                format_version: SEGMENT_FORMAT_VERSION + 1,
-                index_size: U32::new(0),
-                _padding: [0; 7],
-            }
-            .as_bytes(),
-        )
-        .unwrap();
-        assert!(matches!(
-            ClosedSegment::from_bytes(&buf.into_inner()).unwrap_err(),
-            SegmentValidationErr::FormatVersion
-        ));
-
         // test a bad index size
         let mut buf = mk_cursor(PAGESIZE);
         buf.write_all(
             SegmentHeader {
                 magic: SEGMENT_MAGIC,
-                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new((SEGMENT_INLINE_INDEX_SIZE.as_u32()) + 1),
-                _padding: [0; 7],
+                _padding: Default::default(),
             }
             .as_bytes(),
         )
@@ -375,9 +347,8 @@ mod tests {
         buf.write_all(
             SegmentHeader {
                 magic: SEGMENT_MAGIC,
-                format_version: SEGMENT_FORMAT_VERSION,
                 index_size: U32::new(SEGMENT_INLINE_INDEX_SIZE.as_u32()),
-                _padding: [0; 7],
+                _padding: Default::default(),
             }
             .as_bytes(),
         )

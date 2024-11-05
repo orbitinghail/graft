@@ -15,3 +15,15 @@ message Snapshot {
   uint32 last_offset = 3;
   google.protobuf.Timestamp timestamp = 4;
 }
+
+message LsnBound {
+  oneof bound {
+    uint64 included = 1;
+    uint64 excluded = 2;
+  }
+}
+
+message LsnRange {
+  LsnBound start = 1;
+  LsnBound end = 2;
+}

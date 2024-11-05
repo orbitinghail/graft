@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use bytes::{BufMut, Bytes, BytesMut};
-use graft_core::{lsn::LSN, SegmentId, VolumeId};
+use graft_core::{gid::GidParseErr, lsn::LSN, offset::Offset, SegmentId, VolumeId};
 use object_store::path::Path;
 use splinter::SplinterRef;
 use thiserror::Error;
@@ -9,8 +9,7 @@ use zerocopy::{
     FromBytes, Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32, U64,
 };
 
-pub const COMMIT_MAGIC: U32<LittleEndian> = U32::from_bytes([0x31, 0x99, 0xBF, 0x8D]);
-pub const COMMIT_FORMAT: u8 = 1;
+pub const COMMIT_MAGIC: U32<LittleEndian> = U32::from_bytes([0x31, 0x99, 0xBF, 0x00]);
 
 pub fn commit_key_prefix(vid: &VolumeId) -> Path {
     format!("volumes/{}/", vid.pretty()).into()
@@ -20,39 +19,79 @@ pub fn commit_key(vid: &VolumeId, lsn: LSN) -> Path {
     format!("{}/{:0>18x}", commit_key_prefix(vid), lsn).into()
 }
 
+#[derive(Debug, Error)]
+pub enum CommitKeyParseErr {
+    #[error("invalid commit key structure: {0}")]
+    Structure(Path),
+    #[error("invalid volume id: {0}")]
+    VolumeId(#[from] GidParseErr),
+    #[error("invalid lsn: {0}")]
+    Lsn(#[from] std::num::ParseIntError),
+}
+
+pub fn parse_commit_key(key: &Path) -> Result<(VolumeId, LSN), CommitKeyParseErr> {
+    let mut parts = key.parts();
+    if parts.next().as_ref().map(|p| p.as_ref()) != Some("volumes") {
+        return Err(CommitKeyParseErr::Structure(key.clone()));
+    }
+    let vid: VolumeId = parts
+        .next()
+        .ok_or_else(|| CommitKeyParseErr::Structure(key.clone()))?
+        .as_ref()
+        .try_into()?;
+    let lsn: LSN = parts
+        .next()
+        .ok_or_else(|| CommitKeyParseErr::Structure(key.clone()))?
+        .as_ref()
+        .parse()?;
+    // ensure there are no trailing parts
+    if parts.next().is_some() {
+        return Err(CommitKeyParseErr::Structure(key.clone()));
+    }
+    Ok((vid, lsn))
+}
+
 #[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct CommitHeader {
     magic: U32<LittleEndian>,
-    format: u8,
     vid: VolumeId,
     meta: CommitMeta,
 }
+
+static_assertions::const_assert_eq!(size_of::<CommitHeader>(), 48);
 
 #[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct CommitMeta {
     lsn: U64<LittleEndian>,
+    checkpoint_lsn: U64<LittleEndian>,
     last_offset: U32<LittleEndian>,
     timestamp: U64<LittleEndian>,
 }
 
 impl CommitMeta {
-    pub fn new(lsn: LSN, last_offset: u32, timestamp: u64) -> Self {
+    pub fn new(lsn: LSN, checkpoint: LSN, last_offset: u32, timestamp: u64) -> Self {
         Self {
             lsn: lsn.into(),
+            checkpoint_lsn: checkpoint.into(),
             last_offset: last_offset.into(),
             timestamp: timestamp.into(),
         }
     }
 
     #[inline]
-    pub fn lsn(&self) -> u64 {
+    pub fn lsn(&self) -> LSN {
         self.lsn.get()
     }
 
     #[inline]
-    pub fn last_offset(&self) -> u32 {
+    pub fn checkpoint(&self) -> LSN {
+        self.checkpoint_lsn.get()
+    }
+
+    #[inline]
+    pub fn last_offset(&self) -> Offset {
         self.last_offset.get()
     }
 
@@ -87,14 +126,14 @@ pub struct CommitBuilder {
 }
 
 impl CommitBuilder {
-    pub fn new(vid: VolumeId, lsn: LSN, last_offset: u32, timestamp: u64) -> Self {
+    pub fn new(vid: VolumeId, lsn: LSN, checkpoint: LSN, last_offset: u32, timestamp: u64) -> Self {
         let mut buffer = BytesMut::default();
         let header = CommitHeader {
             magic: COMMIT_MAGIC,
-            format: COMMIT_FORMAT,
             vid: vid.clone(),
             meta: CommitMeta {
                 lsn: lsn.into(),
+                checkpoint_lsn: checkpoint.into(),
                 last_offset: last_offset.into(),
                 timestamp: timestamp.into(),
             },
@@ -123,8 +162,6 @@ pub enum CommitValidationErr {
     TooSmall,
     #[error("invalid magic number")]
     Magic,
-    #[error("invalid format version number")]
-    FormatVersion,
 }
 
 pub struct Commit {
@@ -140,9 +177,6 @@ impl Commit {
 
         if header.magic != COMMIT_MAGIC {
             return Err(CommitValidationErr::Magic);
-        }
-        if header.format != COMMIT_FORMAT {
-            return Err(CommitValidationErr::FormatVersion);
         }
 
         Ok(Self { header, offsets: data })

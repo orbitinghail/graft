@@ -19,32 +19,10 @@ pub async fn handler<O: ObjectStore>(
     let vid: VolumeId = req.vid.try_into()?;
     let lsn: Option<LSN> = req.lsn;
 
-    // if a specific lsn is requested and we have a snapshot for it, return it
-    if let Some(lsn) = lsn {
-        if let Some(snapshot) = state.catalog().snapshot(vid.clone(), lsn)? {
-            return Ok(ProtoResponse::new(SnapshotResponse {
-                snapshot: Some(Snapshot::new(
-                    &vid,
-                    snapshot.lsn(),
-                    snapshot.last_offset(),
-                    snapshot.system_time(),
-                )),
-            }));
-        }
-    }
-
-    // otherwise we need to update the catalog
-    state
+    let snapshot = state
         .updater
-        .update_catalog_from_store(state.store(), state.catalog(), &vid, lsn)
+        .snapshot(&state.store, &state.catalog, &vid, lsn)
         .await?;
-
-    // return the requested snapshot or latest
-    let snapshot = if let Some(lsn) = lsn {
-        state.catalog().snapshot(vid.clone(), lsn)?
-    } else {
-        state.catalog().latest_snapshot(&vid)?
-    };
 
     if let Some(snapshot) = snapshot {
         Ok(ProtoResponse::new(SnapshotResponse {
@@ -115,7 +93,7 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has a commit
-        let mut commit = store.prepare(vid.clone(), 0, 0);
+        let mut commit = store.prepare(vid.clone(), 0, 0, 0);
         commit.write_offsets(
             SegmentId::random(),
             &[0u32]

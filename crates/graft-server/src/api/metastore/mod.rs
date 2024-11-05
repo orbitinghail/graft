@@ -36,6 +36,10 @@ impl<O> MetastoreApiState<O> {
     pub fn catalog(&self) -> &VolumeCatalog {
         &self.catalog
     }
+
+    pub fn updater(&self) -> &VolumeCatalogUpdater {
+        &self.updater
+    }
 }
 
 pub fn metastore_router<O>() -> Router<Arc<MetastoreApiState<O>>>

@@ -32,6 +32,9 @@ pub async fn handler<O: ObjectStore, C: Cache>(
 
     let mut loading = FuturesUnordered::new();
 
+    // TODO: If we know the last_offset in the requested LSN, we can skip
+    // returning any offsets that are greater than that.
+
     let segments = state.catalog().query_segments(vid.clone(), lsn);
     for result in segments {
         let (sid, splinter) = result?;
@@ -154,7 +157,7 @@ mod tests {
         batch
             .insert_snapshot(
                 vid.clone(),
-                CommitMeta::new(lsn, 2, 0),
+                CommitMeta::new(lsn, 0, 4, 0),
                 vec![
                     SegmentInfo {
                         sid: sid1.into(),

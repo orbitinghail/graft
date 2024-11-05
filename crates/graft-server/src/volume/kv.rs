@@ -21,10 +21,22 @@ impl CommitKey {
         Self { vid, lsn: U64::new(lsn) }
     }
 
+    /// Warning: it seems like Fjall incorrectly handles RangeInclusive, so we
+    /// need to use a Range here and manually compute the end key.
     pub fn range(vid: VolumeId, end_lsn: LSN) -> Range<Self> {
         let start = Self::new(vid.clone(), 0);
         let end = Self::new(vid, end_lsn + 1);
         start..end
+    }
+
+    #[inline]
+    pub fn vid(&self) -> &VolumeId {
+        &self.vid
+    }
+
+    #[inline]
+    pub fn lsn(&self) -> LSN {
+        self.lsn.get()
     }
 }
 

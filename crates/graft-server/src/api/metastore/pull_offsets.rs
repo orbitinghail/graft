@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use axum::extract::State;
-use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::metastore::v1::{PullOffsetsRequest, PullOffsetsResponse};
+use graft_core::VolumeId;
+use graft_proto::{
+    common::v1::LsnRange,
+    metastore::v1::{PullOffsetsRequest, PullOffsetsResponse},
+};
 use object_store::ObjectStore;
 
 use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
@@ -14,7 +17,7 @@ pub async fn handler<O: ObjectStore>(
     Protobuf(req): Protobuf<PullOffsetsRequest>,
 ) -> Result<ProtoResponse<PullOffsetsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let lsn: LSN = req.lsn;
+    let lsns: LsnRange = req.range.unwrap_or_default();
 
     todo!()
 }

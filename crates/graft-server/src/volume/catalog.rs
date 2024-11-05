@@ -1,4 +1,4 @@
-use std::{fmt::Debug, path::Path};
+use std::{fmt::Debug, ops::Range, path::Path};
 
 use fjall::{
     Batch, Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice,
@@ -78,6 +78,31 @@ impl VolumeCatalog {
             volumes: self.volumes.clone(),
             segments: self.segments.clone(),
         }
+    }
+
+    pub fn contains_snapshot(&self, vid: VolumeId, lsn: LSN) -> Result<bool> {
+        Ok(self.volumes.contains_key(CommitKey::new(vid, lsn))?)
+    }
+
+    pub fn contains_range(&self, vid: &VolumeId, lsns: &Range<LSN>) -> Result<bool> {
+        let start = CommitKey::new(vid.clone(), lsns.start);
+        let end = CommitKey::new(vid.clone(), lsns.end);
+
+        // verify that lsns in the range are contiguous
+        let mut cursor = lsns.start;
+        let mut empty = true;
+
+        for kv in self.volumes.range(start..end) {
+            let (key, _) = kv?;
+            let key = CommitKey::try_ref_from_bytes(&key)
+                .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitKey" })?;
+            if key.lsn() != cursor {
+                return Ok(false);
+            }
+            cursor += 1;
+            empty = false;
+        }
+        Ok(!empty)
     }
 
     /// Return the snapshot for the specified Volume at the provided LSN.

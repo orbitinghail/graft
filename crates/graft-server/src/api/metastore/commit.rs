@@ -17,6 +17,8 @@ pub async fn handler<O: ObjectStore>(
     let snapshot_lsn: LSN = req.snapshot_lsn;
     let last_offset: Offset = req.last_offset;
 
+    // reminder: need to determine if this commit is a checkpoint
+
     todo!()
 }
 

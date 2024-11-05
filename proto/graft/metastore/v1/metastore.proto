@@ -14,31 +14,34 @@ message SnapshotResponse {
   graft.common.v1.Snapshot snapshot = 1;
 }
 
-// Retrieve the latest snapshot along with a Splinter containing all changed
-// offsets between the given LSN (exclusive) and the latest LSN (inclusive).
+// Retrieve the snapshot at the end of the given LSN range along with a Splinter
+// containing all changed offsets. If the start of the range is Unbounded, it
+// will be set to the last checkpoint.
 // Returns: graft.metastore.v1.PullOffsetsResponse
 message PullOffsetsRequest {
   bytes vid = 1;
-  uint64 lsn = 2;
+  graft.common.v1.LsnRange range = 2;
 }
 
 message PullOffsetsResponse {
   graft.common.v1.Snapshot snapshot = 1;
-  bytes offsets = 2;
+  graft.common.v1.LsnRange range = 2;
+  bytes offsets = 3;
 }
 
-// Returns a list of segments added between the provided LSN (exclusive) and the
-// latest LSN (inclusive). This method will also return the latest Snapshot of
-// the Volume.
+// Retrieve the snapshot at the end of the given LSN range along with all
+// segments created in the range. If the start of the range is Unbounded, it
+// will be set to the last checkpoint.
 // Returns: graft.metastore.v1.PullSegmentsResponse
 message PullSegmentsRequest {
   bytes vid = 1;
-  uint64 lsn = 2;
+  graft.common.v1.LsnRange range = 2;
 }
 
 message PullSegmentsResponse {
   graft.common.v1.Snapshot snapshot = 1;
-  repeated graft.common.v1.SegmentInfo segments = 2;
+  graft.common.v1.LsnRange range = 2;
+  repeated graft.common.v1.SegmentInfo segments = 3;
 }
 
 // Commit changes to a Volume if it is safe to do so. The provided Snapshot LSN
