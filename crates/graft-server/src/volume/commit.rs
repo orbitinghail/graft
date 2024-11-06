@@ -2,6 +2,7 @@ use std::time::{Duration, SystemTime};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{gid::GidParseErr, lsn::LSN, offset::Offset, SegmentId, VolumeId};
+use graft_proto::common::v1::Snapshot;
 use object_store::path::Path;
 use splinter::SplinterRef;
 use thiserror::Error;
@@ -71,7 +72,11 @@ pub struct CommitMeta {
 }
 
 impl CommitMeta {
-    pub fn new(lsn: LSN, checkpoint: LSN, last_offset: u32, timestamp: u64) -> Self {
+    pub fn new(lsn: LSN, checkpoint: LSN, last_offset: Offset, timestamp: u64) -> Self {
+        assert!(
+            checkpoint <= lsn,
+            "checkpoint must be less than or equal to lsn"
+        );
         Self {
             lsn: lsn.into(),
             checkpoint_lsn: checkpoint.into(),

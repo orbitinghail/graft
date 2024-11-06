@@ -5,18 +5,16 @@ use std::{
     time::SystemTime,
 };
 
-use bytes::Bytes;
 use common::v1::{lsn_bound, LsnBound, LsnRange, Snapshot};
 use graft_core::{gid::GidParseErr, lsn::LSN, VolumeId};
 use prost_types::TimestampError;
-use zerocopy::IntoBytes;
 
 pub use graft::*;
 
 impl Snapshot {
     pub fn new(vid: &VolumeId, lsn: LSN, last_offset: u32, timestamp: SystemTime) -> Self {
         Self {
-            vid: Bytes::copy_from_slice(vid.as_bytes()),
+            vid: vid.into(),
             lsn,
             last_offset,
             timestamp: Some(timestamp.into()),
@@ -35,8 +33,8 @@ impl Snapshot {
         self.last_offset
     }
 
-    pub fn system_time(&self) -> Option<Result<SystemTime, TimestampError>> {
-        self.timestamp.map(|ts| ts.try_into())
+    pub fn system_time(&self) -> Result<Option<SystemTime>, TimestampError> {
+        self.timestamp.map(|ts| ts.try_into()).transpose()
     }
 }
 
@@ -78,11 +76,20 @@ impl RangeBounds<LSN> for LsnRange {
 }
 
 impl LsnRange {
-    pub fn from_bounds<T: RangeBounds<LSN>>(bounds: T) -> Self {
+    pub fn from_bounds<R>(bounds: &R) -> Self
+    where
+        R: RangeBounds<LSN>,
+    {
         Self {
             start: Some(bounds.start_bound().into()),
             end: Some(bounds.end_bound().into()),
         }
+    }
+
+    pub fn try_len(&self) -> Option<usize> {
+        let start = self.start()?;
+        let end = self.end()?;
+        end.checked_sub(start).map(|len| len as usize)
     }
 
     pub fn start(&self) -> Option<LSN> {

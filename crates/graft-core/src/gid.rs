@@ -140,9 +140,15 @@ impl<'a, const P: u8> TryFrom<&'a [u8]> for &'a Gid<P> {
     }
 }
 
+impl<const P: u8> From<&Gid<P>> for Bytes {
+    fn from(val: &Gid<P>) -> Self {
+        Bytes::copy_from_slice(val.as_bytes())
+    }
+}
+
 impl<const P: u8> From<Gid<P>> for Bytes {
     fn from(val: Gid<P>) -> Self {
-        Bytes::copy_from_slice(val.as_bytes())
+        (&val).into()
     }
 }
 
@@ -189,7 +195,7 @@ mod tests {
         assert_eq!(id, parsed);
 
         // round trip through bytes
-        let bytes: Bytes = id.clone().into();
+        let bytes: Bytes = (&id).into();
         let parsed: SegmentId = bytes.try_into().unwrap();
         assert_eq!(id, parsed);
     }

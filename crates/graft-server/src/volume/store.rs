@@ -68,7 +68,7 @@ impl<O: ObjectStore> VolumeStore<O> {
         };
 
         stream
-            .map_err(VolumeStoreErr::from)
+            .err_into::<VolumeStoreErr>()
             // We can't use try_take_while because we can't depend on the object
             // store implementation to return keys sorted alphanumerically.
             .try_filter_map(move |meta| {

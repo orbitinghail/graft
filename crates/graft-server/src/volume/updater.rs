@@ -100,7 +100,7 @@ impl VolumeCatalogUpdater {
         let mut batch = catalog.batch_insert();
         let mut commits = store.replay_unordered(
             vid.clone(),
-            LsnRange::from_bounds(catalog_lsn.unwrap_or_default()..),
+            LsnRange::from_bounds(&(catalog_lsn.unwrap_or_default()..)),
         );
         while let Some(commit) = commits.try_next().await? {
             batch.insert_commit(commit)?;
@@ -116,7 +116,7 @@ impl VolumeCatalogUpdater {
         store: &VolumeStore<O>,
         catalog: &VolumeCatalog,
         vid: &VolumeId,
-        lsns: Range<LSN>,
+        lsns: &Range<LSN>,
     ) -> Result<(), UpdateErr> {
         // we can return early if the catalog already contains the requested LSNs
         if catalog.contains_range(vid, &lsns)? {

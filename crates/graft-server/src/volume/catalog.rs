@@ -132,13 +132,17 @@ impl VolumeCatalog {
     }
 
     /// Query the catalog for segments in the specified Volume. Segments are
-    /// scanned in reverse order starting from the specified LSN.
+    /// scanned in reverse order by LSN.
     pub fn query_segments(
         &self,
         vid: VolumeId,
-        lsn: LSN,
+        lsns: Range<LSN>,
     ) -> impl Iterator<Item = Result<(SegmentId, SplinterRef<Slice>)>> {
-        let scan = self.segments.range(CommitKey::range(vid, lsn)).rev();
+        // Warning: it seems like Fjall incorrectly handles RangeInclusive, so
+        // this function can't safely accept a general RangeBounds.
+        let start = CommitKey::new(vid.clone(), lsns.start);
+        let end = CommitKey::new(vid.clone(), lsns.end);
+        let scan = self.segments.range(start..end).rev();
         SegmentsQueryIter { scan }
     }
 }

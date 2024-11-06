@@ -1,7 +1,4 @@
-use std::{
-    fmt::{Debug, Display},
-    ops::Range,
-};
+use std::fmt::{Debug, Display};
 
 use graft_core::{
     lsn::LSN,
@@ -19,14 +16,6 @@ pub struct CommitKey {
 impl CommitKey {
     pub fn new(vid: VolumeId, lsn: LSN) -> Self {
         Self { vid, lsn: U64::new(lsn) }
-    }
-
-    /// Warning: it seems like Fjall incorrectly handles RangeInclusive, so we
-    /// need to use a Range here and manually compute the end key.
-    pub fn range(vid: VolumeId, end_lsn: LSN) -> Range<Self> {
-        let start = Self::new(vid.clone(), 0);
-        let end = Self::new(vid, end_lsn + 1);
-        start..end
     }
 
     #[inline]

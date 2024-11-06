@@ -24,7 +24,11 @@ pub async fn handler<O: ObjectStore, C: Cache>(
     let num_offsets = offsets.cardinality();
 
     let snapshot = state.catalog().latest_snapshot(&vid)?;
-    let needs_update = snapshot.is_none() || snapshot.as_ref().is_some_and(|s| s.lsn() < lsn);
+    let checkpoint = snapshot
+        .as_ref()
+        .map(|s| s.checkpoint())
+        .unwrap_or_default();
+    let needs_update = snapshot.is_none() || snapshot.is_some_and(|s| s.lsn() < lsn);
 
     if needs_update {
         // TODO: update the segment index
@@ -35,7 +39,9 @@ pub async fn handler<O: ObjectStore, C: Cache>(
     // TODO: If we know the last_offset in the requested LSN, we can skip
     // returning any offsets that are greater than that.
 
-    let segments = state.catalog().query_segments(vid.clone(), lsn);
+    let segments = state
+        .catalog()
+        .query_segments(vid.clone(), checkpoint..(lsn + 1));
     for result in segments {
         let (sid, splinter) = result?;
 

@@ -9,6 +9,7 @@ This file documents future work that has been punted to help accelerate Graft to
 - [Page deltas](#page-deltas)
 - [Low-latency writes](#low-latency-writes)
 - [Request Hedging](#request-hedging)
+- [Performance Optimizations](#performance-optimizations)
 
 # Time-Travel and Point in Time Restore
 
@@ -66,3 +67,10 @@ Technically, the above write protocol can be coordinated entirely by the client 
 According to the [AnyBlob paper], hedging requests to blob storage can help dramatically reduce tail latency. For S3, the paper suggests hedging if you haven't received the first byte within 200ms. Slightly more aggressive hedging may also be desirable, like hedging if you haven't completly downloaded the file within 600ms. Making this configurable and testing is important.
 
 [AnyBlob paper]: https://www.vldb.org/pvldb/vol16/p2769-durner.pdf
+
+# Performance Optimizations
+Once Graft server is sufficiently mature, a series of performance optimization passes should be performed. I'll keep track of relevant blog posts and tools to make this easier here:
+
+- [Compiling with PGO and BOLT]
+
+[Compiling with PGO and BOLT]: https://kobzol.github.io/rust/cargo/2023/07/28/rust-cargo-pgo.html

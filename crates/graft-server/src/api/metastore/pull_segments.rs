@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
 use axum::extract::State;
+use bytes::Bytes;
 use graft_core::VolumeId;
 use graft_proto::{
-    common::v1::LsnRange,
+    common::v1::{LsnRange, SegmentInfo, Snapshot},
     metastore::v1::{PullSegmentsRequest, PullSegmentsResponse},
 };
+use itertools::Itertools;
 use object_store::ObjectStore;
+use tryiter::TryIteratorExt;
 
 use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
@@ -43,20 +46,41 @@ pub async fn handler<O: ObjectStore>(
     // ensure the catalog contains the requested LSNs
     state
         .updater
-        .update_catalog_from_store_in_range(&state.store, &state.catalog, &vid, lsns)
+        .update_catalog_from_store_in_range(&state.store, &state.catalog, &vid, &lsns)
         .await?;
 
-    // TODO: retrieve the segments from the catalog
-    // TODO: return a PullSegmentsResponse
+    let mut result = PullSegmentsResponse {
+        snapshot: Some(Snapshot::new(
+            &vid,
+            snapshot.lsn(),
+            snapshot.last_offset(),
+            snapshot.system_time(),
+        )),
+        range: Some(LsnRange::from_bounds(&lsns)),
+        segments: Vec::with_capacity(lsns.try_len().unwrap_or_default()),
+    };
 
-    todo!()
+    let mut iter = state.catalog.query_segments(vid.clone(), lsns);
+    while let Some((sid, splinter)) = iter.try_next()? {
+        let offsets = Bytes::copy_from_slice(splinter.into_inner().as_ref());
+        result
+            .segments
+            .push(SegmentInfo { sid: sid.into(), offsets });
+    }
+
+    Ok(ProtoResponse::new(result))
 }
 
 #[cfg(test)]
 mod tests {
-    use axum::handler::Handler;
+    use std::time::SystemTime;
+
+    use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
+    use graft_core::SegmentId;
     use object_store::memory::InMemory;
+    use prost::Message;
+    use splinter::Splinter;
     use tracing_test::traced_test;
 
     use crate::{
@@ -83,6 +107,48 @@ mod tests {
 
         let vid = VolumeId::random();
 
-        todo!("implement sanity test")
+        // case 1: catalog and store are empty
+        let req = PullSegmentsRequest { vid: vid.clone().into(), range: None };
+        let resp = server
+            .post("/")
+            .bytes(req.encode_to_vec().into())
+            .expect_failure()
+            .await;
+        assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
+
+        // case 2: catalog is empty, store has 10 commits
+        let offsets = &[0u32]
+            .into_iter()
+            .collect::<Splinter>()
+            .serialize_to_bytes();
+        for lsn in 0u64..10 {
+            let mut commit = store.prepare(vid.clone(), lsn, 0, 0);
+            commit.write_offsets(SegmentId::random(), offsets);
+            store.commit(commit).await.unwrap();
+        }
+
+        // request the last 5 segments
+        let lsns = 5..10;
+        let req = PullSegmentsRequest {
+            vid: vid.clone().into(),
+            range: Some(LsnRange::from_bounds(&lsns)),
+        };
+        let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
+        let resp = PullSegmentsResponse::decode(resp.into_bytes()).unwrap();
+        let snapshot = resp.snapshot.unwrap();
+        assert_eq!(snapshot.lsn, 9);
+        assert_eq!(snapshot.last_offset, 0);
+        assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
+        assert_eq!(resp.range, Some(LsnRange::from_bounds(&lsns)));
+        assert_eq!(resp.segments.len(), 5);
+        for segment in resp.segments {
+            assert_eq!(segment.offsets, offsets);
+        }
+
+        // request all the segments
+        let req = PullSegmentsRequest { vid: vid.clone().into(), range: None };
+        let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
+        let resp = PullSegmentsResponse::decode(resp.into_bytes()).unwrap();
+        assert_eq!(resp.segments.len(), 10);
     }
 }
