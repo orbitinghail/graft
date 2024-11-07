@@ -2458,9 +2458,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tryiter"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04e6a8593fa685518e40457fbd136ba1216ac49932132dc23787f9cefd64ea7d"
+checksum = "6b9ca4fb10cbbc8c5f322089de465a8dd74e95ce0c3cd4d15da41c0bd15f014c"
 
 [[package]]
 name = "tungstenite"

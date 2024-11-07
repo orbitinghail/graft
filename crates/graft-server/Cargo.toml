@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tryiter = "0.1"
+tryiter = "0.2"
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 splinter = { path = "../splinter" }
