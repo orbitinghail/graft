@@ -2091,7 +2091,6 @@ dependencies = [
  "either",
  "itertools 0.13.0",
  "roaring",
- "static_assertions",
  "thiserror 2.0.0",
  "zerocopy 0.8.9",
 ]

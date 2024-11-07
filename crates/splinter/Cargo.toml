@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 bytes = "1.7"
 either = "1.13.0"
-static_assertions = "1"
 thiserror = "2.0"
 zerocopy = { version = "0.8", features = ["derive"] }
 
