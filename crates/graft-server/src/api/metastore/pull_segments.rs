@@ -60,7 +60,7 @@ pub async fn handler<O: ObjectStore>(
         segments: Vec::with_capacity(lsns.try_len().unwrap_or_default()),
     };
 
-    let mut iter = state.catalog.query_segments(vid.clone(), lsns);
+    let mut iter = state.catalog.query_segments(vid.clone(), &lsns);
     while let Some((sid, splinter)) = iter.try_next()? {
         let offsets = Bytes::copy_from_slice(splinter.into_inner().as_ref());
         result

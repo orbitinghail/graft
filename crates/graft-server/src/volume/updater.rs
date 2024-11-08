@@ -119,7 +119,7 @@ impl VolumeCatalogUpdater {
         lsns: &Range<LSN>,
     ) -> Result<(), UpdateErr> {
         // we can return early if the catalog already contains the requested LSNs
-        if catalog.contains_range(vid, &lsns)? {
+        if catalog.contains_range(vid, lsns)? {
             return Ok(());
         }
 
@@ -127,7 +127,7 @@ impl VolumeCatalogUpdater {
         let _permit = self.limiter.acquire(vid).await;
 
         // check the catalog again in case another task has updated the volume
-        if catalog.contains_range(vid, &lsns)? {
+        if catalog.contains_range(vid, lsns)? {
             return Ok(());
         }
 

@@ -34,41 +34,6 @@ pub trait Relation {
         self.sorted_iter()
             .filter_map(|(k, l)| right.get(k).map(|r| (k, l, r)))
     }
-
-    /// Returns an iterator over the outer join of two relations.
-    fn outer_join<'a, R: Relation>(
-        &'a self,
-        right: &'a R,
-    ) -> impl Iterator<Item = (Segment, Option<Self::ValRef<'a>>, Option<R::ValRef<'a>>)> {
-        let mut left = self.sorted_iter().peekable();
-        let mut right = right.sorted_iter().peekable();
-
-        std::iter::from_fn(move || match (left.peek(), right.peek()) {
-            // lk == rk
-            (Some(&(lk, _)), Some(&(rk, _))) if lk == rk => Some((
-                lk,
-                left.next().map(|(_, v)| v),
-                right.next().map(|(_, v)| v),
-            )),
-
-            // lk < rk
-            (Some(&(lk, _)), Some(&(rk, _))) if lk < rk => {
-                Some((lk, left.next().map(|(_, v)| v), None))
-            }
-
-            // lk > rk
-            (Some(&(_, _)), Some(&(rk, _))) => Some((rk, None, right.next().map(|(_, v)| v))),
-
-            // right is exhausted
-            (Some(&(lk, _)), None) => Some((lk, left.next().map(|(_, v)| v), None)),
-
-            // left is exhausted
-            (None, Some(&(rk, _))) => Some((rk, None, right.next().map(|(_, v)| v))),
-
-            // both are exhausted
-            (None, None) => None,
-        })
-    }
 }
 
 impl<T> Relation for &T
@@ -149,22 +114,5 @@ mod tests {
 
         let joined: Vec<_> = left.inner_join(&right).collect();
         assert_eq!(joined, [(2, &2, &4), (3, &3, &5)]);
-    }
-
-    #[test]
-    fn test_outer_join() {
-        let left = TestRelation { data: [(1, 1), (2, 2), (3, 3)].into() };
-        let right = TestRelation { data: [(2, 4), (3, 5), (4, 6)].into() };
-
-        let joined: Vec<_> = left.outer_join(&right).collect();
-        assert_eq!(
-            joined,
-            [
-                (1, Some(&1), None),
-                (2, Some(&2), Some(&4)),
-                (3, Some(&3), Some(&5)),
-                (4, None, Some(&6))
-            ]
-        );
     }
 }

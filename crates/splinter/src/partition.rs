@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, convert::TryInto, fmt::Debug, marker::PhantomData, mem::size_of};
+use std::{
+    collections::{btree_map::Entry, BTreeMap},
+    convert::TryInto,
+    fmt::Debug,
+    marker::PhantomData,
+    mem::size_of,
+};
 
 use bytes::BufMut;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -7,6 +13,7 @@ use crate::{
     bitmap::BitmapExt,
     block::Block,
     index::IndexRef,
+    ops::Merge,
     relational::Relation,
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
@@ -47,6 +54,44 @@ impl<O, V> Partition<O, V> {
 
     pub fn retain(&mut self, f: impl FnMut(&Segment, &mut V) -> bool) {
         self.values.retain(f);
+    }
+}
+
+impl<O, V> Merge for Partition<O, V>
+where
+    V: Merge + Clone,
+{
+    fn merge(&mut self, rhs: &Self) {
+        for (k, v) in rhs.sorted_iter() {
+            match self.values.entry(k) {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().merge(v);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(v.clone());
+                }
+            }
+        }
+    }
+}
+
+impl<'a, O, V, Rv> Merge<PartitionRef<'a, O, Rv>> for Partition<O, V>
+where
+    O: FromBytes + Immutable + Copy + Into<u32>,
+    V: Merge<Rv>,
+    Rv: FromSuffix<'a> + CopyToOwned<Owned = V>,
+{
+    fn merge(&mut self, rhs: &PartitionRef<'a, O, Rv>) {
+        for (k, v) in rhs.sorted_iter() {
+            match self.values.entry(k) {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().merge(&v);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(v.copy_to_owned());
+                }
+            }
+        }
     }
 }
 

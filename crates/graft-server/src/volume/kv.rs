@@ -49,10 +49,7 @@ impl Debug for CommitKey {
 
 impl Clone for CommitKey {
     fn clone(&self) -> Self {
-        Self {
-            vid: self.vid.clone(),
-            lsn: self.lsn.clone(),
-        }
+        Self { vid: self.vid.clone(), lsn: self.lsn }
     }
 }
 

@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use bytes::Bytes;
 
-use crate::{Splinter, SplinterRef};
+use crate::{util::CopyToOwned, Splinter, SplinterRef};
 use itertools::Itertools;
 
 pub fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
@@ -61,7 +61,7 @@ impl Debug for TestSplinter {
                     .finish()
             }
             Self::SplinterRef(splinter) => {
-                let prefix: Vec<_> = splinter.clone().into_splinter().iter().take(10).collect();
+                let prefix: Vec<_> = splinter.copy_to_owned().iter().take(10).collect();
                 f.debug_struct("SplinterRef")
                     .field("meta", splinter)
                     .field("prefix", &prefix)

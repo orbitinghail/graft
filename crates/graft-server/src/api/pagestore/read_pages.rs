@@ -41,7 +41,7 @@ pub async fn handler<O: ObjectStore, C: Cache>(
 
     let segments = state
         .catalog()
-        .query_segments(vid.clone(), checkpoint..(lsn + 1));
+        .query_segments(vid.clone(), &(checkpoint..(lsn + 1)));
     for result in segments {
         let (sid, splinter) = result?;
 

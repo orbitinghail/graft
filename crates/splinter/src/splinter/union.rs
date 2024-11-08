@@ -1,4 +1,7 @@
-use crate::{ops::Union, relational::Relation, util::CopyToOwned};
+use crate::{
+    ops::{Merge, Union},
+    util::CopyToOwned,
+};
 
 use super::{Splinter, SplinterRef};
 
@@ -7,34 +10,8 @@ impl Union for Splinter {
     type Output = Splinter;
 
     fn union(&self, rhs: &Self) -> Self::Output {
-        let mut out = Splinter::default();
-        for (high, left, right) in self.partitions.outer_join(&rhs.partitions) {
-            match (left, right) {
-                (Some(left), Some(right)) => {
-                    for (mid, left, right) in left.outer_join(right) {
-                        match (left, right) {
-                            (Some(left), Some(right)) => {
-                                out.insert_block(high, mid, left.union(right));
-                            }
-                            (Some(left), None) => {
-                                out.insert_block(high, mid, left.clone());
-                            }
-                            (None, Some(right)) => {
-                                out.insert_block(high, mid, right.clone());
-                            }
-                            (None, None) => {}
-                        }
-                    }
-                }
-                (Some(left), None) => {
-                    out.partitions.insert(high, left.clone());
-                }
-                (None, Some(right)) => {
-                    out.partitions.insert(high, right.clone());
-                }
-                (None, None) => {}
-            }
-        }
+        let mut out = self.clone();
+        out.merge(rhs);
         out
     }
 }
@@ -44,35 +21,8 @@ impl<T: AsRef<[u8]>> Union<SplinterRef<T>> for Splinter {
     type Output = Splinter;
 
     fn union(&self, rhs: &SplinterRef<T>) -> Self::Output {
-        let mut out = Splinter::default();
-        let rhs = rhs.load_partitions();
-        for (high, left, right) in self.partitions.outer_join(&rhs) {
-            match (left, right) {
-                (Some(left), Some(right)) => {
-                    for (mid, left, right) in left.outer_join(&right) {
-                        match (left, right) {
-                            (Some(left), Some(right)) => {
-                                out.insert_block(high, mid, left.union(&right));
-                            }
-                            (Some(left), None) => {
-                                out.insert_block(high, mid, left.clone());
-                            }
-                            (None, Some(right)) => {
-                                out.insert_block(high, mid, right.copy_to_owned());
-                            }
-                            (None, None) => {}
-                        }
-                    }
-                }
-                (Some(left), None) => {
-                    out.partitions.insert(high, left.clone());
-                }
-                (None, Some(right)) => {
-                    out.partitions.insert(high, right.copy_to_owned());
-                }
-                (None, None) => {}
-            }
-        }
+        let mut out = self.clone();
+        out.merge(rhs);
         out
     }
 }
@@ -95,35 +45,8 @@ where
     type Output = Splinter;
 
     fn union(&self, rhs: &SplinterRef<T2>) -> Self::Output {
-        let mut out = Splinter::default();
-        let rhs = rhs.load_partitions();
-        for (high, left, right) in self.load_partitions().outer_join(&rhs) {
-            match (left, right) {
-                (Some(left), Some(right)) => {
-                    for (mid, left, right) in left.outer_join(&right) {
-                        match (left, right) {
-                            (Some(left), Some(right)) => {
-                                out.insert_block(high, mid, left.union(&right));
-                            }
-                            (Some(left), None) => {
-                                out.insert_block(high, mid, left.copy_to_owned());
-                            }
-                            (None, Some(right)) => {
-                                out.insert_block(high, mid, right.copy_to_owned());
-                            }
-                            (None, None) => {}
-                        }
-                    }
-                }
-                (Some(left), None) => {
-                    out.partitions.insert(high, left.copy_to_owned());
-                }
-                (None, Some(right)) => {
-                    out.partitions.insert(high, right.copy_to_owned());
-                }
-                (None, None) => {}
-            }
-        }
+        let mut out = self.copy_to_owned();
+        out.merge(rhs);
         out
     }
 }

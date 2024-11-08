@@ -17,6 +17,7 @@ use crate::{
 mod cmp;
 mod cut;
 mod intersection;
+mod merge;
 mod union;
 
 pub const SPLINTER_MAGIC: [u8; 2] = [0x57, 0x16];
@@ -65,7 +66,7 @@ pub struct Splinter {
 
 impl Splinter {
     pub fn from_bytes<T: AsRef<[u8]>>(data: T) -> Result<Self, DecodeErr> {
-        SplinterRef::from_bytes(data).map(SplinterRef::into_splinter)
+        SplinterRef::from_bytes(data).map(Into::into)
     }
 
     #[inline]
@@ -216,11 +217,6 @@ where
             .map(|p| p.cardinality())
             .sum()
     }
-
-    pub fn into_splinter(self) -> Splinter {
-        let partitions = self.load_partitions().copy_to_owned();
-        Splinter { partitions }
-    }
 }
 
 impl<T: AsRef<[u8]>> Debug for SplinterRef<T> {
@@ -234,7 +230,16 @@ impl<T: AsRef<[u8]>> Debug for SplinterRef<T> {
 
 impl<T: AsRef<[u8]>> From<SplinterRef<T>> for Splinter {
     fn from(value: SplinterRef<T>) -> Self {
-        value.into_splinter()
+        value.copy_to_owned()
+    }
+}
+
+impl<T: AsRef<[u8]>> CopyToOwned for SplinterRef<T> {
+    type Owned = Splinter;
+
+    fn copy_to_owned(&self) -> Self::Owned {
+        let partitions = self.load_partitions().copy_to_owned();
+        Splinter { partitions }
     }
 }
 
@@ -299,11 +304,11 @@ mod tests {
             assert_eq!(splinter, splinter_ref, "Splinter == SplinterRef");
             assert_eq!(
                 splinter,
-                splinter_ref.clone().into_splinter(),
+                splinter_ref.copy_to_owned(),
                 "Splinter == Splinter"
             );
             assert_eq!(
-                splinter_ref.clone().into_splinter().serialize_to_bytes(),
+                splinter_ref.copy_to_owned().serialize_to_bytes(),
                 splinter.serialize_to_bytes(),
                 "deterministic serialization"
             );

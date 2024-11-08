@@ -2,7 +2,6 @@ use std::time::{Duration, SystemTime};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{gid::GidParseErr, lsn::LSN, offset::Offset, SegmentId, VolumeId};
-use graft_proto::common::v1::Snapshot;
 use object_store::path::Path;
 use splinter::SplinterRef;
 use thiserror::Error;

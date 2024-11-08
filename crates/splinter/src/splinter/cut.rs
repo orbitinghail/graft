@@ -102,8 +102,6 @@ mod tests {
     fn test_sanity() {
         check_cut(0..0, 0..0, 0..0, 0..0);
         check_cut(0..10, 0..5, 5..10, 0..5);
-
-        // this test is pending cleanup
         check_cut(0..10, 0..10, 0..0, 0..10);
     }
 }

@@ -13,6 +13,7 @@ use crate::{
 mod cmp;
 mod cut;
 mod intersection;
+mod merge;
 mod union;
 
 #[derive(Clone)]
@@ -89,7 +90,7 @@ impl<T: Deref<Target = [Segment]>> BlockRef<T> {
 
     /// If this block is a bitmap, return the bitmap, otherwise return None
     #[inline]
-    fn bitmap(&self) -> Option<&[u8; BITMAP_SIZE]> {
+    pub(crate) fn bitmap(&self) -> Option<&[u8; BITMAP_SIZE]> {
         (*self.segments).try_into().ok()
     }
 

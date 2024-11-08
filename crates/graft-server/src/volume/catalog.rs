@@ -136,7 +136,7 @@ impl VolumeCatalog {
     pub fn query_segments(
         &self,
         vid: VolumeId,
-        lsns: Range<LSN>,
+        lsns: &Range<LSN>,
     ) -> impl Iterator<Item = Result<(SegmentId, SplinterRef<Slice>)>> {
         // Warning: it seems like Fjall incorrectly handles RangeInclusive, so
         // this function can't safely accept a general RangeBounds.
