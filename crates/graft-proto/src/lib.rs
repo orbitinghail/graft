@@ -1,7 +1,7 @@
 include!("mod.rs");
 
 use std::{
-    ops::{Bound, RangeBounds},
+    ops::{Bound, Range, RangeBounds},
     time::SystemTime,
 };
 
@@ -114,5 +114,25 @@ impl LsnRange {
             Some(lsn_bound::Bound::Excluded(lsn)) => Some(lsn.saturating_sub(1)),
             None => None,
         })
+    }
+
+    pub fn end_exclusive(&self) -> Option<LSN> {
+        self.end.and_then(|b| match b.bound {
+            Some(lsn_bound::Bound::Included(lsn)) => lsn.checked_add(1),
+            Some(lsn_bound::Bound::Excluded(lsn)) => Some(lsn),
+            None => None,
+        })
+    }
+
+    pub fn canonical(&self) -> Range<LSN> {
+        (*self).into()
+    }
+}
+
+impl From<LsnRange> for Range<LSN> {
+    fn from(range: LsnRange) -> Self {
+        let start = range.start().unwrap_or(0);
+        let end = range.end_exclusive().unwrap_or(LSN::MAX);
+        start..end
     }
 }

@@ -1,4 +1,8 @@
-use std::{fmt::Debug, ops::Range, path::Path};
+use std::{
+    fmt::Debug,
+    ops::{Range, RangeBounds},
+    path::Path,
+};
 
 use fjall::{
     Batch, Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice,
@@ -84,15 +88,14 @@ impl VolumeCatalog {
         Ok(self.volumes.contains_key(CommitKey::new(vid, lsn))?)
     }
 
-    pub fn contains_range(&self, vid: &VolumeId, lsns: &Range<LSN>) -> Result<bool> {
-        let start = CommitKey::new(vid.clone(), lsns.start);
-        let end = CommitKey::new(vid.clone(), lsns.end);
+    pub fn contains_range<R: RangeBounds<LSN>>(&self, vid: &VolumeId, lsns: &R) -> Result<bool> {
+        let range = CommitKey::range(vid, lsns);
 
         // verify that lsns in the range are contiguous
-        let mut cursor = lsns.start;
+        let mut cursor = range.start.lsn();
         let mut empty = true;
 
-        for kv in self.volumes.range(start..end) {
+        for kv in self.volumes.range(range) {
             let (key, _) = kv?;
             let key = CommitKey::try_ref_from_bytes(&key)
                 .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitKey" })?;
@@ -133,16 +136,13 @@ impl VolumeCatalog {
 
     /// Query the catalog for segments in the specified Volume. Segments are
     /// scanned in reverse order by LSN.
-    pub fn query_segments(
+    pub fn query_segments<R: RangeBounds<LSN>>(
         &self,
-        vid: VolumeId,
-        lsns: &Range<LSN>,
+        vid: &VolumeId,
+        lsns: &R,
     ) -> impl Iterator<Item = Result<(SegmentId, SplinterRef<Slice>)>> {
-        // Warning: it seems like Fjall incorrectly handles RangeInclusive, so
-        // this function can't safely accept a general RangeBounds.
-        let start = CommitKey::new(vid.clone(), lsns.start);
-        let end = CommitKey::new(vid.clone(), lsns.end);
-        let scan = self.segments.range(start..end).rev();
+        let range = CommitKey::range(vid, lsns);
+        let scan = self.segments.range(range).rev();
         SegmentsQueryIter { scan }
     }
 }

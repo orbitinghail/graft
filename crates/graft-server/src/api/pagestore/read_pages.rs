@@ -39,9 +39,7 @@ pub async fn handler<O: ObjectStore, C: Cache>(
     // TODO: If we know the last_offset in the requested LSN, we can skip
     // returning any offsets that are greater than that.
 
-    let segments = state
-        .catalog()
-        .query_segments(vid.clone(), &(checkpoint..(lsn + 1)));
+    let segments = state.catalog().query_segments(&vid, &(checkpoint..=lsn));
     for result in segments {
         let (sid, splinter) = result?;
 

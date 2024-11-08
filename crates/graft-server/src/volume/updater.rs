@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Range, RangeBounds};
 
 use foldhash::fast::RandomState;
 use futures::TryStreamExt;
@@ -111,12 +111,12 @@ impl VolumeCatalogUpdater {
         Ok(())
     }
 
-    pub async fn update_catalog_from_store_in_range<O: ObjectStore>(
+    pub async fn update_catalog_from_store_in_range<O: ObjectStore, R: RangeBounds<LSN>>(
         &self,
         store: &VolumeStore<O>,
         catalog: &VolumeCatalog,
         vid: &VolumeId,
-        lsns: &Range<LSN>,
+        lsns: &R,
     ) -> Result<(), UpdateErr> {
         // we can return early if the catalog already contains the requested LSNs
         if catalog.contains_range(vid, lsns)? {

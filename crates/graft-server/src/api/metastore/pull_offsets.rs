@@ -36,7 +36,7 @@ pub async fn handler<O: ObjectStore>(
     let start_lsn = lsns.start().unwrap_or(checkpoint).max(checkpoint);
 
     // calculate the resolved lsn range
-    let lsns = start_lsn..(snapshot.lsn() + 1);
+    let lsns = start_lsn..=snapshot.lsn();
 
     // ensure the catalog contains the requested LSNs
     state
@@ -45,7 +45,7 @@ pub async fn handler<O: ObjectStore>(
         .await?;
 
     // read the segments, and merge into a single splinter
-    let mut iter = state.catalog.query_segments(vid.clone(), &lsns);
+    let mut iter = state.catalog.query_segments(&vid, &lsns);
     let mut splinter = Splinter::default();
     while let Some((_, offsets)) = iter.try_next()? {
         splinter.merge(&offsets);
@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(snapshot.lsn, 9);
         assert_eq!(snapshot.last_offset, 0);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
-        assert_eq!(resp.range, Some(LsnRange::from_bounds(&lsns)));
+        assert_eq!(resp.range.map(|r| r.canonical()), Some(lsns));
         let splinter = Splinter::from_bytes(resp.offsets).unwrap();
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);

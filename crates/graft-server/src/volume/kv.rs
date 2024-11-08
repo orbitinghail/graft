@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    ops::{Range, RangeBounds},
+};
 
 use graft_core::{
     lsn::LSN,
@@ -26,6 +29,21 @@ impl CommitKey {
     #[inline]
     pub fn lsn(&self) -> LSN {
         self.lsn.get()
+    }
+
+    pub fn range<R: RangeBounds<LSN>>(vid: &VolumeId, lsns: &R) -> Range<CommitKey> {
+        Range {
+            start: match lsns.start_bound() {
+                std::ops::Bound::Included(lsn) => CommitKey::new(vid.clone(), *lsn),
+                std::ops::Bound::Excluded(lsn) => CommitKey::new(vid.clone(), *lsn + 1),
+                std::ops::Bound::Unbounded => CommitKey::new(vid.clone(), 0),
+            },
+            end: match lsns.end_bound() {
+                std::ops::Bound::Included(lsn) => CommitKey::new(vid.clone(), *lsn + 1),
+                std::ops::Bound::Excluded(lsn) => CommitKey::new(vid.clone(), *lsn),
+                std::ops::Bound::Unbounded => CommitKey::new(vid.clone(), LSN::MAX),
+            },
+        }
     }
 }
 
