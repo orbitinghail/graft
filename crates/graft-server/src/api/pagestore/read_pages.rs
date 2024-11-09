@@ -79,6 +79,8 @@ pub async fn handler<O: ObjectStore, C: Cache>(
 
 #[cfg(test)]
 mod tests {
+    use std::time::SystemTime;
+
     use axum::handler::Handler;
     use axum_test::TestServer;
     use bytes::Bytes;
@@ -161,7 +163,7 @@ mod tests {
         batch
             .insert_snapshot(
                 vid.clone(),
-                CommitMeta::new(lsn, 0, 4, 0),
+                CommitMeta::new(lsn, 0, 4, SystemTime::now()),
                 vec![
                     SegmentInfo {
                         sid: sid1.into(),

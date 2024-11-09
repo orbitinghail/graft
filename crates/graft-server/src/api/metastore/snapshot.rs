@@ -40,6 +40,8 @@ pub async fn handler<O: ObjectStore>(
 
 #[cfg(test)]
 mod tests {
+    use std::time::SystemTime;
+
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
     use graft_core::SegmentId;
@@ -50,7 +52,11 @@ mod tests {
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
-        volume::{catalog::VolumeCatalog, store::VolumeStore},
+        volume::{
+            catalog::VolumeCatalog,
+            commit::{CommitBuilder, CommitMeta},
+            store::VolumeStore,
+        },
     };
 
     use super::*;
@@ -93,7 +99,8 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has a commit
-        let mut commit = store.prepare(vid.clone(), 0, 0, 0);
+        let meta = CommitMeta::new(0, 0, 0, SystemTime::now());
+        let mut commit = CommitBuilder::default();
         commit.write_offsets(
             SegmentId::random(),
             &[0u32]
@@ -101,7 +108,7 @@ mod tests {
                 .collect::<Splinter>()
                 .serialize_to_bytes(),
         );
-        store.commit(commit).await.unwrap();
+        store.commit(vid.clone(), meta, commit).await.unwrap();
 
         // request latest
         let req = SnapshotRequest { vid: vid.clone().into(), lsn: None };

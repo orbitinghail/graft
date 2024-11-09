@@ -55,6 +55,10 @@ impl<O, V> Partition<O, V> {
     pub fn retain(&mut self, f: impl FnMut(&Segment, &mut V) -> bool) {
         self.values.retain(f);
     }
+
+    pub fn last(&self) -> Option<(Segment, &V)> {
+        self.values.last_key_value().map(|(k, v)| (*k, v))
+    }
 }
 
 impl<O, V> Merge for Partition<O, V>

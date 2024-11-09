@@ -131,6 +131,14 @@ impl Splinter {
     pub fn serialize_to_splinter_ref(&self) -> SplinterRef<Bytes> {
         SplinterRef::from_bytes(self.serialize_to_bytes()).expect("serialization roundtrip failed")
     }
+
+    /// returns the last key in the set
+    pub fn last(&self) -> Option<u32> {
+        let (h, p) = self.partitions.last()?;
+        let (m, b) = p.last()?;
+        let l = b.last()?;
+        Some(combine_segments(h, m, l))
+    }
 }
 
 impl Debug for Splinter {

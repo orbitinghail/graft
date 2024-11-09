@@ -8,7 +8,9 @@ use object_store::ObjectStore;
 
 use crate::volume::commit::{commit_key_prefix, CommitValidationErr};
 
-use super::commit::{commit_key, parse_commit_key, Commit, CommitBuilder, CommitKeyParseErr};
+use super::commit::{
+    commit_key, parse_commit_key, Commit, CommitBuilder, CommitKeyParseErr, CommitMeta,
+};
 
 const REPLAY_CONCURRENCY: usize = 5;
 
@@ -33,23 +35,14 @@ impl<O: ObjectStore> VolumeStore<O> {
         Self { store }
     }
 
-    pub fn prepare(
+    pub async fn commit(
         &self,
         vid: VolumeId,
-        lsn: LSN,
-        checkpoint: LSN,
-        last_offset: u32,
-    ) -> CommitBuilder {
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        CommitBuilder::new(vid, lsn, checkpoint, last_offset, timestamp)
-    }
-
-    pub async fn commit(&self, commit: CommitBuilder) -> Result<(), VolumeStoreErr> {
-        let (vid, lsn, commit) = commit.freeze();
-        let key = commit_key(&vid, lsn);
+        meta: CommitMeta,
+        commit: CommitBuilder,
+    ) -> Result<(), VolumeStoreErr> {
+        let key = commit_key(&vid, meta.lsn());
+        let commit = commit.build(vid, meta);
         self.store.put(&key, commit.into()).await?;
         Ok(())
     }

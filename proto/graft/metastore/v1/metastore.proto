@@ -49,7 +49,7 @@ message PullSegmentsResponse {
 // metadata on success.
 message CommitRequest {
   bytes vid = 1;
-  uint64 snapshot_lsn = 2;
+  optional uint64 snapshot_lsn = 2;
   uint32 last_offset = 3;
   repeated graft.common.v1.SegmentInfo segments = 4;
 }

@@ -44,6 +44,15 @@ pub enum ApiErr {
 
     #[error("failed to load segment: {0}")]
     SegmentValidationErr(#[from] SegmentValidationErr),
+
+    #[error(
+        "commit rejected for volume {vid}: snapshot lsn {snapshot:?} is out of sync with latest lsn {latest:?}"
+    )]
+    CommitSnapshotOutOfDate {
+        vid: VolumeId,
+        snapshot: Option<LSN>,
+        latest: Option<LSN>,
+    },
 }
 
 impl From<UpdateErr> for ApiErr {

@@ -34,12 +34,13 @@ splinter
 
 # TODO
 
-## Cut
-To efficiently support cut, we will need a mutable splinter. The simplest form of this is `HashMap<Segment, HashMap<Segment, Block>>` where Block is an enum storing either a list of Segments or a bitset.
+## Range Compression
 
-## Missing methods
-- iter -> iterate through all of the elements in the splinter
-- from_sorted_iter
+One way to add range compression to Splinter is to avoid storing full blocks. When querying Splinter, if the cardinality of a block is 256 then the code can short circuit rather than read the block. I suspect this doesn't add too much complexity and is probably the easiest way to add range compression.
+
+The other option is to follow in the footsteps of Roaring and add a bit somewhere to specify if a block stores ranges. Then, we could store up to 16 non-overlapping ranges in each block (as each range is two u8s). This allows range compression to be a tiny bit more granular at the cost of storage size (extra bit per block, ends up being more due to alignment) and complexity.
+
+Once we add range optimization to Splinter, checking to see if a Splinter is contiguous will be cheaper.
 
 ## Optimization ideas
 

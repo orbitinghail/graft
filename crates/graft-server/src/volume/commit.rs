@@ -19,6 +19,16 @@ pub fn commit_key(vid: &VolumeId, lsn: LSN) -> Path {
     format!("{}/{:0>18x}", commit_key_prefix(vid), lsn).into()
 }
 
+fn time_to_millis(time: SystemTime) -> u64 {
+    time.duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+fn millis_to_time(millis: u64) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_millis(millis)
+}
+
 #[derive(Debug, Error)]
 pub enum CommitKeyParseErr {
     #[error("invalid commit key structure: {0}")]
@@ -71,7 +81,7 @@ pub struct CommitMeta {
 }
 
 impl CommitMeta {
-    pub fn new(lsn: LSN, checkpoint: LSN, last_offset: Offset, timestamp: u64) -> Self {
+    pub fn new(lsn: LSN, checkpoint: LSN, last_offset: Offset, timestamp: SystemTime) -> Self {
         assert!(
             checkpoint <= lsn,
             "checkpoint must be less than or equal to lsn"
@@ -80,7 +90,7 @@ impl CommitMeta {
             lsn: lsn.into(),
             checkpoint_lsn: checkpoint.into(),
             last_offset: last_offset.into(),
-            timestamp: timestamp.into(),
+            timestamp: time_to_millis(timestamp).into(),
         }
     }
 
@@ -106,7 +116,7 @@ impl CommitMeta {
 
     #[inline]
     pub fn system_time(&self) -> SystemTime {
-        SystemTime::UNIX_EPOCH + Duration::from_millis(self.timestamp())
+        millis_to_time(self.timestamp())
     }
 }
 
@@ -124,39 +134,38 @@ pub struct OffsetsHeader {
 }
 
 pub struct CommitBuilder {
-    vid: VolumeId,
-    lsn: LSN,
-    buffer: BytesMut,
+    header: BytesMut,
+    offsets: BytesMut,
+}
+
+impl Default for CommitBuilder {
+    fn default() -> Self {
+        let mut header = BytesMut::default();
+        header.reserve(size_of::<CommitHeader>());
+        let offsets = header.split_off(size_of::<CommitHeader>());
+        Self { header, offsets }
+    }
 }
 
 impl CommitBuilder {
-    pub fn new(vid: VolumeId, lsn: LSN, checkpoint: LSN, last_offset: u32, timestamp: u64) -> Self {
-        let mut buffer = BytesMut::default();
-        let header = CommitHeader {
-            magic: COMMIT_MAGIC,
-            vid: vid.clone(),
-            meta: CommitMeta {
-                lsn: lsn.into(),
-                checkpoint_lsn: checkpoint.into(),
-                last_offset: last_offset.into(),
-                timestamp: timestamp.into(),
-            },
-        };
-        buffer.put_slice(header.as_bytes());
-        Self { vid, lsn, buffer }
-    }
-
     pub fn write_offsets(&mut self, sid: SegmentId, splinter: &[u8]) {
         let header = OffsetsHeader {
             sid,
             size: (splinter.len() as u32).into(),
         };
-        self.buffer.put_slice(header.as_bytes());
-        self.buffer.put_slice(splinter);
+        self.offsets.put_slice(header.as_bytes());
+        self.offsets.put_slice(splinter);
     }
 
-    pub fn freeze(self) -> (VolumeId, LSN, Bytes) {
-        (self.vid, self.lsn, self.buffer.freeze())
+    pub fn build(mut self, vid: VolumeId, meta: CommitMeta) -> Bytes {
+        // write the header
+        let header = CommitHeader { magic: COMMIT_MAGIC, vid, meta };
+        self.header.put_slice(header.as_bytes());
+
+        // combine the header and buffer, freezing the result
+        let mut buffer = self.header;
+        buffer.unsplit(self.offsets);
+        buffer.freeze()
     }
 }
 

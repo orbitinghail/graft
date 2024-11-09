@@ -19,7 +19,6 @@ pub trait BitmapExt {
     }
 
     /// Return the last segment in the bitmap
-    #[cfg(test)]
     #[inline]
     fn last(&self) -> Option<Segment> {
         // Traverse the bitmap from the last byte to the first
