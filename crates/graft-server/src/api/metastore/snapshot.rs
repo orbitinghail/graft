@@ -108,7 +108,7 @@ mod tests {
                 .collect::<Splinter>()
                 .serialize_to_bytes(),
         );
-        store.commit(vid.clone(), meta, commit).await.unwrap();
+        store.commit(commit.build(vid.clone(), meta)).await.unwrap();
 
         // request latest
         let req = SnapshotRequest { vid: vid.clone().into(), lsn: None };

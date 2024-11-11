@@ -5,11 +5,18 @@ use std::{
     time::SystemTime,
 };
 
-use common::v1::{lsn_bound, LsnBound, LsnRange, Snapshot};
-use graft_core::{gid::GidParseErr, lsn::LSN, VolumeId};
+use bytes::Bytes;
+use common::v1::{lsn_bound, LsnBound, LsnRange, SegmentInfo, Snapshot};
+use graft_core::{gid::GidParseErr, lsn::LSN, SegmentId, VolumeId};
 use prost_types::TimestampError;
 
 pub use graft::*;
+
+impl SegmentInfo {
+    pub fn new(sid: &SegmentId, offsets: Bytes) -> Self {
+        Self { sid: sid.into(), offsets }
+    }
+}
 
 impl Snapshot {
     pub fn new(vid: &VolumeId, lsn: LSN, last_offset: u32, timestamp: SystemTime) -> Self {

@@ -35,15 +35,9 @@ impl<O: ObjectStore> VolumeStore<O> {
         Self { store }
     }
 
-    pub async fn commit(
-        &self,
-        vid: VolumeId,
-        meta: CommitMeta,
-        commit: CommitBuilder,
-    ) -> Result<(), VolumeStoreErr> {
-        let key = commit_key(&vid, meta.lsn());
-        let commit = commit.build(vid, meta);
-        self.store.put(&key, commit.into()).await?;
+    pub async fn commit(&self, commit: Commit) -> Result<(), VolumeStoreErr> {
+        let key = commit_key(commit.vid(), commit.meta().lsn());
+        self.store.put(&key, commit.into_payload()).await?;
         Ok(())
     }
 

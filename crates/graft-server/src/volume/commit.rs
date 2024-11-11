@@ -1,8 +1,11 @@
-use std::time::{Duration, SystemTime};
+use std::{
+    default,
+    time::{Duration, SystemTime},
+};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{gid::GidParseErr, lsn::LSN, offset::Offset, SegmentId, VolumeId};
-use object_store::path::Path;
+use object_store::{path::Path, PutPayload};
 use splinter::SplinterRef;
 use thiserror::Error;
 use zerocopy::{
@@ -134,16 +137,12 @@ pub struct OffsetsHeader {
 }
 
 pub struct CommitBuilder {
-    header: BytesMut,
     offsets: BytesMut,
 }
 
 impl Default for CommitBuilder {
     fn default() -> Self {
-        let mut header = BytesMut::default();
-        header.reserve(size_of::<CommitHeader>());
-        let offsets = header.split_off(size_of::<CommitHeader>());
-        Self { header, offsets }
+        Self { offsets: Default::default() }
     }
 }
 
@@ -157,15 +156,9 @@ impl CommitBuilder {
         self.offsets.put_slice(splinter);
     }
 
-    pub fn build(mut self, vid: VolumeId, meta: CommitMeta) -> Bytes {
-        // write the header
+    pub fn build(self, vid: VolumeId, meta: CommitMeta) -> Commit {
         let header = CommitHeader { magic: COMMIT_MAGIC, vid, meta };
-        self.header.put_slice(header.as_bytes());
-
-        // combine the header and buffer, freezing the result
-        let mut buffer = self.header;
-        buffer.unsplit(self.offsets);
-        buffer.freeze()
+        Commit { header, offsets: self.offsets.freeze() }
     }
 }
 
@@ -177,6 +170,7 @@ pub enum CommitValidationErr {
     Magic,
 }
 
+#[derive(Clone)]
 pub struct Commit {
     header: CommitHeader,
     offsets: Bytes,
@@ -207,6 +201,11 @@ impl Commit {
 
     pub fn iter_offsets(&self) -> OffsetsIter<'_> {
         OffsetsIter { offsets: &self.offsets }
+    }
+
+    pub fn into_payload(self) -> PutPayload {
+        let header = Bytes::copy_from_slice(self.header.as_bytes());
+        [header, self.offsets].into_iter().collect()
     }
 }
 

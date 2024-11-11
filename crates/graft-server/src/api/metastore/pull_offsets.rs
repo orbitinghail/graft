@@ -112,15 +112,13 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has 10 commits
-        let offsets = &[0u32]
-            .into_iter()
-            .collect::<Splinter>()
-            .serialize_to_bytes();
+        let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
         for lsn in 0u64..10 {
             let meta = CommitMeta::new(lsn, 0, 0, SystemTime::now());
             let mut commit = CommitBuilder::default();
-            commit.write_offsets(SegmentId::random(), offsets);
-            store.commit(vid.clone(), meta, commit).await.unwrap();
+            commit.write_offsets(SegmentId::random(), &offsets);
+            let commit = commit.build(vid.clone(), meta);
+            store.commit(commit).await.unwrap();
         }
 
         // request the last 5 segments

@@ -129,7 +129,8 @@ mod tests {
             let meta = CommitMeta::new(lsn, 0, 0, SystemTime::now());
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), offsets);
-            store.commit(vid.clone(), meta, commit).await.unwrap();
+            let commit = commit.build(vid.clone(), meta);
+            store.commit(commit).await.unwrap();
         }
 
         // request the last 5 segments
