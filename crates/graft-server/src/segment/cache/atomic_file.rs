@@ -77,7 +77,7 @@ mod tests {
     use super::*;
     use std::fs;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_write_file_atomic() {
         let tempdir = tempfile::tempdir().unwrap();
         let path = tempdir.path().join("test");
