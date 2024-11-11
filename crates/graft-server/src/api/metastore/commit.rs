@@ -6,7 +6,7 @@ use graft_proto::{
     common::v1::Snapshot,
     metastore::v1::{CommitRequest, CommitResponse},
 };
-use itertools::{all, Itertools};
+use itertools::Itertools;
 use object_store::ObjectStore;
 use splinter::{ops::Merge, Splinter, SplinterRef};
 

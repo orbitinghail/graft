@@ -9,9 +9,9 @@ use graft_core::{
     hash_table::{HTEntry, HashTable},
     SegmentId,
 };
-use tokio::{fs::File, io::AsyncWriteExt, sync::RwLock};
+use tokio::{fs::File, sync::RwLock};
 
-use super::atomic_file::AtomicFileWriter;
+use super::atomic_file::write_file_atomic;
 use crate::resource_pool::{ResourceHandle, ResourcePool, ResourcePoolGuard};
 
 use super::Cache;
@@ -79,21 +79,18 @@ impl Cache for DiskCache {
     async fn put(&self, sid: &SegmentId, data: bytes::Bytes) -> std::io::Result<()> {
         let path = self.dir.join(sid.pretty());
 
-        // write the data to disk
-        let mut file = AtomicFileWriter::open(&path).await?;
-        file.write_all(&data).await?;
-
-        // optimistically commit the file, aborting if it already exists
-        let size = match file.commit().await {
-            Ok(size) => size,
+        // optimistically write the file to disk, aborting if it already exists
+        match write_file_atomic(&path, &data).await {
+            Ok(()) => (),
+            // we don't need to update self.segments if the file already exists
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
             Err(e) => return Err(e),
-        };
+        }
 
         // insert the segment into the cache
         self.segments.write().await.insert(Segment {
             sid: sid.clone(),
-            size,
+            size: data.len().into(),
             mmap_handle: Default::default(),
         });
 

@@ -1,101 +1,75 @@
-use std::{
-    os::{
-        fd::{AsFd, AsRawFd},
-        unix::fs::MetadataExt,
-    },
-    path::{Path, PathBuf},
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::{io::Write, os::fd::AsRawFd, path::Path};
 
-use graft_core::byte_unit::ByteUnit;
 use nix::fcntl::{AtFlags, OFlag};
-use pin_project::pin_project;
 use tokio::{
     fs::OpenOptions,
-    io::{self, AsyncSeek, AsyncWrite, AsyncWriteExt},
+    io::{self, AsyncWriteExt},
+    task::block_in_place,
 };
 
-pub async fn write_file_atomic<P, B>(path: P, data: B) -> io::Result<ByteUnit>
+#[cfg(target_os = "linux")]
+pub async fn write_file_atomic<P, B>(path: P, data: B) -> io::Result<()>
 where
     P: AsRef<Path>,
     B: AsRef<[u8]>,
 {
-    let mut writer = AtomicFileWriter::open(path).await?;
-    writer.write_all(data.as_ref()).await?;
-    writer.commit().await
+    let path = path.as_ref().to_path_buf();
+    assert!(path.is_absolute(), "path must be absolute");
+
+    // resolve the path to its directory
+    let dir = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+
+    // open a temporary file in the target directory
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(OFlag::O_TMPFILE.bits())
+        .open(dir)
+        .await?;
+
+    // write and flush the file to disk
+    file.write_all(data.as_ref()).await?;
+    file.sync_all().await?;
+
+    // use linkat to map the file to its final location
+    let fd = file.as_raw_fd();
+    nix::unistd::linkat(Some(fd), Path::new(""), None, &path, AtFlags::AT_EMPTY_PATH)?;
+
+    Ok(())
 }
 
-#[pin_project]
-pub struct AtomicFileWriter {
-    path: PathBuf,
-    #[pin]
-    file: tokio::fs::File,
+#[cfg(not(target_os = "linux"))]
+pub async fn write_file_atomic<P, B>(path: P, data: B) -> io::Result<()>
+where
+    P: AsRef<Path>,
+    B: AsRef<[u8]>,
+{
+    write_file_atomic_generic(path, data).await
 }
 
-impl AtomicFileWriter {
-    pub async fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        let path = path.as_ref().to_path_buf();
-        assert!(path.is_absolute(), "path must be absolute");
+pub async fn write_file_atomic_generic<P, B>(path: P, data: B) -> io::Result<()>
+where
+    P: AsRef<Path>,
+    B: AsRef<[u8]>,
+{
+    let path = path.as_ref().to_path_buf();
+    assert!(path.is_absolute(), "path must be absolute");
 
-        // resolve the path to its directory
-        let dir = path
-            .parent()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    block_in_place(|| {
+        // open a named temporary file
+        let mut file = tempfile::NamedTempFile::new()?;
 
-        // open a temporary file in the target directory
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .custom_flags(OFlag::O_TMPFILE.bits())
-            .open(dir)
-            .await?;
+        // write and flush the file to disk
+        file.write_all(data.as_ref())?;
+        file.flush()?;
 
-        Ok(Self { path, file })
-    }
+        // persist the file to disk
+        file.persist_noclobber(path)?;
 
-    pub async fn commit(self) -> io::Result<ByteUnit> {
-        let Self { path, file } = self;
-
-        // flush the file
-        file.sync_all().await?;
-
-        let size = file.metadata().await?.size();
-
-        // use linkat to map the file to its final location
-        let fd = file.as_fd().as_raw_fd();
-        nix::unistd::linkat(Some(fd), Path::new(""), None, &path, AtFlags::AT_EMPTY_PATH)?;
-
-        Ok(size.into())
-    }
-}
-
-impl AsyncSeek for AtomicFileWriter {
-    fn start_seek(self: Pin<&mut Self>, position: std::io::SeekFrom) -> std::io::Result<()> {
-        self.project().file.start_seek(position)
-    }
-
-    fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<u64>> {
-        self.project().file.poll_complete(cx)
-    }
-}
-
-impl AsyncWrite for AtomicFileWriter {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        self.project().file.poll_write(cx, buf)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project().file.poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project().file.poll_shutdown(cx)
-    }
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -110,6 +84,18 @@ mod tests {
         let data = b"hello, world!";
 
         write_file_atomic(&path, data).await.unwrap();
+
+        let read_data = fs::read(path).unwrap();
+        assert_eq!(data, read_data.as_slice());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_write_file_atomic_generic() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join("test");
+        let data = b"hello, world!";
+
+        write_file_atomic_generic(&path, data).await.unwrap();
 
         let read_data = fs::read(path).unwrap();
         assert_eq!(data, read_data.as_slice());

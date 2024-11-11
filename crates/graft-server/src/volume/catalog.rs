@@ -1,8 +1,4 @@
-use std::{
-    fmt::Debug,
-    ops::{Range, RangeBounds},
-    path::Path,
-};
+use std::{fmt::Debug, ops::RangeBounds, path::Path};
 
 use fjall::{
     Batch, Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice,

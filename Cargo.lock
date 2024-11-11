@@ -763,7 +763,6 @@ dependencies = [
  "nix",
  "object_store",
  "odht",
- "pin-project",
  "prost",
  "rlimit",
  "splinter",
