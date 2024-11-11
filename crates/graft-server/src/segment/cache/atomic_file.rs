@@ -1,17 +1,17 @@
 use std::{io::Write, os::fd::AsRawFd, path::Path};
 
+use bytes::Bytes;
 use nix::fcntl::{AtFlags, OFlag};
 use tokio::{
     fs::OpenOptions,
     io::{self, AsyncWriteExt},
-    task::block_in_place,
+    task::spawn_blocking,
 };
 
 #[cfg(target_os = "linux")]
-pub async fn write_file_atomic<P, B>(path: P, data: B) -> io::Result<()>
+pub async fn write_file_atomic<P>(path: P, data: &Bytes) -> io::Result<()>
 where
     P: AsRef<Path>,
-    B: AsRef<[u8]>,
 {
     let path = path.as_ref().to_path_buf();
     assert!(path.is_absolute(), "path must be absolute");
@@ -30,7 +30,7 @@ where
         .await?;
 
     // write and flush the file to disk
-    file.write_all(data.as_ref()).await?;
+    file.write_all(data).await?;
     file.sync_all().await?;
 
     // use linkat to map the file to its final location
@@ -41,23 +41,23 @@ where
 }
 
 #[cfg(not(target_os = "linux"))]
-pub async fn write_file_atomic<P, B>(path: P, data: B) -> io::Result<()>
+pub async fn write_file_atomic<P>(path: P, data: &Bytes) -> io::Result<()>
 where
     P: AsRef<Path>,
-    B: AsRef<[u8]>,
 {
     write_file_atomic_generic(path, data).await
 }
 
-pub async fn write_file_atomic_generic<P, B>(path: P, data: B) -> io::Result<()>
+pub async fn write_file_atomic_generic<P>(path: P, data: &Bytes) -> io::Result<()>
 where
     P: AsRef<Path>,
-    B: AsRef<[u8]>,
 {
     let path = path.as_ref().to_path_buf();
     assert!(path.is_absolute(), "path must be absolute");
 
-    block_in_place(|| {
+    let data = data.clone();
+
+    spawn_blocking(move || {
         // open a named temporary file
         let mut file = tempfile::NamedTempFile::new()?;
 
@@ -70,6 +70,8 @@ where
 
         Ok(())
     })
+    .await
+    .unwrap()
 }
 
 #[cfg(test)]
@@ -77,25 +79,25 @@ mod tests {
     use super::*;
     use std::fs;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn test_write_file_atomic() {
         let tempdir = tempfile::tempdir().unwrap();
         let path = tempdir.path().join("test");
-        let data = b"hello, world!";
+        let data = Bytes::from_static(b"hello world!");
 
-        write_file_atomic(&path, data).await.unwrap();
+        write_file_atomic(&path, &data).await.unwrap();
 
         let read_data = fs::read(path).unwrap();
         assert_eq!(data, read_data.as_slice());
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn test_write_file_atomic_generic() {
         let tempdir = tempfile::tempdir().unwrap();
         let path = tempdir.path().join("test");
-        let data = b"hello, world!";
+        let data = Bytes::from_static(b"hello world!");
 
-        write_file_atomic_generic(&path, data).await.unwrap();
+        write_file_atomic_generic(&path, &data).await.unwrap();
 
         let read_data = fs::read(path).unwrap();
         assert_eq!(data, read_data.as_slice());
