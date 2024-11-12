@@ -49,7 +49,7 @@ pub fn parse_commit_key(key: &Path) -> Result<(VolumeId, LSN), CommitKeyParseErr
         .next()
         .ok_or_else(|| CommitKeyParseErr::Structure(key.clone()))?
         .as_ref()
-        .try_into()?;
+        .parse()?;
     let lsn: LSN = parts
         .next()
         .ok_or_else(|| CommitKeyParseErr::Structure(key.clone()))?

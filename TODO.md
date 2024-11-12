@@ -16,8 +16,8 @@ The CLI provides the following methods:
 open(name, vid)
 open a vid using the provided virtual file name
 
-close(name, vid)
-remove the provided vid from the cache
+close(name)
+remove the provided virtual file from the cache
 
 snapshot(name)
 printout the virtual file's snapshot metadata

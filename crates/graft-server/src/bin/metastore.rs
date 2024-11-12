@@ -28,7 +28,7 @@ async fn main() {
     let router = metastore_router().with_state(state);
 
     supervisor.spawn(ApiServerTask::new(
-        TcpListener::bind("0.0.0.0:3000").await.unwrap(),
+        TcpListener::bind("0.0.0.0:3001").await.unwrap(),
         router,
     ));
 

@@ -1,6 +1,7 @@
 use std::{
     fmt::{Debug, Display},
     hash::Hash,
+    str::FromStr,
     time::SystemTime,
 };
 
@@ -92,10 +93,10 @@ impl<const P: u8> TryFrom<[u8; GID_SIZE.as_usize()]> for Gid<P> {
     }
 }
 
-impl<const P: u8> TryFrom<&str> for Gid<P> {
-    type Error = GidParseErr;
+impl<const P: u8> FromStr for Gid<P> {
+    type Err = GidParseErr;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         // To calculate this compute ceil(16 * (log2(256) / log2(58))) + 1
         // The format is the prefix byte followed by up to 22 base58 characters
         static MAX_ENCODED_LEN: usize = 22;
@@ -191,7 +192,7 @@ mod tests {
         // round trip through pretty format
         let pretty = id.pretty();
         println!("random: {pretty}");
-        let parsed: SegmentId = pretty.as_str().try_into().unwrap();
+        let parsed: SegmentId = pretty.parse().unwrap();
         assert_eq!(id, parsed);
 
         // round trip through bytes
@@ -212,21 +213,21 @@ mod tests {
         ];
 
         for &case in cases.iter() {
-            let result: Result<VolumeId, _> = case.try_into();
+            let result: Result<VolumeId, _> = case.parse();
             assert_eq!(result, Err(GidParseErr::InvalidLength));
         }
 
         // bad encoding
         let cases = ["GontbnaXtUE3!BbafyDiJt", "zzzzzzzzzzzzzzzzzzzzzz"];
         for &case in cases.iter() {
-            let result: Result<VolumeId, _> = case.try_into();
+            let result: Result<VolumeId, _> = case.parse();
             assert!(matches!(result, Err(GidParseErr::DecodeErr(_))));
         }
 
         // bad layout
         let cases = ["GGGGGGGGGGGGGGGGGGGGGG"];
         for &case in cases.iter() {
-            let result: Result<VolumeId, _> = case.try_into();
+            let result: Result<VolumeId, _> = case.parse();
             assert_eq!(result, Err(GidParseErr::InvalidLayout));
         }
 

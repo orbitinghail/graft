@@ -8,9 +8,7 @@ use object_store::ObjectStore;
 
 use crate::volume::commit::{commit_key_prefix, CommitValidationErr};
 
-use super::commit::{
-    commit_key, parse_commit_key, Commit, CommitBuilder, CommitKeyParseErr, CommitMeta,
-};
+use super::commit::{commit_key, parse_commit_key, Commit, CommitKeyParseErr};
 
 const REPLAY_CONCURRENCY: usize = 5;
 
