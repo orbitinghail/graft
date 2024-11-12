@@ -12,8 +12,14 @@ message SegmentInfo {
 message Snapshot {
   bytes vid = 1;
   uint64 lsn = 2;
-  uint32 last_offset = 3;
-  google.protobuf.Timestamp timestamp = 4;
+  uint64 checkpoint_lsn = 3;
+  uint32 last_offset = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+message Commit {
+  Snapshot snapshot = 1;
+  repeated SegmentInfo segments = 2;
 }
 
 message LsnBound {

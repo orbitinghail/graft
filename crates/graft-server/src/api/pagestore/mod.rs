@@ -1,3 +1,4 @@
+use graft_client::MetaStoreClient;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 
@@ -10,7 +11,7 @@ use crate::{
         cache::Cache,
         loader::SegmentLoader,
     },
-    volume::catalog::VolumeCatalog,
+    volume::{catalog::VolumeCatalog, updater::VolumeCatalogUpdater},
 };
 
 mod read_pages;
@@ -21,6 +22,8 @@ pub struct PagestoreApiState<O, C> {
     commit_bus: Bus<CommitSegmentReq>,
     catalog: VolumeCatalog,
     loader: SegmentLoader<O, C>,
+    metastore: MetaStoreClient,
+    updater: VolumeCatalogUpdater,
 }
 
 impl<O, C> PagestoreApiState<O, C> {
@@ -29,8 +32,17 @@ impl<O, C> PagestoreApiState<O, C> {
         commit_bus: Bus<CommitSegmentReq>,
         catalog: VolumeCatalog,
         loader: SegmentLoader<O, C>,
+        metastore: MetaStoreClient,
+        updater: VolumeCatalogUpdater,
     ) -> Self {
-        Self { page_tx, commit_bus, catalog, loader }
+        Self {
+            page_tx,
+            commit_bus,
+            catalog,
+            loader,
+            metastore,
+            updater,
+        }
     }
 
     pub async fn write_page(&self, req: WritePageReq) {
@@ -47,6 +59,14 @@ impl<O, C> PagestoreApiState<O, C> {
 
     pub fn loader(&self) -> &SegmentLoader<O, C> {
         &self.loader
+    }
+
+    pub fn metastore_client(&self) -> &MetaStoreClient {
+        &self.metastore
+    }
+
+    pub fn updater(&self) -> &VolumeCatalogUpdater {
+        &self.updater
     }
 }
 

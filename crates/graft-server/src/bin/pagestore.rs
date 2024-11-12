@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use futures::{select, FutureExt};
+use graft_client::MetaStoreClient;
 use graft_core::byte_unit::ByteUnit;
 use graft_server::{
     api::{
@@ -12,7 +13,7 @@ use graft_server::{
         writer::SegmentWriterTask,
     },
     supervisor::Supervisor,
-    volume::catalog::VolumeCatalog,
+    volume::{catalog::VolumeCatalog, updater::VolumeCatalogUpdater},
 };
 use object_store::memory::InMemory;
 use rlimit::Resource;
@@ -39,16 +40,21 @@ async fn main() {
     let cache = Arc::new(DiskCache::new(cache_dir, cache_size, cache_open_limit));
     let catalog = VolumeCatalog::open_temporary().unwrap();
     let loader = SegmentLoader::new(store.clone(), cache.clone(), 8);
+    let updater = VolumeCatalogUpdater::new(8);
 
     let (page_tx, page_rx) = mpsc::channel(128);
     let (store_tx, store_rx) = mpsc::channel(8);
     let commit_bus = Bus::new(128);
+
+    let metastore = MetaStoreClient::default();
 
     let api_state = Arc::new(PagestoreApiState::new(
         page_tx,
         commit_bus.clone(),
         catalog.clone(),
         loader,
+        metastore,
+        updater,
     ));
     let router = pagestore_router().with_state(api_state);
 

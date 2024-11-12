@@ -53,6 +53,9 @@ pub enum ApiErr {
         snapshot: Option<LSN>,
         latest: Option<LSN>,
     },
+
+    #[error("graft client request failed")]
+    ClientErr(#[from] graft_client::ClientErr),
 }
 
 impl From<UpdateErr> for ApiErr {
@@ -60,6 +63,7 @@ impl From<UpdateErr> for ApiErr {
         match value {
             UpdateErr::CatalogErr(err) => ApiErr::CatalogErr(err),
             UpdateErr::StoreErr(err) => ApiErr::VolumeStoreErr(err),
+            UpdateErr::ClientErr(err) => ApiErr::ClientErr(err),
         }
     }
 }

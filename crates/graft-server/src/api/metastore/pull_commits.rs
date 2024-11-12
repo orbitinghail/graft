@@ -4,8 +4,8 @@ use axum::extract::State;
 use bytes::Bytes;
 use graft_core::VolumeId;
 use graft_proto::{
-    common::v1::{LsnRange, SegmentInfo, Snapshot},
-    metastore::v1::{PullSegmentsRequest, PullSegmentsResponse},
+    common::v1::{Commit, LsnRange, SegmentInfo, Snapshot},
+    metastore::v1::{PullCommitsRequest, PullCommitsResponse},
 };
 use itertools::Itertools;
 use object_store::ObjectStore;
@@ -21,8 +21,8 @@ use super::MetastoreApiState;
 /// only segments starting at the last checkpoint will be returned.
 pub async fn handler<O: ObjectStore>(
     State(state): State<Arc<MetastoreApiState<O>>>,
-    Protobuf(req): Protobuf<PullSegmentsRequest>,
-) -> Result<ProtoResponse<PullSegmentsResponse>, ApiErr> {
+    Protobuf(req): Protobuf<PullCommitsRequest>,
+) -> Result<ProtoResponse<PullCommitsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsns: LsnRange = req.range.unwrap_or_default();
 
@@ -49,23 +49,22 @@ pub async fn handler<O: ObjectStore>(
         .update_catalog_from_store_in_range(&state.store, &state.catalog, &vid, &lsns)
         .await?;
 
-    let mut result = PullSegmentsResponse {
-        snapshot: Some(Snapshot::new(
-            &vid,
-            snapshot.lsn(),
-            snapshot.last_offset(),
-            snapshot.system_time(),
-        )),
-        range: Some(LsnRange::from_bounds(&lsns)),
-        segments: Vec::with_capacity(lsns.try_len().unwrap_or_default()),
+    let mut result = PullCommitsResponse {
+        commits: Vec::with_capacity(lsns.try_len().unwrap_or_default()),
     };
 
-    let mut iter = state.catalog.query_segments(&vid, &lsns);
-    while let Some((sid, splinter)) = iter.try_next()? {
-        let offsets = Bytes::copy_from_slice(splinter.into_inner().as_ref());
-        result
-            .segments
-            .push(SegmentInfo { sid: sid.into(), offsets });
+    let mut scan = state.catalog.scan_volume(&vid, &lsns);
+    while let Some((meta, mut segments)) = scan.try_next()? {
+        let mut segment_infos = Vec::default();
+        while let Some((sid, splinter)) = segments.try_next()? {
+            let offsets = Bytes::copy_from_slice(splinter.into_inner().as_ref());
+            segment_infos.push(SegmentInfo { sid: sid.into(), offsets });
+        }
+
+        result.commits.push(Commit {
+            snapshot: Some(meta.into_snapshot(&vid)),
+            segments: segment_infos,
+        });
     }
 
     Ok(ProtoResponse::new(result))
@@ -89,6 +88,7 @@ mod tests {
             catalog::VolumeCatalog,
             commit::{CommitBuilder, CommitMeta},
             store::VolumeStore,
+            updater::VolumeCatalogUpdater,
         },
     };
 
@@ -96,12 +96,16 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     #[traced_test]
-    async fn test_pull_segments_sanity() {
+    async fn test_pull_commits_sanity() {
         let store = Arc::new(InMemory::default());
         let store = Arc::new(VolumeStore::new(store));
         let catalog = VolumeCatalog::open_temporary().unwrap();
 
-        let state = Arc::new(MetastoreApiState::new(store.clone(), catalog.clone(), 8));
+        let state = Arc::new(MetastoreApiState::new(
+            store.clone(),
+            catalog.clone(),
+            VolumeCatalogUpdater::new(8),
+        ));
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())
@@ -112,7 +116,7 @@ mod tests {
         let vid = VolumeId::random();
 
         // case 1: catalog and store are empty
-        let req = PullSegmentsRequest { vid: vid.clone().into(), range: None };
+        let req = PullCommitsRequest { vid: vid.clone().into(), range: None };
         let resp = server
             .post("/")
             .bytes(req.encode_to_vec().into())
@@ -133,28 +137,28 @@ mod tests {
             store.commit(commit).await.unwrap();
         }
 
-        // request the last 5 segments
+        // request the last 5 commits
         let lsns = 5..10;
-        let req = PullSegmentsRequest {
+        let req = PullCommitsRequest {
             vid: vid.clone().into(),
             range: Some(LsnRange::from_bounds(&lsns)),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
-        let resp = PullSegmentsResponse::decode(resp.into_bytes()).unwrap();
-        let snapshot = resp.snapshot.unwrap();
-        assert_eq!(snapshot.lsn, 9);
-        assert_eq!(snapshot.last_offset, 0);
+        let resp = PullCommitsResponse::decode(resp.into_bytes()).unwrap();
+        assert_eq!(resp.commits.len(), 5);
+        let last_commit = resp.commits.last().unwrap();
+        let snapshot = last_commit.snapshot.as_ref().unwrap();
+        assert_eq!(snapshot.lsn(), 9);
+        assert_eq!(snapshot.last_offset(), 0);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
-        assert_eq!(resp.range.map(|r| r.canonical()), Some(lsns));
-        assert_eq!(resp.segments.len(), 5);
-        for segment in resp.segments {
+        for segment in &last_commit.segments {
             assert_eq!(segment.offsets, offsets);
         }
 
-        // request all the segments
-        let req = PullSegmentsRequest { vid: vid.clone().into(), range: None };
+        // request all the commits
+        let req = PullCommitsRequest { vid: vid.clone().into(), range: None };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
-        let resp = PullSegmentsResponse::decode(resp.into_bytes()).unwrap();
-        assert_eq!(resp.segments.len(), 10);
+        let resp = PullCommitsResponse::decode(resp.into_bytes()).unwrap();
+        assert_eq!(resp.commits.len(), 10);
     }
 }

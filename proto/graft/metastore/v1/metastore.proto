@@ -29,19 +29,16 @@ message PullOffsetsResponse {
   bytes offsets = 3;
 }
 
-// Retrieve the snapshot at the end of the given LSN range along with all
-// segments created in the range. If the start of the range is Unbounded, it
-// will be set to the last checkpoint.
+// Retrieve all of the commits to the Volume in the provided LSN Range. If the
+// start of the range is Unbounded, it will be set to the last checkpoint.
 // Returns: graft.metastore.v1.PullSegmentsResponse
-message PullSegmentsRequest {
+message PullCommitsRequest {
   bytes vid = 1;
   graft.common.v1.LsnRange range = 2;
 }
 
-message PullSegmentsResponse {
-  graft.common.v1.Snapshot snapshot = 1;
-  graft.common.v1.LsnRange range = 2;
-  repeated graft.common.v1.SegmentInfo segments = 3;
+message PullCommitsResponse {
+  repeated graft.common.v1.Commit commits = 1;
 }
 
 // Commit changes to a Volume if it is safe to do so. The provided Snapshot LSN

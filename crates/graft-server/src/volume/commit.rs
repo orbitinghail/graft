@@ -1,10 +1,8 @@
-use std::{
-    default,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{gid::GidParseErr, lsn::LSN, offset::Offset, SegmentId, VolumeId};
+use graft_proto::common::v1::Snapshot;
 use object_store::{path::Path, PutPayload};
 use splinter::SplinterRef;
 use thiserror::Error;
@@ -121,11 +119,35 @@ impl CommitMeta {
     pub fn system_time(&self) -> SystemTime {
         millis_to_time(self.timestamp())
     }
+
+    pub fn into_snapshot(self, vid: &VolumeId) -> Snapshot {
+        Snapshot::new(
+            vid,
+            self.lsn(),
+            self.checkpoint(),
+            self.last_offset(),
+            self.system_time(),
+        )
+    }
 }
 
 impl AsRef<[u8]> for CommitMeta {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+impl From<Snapshot> for CommitMeta {
+    fn from(snapshot: Snapshot) -> Self {
+        Self::new(
+            snapshot.lsn(),
+            snapshot.checkpoint(),
+            snapshot.last_offset(),
+            snapshot
+                .system_time()
+                .unwrap_or_default()
+                .unwrap_or(SystemTime::UNIX_EPOCH),
+        )
     }
 }
 
@@ -136,14 +158,9 @@ pub struct OffsetsHeader {
     size: U32<LittleEndian>,
 }
 
+#[derive(Default)]
 pub struct CommitBuilder {
     offsets: BytesMut,
-}
-
-impl Default for CommitBuilder {
-    fn default() -> Self {
-        Self { offsets: Default::default() }
-    }
 }
 
 impl CommitBuilder {

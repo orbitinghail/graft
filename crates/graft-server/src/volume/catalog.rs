@@ -9,6 +9,7 @@ use graft_core::{
 };
 use graft_proto::common::v1::SegmentInfo;
 use splinter::SplinterRef;
+use tryiter::TryIteratorExt;
 use zerocopy::{FromBytes, TryFromBytes};
 
 use super::{
@@ -130,9 +131,9 @@ impl VolumeCatalog {
             .transpose()
     }
 
-    /// Query the catalog for segments in the specified Volume. Segments are
+    /// scan the catalog for segments in the specified Volume. Segments are
     /// scanned in reverse order by LSN.
-    pub fn query_segments<R: RangeBounds<LSN>>(
+    pub fn scan_segments<R: RangeBounds<LSN>>(
         &self,
         vid: &VolumeId,
         lsns: &R,
@@ -140,6 +141,35 @@ impl VolumeCatalog {
         let range = CommitKey::range(vid, lsns);
         let scan = self.segments.range(range).rev();
         SegmentsQueryIter { scan }
+    }
+
+    /// scan the catalog for commits in the specified Volume in order by lsn
+    pub fn scan_volume<R: RangeBounds<LSN>>(
+        &self,
+        vid: &VolumeId,
+        lsns: &R,
+    ) -> impl Iterator<
+        Item = Result<(
+            CommitMeta,
+            impl Iterator<Item = Result<(SegmentId, SplinterRef<Slice>)>>,
+        )>,
+    > + '_ {
+        let range = CommitKey::range(vid, lsns);
+        self.volumes
+            .range(range)
+            .err_into::<VolumeCatalogErr>()
+            .map_ok(|(key, meta)| {
+                let key = CommitKey::try_read_from_bytes(&key)
+                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitKey" })?;
+                let meta = CommitMeta::read_from_bytes(&meta)
+                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitMeta" })?;
+
+                // scan segments for this commit
+                let segments = self.segments.prefix(key);
+                let segments = SegmentsQueryIter { scan: segments };
+
+                Ok((meta, segments))
+            })
     }
 }
 

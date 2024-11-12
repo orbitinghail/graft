@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use graft_core::VolumeId;
 use graft_proto::{
-    common::v1::{LsnRange, Snapshot},
+    common::v1::LsnRange,
     metastore::v1::{PullOffsetsRequest, PullOffsetsResponse},
 };
 use object_store::ObjectStore;
@@ -45,19 +45,14 @@ pub async fn handler<O: ObjectStore>(
         .await?;
 
     // read the segments, and merge into a single splinter
-    let mut iter = state.catalog.query_segments(&vid, &lsns);
+    let mut iter = state.catalog.scan_segments(&vid, &lsns);
     let mut splinter = Splinter::default();
     while let Some((_, offsets)) = iter.try_next()? {
         splinter.merge(&offsets);
     }
 
     Ok(ProtoResponse::new(PullOffsetsResponse {
-        snapshot: Some(Snapshot::new(
-            &vid,
-            snapshot.lsn(),
-            snapshot.last_offset(),
-            snapshot.system_time(),
-        )),
+        snapshot: Some(snapshot.into_snapshot(&vid)),
         range: Some(LsnRange::from_bounds(&lsns)),
         offsets: splinter.serialize_to_bytes(),
     }))
@@ -80,6 +75,7 @@ mod tests {
             catalog::VolumeCatalog,
             commit::{CommitBuilder, CommitMeta},
             store::VolumeStore,
+            updater::VolumeCatalogUpdater,
         },
     };
 
@@ -92,7 +88,11 @@ mod tests {
         let store = Arc::new(VolumeStore::new(store));
         let catalog = VolumeCatalog::open_temporary().unwrap();
 
-        let state = Arc::new(MetastoreApiState::new(store.clone(), catalog.clone(), 8));
+        let state = Arc::new(MetastoreApiState::new(
+            store.clone(),
+            catalog.clone(),
+            VolumeCatalogUpdater::new(8),
+        ));
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())

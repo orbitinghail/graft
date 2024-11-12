@@ -16,13 +16,24 @@ impl SegmentInfo {
     pub fn new(sid: &SegmentId, offsets: Bytes) -> Self {
         Self { sid: sid.into(), offsets }
     }
+
+    pub fn sid(&self) -> Result<&SegmentId, GidParseErr> {
+        self.sid.as_ref().try_into()
+    }
 }
 
 impl Snapshot {
-    pub fn new(vid: &VolumeId, lsn: LSN, last_offset: u32, timestamp: SystemTime) -> Self {
+    pub fn new(
+        vid: &VolumeId,
+        lsn: LSN,
+        checkpoint_lsn: LSN,
+        last_offset: u32,
+        timestamp: SystemTime,
+    ) -> Self {
         Self {
             vid: vid.into(),
             lsn,
+            checkpoint_lsn,
             last_offset,
             timestamp: Some(timestamp.into()),
         }
@@ -34,6 +45,10 @@ impl Snapshot {
 
     pub fn lsn(&self) -> LSN {
         self.lsn
+    }
+
+    pub fn checkpoint(&self) -> LSN {
+        self.checkpoint_lsn
     }
 
     pub fn last_offset(&self) -> u32 {

@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::{
-    common::v1::Snapshot,
-    metastore::v1::{SnapshotRequest, SnapshotResponse},
-};
+use graft_proto::metastore::v1::{SnapshotRequest, SnapshotResponse};
 use object_store::ObjectStore;
 
 use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
@@ -26,12 +23,7 @@ pub async fn handler<O: ObjectStore>(
 
     if let Some(snapshot) = snapshot {
         Ok(ProtoResponse::new(SnapshotResponse {
-            snapshot: Some(Snapshot::new(
-                &vid,
-                snapshot.lsn(),
-                snapshot.last_offset(),
-                snapshot.system_time(),
-            )),
+            snapshot: Some(snapshot.into_snapshot(&vid)),
         }))
     } else {
         Err(ApiErr::SnapshotMissing(vid, lsn))
@@ -56,6 +48,7 @@ mod tests {
             catalog::VolumeCatalog,
             commit::{CommitBuilder, CommitMeta},
             store::VolumeStore,
+            updater::VolumeCatalogUpdater,
         },
     };
 
@@ -68,7 +61,11 @@ mod tests {
         let store = Arc::new(VolumeStore::new(store));
         let catalog = VolumeCatalog::open_temporary().unwrap();
 
-        let state = Arc::new(MetastoreApiState::new(store.clone(), catalog.clone(), 8));
+        let state = Arc::new(MetastoreApiState::new(
+            store.clone(),
+            catalog.clone(),
+            VolumeCatalogUpdater::new(8),
+        ));
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())

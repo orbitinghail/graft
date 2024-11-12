@@ -2,10 +2,7 @@ use std::{sync::Arc, time::SystemTime};
 
 use axum::extract::State;
 use graft_core::{lsn::LSN, offset::Offset, SegmentId, VolumeId};
-use graft_proto::{
-    common::v1::Snapshot,
-    metastore::v1::{CommitRequest, CommitResponse},
-};
+use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
 use itertools::Itertools;
 use object_store::ObjectStore;
 use splinter::{ops::Merge, Splinter, SplinterRef};
@@ -73,12 +70,7 @@ pub async fn handler<O: ObjectStore>(
 
     // the commit was successful, return the new snapshot
     Ok(ProtoResponse::new(CommitResponse {
-        snapshot: Some(Snapshot::new(
-            &vid,
-            meta.lsn(),
-            meta.last_offset(),
-            meta.system_time(),
-        )),
+        snapshot: Some(meta.into_snapshot(&vid)),
     }))
 }
 
@@ -93,7 +85,7 @@ mod tests {
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
-        volume::{catalog::VolumeCatalog, commit, store::VolumeStore},
+        volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
     };
 
     use super::*;
@@ -105,7 +97,11 @@ mod tests {
         let store = Arc::new(VolumeStore::new(store));
         let catalog = VolumeCatalog::open_temporary().unwrap();
 
-        let state = Arc::new(MetastoreApiState::new(store.clone(), catalog.clone(), 8));
+        let state = Arc::new(MetastoreApiState::new(
+            store.clone(),
+            catalog.clone(),
+            VolumeCatalogUpdater::new(8),
+        ));
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())

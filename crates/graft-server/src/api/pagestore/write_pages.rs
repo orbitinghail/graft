@@ -100,7 +100,7 @@ mod tests {
             writer::SegmentWriterTask,
         },
         supervisor::SupervisedTask,
-        volume::catalog::VolumeCatalog,
+        volume::{catalog::VolumeCatalog, updater::VolumeCatalogUpdater},
     };
 
     use super::*;
@@ -122,7 +122,14 @@ mod tests {
         SegmentUploaderTask::new(store_rx, commit_bus.clone(), store.clone(), cache.clone())
             .testonly_spawn();
 
-        let state = Arc::new(PagestoreApiState::new(page_tx, commit_bus, catalog, loader));
+        let state = Arc::new(PagestoreApiState::new(
+            page_tx,
+            commit_bus,
+            catalog,
+            loader,
+            Default::default(),
+            VolumeCatalogUpdater::new(10),
+        ));
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())

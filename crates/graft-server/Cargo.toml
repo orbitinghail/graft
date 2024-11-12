@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tryiter = "0.2"
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
+graft-client = { path = "../graft-client" }
+
+tryiter = "0.2"
 splinter = { path = "../splinter" }
 tokio = { version = "1.40.0", features = ["full", "test-util"] }
 odht = { git = "https://github.com/carlsverre/odht.git" }
@@ -32,6 +34,7 @@ foldhash = "0.1.3"
 tokio-util = "0.7.12"
 
 [dev-dependencies]
-axum-test = "16.2.0"
 graft-core = { path = "../graft-core", features = ["testutil"] }
+
+axum-test = "16.2.0"
 tracing-test = "0.2.5"

@@ -2,15 +2,16 @@ use std::ops::RangeBounds;
 
 use foldhash::fast::RandomState;
 use futures::TryStreamExt;
+use graft_client::MetaStoreClient;
 use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::common::v1::LsnRange;
+use graft_proto::{common::v1::LsnRange, metastore::v1::PullCommitsRequest};
 use object_store::ObjectStore;
 
 use crate::limiter::Limiter;
 
 use super::{
     catalog::{VolumeCatalog, VolumeCatalogErr},
-    commit::CommitMeta,
+    commit::{self, CommitMeta},
     store::{VolumeStore, VolumeStoreErr},
 };
 
@@ -21,6 +22,9 @@ pub enum UpdateErr {
 
     #[error(transparent)]
     StoreErr(#[from] VolumeStoreErr),
+
+    #[error(transparent)]
+    ClientErr(#[from] graft_client::ClientErr),
 }
 
 pub struct VolumeCatalogUpdater {
@@ -137,6 +141,65 @@ impl VolumeCatalogUpdater {
         while let Some(commit) = commits.try_next().await? {
             batch.insert_commit(commit)?;
         }
+        batch.commit()?;
+
+        // return; dropping the permit and allowing other updates to proceed
+        Ok(())
+    }
+
+    pub async fn update_catalog_from_client(
+        &self,
+        client: &MetaStoreClient,
+        catalog: &VolumeCatalog,
+        vid: &VolumeId,
+        min_lsn: Option<LSN>,
+    ) -> Result<(), UpdateErr> {
+        // read the latest lsn for the volume in the catalog
+        let initial_lsn = catalog.latest_snapshot(vid)?.map(|s| s.lsn());
+
+        // if catalog lsn >= min_lsn, then no update is needed
+        if initial_lsn.is_some_and(|l1| min_lsn.is_some_and(|l2| l1 >= l2)) {
+            return Ok(());
+        }
+
+        // acquire a permit to update the volume
+        let _permit = self.limiter.acquire(vid).await;
+
+        // check the catalog again in case another task has updated the volume
+        let catalog_lsn = catalog.latest_snapshot(vid)?.map(|s| s.lsn());
+
+        // check to see if we can exit early
+        if match (catalog_lsn, min_lsn) {
+            (None, None) => false,
+            (None, Some(_)) => false,
+            // another task may have updated the volume concurrently; since we
+            // don't have a minimum lsn to acquire we can just use the other
+            // task's update
+            (Some(catalog_lsn), None) => initial_lsn != Some(catalog_lsn),
+            // another task may have updated the volume concurrently; since we
+            // have a minimum lsn to acquire we can only use the other task's
+            // update if it meets the minimum lsn requirement
+            (Some(catalog_lsn), Some(min_lsn)) => catalog_lsn >= min_lsn,
+        } {
+            return Ok(());
+        }
+
+        // update the catalog from the client
+        let resp = client
+            .pull_commits(PullCommitsRequest {
+                vid: vid.clone().into(),
+                range: Some(LsnRange::from_bounds(&(catalog_lsn.unwrap_or_default()..))),
+            })
+            .await?;
+
+        let mut batch = catalog.batch_insert();
+        for commit in resp.commits {
+            let snapshot = commit.snapshot.expect("missing snapshot");
+            let meta: CommitMeta = snapshot.into();
+
+            batch.insert_snapshot(vid.clone(), meta, commit.segments)?;
+        }
+
         batch.commit()?;
 
         // return; dropping the permit and allowing other updates to proceed

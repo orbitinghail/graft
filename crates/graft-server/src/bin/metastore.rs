@@ -7,7 +7,7 @@ use graft_server::{
         task::ApiServerTask,
     },
     supervisor::Supervisor,
-    volume::{catalog::VolumeCatalog, store::VolumeStore},
+    volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
 use object_store::memory::InMemory;
 use tokio::{net::TcpListener, select, signal::ctrl_c};
@@ -22,8 +22,9 @@ async fn main() {
     let store = Arc::new(InMemory::default());
     let store = Arc::new(VolumeStore::new(store));
     let catalog = VolumeCatalog::open_temporary().unwrap();
+    let updater = VolumeCatalogUpdater::new(8);
 
-    let state = Arc::new(MetastoreApiState::new(store, catalog, 8));
+    let state = Arc::new(MetastoreApiState::new(store, catalog, updater));
     let router = metastore_router().with_state(state);
 
     supervisor.spawn(ApiServerTask::new(

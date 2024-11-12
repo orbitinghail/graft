@@ -31,7 +31,11 @@ pub async fn handler<O: ObjectStore, C: Cache>(
     let needs_update = snapshot.is_none() || snapshot.is_some_and(|s| s.lsn() < lsn);
 
     if needs_update {
-        // TODO: update the segment index
+        // update the catalog from the metastore
+        state
+            .updater()
+            .update_catalog_from_client(state.metastore_client(), state.catalog(), &vid, Some(lsn))
+            .await?;
     }
 
     let mut loading = FuturesUnordered::new();
@@ -39,7 +43,7 @@ pub async fn handler<O: ObjectStore, C: Cache>(
     // TODO: If we know the last_offset in the requested LSN, we can skip
     // returning any offsets that are greater than that.
 
-    let segments = state.catalog().query_segments(&vid, &(checkpoint..=lsn));
+    let segments = state.catalog().scan_segments(&vid, &(checkpoint..=lsn));
     for result in segments {
         let (sid, splinter) = result?;
 
@@ -97,7 +101,7 @@ mod tests {
             bus::Bus, cache::mem::MemCache, loader::SegmentLoader, offsets_map::OffsetsMap,
             open::OpenSegment,
         },
-        volume::{catalog::VolumeCatalog, commit::CommitMeta},
+        volume::{catalog::VolumeCatalog, commit::CommitMeta, updater::VolumeCatalogUpdater},
     };
 
     use super::*;
@@ -126,6 +130,8 @@ mod tests {
             commit_bus,
             catalog.clone(),
             loader,
+            Default::default(),
+            VolumeCatalogUpdater::new(10),
         ));
 
         let server = TestServer::builder()
