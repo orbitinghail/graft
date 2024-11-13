@@ -61,7 +61,7 @@ impl DiskCache {
     /// **Parameters:**
     /// - `space_limit` The maximum amount of space that the cache can use.
     /// - `open_limit` The maximum number of mmap'ed segments.
-    pub fn new<P: AsRef<Path>>(dir: P, space_limit: ByteUnit, open_limit: usize) -> Self {
+    pub fn new<P: AsRef<Path>>(dir: &P, space_limit: ByteUnit, open_limit: usize) -> Self {
         let dir = canonicalize(dir).expect("failed to canonicalize cache directory");
         tracing::info!("Opening disk cache at {:?}", dir);
         Self {
@@ -78,6 +78,8 @@ impl Cache for DiskCache {
 
     async fn put(&self, sid: &SegmentId, data: bytes::Bytes) -> std::io::Result<()> {
         let path = self.dir.join(sid.pretty());
+
+        tracing::debug!("writing segment {:?} to disk at path {:?}", sid, path);
 
         // optimistically write the file to disk, aborting if it already exists
         match write_file_atomic(&path, &data).await {

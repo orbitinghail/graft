@@ -8,6 +8,8 @@ use crate::byte_unit::ByteUnit;
 pub const PAGESIZE: ByteUnit = ByteUnit::from_kb(4);
 static_assertions::const_assert!(PAGESIZE.is_power_of_two());
 
+pub const EMPTY_PAGE: Page = Page(Bytes::from_static(&[0; PAGESIZE.as_usize()]));
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Page(Bytes);
 

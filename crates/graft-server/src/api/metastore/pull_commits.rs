@@ -4,7 +4,7 @@ use axum::extract::State;
 use bytes::Bytes;
 use graft_core::VolumeId;
 use graft_proto::{
-    common::v1::{Commit, LsnRange, SegmentInfo, Snapshot},
+    common::v1::{Commit, LsnRange, SegmentInfo},
     metastore::v1::{PullCommitsRequest, PullCommitsResponse},
 };
 use itertools::Itertools;

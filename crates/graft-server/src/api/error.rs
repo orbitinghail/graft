@@ -71,6 +71,9 @@ impl From<UpdateErr> for ApiErr {
 impl IntoResponse for ApiErr {
     fn into_response(self) -> Response {
         use ApiErr::*;
+
+        tracing::error!(error = ?self, "api error");
+
         let status = match self {
             GidParseErr(_) => StatusCode::BAD_REQUEST,
             DuplicatePageOffset(_) => StatusCode::BAD_REQUEST,

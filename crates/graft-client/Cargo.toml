@@ -16,6 +16,8 @@ tokio = { version = "1" }
 thiserror = "2.0.3"
 
 [dev-dependencies]
+splinter = { path = "../splinter" }
+
 fjall = "2.3"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"

@@ -41,7 +41,7 @@ pub struct MetaStoreClient {
 impl Default for MetaStoreClient {
     fn default() -> Self {
         Self {
-            endpoint: Url::parse("http://localhost:3030/metastore/v1/").unwrap(),
+            endpoint: Url::parse("http://localhost:3001/metastore/v1/").unwrap(),
             http: Default::default(),
         }
     }

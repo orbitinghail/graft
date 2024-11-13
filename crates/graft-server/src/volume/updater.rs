@@ -11,7 +11,7 @@ use crate::limiter::Limiter;
 
 use super::{
     catalog::{VolumeCatalog, VolumeCatalogErr},
-    commit::{self, CommitMeta},
+    commit::CommitMeta,
     store::{VolumeStore, VolumeStoreErr},
 };
 

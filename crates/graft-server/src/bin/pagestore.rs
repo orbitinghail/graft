@@ -37,7 +37,7 @@ async fn main() {
     let mut supervisor = Supervisor::default();
 
     let store = Arc::new(InMemory::default());
-    let cache = Arc::new(DiskCache::new(cache_dir, cache_size, cache_open_limit));
+    let cache = Arc::new(DiskCache::new(&cache_dir, cache_size, cache_open_limit));
     let catalog = VolumeCatalog::open_temporary().unwrap();
     let loader = SegmentLoader::new(store.clone(), cache.clone(), 8);
     let updater = VolumeCatalogUpdater::new(8);

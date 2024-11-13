@@ -819,6 +819,7 @@ dependencies = [
  "prost",
  "prost-types",
  "reqwest",
+ "splinter",
  "thiserror 2.0.3",
  "tokio",
  "tryiter",
