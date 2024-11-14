@@ -225,6 +225,11 @@ where
             .map(|p| p.cardinality())
             .sum()
     }
+
+    // TODO: Implement SplinterRef::iter
+    // pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+    //     todo!()
+    // }
 }
 
 impl<T: AsRef<[u8]>> Debug for SplinterRef<T> {

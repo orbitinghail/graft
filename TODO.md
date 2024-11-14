@@ -5,6 +5,9 @@ Next tasks:
 - add range compression to Splinter
 - end to end testing framework
 
+# SplinterRef Iter
+Needed for zero-copy client-side offset iteration.
+
 
 # remote file utility
 

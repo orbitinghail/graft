@@ -10,8 +10,8 @@ use graft_core::{
     VolumeId,
 };
 use graft_proto::{
-    common::v1::Snapshot,
-    metastore::v1::{CommitRequest, SnapshotRequest},
+    common::v1::{LsnRange, Snapshot},
+    metastore::v1::{CommitRequest, PullOffsetsRequest},
     pagestore::v1::{PageAtOffset, ReadPagesRequest, WritePagesRequest},
 };
 use prost::Message;
@@ -25,6 +25,10 @@ use tryiter::TryIteratorExt;
 struct Cli {
     /// The volume id to operate on
     vid: Option<VolumeId>,
+
+    /// Specify a client id to differentiate between multiple clients
+    #[arg(short, long)]
+    client_id: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -42,7 +46,10 @@ enum Commands {
     Remove,
     /// Write a page to a volume
     /// This synchronously writes to Graft and updates the cache
-    Write { page: Option<Offset> },
+    Write {
+        page: Option<Offset>,
+        data: Option<BytesMut>,
+    },
     /// Read a page from a volume
     /// This will read the page from Graft at the current LSN if it's not in the cache
     Read { page: Option<Offset> },
@@ -60,28 +67,48 @@ struct Context {
 }
 
 async fn get_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<Snapshot>> {
-    // Check if we have a snapshot in the cache
-    if let Some(snapshot) = ctx.volumes.get(vid)? {
-        let snapshot = Snapshot::decode(snapshot.as_ref())?;
+    if let Some(snapshot) = get_cached_snapshot(ctx, vid)? {
         return Ok(Some(snapshot));
     }
     pull_snapshot(ctx, vid).await
 }
 
+fn get_cached_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<Snapshot>> {
+    if let Some(snapshot) = ctx.volumes.get(vid)? {
+        let snapshot = Snapshot::decode(snapshot.as_ref())?;
+        return Ok(Some(snapshot));
+    }
+    Ok(None)
+}
+
 async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<Snapshot>> {
+    // load cached lsn
+    let cached_lsn = get_cached_snapshot(ctx, vid)?.map(|s| s.lsn()).unwrap_or(0);
+
     match ctx
         .metastore
-        .snapshot(SnapshotRequest { vid: vid.clone().into(), lsn: None })
+        .pull_offsets(PullOffsetsRequest {
+            vid: vid.clone().into(),
+            range: Some(LsnRange::from_bounds(&(cached_lsn..))),
+        })
         .await
     {
         Ok(resp) => {
-            if let Some(snapshot) = resp.snapshot {
-                let snapshot_bytes = snapshot.encode_to_vec();
-                ctx.volumes.insert(vid, &snapshot_bytes)?;
-                Ok(Some(snapshot))
-            } else {
-                Ok(None)
+            let snapshot = resp
+                .snapshot
+                .expect("missing snapshot in pull_offsets response");
+            let offsets = Splinter::from_bytes(resp.offsets).expect("failed to decode offsets");
+
+            // clear any changed offsets from the cache
+            for offset in offsets.iter() {
+                ctx.pages.remove(page_key(vid, offset))?;
             }
+
+            // update the cache with the new snapshot
+            let snapshot_bytes = snapshot.encode_to_vec();
+            ctx.volumes.insert(vid, &snapshot_bytes)?;
+
+            Ok(Some(snapshot))
         }
         Err(err) => {
             if let ClientErr::RequestErr(ref err) = err {
@@ -194,8 +221,9 @@ fn print_page(page: Page) {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
+    let client_id = args.client_id.unwrap_or_else(|| "default".to_string());
 
-    let config = Config::new("/tmp/virtual_file_cache");
+    let config = Config::new(format!("/tmp/virtual_file_cache_{client_id}"));
     let keyspace = fjall::Keyspace::open(config)?;
     let client = reqwest::Client::new();
 
@@ -230,19 +258,25 @@ async fn main() -> anyhow::Result<()> {
             remove(&ctx, &vid)?;
             println!("removed volume {}", vid);
         }
-        Commands::Write { page } => {
-            // gather up to PAGE_SIZE bytes from stdin
-            let mut data = BytesMut::with_capacity(PAGESIZE.as_usize());
-            let mut buf = [0; PAGESIZE.as_usize()];
+        Commands::Write { page, data } => {
+            let mut data = if let Some(data) = data {
+                data
+            } else {
+                // gather up to PAGE_SIZE bytes from stdin
+                let mut data = BytesMut::with_capacity(PAGESIZE.as_usize());
+                let mut buf = [0; PAGESIZE.as_usize()];
 
-            // loop until we have a full page or EOF
-            while data.has_remaining_mut() {
-                let n = std::io::stdin().read(&mut buf)?;
-                if n == 0 {
-                    break;
+                // loop until we have a full page or EOF
+                while data.has_remaining_mut() {
+                    let n = std::io::stdin().read(&mut buf)?;
+                    if n == 0 {
+                        break;
+                    }
+                    data.put_slice(&buf[..n.min(data.remaining_mut())]);
                 }
-                data.put_slice(&buf[..n.min(data.remaining_mut())]);
-            }
+
+                data
+            };
 
             // fill the remainder of the page with zeros
             data.resize(PAGESIZE.as_usize(), 0);
