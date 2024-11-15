@@ -172,11 +172,11 @@ mod tests {
                 CommitMeta::new(lsn, 0, 4, SystemTime::now()),
                 vec![
                     SegmentInfo {
-                        sid: sid1.into(),
+                        sid: sid1.copy_to_bytes(),
                         offsets: offsets1.get(&vid).unwrap().clone().into_inner(),
                     },
                     SegmentInfo {
-                        sid: sid2.into(),
+                        sid: sid2.copy_to_bytes(),
                         offsets: offsets2.get(&vid).unwrap().clone().into_inner(),
                     },
                 ],
@@ -186,7 +186,7 @@ mod tests {
 
         // we are finally able to test read_pages :)
         let req = ReadPagesRequest {
-            vid: vid.into(),
+            vid: vid.copy_to_bytes(),
             lsn,
             offsets: (0u32..=4).collect::<Splinter>().serialize_to_bytes(),
         };

@@ -57,7 +57,7 @@ pub async fn handler<O: ObjectStore>(
         let mut segment_infos = Vec::default();
         while let Some((sid, splinter)) = segments.try_next()? {
             segment_infos.push(SegmentInfo {
-                sid: sid.into(),
+                sid: sid.copy_to_bytes(),
                 offsets: splinter.into_inner(),
             });
         }
@@ -117,7 +117,7 @@ mod tests {
         let vid = VolumeId::random();
 
         // case 1: catalog and store are empty
-        let req = PullCommitsRequest { vid: vid.clone().into(), range: None };
+        let req = PullCommitsRequest { vid: vid.copy_to_bytes(), range: None };
         let resp = server
             .post("/")
             .bytes(req.encode_to_vec().into())
@@ -141,7 +141,7 @@ mod tests {
         // request the last 5 commits
         let lsns = 5..10;
         let req = PullCommitsRequest {
-            vid: vid.clone().into(),
+            vid: vid.copy_to_bytes(),
             range: Some(LsnRange::from_bounds(&lsns)),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
@@ -157,7 +157,7 @@ mod tests {
         }
 
         // request all the commits
-        let req = PullCommitsRequest { vid: vid.clone().into(), range: None };
+        let req = PullCommitsRequest { vid: vid.copy_to_bytes(), range: None };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = PullCommitsResponse::decode(resp.into_bytes()).unwrap();
         assert_eq!(resp.commits.len(), 10);

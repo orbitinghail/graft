@@ -4,7 +4,7 @@ use foldhash::fast::RandomState;
 use futures::TryStreamExt;
 use graft_client::MetaStoreClient;
 use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::{common::v1::LsnRange, metastore::v1::PullCommitsRequest};
+use graft_proto::common::v1::LsnRange;
 use object_store::ObjectStore;
 
 use crate::limiter::Limiter;
@@ -185,15 +185,12 @@ impl VolumeCatalogUpdater {
         }
 
         // update the catalog from the client
-        let resp = client
-            .pull_commits(PullCommitsRequest {
-                vid: vid.clone().into(),
-                range: Some(LsnRange::from_bounds(&(catalog_lsn.unwrap_or_default()..))),
-            })
+        let commits = client
+            .pull_commits(vid, catalog_lsn.unwrap_or_default()..)
             .await?;
 
         let mut batch = catalog.batch_insert();
-        for commit in resp.commits {
+        for commit in commits {
             let snapshot = commit.snapshot.expect("missing snapshot");
             let meta: CommitMeta = snapshot.into();
 

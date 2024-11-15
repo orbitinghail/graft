@@ -1,24 +1,44 @@
 include!("mod.rs");
 
 use std::{
+    error::Error,
+    fmt::Display,
     ops::{Bound, Range, RangeBounds},
     time::SystemTime,
 };
 
 use bytes::Bytes;
-use common::v1::{lsn_bound, LsnBound, LsnRange, SegmentInfo, Snapshot};
+use common::v1::{lsn_bound, Commit, GraftErr, LsnBound, LsnRange, SegmentInfo, Snapshot};
 use graft_core::{gid::GidParseErr, lsn::LSN, SegmentId, VolumeId};
 use prost_types::TimestampError;
 
 pub use graft::*;
+use splinter::{DecodeErr, SplinterRef};
+
+impl Error for GraftErr {}
+impl Display for GraftErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}: {}", self.code(), self.message)
+    }
+}
+
+impl Commit {
+    pub fn snapshot(&self) -> &Snapshot {
+        self.snapshot.as_ref().expect("snapshot is required")
+    }
+}
 
 impl SegmentInfo {
     pub fn new(sid: &SegmentId, offsets: Bytes) -> Self {
-        Self { sid: sid.into(), offsets }
+        Self { sid: sid.copy_to_bytes(), offsets }
     }
 
     pub fn sid(&self) -> Result<&SegmentId, GidParseErr> {
         self.sid.as_ref().try_into()
+    }
+
+    pub fn offsets(&self) -> Result<SplinterRef<Bytes>, DecodeErr> {
+        SplinterRef::from_bytes(self.offsets.clone())
     }
 }
 
@@ -31,7 +51,7 @@ impl Snapshot {
         timestamp: SystemTime,
     ) -> Self {
         Self {
-            vid: vid.into(),
+            vid: vid.copy_to_bytes(),
             lsn,
             checkpoint_lsn,
             last_offset,

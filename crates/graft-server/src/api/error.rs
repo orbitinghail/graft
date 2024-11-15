@@ -8,10 +8,12 @@ use graft_core::{
     offset::Offset,
     page::PageSizeErr,
 };
+use graft_proto::common::v1::{GraftErr, GraftErrCode};
 use splinter::DecodeErr;
 use thiserror::Error;
 
 use crate::{
+    api::response::ProtoResponse,
     segment::closed::SegmentValidationErr,
     volume::{catalog::VolumeCatalogErr, store::VolumeStoreErr, updater::UpdateErr},
 };
@@ -74,13 +76,19 @@ impl IntoResponse for ApiErr {
 
         tracing::error!(error = ?self, "api error");
 
-        let status = match self {
-            GidParseErr(_) => StatusCode::BAD_REQUEST,
-            DuplicatePageOffset(_) => StatusCode::BAD_REQUEST,
-            OffsetsDecodeErr(_) => StatusCode::BAD_REQUEST,
-            SnapshotMissing(_, _) => StatusCode::NOT_FOUND,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        let (status, code) = match self {
+            GidParseErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
+            DuplicatePageOffset(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
+            OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
+            SnapshotMissing(_, _) => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, GraftErrCode::Client),
         };
-        (status, self.to_string()).into_response()
+        let message = self.to_string();
+
+        (
+            status,
+            ProtoResponse::new(GraftErr { code: code as i32, message }),
+        )
+            .into_response()
     }
 }

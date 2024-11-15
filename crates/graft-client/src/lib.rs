@@ -1,21 +1,45 @@
+use std::ops::RangeBounds;
+
+use bytes::Bytes;
+use futures::TryFutureExt;
+use graft_core::{lsn::LSN, offset::Offset, VolumeId};
 use graft_proto::{
+    common::v1::{Commit, GraftErr, GraftErrCode, LsnRange, SegmentInfo, Snapshot},
     metastore::v1::{
         CommitRequest, CommitResponse, PullCommitsRequest, PullCommitsResponse, PullOffsetsRequest,
         PullOffsetsResponse, SnapshotRequest, SnapshotResponse,
     },
-    pagestore::v1::{ReadPagesRequest, ReadPagesResponse, WritePagesRequest, WritePagesResponse},
+    pagestore::v1::{
+        PageAtOffset, ReadPagesRequest, ReadPagesResponse, WritePagesRequest, WritePagesResponse,
+    },
 };
 use prost::Message;
 use reqwest::{header::CONTENT_TYPE, Url};
+use splinter::SplinterRef;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ClientErr {
-    #[error("failed to make request: {0}")]
+    #[error("graft error: {0}")]
+    GraftErr(#[from] GraftErr),
+
+    #[error("request failed: {0}")]
     RequestErr(#[from] reqwest::Error),
 
     #[error("failed to parse response: {0}")]
     ResponseParseErr(#[from] prost::DecodeError),
+
+    #[error("failed to parse splinter: {0}")]
+    SplinterParseErr(#[from] splinter::DecodeErr),
+}
+
+impl ClientErr {
+    fn is_snapshot_missing(&self) -> bool {
+        match self {
+            ClientErr::GraftErr(err) => err.code() == GraftErrCode::SnapshotMissing,
+            _ => false,
+        }
+    }
 }
 
 async fn prost_request<Req: Message, Resp: Message + Default>(
@@ -23,14 +47,22 @@ async fn prost_request<Req: Message, Resp: Message + Default>(
     url: Url,
     req: Req,
 ) -> Result<Resp, ClientErr> {
-    let resp = http
+    let (success, body) = http
         .post(url)
         .body(req.encode_to_vec())
         .header(CONTENT_TYPE, "application/x-protobuf")
         .send()
-        .await?
-        .error_for_status()?;
-    Ok(Resp::decode(resp.bytes().await?)?)
+        .and_then(|resp| {
+            let success = resp.status().is_success();
+            resp.bytes().map_ok(move |b| (success, b))
+        })
+        .await?;
+    if success {
+        Ok(Resp::decode(body)?)
+    } else {
+        let err = GraftErr::decode(body)?;
+        Err(ClientErr::GraftErr(err))
+    }
 }
 
 pub struct MetaStoreClient {
@@ -52,30 +84,73 @@ impl MetaStoreClient {
         Self { endpoint, http }
     }
 
-    pub async fn snapshot(&self, req: SnapshotRequest) -> Result<SnapshotResponse, ClientErr> {
+    pub async fn snapshot(
+        &self,
+        vid: &VolumeId,
+        lsn: Option<LSN>,
+    ) -> Result<Option<Snapshot>, ClientErr> {
         let url = self.endpoint.join("snapshot").unwrap();
-        prost_request(&self.http, url, req).await
+        let req = SnapshotRequest { vid: vid.copy_to_bytes(), lsn };
+        match prost_request::<_, SnapshotResponse>(&self.http, url, req).await {
+            Ok(resp) => Ok(resp.snapshot),
+            Err(err) if err.is_snapshot_missing() => Ok(None),
+            Err(err) => Err(err),
+        }
     }
 
-    pub async fn pull_offsets(
+    pub async fn pull_offsets<R: RangeBounds<LSN>>(
         &self,
-        req: PullOffsetsRequest,
-    ) -> Result<PullOffsetsResponse, ClientErr> {
+        vid: &VolumeId,
+        range: R,
+    ) -> Result<Option<(Snapshot, LsnRange, SplinterRef<Bytes>)>, ClientErr> {
         let url = self.endpoint.join("pull_offsets").unwrap();
-        prost_request(&self.http, url, req).await
+        let req = PullOffsetsRequest {
+            vid: vid.copy_to_bytes(),
+            range: Some(LsnRange::from_bounds(&range)),
+        };
+        match prost_request::<_, PullOffsetsResponse>(&self.http, url, req).await {
+            Ok(resp) => {
+                let snapshot = resp.snapshot.expect("snapshot is missing");
+                let range = resp.range.expect("range is missing");
+                let offsets = SplinterRef::from_bytes(resp.offsets)?;
+                Ok(Some((snapshot, range, offsets)))
+            }
+            Err(err) if err.is_snapshot_missing() => Ok(None),
+            Err(err) => Err(err),
+        }
     }
 
-    pub async fn pull_commits(
-        &self,
-        req: PullCommitsRequest,
-    ) -> Result<PullCommitsResponse, ClientErr> {
+    pub async fn pull_commits<R>(&self, vid: &VolumeId, range: R) -> Result<Vec<Commit>, ClientErr>
+    where
+        R: RangeBounds<LSN>,
+    {
         let url = self.endpoint.join("pull_commits").unwrap();
-        prost_request(&self.http, url, req).await
+        let req = PullCommitsRequest {
+            vid: vid.copy_to_bytes(),
+            range: Some(LsnRange::from_bounds(&range)),
+        };
+        prost_request::<_, PullCommitsResponse>(&self.http, url, req)
+            .map_ok(|resp| resp.commits)
+            .await
     }
 
-    pub async fn commit(&self, req: CommitRequest) -> Result<CommitResponse, ClientErr> {
+    pub async fn commit(
+        &self,
+        vid: &VolumeId,
+        snapshot: Option<LSN>,
+        last_offset: Offset,
+        segments: Vec<SegmentInfo>,
+    ) -> Result<Snapshot, ClientErr> {
         let url = self.endpoint.join("commit").unwrap();
-        prost_request(&self.http, url, req).await
+        let req = CommitRequest {
+            vid: vid.copy_to_bytes(),
+            snapshot_lsn: snapshot,
+            last_offset,
+            segments,
+        };
+        prost_request::<_, CommitResponse>(&self.http, url, req)
+            .map_ok(|r| r.snapshot.expect("missing snapshot after commit"))
+            .await
     }
 }
 
@@ -98,16 +173,28 @@ impl PageStoreClient {
         Self { endpoint, http }
     }
 
-    pub async fn read_pages(&self, req: ReadPagesRequest) -> Result<ReadPagesResponse, ClientErr> {
+    pub async fn read_pages(
+        &self,
+        vid: &VolumeId,
+        lsn: LSN,
+        offsets: Bytes,
+    ) -> Result<Vec<PageAtOffset>, ClientErr> {
         let url = self.endpoint.join("read_pages").unwrap();
-        prost_request(&self.http, url, req).await
+        let req = ReadPagesRequest { vid: vid.copy_to_bytes(), lsn, offsets };
+        prost_request::<_, ReadPagesResponse>(&self.http, url, req)
+            .map_ok(|r| r.pages)
+            .await
     }
 
     pub async fn write_pages(
         &self,
-        req: WritePagesRequest,
-    ) -> Result<WritePagesResponse, ClientErr> {
+        vid: &VolumeId,
+        pages: Vec<PageAtOffset>,
+    ) -> Result<Vec<SegmentInfo>, ClientErr> {
         let url = self.endpoint.join("write_pages").unwrap();
-        prost_request(&self.http, url, req).await
+        let req = WritePagesRequest { vid: vid.copy_to_bytes(), pages };
+        prost_request::<_, WritePagesResponse>(&self.http, url, req)
+            .map_ok(|r| r.segments)
+            .await
     }
 }

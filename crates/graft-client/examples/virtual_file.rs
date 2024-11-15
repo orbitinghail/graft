@@ -3,20 +3,16 @@ use std::{io::Read, str::FromStr};
 use bytes::{BufMut, Bytes, BytesMut};
 use clap::{Parser, Subcommand};
 use fjall::Config;
-use graft_client::{ClientErr, MetaStoreClient, PageStoreClient};
+use graft_client::{MetaStoreClient, PageStoreClient};
 use graft_core::{
     offset::Offset,
     page::{Page, EMPTY_PAGE, PAGESIZE},
     VolumeId,
 };
-use graft_proto::{
-    common::v1::{LsnRange, Snapshot},
-    metastore::v1::{CommitRequest, PullOffsetsRequest},
-    pagestore::v1::{PageAtOffset, ReadPagesRequest, WritePagesRequest},
-};
+use graft_proto::{common::v1::Snapshot, pagestore::v1::PageAtOffset};
 use prost::Message;
 use reqwest::Url;
-use splinter::{Splinter, SplinterRef};
+use splinter::Splinter;
 use tryiter::TryIteratorExt;
 
 #[derive(Parser)]
@@ -85,20 +81,8 @@ async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<S
     // load cached lsn
     let cached_lsn = get_cached_snapshot(ctx, vid)?.map(|s| s.lsn()).unwrap_or(0);
 
-    match ctx
-        .metastore
-        .pull_offsets(PullOffsetsRequest {
-            vid: vid.clone().into(),
-            range: Some(LsnRange::from_bounds(&(cached_lsn..))),
-        })
-        .await
-    {
-        Ok(resp) => {
-            let snapshot = resp
-                .snapshot
-                .expect("missing snapshot in pull_offsets response");
-            let offsets = SplinterRef::from_bytes(resp.offsets).expect("failed to decode offsets");
-
+    match ctx.metastore.pull_offsets(vid, cached_lsn..).await? {
+        Some((snapshot, _, offsets)) => {
             // clear any changed offsets from the cache
             for offset in offsets.iter() {
                 ctx.pages.remove(page_key(vid, offset))?;
@@ -110,14 +94,7 @@ async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<S
 
             Ok(Some(snapshot))
         }
-        Err(err) => {
-            if let ClientErr::RequestErr(ref err) = err {
-                if err.status().map(|s| s == 404).unwrap_or(false) {
-                    return Ok(None);
-                }
-            }
-            Err(err.into())
-        }
+        None => Ok(None),
     }
 }
 
@@ -146,13 +123,12 @@ async fn read_page(ctx: &Context, vid: &VolumeId, page: Offset) -> anyhow::Resul
     if let Some(snapshot) = get_snapshot(ctx, vid).await? {
         let pages = ctx
             .pagestore
-            .read_pages(ReadPagesRequest {
-                vid: vid.clone().into(),
-                lsn: snapshot.lsn(),
-                offsets: Splinter::from_iter([page]).serialize_to_bytes(),
-            })
-            .await?
-            .pages;
+            .read_pages(
+                vid,
+                snapshot.lsn(),
+                Splinter::from_iter([page]).serialize_to_bytes(),
+            )
+            .await?;
 
         if let Some(p) = pages.into_iter().next() {
             assert_eq!(p.offset, page, "unexpected page: {:?}", p);
@@ -179,25 +155,19 @@ async fn write_page(
     // first we upload the page to the page store
     let segments = ctx
         .pagestore
-        .write_pages(WritePagesRequest {
-            vid: vid.clone().into(),
-            pages: vec![PageAtOffset { offset: page, data: data.clone() }],
-        })
-        .await?
-        .segments;
+        .write_pages(vid, vec![PageAtOffset { offset: page, data: data.clone() }])
+        .await?;
 
     // then we commit the new segments to the metastore
     let snapshot = ctx
         .metastore
-        .commit(CommitRequest {
-            vid: vid.clone().into(),
-            snapshot_lsn: snapshot.as_ref().map(|s| s.lsn()),
-            last_offset: snapshot.map(|s| s.last_offset().max(page)).unwrap_or(page),
+        .commit(
+            vid,
+            snapshot.as_ref().map(|s| s.lsn()),
+            snapshot.map(|s| s.last_offset().max(page)).unwrap_or(page),
             segments,
-        })
-        .await?
-        .snapshot
-        .expect("missing snapshot in commit response");
+        )
+        .await?;
 
     // Update the cache with the new page and snapshot
     ctx.volumes.insert(vid, snapshot.encode_to_vec())?;

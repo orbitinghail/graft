@@ -834,6 +834,7 @@ dependencies = [
  "bytes",
  "clap",
  "fjall",
+ "futures",
  "graft-core",
  "graft-proto",
  "prost",
@@ -869,6 +870,7 @@ dependencies = [
  "graft-core",
  "prost",
  "prost-types",
+ "splinter",
  "zerocopy 0.8.10",
 ]
 

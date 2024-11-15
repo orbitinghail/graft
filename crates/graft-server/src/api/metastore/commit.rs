@@ -115,7 +115,7 @@ mod tests {
         // let's commit and validate the store 10 times
         for i in 0..10 {
             let commit = CommitRequest {
-                vid: vid.clone().into(),
+                vid: vid.copy_to_bytes(),
                 snapshot_lsn: (i != 0).then(|| i - 1),
                 last_offset: 0,
                 segments: vec![SegmentInfo::new(&SegmentId::random(), offsets.clone())],

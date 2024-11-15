@@ -53,6 +53,10 @@ impl<const P: u8> Gid<P> {
     pub fn as_time(&self) -> SystemTime {
         self.ts.as_time()
     }
+
+    pub fn copy_to_bytes(&self) -> Bytes {
+        Bytes::copy_from_slice(self.as_bytes())
+    }
 }
 
 impl<const P: u8> Display for Gid<P> {
@@ -141,18 +145,6 @@ impl<'a, const P: u8> TryFrom<&'a [u8]> for &'a Gid<P> {
     }
 }
 
-impl<const P: u8> From<&Gid<P>> for Bytes {
-    fn from(val: &Gid<P>) -> Self {
-        Bytes::copy_from_slice(val.as_bytes())
-    }
-}
-
-impl<const P: u8> From<Gid<P>> for Bytes {
-    fn from(val: Gid<P>) -> Self {
-        (&val).into()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use rand::random;
@@ -196,7 +188,7 @@ mod tests {
         assert_eq!(id, parsed);
 
         // round trip through bytes
-        let bytes: Bytes = (&id).into();
+        let bytes = id.copy_to_bytes();
         let parsed: SegmentId = bytes.try_into().unwrap();
         assert_eq!(id, parsed);
     }

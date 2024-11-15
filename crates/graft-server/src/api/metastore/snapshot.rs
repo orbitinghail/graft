@@ -78,7 +78,7 @@ mod tests {
         // case 1: catalog and store are empty
 
         // request latest
-        let req = SnapshotRequest { vid: vid.clone().into(), lsn: None };
+        let req = SnapshotRequest { vid: vid.copy_to_bytes(), lsn: None };
         let resp = server
             .post("/")
             .bytes(req.encode_to_vec().into())
@@ -87,7 +87,7 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // request specific
-        let req = SnapshotRequest { vid: vid.clone().into(), lsn: Some(10) };
+        let req = SnapshotRequest { vid: vid.copy_to_bytes(), lsn: Some(10) };
         let resp = server
             .post("/")
             .bytes(req.encode_to_vec().into())
@@ -108,7 +108,7 @@ mod tests {
         store.commit(commit.build(vid.clone(), meta)).await.unwrap();
 
         // request latest
-        let req = SnapshotRequest { vid: vid.clone().into(), lsn: None };
+        let req = SnapshotRequest { vid: vid.copy_to_bytes(), lsn: None };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = SnapshotResponse::decode(resp.into_bytes()).unwrap();
         let snapshot = resp.snapshot.unwrap();

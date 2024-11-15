@@ -59,7 +59,7 @@ pub async fn handler<O, C>(
 
             // store the segment
             segments.push(SegmentInfo {
-                sid: commit.sid.into(),
+                sid: commit.sid.copy_to_bytes(),
                 offsets: offsets.inner().clone(),
             });
         }
@@ -141,13 +141,13 @@ mod tests {
         let page: Bytes = Page::test_filled(1).into();
 
         let req1 = WritePagesRequest {
-            vid: VolumeId::random().into(),
+            vid: VolumeId::random().copy_to_bytes(),
             pages: vec![PageAtOffset { offset: 0, data: page.clone() }],
         };
         let req1 = server.post("/").bytes(req1.encode_to_vec().into());
 
         let req2 = WritePagesRequest {
-            vid: VolumeId::random().into(),
+            vid: VolumeId::random().copy_to_bytes(),
             pages: vec![
                 PageAtOffset { offset: 0, data: page.clone() },
                 PageAtOffset { offset: 1, data: page.clone() },

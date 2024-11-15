@@ -103,7 +103,7 @@ mod tests {
         let vid = VolumeId::random();
 
         // case 1: catalog and store are empty
-        let req = PullOffsetsRequest { vid: vid.clone().into(), range: None };
+        let req = PullOffsetsRequest { vid: vid.copy_to_bytes(), range: None };
         let resp = server
             .post("/")
             .bytes(req.encode_to_vec().into())
@@ -124,7 +124,7 @@ mod tests {
         // request the last 5 segments
         let lsns = 5..10;
         let req = PullOffsetsRequest {
-            vid: vid.clone().into(),
+            vid: vid.copy_to_bytes(),
             range: Some(LsnRange::from_bounds(&lsns)),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);
 
         // request all the segments
-        let req = PullOffsetsRequest { vid: vid.clone().into(), range: None };
+        let req = PullOffsetsRequest { vid: vid.copy_to_bytes(), range: None };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = PullOffsetsResponse::decode(resp.into_bytes()).unwrap();
         let splinter = Splinter::from_bytes(resp.offsets).unwrap();

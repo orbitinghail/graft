@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 graft-core = { path = "../graft-core" }
+splinter = { path = "../splinter" }
 
 bytes = "1.8.0"
 prost = "0.13.3"

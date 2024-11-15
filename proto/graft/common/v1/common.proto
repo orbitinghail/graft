@@ -3,6 +3,22 @@ package graft.common.v1;
 
 import "google/protobuf/timestamp.proto";
 
+enum GraftErrCode {
+  GRAFT_ERR_CODE_UNSPECIFIED = 0;
+
+  // general cases
+  GRAFT_ERR_CODE_CLIENT = 1;
+  GRAFT_ERR_CODE_SERVER = 2;
+
+  // special cases
+  GRAFT_ERR_CODE_SNAPSHOT_MISSING = 3;
+}
+
+message GraftErr {
+  GraftErrCode code = 1;
+  string message = 2;
+}
+
 message SegmentInfo {
   bytes sid = 1;
   bytes offsets = 2;
