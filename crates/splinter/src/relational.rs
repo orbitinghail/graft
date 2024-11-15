@@ -20,9 +20,6 @@ pub trait Relation {
     /// Returns an iterator over the key-value pairs of the relation sorted by key.
     fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)>;
 
-    /// Returns an iterator over the values of the relation sorted by key.
-    fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>>;
-
     /// Returns an iterator over the inner join of two relations.
     fn inner_join<'a, R>(
         &'a self,
@@ -53,10 +50,6 @@ where
     fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
         (**self).sorted_iter()
     }
-
-    fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
-        (**self).sorted_values()
-    }
 }
 
 #[cfg(test)]
@@ -84,10 +77,6 @@ mod tests {
             self.data.iter().map(|(k, v)| (*k, v))
         }
 
-        fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
-            self.data.values()
-        }
-
         fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
             self.data.get(&key)
         }
@@ -103,7 +92,7 @@ mod tests {
     #[test]
     fn test_values() {
         let relation = TestRelation { data: [(1, 1), (2, 2), (3, 3)].into() };
-        let values: Vec<_> = relation.sorted_values().copied().collect();
+        let values: Vec<_> = relation.sorted_iter().map(|(_, b)| *b).collect();
         assert_eq!(values, [1, 2, 3]);
     }
 

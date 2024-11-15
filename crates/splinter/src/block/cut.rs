@@ -1,6 +1,4 @@
-use std::ops::Deref;
-
-use crate::{bitmap::BITMAP_SIZE, ops::Cut, util::CopyToOwned, Segment};
+use crate::{bitmap::BITMAP_SIZE, ops::Cut, util::CopyToOwned};
 
 use super::{Block, BlockRef};
 
@@ -17,10 +15,10 @@ impl Cut for Block {
     }
 }
 
-impl<T: Deref<Target = [Segment]>> Cut<BlockRef<T>> for Block {
+impl<'a> Cut<BlockRef<'a>> for Block {
     type Output = Block;
 
-    fn cut(&mut self, rhs: &BlockRef<T>) -> Self::Output {
+    fn cut(&mut self, rhs: &BlockRef<'a>) -> Self::Output {
         let rhs = rhs.copy_to_owned();
         self.cut(&rhs)
     }

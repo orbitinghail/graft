@@ -1,6 +1,4 @@
-use std::ops::Deref;
-
-use crate::{bitmap::BITMAP_SIZE, ops::Intersection, util::CopyToOwned, Segment};
+use crate::{bitmap::BITMAP_SIZE, ops::Intersection, util::CopyToOwned};
 
 use super::{Block, BlockRef};
 
@@ -19,18 +17,18 @@ impl Intersection for Block {
 }
 
 // Block <> BlockRef
-impl<T: Deref<Target = [Segment]>> Intersection<BlockRef<T>> for Block {
+impl<'a> Intersection<BlockRef<'a>> for Block {
     type Output = Block;
 
     #[inline]
-    fn intersection(&self, rhs: &BlockRef<T>) -> Self::Output {
+    fn intersection(&self, rhs: &BlockRef<'a>) -> Self::Output {
         let rhs = rhs.copy_to_owned();
         self.intersection(&rhs)
     }
 }
 
 // BlockRef <> Block
-impl<T: Deref<Target = [Segment]>> Intersection<Block> for BlockRef<T> {
+impl<'a> Intersection<Block> for BlockRef<'a> {
     type Output = Block;
 
     #[inline]
@@ -40,16 +38,11 @@ impl<T: Deref<Target = [Segment]>> Intersection<Block> for BlockRef<T> {
 }
 
 // BlockRef <> BlockRef
-impl<T1, T2> Intersection<BlockRef<T2>> for BlockRef<T1>
-where
-    T1: Deref<Target = [Segment]>,
-    T2: Deref<Target = [Segment]>,
-{
+impl<'a, 'b> Intersection<BlockRef<'b>> for BlockRef<'a> {
     type Output = Block;
 
     #[inline]
-    fn intersection(&self, rhs: &BlockRef<T2>) -> Self::Output {
-        let rhs = rhs.copy_to_owned();
-        rhs.intersection(self)
+    fn intersection(&self, rhs: &BlockRef<'b>) -> Self::Output {
+        self.copy_to_owned().intersection(rhs)
     }
 }

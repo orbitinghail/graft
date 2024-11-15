@@ -6,7 +6,7 @@ use zerocopy::{
 };
 
 use crate::{
-    bitmap::BitmapExt,
+    bitmap::{BitmapExt, BitmapMutExt},
     block::{Block, BlockRef},
     partition::{Partition, PartitionRef},
     relational::Relation,
@@ -89,9 +89,9 @@ impl Splinter {
     /// calculates the total number of values stored in the set
     pub fn cardinality(&self) -> usize {
         self.partitions
-            .sorted_values()
-            .flat_map(|p| p.sorted_values())
-            .map(|b| b.cardinality())
+            .sorted_iter()
+            .flat_map(|(_, p)| p.sorted_iter())
+            .map(|(_, b)| b.cardinality())
             .sum()
     }
 
@@ -200,7 +200,7 @@ where
 
     pub(crate) fn load_partitions(
         &self,
-    ) -> PartitionRef<'_, U32, PartitionRef<'_, U16, BlockRef<&'_ [u8]>>> {
+    ) -> PartitionRef<'_, U32, PartitionRef<'_, U16, BlockRef<'_>>> {
         let data = self.data.as_ref();
         let slice = &data[..data.len() - size_of::<Footer>()];
         PartitionRef::from_suffix(slice, self.partitions)
@@ -221,15 +221,17 @@ where
     /// calculates the total number of values stored in the set
     pub fn cardinality(&self) -> usize {
         self.load_partitions()
-            .sorted_values()
-            .map(|p| p.cardinality())
+            .sorted_iter()
+            .map(|(_, p)| p.cardinality())
             .sum()
     }
 
-    // TODO: Implement SplinterRef::iter
-    // pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
-    //     todo!()
-    // }
+    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+        self.load_partitions()
+            .into_iter()
+            .flat_map(|(h, p)| p.into_iter().map(move |(m, b)| (h, m, b)))
+            .flat_map(|(h, m, b)| b.into_segments().map(move |l| combine_segments(h, m, l)))
+    }
 }
 
 impl<T: AsRef<[u8]>> Debug for SplinterRef<T> {
@@ -353,6 +355,9 @@ mod tests {
                 panic!("missing key: {}", i);
             }
         }
+
+        // check that the splinter can enumerate all keys
+        assert!(itertools::equal(values, splinter.iter()));
 
         // check that some keys are not present
         assert!(!splinter.contains(65535), "unexpected key: 65535");

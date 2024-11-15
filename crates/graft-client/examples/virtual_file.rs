@@ -16,7 +16,7 @@ use graft_proto::{
 };
 use prost::Message;
 use reqwest::Url;
-use splinter::Splinter;
+use splinter::{Splinter, SplinterRef};
 use tryiter::TryIteratorExt;
 
 #[derive(Parser)]
@@ -97,7 +97,7 @@ async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<S
             let snapshot = resp
                 .snapshot
                 .expect("missing snapshot in pull_offsets response");
-            let offsets = Splinter::from_bytes(resp.offsets).expect("failed to decode offsets");
+            let offsets = SplinterRef::from_bytes(resp.offsets).expect("failed to decode offsets");
 
             // clear any changed offsets from the cache
             for offset in offsets.iter() {

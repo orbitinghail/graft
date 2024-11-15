@@ -1,6 +1,4 @@
-use std::ops::Deref;
-
-use crate::{bitmap::BITMAP_SIZE, ops::Union, util::CopyToOwned, Segment};
+use crate::{bitmap::BITMAP_SIZE, ops::Union, util::CopyToOwned};
 
 use super::{Block, BlockRef};
 
@@ -19,18 +17,18 @@ impl Union for Block {
 }
 
 // Block <> BlockRef
-impl<T: Deref<Target = [Segment]>> Union<BlockRef<T>> for Block {
+impl<'a> Union<BlockRef<'a>> for Block {
     type Output = Block;
 
     #[inline]
-    fn union(&self, rhs: &BlockRef<T>) -> Self::Output {
+    fn union(&self, rhs: &BlockRef<'a>) -> Self::Output {
         let rhs = rhs.copy_to_owned();
         self.union(&rhs)
     }
 }
 
 // BlockRef <> Block
-impl<T: Deref<Target = [Segment]>> Union<Block> for BlockRef<T> {
+impl<'a> Union<Block> for BlockRef<'a> {
     type Output = Block;
 
     #[inline]
@@ -40,16 +38,11 @@ impl<T: Deref<Target = [Segment]>> Union<Block> for BlockRef<T> {
 }
 
 // BlockRef <> BlockRef
-impl<T1, T2> Union<BlockRef<T2>> for BlockRef<T1>
-where
-    T1: Deref<Target = [Segment]>,
-    T2: Deref<Target = [Segment]>,
-{
+impl<'a, 'b> Union<BlockRef<'b>> for BlockRef<'a> {
     type Output = Block;
 
     #[inline]
-    fn union(&self, rhs: &BlockRef<T2>) -> Self::Output {
-        let rhs = rhs.copy_to_owned();
-        rhs.union(self)
+    fn union(&self, rhs: &BlockRef<'b>) -> Self::Output {
+        self.copy_to_owned().union(rhs)
     }
 }

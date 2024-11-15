@@ -10,7 +10,7 @@ use bytes::BufMut;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::{
-    bitmap::BitmapExt,
+    bitmap::BitmapMutExt,
     block::Block,
     index::IndexRef,
     ops::Merge,
@@ -114,10 +114,6 @@ impl<O, V> Relation for Partition<O, V> {
         self.values.iter().map(|(k, v)| (*k, v))
     }
 
-    fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
-        self.values.values()
-    }
-
     fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
         self.values.get(&key)
     }
@@ -195,10 +191,8 @@ where
 
     fn copy_to_owned(&self) -> Self::Owned {
         let values: BTreeMap<Segment, V::Owned> = self
-            .index
-            .key_block()
-            .segments()
-            .zip(self.sorted_values().map(|v| v.copy_to_owned()))
+            .sorted_iter()
+            .map(|(k, v)| (k, v.copy_to_owned()))
             .collect();
         Partition { values, _phantom: PhantomData }
     }
@@ -207,47 +201,45 @@ where
 impl<'a, Offset, V> PartitionRef<'a, Offset, V>
 where
     Offset: FromBytes + Immutable + Copy + Into<u32>,
-    V: FromSuffix<'a>,
+    V: FromSuffix<'a> + 'a,
 {
-    fn get_by_index(&self, index: usize) -> Option<V> {
-        if let Some((cardinality, offset)) = self.index.get(index) {
-            assert!(self.values.len() >= offset, "offset out of range");
-            let data = &self.values[..(self.values.len() - offset)];
-            Some(V::from_suffix(data, cardinality))
-        } else {
-            None
-        }
-    }
-
     /// returns the cardinality of the partition by summing the cardinalities
     /// stored in the partition's index
     #[inline]
     pub fn cardinality(&self) -> usize {
         self.index.cardinality()
     }
-}
 
-struct PartitionRefValuesIter<'a, 'b, O, V> {
-    inner: &'a PartitionRef<'b, O, V>,
-    cursor: usize,
-}
-
-impl<'a, 'b, O, V> Iterator for PartitionRefValuesIter<'a, 'b, O, V>
-where
-    O: FromBytes + Immutable + Copy + Into<u32>,
-    V: FromSuffix<'b>,
-{
-    type Item = V;
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = self.inner.len() - self.cursor;
-        (remaining, Some(remaining))
+    pub fn into_iter(self) -> impl Iterator<Item = (Segment, V)> + 'a {
+        PartitionRefIter {
+            values: self.values,
+            index_iter: self.index.into_iter(),
+            _phantom: PhantomData,
+        }
     }
+}
+
+struct PartitionRefIter<'a, I, V> {
+    values: &'a [u8],
+    index_iter: I,
+    _phantom: PhantomData<V>,
+}
+
+impl<'a, I, V> Iterator for PartitionRefIter<'a, I, V>
+where
+    I: Iterator<Item = (Segment, usize, usize)> + 'a,
+    V: FromSuffix<'a>,
+{
+    type Item = (Segment, V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let result = self.inner.get_by_index(self.cursor);
-        self.cursor += 1;
-        result
+        if let Some((segment, cardinality, offset)) = self.index_iter.next() {
+            assert!(self.values.len() >= offset, "offset out of range");
+            let data = &self.values[..(self.values.len() - offset)];
+            Some((segment, V::from_suffix(data, cardinality)))
+        } else {
+            None
+        }
     }
 }
 
@@ -267,12 +259,11 @@ where
 
     #[inline]
     fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
-        self.index.segments().zip(self.sorted_values())
-    }
-
-    #[inline]
-    fn sorted_values(&self) -> impl Iterator<Item = Self::ValRef<'_>> {
-        PartitionRefValuesIter { inner: self, cursor: 0 }
+        PartitionRefIter {
+            values: self.values,
+            index_iter: self.index.clone().into_iter(),
+            _phantom: PhantomData,
+        }
     }
 
     fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
@@ -302,9 +293,7 @@ where
     V: FromSuffix<'a> + PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.index.key_block() == other.index.key_block()
-            && self.len() == other.len()
-            && self.sorted_values().eq(other.sorted_values())
+        self.len() == other.len() && self.sorted_iter().eq(other.sorted_iter())
     }
 }
 

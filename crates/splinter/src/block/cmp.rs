@@ -1,6 +1,4 @@
-use std::ops::Deref;
-
-use crate::{bitmap::BitmapExt, Segment};
+use crate::bitmap::BitmapExt;
 
 use super::{Block, BlockRef};
 
@@ -12,18 +10,14 @@ impl PartialEq<Block> for Block {
 }
 
 // BlockRef == BlockRef
-impl<T1, T2> PartialEq<BlockRef<T2>> for BlockRef<T1>
-where
-    T1: Deref<Target = [Segment]>,
-    T2: Deref<Target = [Segment]>,
-{
-    fn eq(&self, other: &BlockRef<T2>) -> bool {
-        self.segments.deref() == other.segments.deref()
+impl<'a, 'b> PartialEq<BlockRef<'b>> for BlockRef<'a> {
+    fn eq(&self, other: &BlockRef<'b>) -> bool {
+        self.segments == other.segments
     }
 }
 
 // BlockRef == Block
-impl<T: Deref<Target = [Segment]>> PartialEq<Block> for BlockRef<T> {
+impl<'a> PartialEq<Block> for BlockRef<'a> {
     fn eq(&self, other: &Block) -> bool {
         if let Some(bitmap) = self.bitmap() {
             bitmap == &other.bitmap
@@ -34,9 +28,9 @@ impl<T: Deref<Target = [Segment]>> PartialEq<Block> for BlockRef<T> {
 }
 
 // Block == BlockRef
-impl<T: Deref<Target = [Segment]>> PartialEq<BlockRef<T>> for Block {
+impl<'a> PartialEq<BlockRef<'a>> for Block {
     #[inline]
-    fn eq(&self, other: &BlockRef<T>) -> bool {
+    fn eq(&self, other: &BlockRef<'a>) -> bool {
         other == self
     }
 }

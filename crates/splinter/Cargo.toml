@@ -8,11 +8,11 @@ bytes = "1.7"
 either = "1.13.0"
 thiserror = "2.0"
 zerocopy = { version = "0.8", features = ["derive"] }
+itertools = "0.13"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 roaring = "0.10"
-itertools = "0.13"
 
 [[bench]]
 name = "bitmaps"

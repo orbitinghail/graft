@@ -1,19 +1,21 @@
-use zerocopy::{FromBytes, Immutable, Ref};
+use itertools::izip;
+use zerocopy::{FromBytes, Immutable};
 
 use crate::{
     block::{block_size, BlockRef},
     Segment,
 };
 
+#[derive(Clone)]
 pub struct IndexRef<'a, Offset> {
-    keys: BlockRef<&'a [u8]>,
+    keys: BlockRef<'a>,
     cardinalities: &'a [u8],
-    offsets: Ref<&'a [u8], [Offset]>,
+    offsets: &'a [Offset],
 }
 
 impl<'a, Offset> IndexRef<'a, Offset>
 where
-    Offset: FromBytes + Immutable + Copy + Into<u32>,
+    Offset: FromBytes + Immutable + Copy + Into<u32> + 'a,
 {
     #[inline]
     fn size(cardinality: usize) -> usize {
@@ -31,25 +33,14 @@ where
     fn from_bytes(index: &'a [u8], cardinality: usize) -> Self {
         let (keys, index) = index.split_at(block_size(cardinality));
         let (cardinalities, index) = index.split_at(cardinality);
-        let (index, offsets) = Ref::from_suffix_with_elems(index, cardinality).unwrap();
-
-        assert!(index.is_empty(), "index should be fully loaded");
+        let offsets =
+            <[Offset]>::ref_from_bytes_with_elems(index, cardinality).expect("offsets too short");
 
         Self {
             keys: BlockRef::from_bytes(keys),
             cardinalities,
             offsets,
         }
-    }
-
-    #[inline]
-    pub fn key_block(&self) -> BlockRef<&'_ [u8]> {
-        self.keys.clone()
-    }
-
-    #[inline]
-    pub fn segments(&self) -> impl Iterator<Item = Segment> + '_ {
-        self.keys.segments()
     }
 
     #[inline]
@@ -84,5 +75,14 @@ where
         } else {
             None
         }
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = (Segment, usize, usize)> + 'a {
+        let segments = self.keys.into_segments();
+        let cardinalities = self.cardinalities.iter().map(|&x| x as usize + 1);
+        let offsets = self.offsets.iter().map(|&x| x.into() as usize);
+
+        // zip the segments, cardinalities, and offsets together
+        izip!(segments, cardinalities, offsets)
     }
 }

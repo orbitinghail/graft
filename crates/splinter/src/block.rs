@@ -1,11 +1,10 @@
-use core::slice;
-use std::{array::TryFromSliceError, iter::Copied, ops::Deref};
+use std::array::TryFromSliceError;
 
 use bytes::BufMut;
 use either::Either;
 
 use crate::{
-    bitmap::{Bitmap, BitmapExt, BitmapSegmentsIter, BITMAP_SIZE},
+    bitmap::{Bitmap, BitmapExt, BitmapMutExt, BITMAP_SIZE},
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
 };
@@ -46,6 +45,9 @@ impl BitmapExt for Block {
     fn as_ref(&self) -> &Bitmap {
         &self.bitmap
     }
+}
+
+impl BitmapMutExt for Block {
     fn as_mut(&mut self) -> &mut Bitmap {
         &mut self.bitmap
     }
@@ -76,28 +78,48 @@ impl SerializeContainer for Block {
     }
 }
 
-#[derive(Clone)]
-pub struct BlockRef<T> {
-    segments: T,
+impl FromIterator<Segment> for Block {
+    fn from_iter<T: IntoIterator<Item = Segment>>(iter: T) -> Self {
+        let mut block = Block::default();
+        for segment in iter {
+            block.insert(segment);
+        }
+        block
+    }
 }
 
-impl<T: Deref<Target = [Segment]>> BlockRef<T> {
+#[derive(Clone)]
+pub struct BlockRef<'a> {
+    segments: &'a [Segment],
+}
+
+impl<'a> BlockRef<'a> {
     #[inline]
-    pub fn from_bytes(segments: T) -> Self {
+    pub fn from_bytes(segments: &'a [Segment]) -> Self {
         assert!(segments.len() <= 32, "segments overflow");
         Self { segments }
     }
 
     /// If this block is a bitmap, return the bitmap, otherwise return None
     #[inline]
-    pub(crate) fn bitmap(&self) -> Option<&[u8; BITMAP_SIZE]> {
+    pub(crate) fn bitmap(&self) -> Option<&Bitmap> {
         (*self.segments).try_into().ok()
     }
 
     #[inline]
-    pub fn segments(&self) -> Either<BitmapSegmentsIter<'_>, Copied<slice::Iter<'_, Segment>>> {
+    pub fn segments(&self) -> impl Iterator<Item = Segment> + '_ {
         if let Some(bitmap) = self.bitmap() {
             Either::Left(bitmap.segments())
+        } else {
+            Either::Right(self.segments.iter().copied())
+        }
+    }
+
+    #[inline]
+    pub fn into_segments(self) -> impl Iterator<Item = Segment> + 'a {
+        if self.segments.len() == BITMAP_SIZE {
+            let bitmap = TryInto::<&Bitmap>::try_into(self.segments).unwrap();
+            Either::Left(bitmap.into_segments())
         } else {
             Either::Right(self.segments.iter().copied())
         }
@@ -145,26 +167,19 @@ impl<T: Deref<Target = [Segment]>> BlockRef<T> {
     }
 }
 
-impl<T> CopyToOwned for BlockRef<T>
-where
-    T: Deref<Target = [Segment]>,
-{
+impl<'a> CopyToOwned for BlockRef<'a> {
     type Owned = Block;
 
     fn copy_to_owned(&self) -> Self::Owned {
         if let Some(bitmap) = self.bitmap() {
             bitmap.to_owned().into()
         } else {
-            let mut block = Block::default();
-            for &segment in self.segments.iter() {
-                block.insert(segment);
-            }
-            block
+            self.segments().collect()
         }
     }
 }
 
-impl<'a> FromSuffix<'a> for BlockRef<&'a [u8]> {
+impl<'a> FromSuffix<'a> for BlockRef<'a> {
     fn from_suffix(data: &'a [u8], cardinality: usize) -> Self {
         let size = block_size(cardinality);
         assert!(data.len() >= size, "data too short");
@@ -180,121 +195,121 @@ pub fn block_size(cardinality: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use bytes::{Bytes, BytesMut};
+    use bytes::BytesMut;
 
     use super::*;
 
-    fn mkblock(values: impl IntoIterator<Item = u8>) -> BlockRef<Bytes> {
-        let mut block = Block::default();
-        for i in values {
-            block.insert(i);
-        }
-        let mut buf = BytesMut::new();
-        block.serialize(&mut buf);
-        BlockRef::from_bytes(buf.freeze())
+    fn test_block(
+        values: impl IntoIterator<Item = Segment>,
+        cb_block: impl FnOnce(Block),
+        cb_ref: impl FnOnce(BlockRef<'_>),
+    ) {
+        let block: Block = values.into_iter().collect();
+        cb_block(block.clone());
+        let mut segments = BytesMut::new();
+        block.serialize(&mut segments);
+        let block_ref = BlockRef::from_bytes(&segments);
+        cb_ref(block_ref);
+    }
+
+    macro_rules! assert_block_fn_eq {
+        ($values:expr, $expected:expr, |$b:ident| $fn:block) => {{
+            test_block(
+                $values,
+                |$b| {
+                    assert_eq!($fn, $expected);
+                },
+                |$b| {
+                    assert_eq!($fn, $expected);
+                },
+            );
+        }};
     }
 
     #[test]
     fn test_block_last() {
         // empty block
-        assert_eq!(mkblock(0..0).last(), None);
-        assert_eq!(mkblock(0..0).last(), None);
-        assert_eq!(mkblock(0..0).last(), None);
+        assert_block_fn_eq!(0..0, None, |b| { b.last() });
 
         // block with 1 element
-        assert_eq!(mkblock(0..1).last(), Some(0));
-        assert_eq!(mkblock(33..34).last(), Some(33));
-        assert_eq!(mkblock(128..129).last(), Some(128));
+        assert_block_fn_eq!(0..1, Some(0), |b| { b.last() });
+        assert_block_fn_eq!(33..34, Some(33), |b| { b.last() });
+        assert_block_fn_eq!(128..129, Some(128), |b| { b.last() });
 
         // block with 31 elements; stored as a list
-        assert_eq!(mkblock(0..31).last(), Some(30));
-        assert_eq!(mkblock(1..32).last(), Some(31));
-        assert_eq!(mkblock(100..131).last(), Some(130));
+        assert_block_fn_eq!(0..31, Some(30), |b| { b.last() });
+        assert_block_fn_eq!(1..32, Some(31), |b| { b.last() });
+        assert_block_fn_eq!(100..131, Some(130), |b| { b.last() });
 
         // block with > 32 elements; stored as a bitmap
-        assert_eq!(mkblock(0..32).last(), Some(31));
-        assert_eq!(mkblock(1..33).last(), Some(32));
-        assert_eq!(mkblock(21..131).last(), Some(130));
-        assert_eq!(mkblock(0..=255).last(), Some(255));
+        assert_block_fn_eq!(0..32, Some(31), |b| { b.last() });
+        assert_block_fn_eq!(1..33, Some(32), |b| { b.last() });
+        assert_block_fn_eq!(21..131, Some(130), |b| { b.last() });
+        assert_block_fn_eq!(0..=255, Some(255), |b| { b.last() });
     }
 
     #[test]
     fn test_block_rank() {
         // empty block
-        assert_eq!(mkblock(0..0).rank(0), 0);
-        assert_eq!(mkblock(0..0).rank(128), 0);
-        assert_eq!(mkblock(0..0).rank(255), 0);
+        assert_block_fn_eq!(0..0, 0, |b| { b.rank(0) });
+        assert_block_fn_eq!(0..0, 0, |b| { b.rank(128) });
+        assert_block_fn_eq!(0..0, 0, |b| { b.rank(255) });
 
         // block with 1 element
-        assert_eq!(mkblock(0..1).rank(0), 1);
-        assert_eq!(mkblock(0..1).rank(128), 1);
-        assert_eq!(mkblock(128..129).rank(0), 0);
+        assert_block_fn_eq!(0..1, 1, |b| { b.rank(0) });
+        assert_block_fn_eq!(0..1, 1, |b| { b.rank(128) });
+        assert_block_fn_eq!(128..129, 0, |b| { b.rank(0) });
 
         // block with 31 elements; stored as a list
-        let block = mkblock(0..31);
-        assert_eq!(block.cardinality(), 31);
-        for i in 0..31 {
-            assert_eq!(block.rank(i), (i + 1).into());
-        }
-        for i in 31..255 {
-            assert_eq!(block.rank(i), 31);
+        assert_block_fn_eq!(0..31, 31, |b| { b.cardinality() });
+        for i in 0usize..31 {
+            assert_block_fn_eq!(0..31, i + 1, |b| { b.rank(i as Segment) });
         }
 
         // block with 32 elements; stored as a bitmap
-        let block = mkblock(0..32);
-        assert_eq!(block.cardinality(), 32);
-        for i in 0..32 {
-            assert_eq!(block.rank(i), (i + 1).into());
+        assert_block_fn_eq!(0..32, 32, |b| { b.cardinality() });
+        for i in 0usize..32 {
+            assert_block_fn_eq!(0..32, i + 1, |b| { b.rank(i as Segment) });
         }
         for i in 32..255 {
-            assert_eq!(block.rank(i), 32);
+            assert_block_fn_eq!(0..32, 32, |b| { b.rank(i as Segment) });
         }
 
         // full block
-        let block = mkblock(0..=255);
-        assert_eq!(block.cardinality(), 256);
-        for i in 0..255 {
-            assert_eq!(block.rank(i), (i + 1).into());
+        assert_block_fn_eq!(0..=255, 256, |b| { b.cardinality() });
+        for i in 0usize..255 {
+            assert_block_fn_eq!(0..=255, i + 1, |b| { b.rank(i as Segment) });
         }
     }
 
     #[test]
     fn test_block_contains() {
         // empty block
-        assert!(!mkblock(0..0).contains(0));
-        assert!(!mkblock(0..0).contains(128));
-        assert!(!mkblock(0..0).contains(255));
+        assert_block_fn_eq!(0..0, false, |b| { b.contains(0) });
+        assert_block_fn_eq!(0..0, false, |b| { b.contains(128) });
+        assert_block_fn_eq!(0..0, false, |b| { b.contains(255) });
 
         // block with 1 element
-        assert!(mkblock(0..1).contains(0));
-        assert!(!mkblock(0..1).contains(128));
-        assert!(!mkblock(128..129).contains(0));
+        assert_block_fn_eq!(0..1, true, |b| { b.contains(0) });
+        assert_block_fn_eq!(0..1, false, |b| { b.contains(128) });
+        assert_block_fn_eq!(128..129, false, |b| { b.contains(0) });
 
         // block with 31 elements; stored as a list
-        let block = mkblock(0..31);
-        assert_eq!(block.cardinality(), 31);
-        for i in 0..31 {
-            assert!(block.contains(i));
-        }
-        for i in 31..255 {
-            assert!(!block.contains(i));
+        assert_block_fn_eq!(0..31, 31, |b| { b.cardinality() });
+        for i in 0..255 {
+            assert_block_fn_eq!(0..31, i < 31, |b| { b.contains(i) });
         }
 
         // block with 32 elements; stored as a bitmap
-        let block = mkblock(0..32);
-        assert_eq!(block.cardinality(), 32);
-        for i in 0..32 {
-            assert!(block.contains(i));
-        }
-        for i in 32..255 {
-            assert!(!block.contains(i));
+        assert_block_fn_eq!(0..32, 32, |b| { b.cardinality() });
+        for i in 0..255 {
+            assert_block_fn_eq!(0..32, i < 32, |b| { b.contains(i) });
         }
 
         // full block
-        let block = mkblock(0..=255);
-        assert_eq!(block.cardinality(), 256);
+        assert_block_fn_eq!(0..=255, 256, |b| { b.cardinality() });
         for i in 0..255 {
-            assert!(block.contains(i));
+            assert_block_fn_eq!(0..=255, true, |b| { b.contains(i) });
         }
     }
 }
