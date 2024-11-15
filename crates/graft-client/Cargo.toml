@@ -7,18 +7,18 @@ edition = "2021"
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 
-bytes = "1.8.0"
-prost = "0.13.3"
-prost-types = "0.13.3"
-zerocopy = "0.8.9"
+bytes = "1.8"
+prost = "0.13"
+prost-types = "0.13"
+zerocopy = "0.8"
 reqwest = { version = "0.12" }
 tokio = { version = "1" }
-thiserror = "2.0.3"
+thiserror = "2.0"
 
 [dev-dependencies]
 splinter = { path = "../splinter" }
 
-fjall = "2.3"
+fjall = "2.4"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 clap = { version = "4.5.20", features = ["derive"] }

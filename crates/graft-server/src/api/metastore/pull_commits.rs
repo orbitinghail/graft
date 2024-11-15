@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use axum::extract::State;
-use bytes::Bytes;
 use graft_core::VolumeId;
 use graft_proto::{
     common::v1::{Commit, LsnRange, SegmentInfo},
@@ -57,8 +56,10 @@ pub async fn handler<O: ObjectStore>(
     while let Some((meta, mut segments)) = scan.try_next()? {
         let mut segment_infos = Vec::default();
         while let Some((sid, splinter)) = segments.try_next()? {
-            let offsets = Bytes::copy_from_slice(splinter.into_inner().as_ref());
-            segment_infos.push(SegmentInfo { sid: sid.into(), offsets });
+            segment_infos.push(SegmentInfo {
+                sid: sid.into(),
+                offsets: splinter.into_inner(),
+            });
         }
 
         result.commits.push(Commit {

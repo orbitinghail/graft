@@ -1,5 +1,6 @@
 use std::{fmt::Debug, ops::RangeBounds, path::Path};
 
+use bytes::Bytes;
 use fjall::{
     Batch, Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice,
 };
@@ -137,7 +138,7 @@ impl VolumeCatalog {
         &self,
         vid: &VolumeId,
         lsns: &R,
-    ) -> impl Iterator<Item = Result<(SegmentId, SplinterRef<Slice>)>> {
+    ) -> impl Iterator<Item = Result<(SegmentId, SplinterRef<Bytes>)>> {
         let range = CommitKey::range(vid, lsns);
         let scan = self.segments.range(range).rev();
         SegmentsQueryIter { scan }
@@ -151,7 +152,7 @@ impl VolumeCatalog {
     ) -> impl Iterator<
         Item = Result<(
             CommitMeta,
-            impl Iterator<Item = Result<(SegmentId, SplinterRef<Slice>)>>,
+            impl Iterator<Item = Result<(SegmentId, SplinterRef<Bytes>)>>,
         )>,
     > + '_ {
         let range = CommitKey::range(vid, lsns);
@@ -224,17 +225,17 @@ impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> SegmentsQueryIter<I> {
     fn next_inner(
         &mut self,
         entry: fjall::Result<(Slice, Slice)>,
-    ) -> Result<(SegmentId, SplinterRef<Slice>)> {
+    ) -> Result<(SegmentId, SplinterRef<Bytes>)> {
         let (key, value) = entry?;
         let key = SegmentKey::try_read_from_bytes(&key)
             .map_err(|_| VolumeCatalogErr::DecodeErr { target: "SegmentKey" })?;
-        let val = SplinterRef::from_bytes(value)?;
+        let val = SplinterRef::from_bytes(Bytes::from(value))?;
         Ok((key.sid().clone(), val))
     }
 }
 
 impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> Iterator for SegmentsQueryIter<I> {
-    type Item = Result<(SegmentId, SplinterRef<Slice>)>;
+    type Item = Result<(SegmentId, SplinterRef<Bytes>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.scan.next().map(|entry| self.next_inner(entry))
