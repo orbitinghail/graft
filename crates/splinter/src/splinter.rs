@@ -409,7 +409,7 @@ mod tests {
 
         // 1 fully dense block
         let set = (0..=255).collect::<Vec<_>>();
-        run_test("1 dense block", set, 50, 528);
+        run_test("1 dense block", set, 18, 528);
 
         // 8 sparse blocks
         let set = (0..=1024).step_by(128).collect::<Vec<_>>();
@@ -421,14 +421,14 @@ mod tests {
 
         // 512 sparse blocks
         let set = (0..=65536).step_by(128).collect::<Vec<_>>();
-        run_test("512 sparse blocks", set, 1337, 1050);
+        run_test("512 sparse blocks", set, 1305, 1050);
 
         // the rest of the compression tests use 4k elements
         let elements = 4096;
 
         // fully dense splinter
         let set = (0..elements).collect::<Vec<_>>();
-        run_test("fully dense", set, 590, 8208);
+        run_test("fully dense", set, 78, 8208);
 
         // 32 elements per block; dense partitions
         let set = (0..).step_by(8).take(elements as usize).collect::<Vec<_>>();
@@ -439,7 +439,7 @@ mod tests {
             .step_by(16)
             .take(elements as usize)
             .collect::<Vec<_>>();
-        run_test("16/block; dense", set, 4910, 8208);
+        run_test("16/block; dense", set, 4878, 8208);
 
         // 1 element per block; dense partitions
         // second worse case scenario
@@ -447,7 +447,7 @@ mod tests {
             .step_by(256)
             .take(elements as usize)
             .collect::<Vec<_>>();
-        run_test("1/block; dense", set, 17000, 8328);
+        run_test("1/block; dense", set, 16488, 8328);
 
         // 1 element per block; sparse partitions
         // worse case scenario
@@ -455,21 +455,22 @@ mod tests {
             .step_by(4096)
             .take(elements as usize)
             .collect::<Vec<_>>();
-        run_test("1/block; sparse", set, 21800, 10248);
+        run_test("1/block; sparse", set, 21768, 10248);
 
         let mut fail_test = false;
 
         println!(
-            "{:20} {:12} {:>6} {:>10} {:>10}",
-            "distribution", "bitmap", "size", "expected", "result"
+            "{:20} {:12} {:>6} {:>10} {:>10} {:>10}",
+            "distribution", "bitmap", "size", "expected", "diff", "result"
         );
         for report in reports {
             println!(
-                "{:20} {:12} {:6} {:10} {:>10}",
+                "{:20} {:12} {:6} {:10} {:>10} {:>10}",
                 report.name,
                 report.ty,
                 report.size,
                 report.expected,
+                report.size as isize - report.expected as isize,
                 if report.size == report.expected {
                     "ok"
                 } else {

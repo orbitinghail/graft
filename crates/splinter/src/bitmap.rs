@@ -1,6 +1,7 @@
 use crate::Segment;
 
 pub const BITMAP_SIZE: usize = 32;
+pub const BITMAP_FULL: Bitmap = [0xff; BITMAP_SIZE];
 
 pub type Bitmap = [u8; BITMAP_SIZE];
 

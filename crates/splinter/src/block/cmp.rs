@@ -1,3 +1,5 @@
+use either::Either::{Left, Right};
+
 use crate::bitmap::BitmapExt;
 
 use super::{Block, BlockRef};
@@ -12,17 +14,23 @@ impl PartialEq<Block> for Block {
 // BlockRef == BlockRef
 impl<'a, 'b> PartialEq<BlockRef<'b>> for BlockRef<'a> {
     fn eq(&self, other: &BlockRef<'b>) -> bool {
-        self.segments == other.segments
+        use BlockRef::*;
+
+        match (self, other) {
+            (Partial { segments }, Partial { segments: other }) => segments == other,
+            (Partial { .. }, Full) => false,
+            (Full, Partial { .. }) => false,
+            (Full, Full) => true,
+        }
     }
 }
 
 // BlockRef == Block
 impl<'a> PartialEq<Block> for BlockRef<'a> {
     fn eq(&self, other: &Block) -> bool {
-        if let Some(bitmap) = self.bitmap() {
-            bitmap == &other.bitmap
-        } else {
-            self.segments.iter().copied().eq(other.bitmap.segments())
+        match self.resolve_bitmap() {
+            Left(bitmap) => bitmap == &other.bitmap,
+            Right(segments) => segments.iter().copied().eq(other.bitmap.segments()),
         }
     }
 }

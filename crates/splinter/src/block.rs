@@ -4,7 +4,7 @@ use bytes::BufMut;
 use either::Either;
 
 use crate::{
-    bitmap::{Bitmap, BitmapExt, BitmapMutExt, BITMAP_SIZE},
+    bitmap::{Bitmap, BitmapExt, BitmapMutExt, BITMAP_FULL, BITMAP_SIZE},
     util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
 };
@@ -68,6 +68,9 @@ impl SerializeContainer for Block {
                 out.put_u8(segment);
             }
             cardinality
+        } else if cardinality == 256 {
+            // we don't write out the bitmap for a full block
+            0
         } else {
             // write out the bitmap verbatim
             out.put_slice(&self.bitmap);
@@ -89,80 +92,82 @@ impl FromIterator<Segment> for Block {
 }
 
 #[derive(Clone)]
-pub struct BlockRef<'a> {
-    segments: &'a [Segment],
+pub enum BlockRef<'a> {
+    Partial { segments: &'a [Segment] },
+    Full,
 }
 
 impl<'a> BlockRef<'a> {
     #[inline]
     pub fn from_bytes(segments: &'a [Segment]) -> Self {
         assert!(segments.len() <= 32, "segments overflow");
-        Self { segments }
+        Self::Partial { segments }
     }
 
-    /// If this block is a bitmap, return the bitmap, otherwise return None
+    /// Resolve this BlockRef to either a Bitmap or a slice of segments
     #[inline]
-    pub(crate) fn bitmap(&self) -> Option<&Bitmap> {
-        (*self.segments).try_into().ok()
-    }
-
-    #[inline]
-    pub fn segments(&self) -> impl Iterator<Item = Segment> + '_ {
-        if let Some(bitmap) = self.bitmap() {
-            Either::Left(bitmap.segments())
-        } else {
-            Either::Right(self.segments.iter().copied())
+    pub(crate) fn resolve_bitmap(&self) -> Either<&Bitmap, &[Segment]> {
+        match *self {
+            BlockRef::Partial { segments } => {
+                if segments.len() == BITMAP_SIZE {
+                    Either::Left(TryInto::<&Bitmap>::try_into(segments).unwrap())
+                } else {
+                    Either::Right(segments)
+                }
+            }
+            BlockRef::Full => Either::Left(&BITMAP_FULL),
         }
     }
 
     #[inline]
     pub fn into_segments(self) -> impl Iterator<Item = Segment> + 'a {
-        if self.segments.len() == BITMAP_SIZE {
-            let bitmap = TryInto::<&Bitmap>::try_into(self.segments).unwrap();
-            Either::Left(bitmap.into_segments())
-        } else {
-            Either::Right(self.segments.iter().copied())
+        match self {
+            BlockRef::Partial { segments } => {
+                if segments.len() == BITMAP_SIZE {
+                    let bitmap = TryInto::<&Bitmap>::try_into(segments).unwrap();
+                    Either::Left(Either::Left(bitmap.into_segments()))
+                } else {
+                    Either::Left(Either::Right(segments.iter().copied()))
+                }
+            }
+            BlockRef::Full => Either::Right(0..=255),
         }
     }
 
     #[cfg(test)]
     #[inline]
     pub fn cardinality(&self) -> usize {
-        if let Some(bitmap) = self.bitmap() {
-            bitmap.cardinality()
-        } else {
-            self.segments.len()
+        match self.resolve_bitmap() {
+            Either::Left(bitmap) => bitmap.cardinality(),
+            Either::Right(segments) => segments.len(),
         }
     }
 
     #[cfg(test)]
     #[inline]
     pub fn last(&self) -> Option<Segment> {
-        if let Some(bitmap) = self.bitmap() {
-            bitmap.last()
-        } else {
-            self.segments.last().copied()
+        match self.resolve_bitmap() {
+            Either::Left(bitmap) => bitmap.last(),
+            Either::Right(segments) => segments.last().copied(),
         }
     }
 
     /// Count the number of 1-bits in the block up to and including the `position``
     pub fn rank(&self, position: u8) -> usize {
-        if let Some(bitmap) = self.bitmap() {
-            bitmap.rank(position)
-        } else {
-            match self.segments.binary_search(&position) {
+        match self.resolve_bitmap() {
+            Either::Left(bitmap) => bitmap.rank(position),
+            Either::Right(segments) => match segments.binary_search(&position) {
                 Ok(i) => i + 1,
                 Err(i) => i,
-            }
+            },
         }
     }
 
     #[inline]
     pub fn contains(&self, segment: Segment) -> bool {
-        if let Some(bitmap) = self.bitmap() {
-            bitmap.contains(segment)
-        } else {
-            self.segments.iter().any(|&x| x == segment)
+        match self.resolve_bitmap() {
+            Either::Left(bitmap) => bitmap.contains(segment),
+            Either::Right(segments) => segments.contains(&segment),
         }
     }
 }
@@ -171,26 +176,33 @@ impl<'a> CopyToOwned for BlockRef<'a> {
     type Owned = Block;
 
     fn copy_to_owned(&self) -> Self::Owned {
-        if let Some(bitmap) = self.bitmap() {
-            bitmap.to_owned().into()
-        } else {
-            self.segments().collect()
+        match self.resolve_bitmap() {
+            Either::Left(bitmap) => bitmap.to_owned().into(),
+            Either::Right(segments) => segments.iter().copied().collect(),
         }
     }
 }
 
 impl<'a> FromSuffix<'a> for BlockRef<'a> {
     fn from_suffix(data: &'a [u8], cardinality: usize) -> Self {
-        let size = block_size(cardinality);
-        assert!(data.len() >= size, "data too short");
-        let (_, block) = data.split_at(data.len() - size);
-        Self::from_bytes(block)
+        if cardinality == 256 {
+            Self::Full
+        } else {
+            let size = block_size(cardinality);
+            assert!(data.len() >= size, "data too short");
+            let (_, block) = data.split_at(data.len() - size);
+            Self::from_bytes(block)
+        }
     }
 }
 
 #[inline]
 pub fn block_size(cardinality: usize) -> usize {
-    cardinality.min(BITMAP_SIZE)
+    if cardinality == 256 {
+        0
+    } else {
+        cardinality.min(BITMAP_SIZE)
+    }
 }
 
 #[cfg(test)]
@@ -206,9 +218,11 @@ mod tests {
     ) {
         let block: Block = values.into_iter().collect();
         cb_block(block.clone());
-        let mut segments = BytesMut::new();
-        block.serialize(&mut segments);
-        let block_ref = BlockRef::from_bytes(&segments);
+        let mut buf = BytesMut::new();
+        let (cardinality, n) = block.serialize(&mut buf);
+        assert_eq!(cardinality, block.cardinality());
+        assert_eq!(n, buf.len());
+        let block_ref = BlockRef::from_suffix(&buf, cardinality);
         cb_ref(block_ref);
     }
 

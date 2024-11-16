@@ -37,7 +37,11 @@ where
             <[Offset]>::ref_from_bytes_with_elems(index, cardinality).expect("offsets too short");
 
         Self {
-            keys: BlockRef::from_bytes(keys),
+            keys: if cardinality == 256 {
+                BlockRef::Full
+            } else {
+                BlockRef::from_bytes(keys)
+            },
             cardinalities,
             offsets,
         }
