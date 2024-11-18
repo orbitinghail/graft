@@ -105,11 +105,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(
-        flavor = "current_thread",
-        unhandled_panic = "shutdown_runtime",
-        start_paused = true
-    )]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_writer_sanity() {
         let (input_tx, input_rx) = mpsc::channel(1);
         let (output_tx, mut output_rx) = mpsc::channel(1);

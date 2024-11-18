@@ -14,6 +14,8 @@ use tokio::{net::TcpListener, select, signal::ctrl_c};
 
 #[tokio::main]
 async fn main() {
+    tracing::info!("starting metastore");
+
     tracing_subscriber::fmt::init();
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 

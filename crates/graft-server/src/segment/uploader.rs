@@ -86,7 +86,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "current_thread", unhandled_panic = "shutdown_runtime")]
+    #[tokio::test(flavor = "current_thread")]
 
     async fn test_uploader_sanity() {
         let (input_tx, input_rx) = mpsc::channel(1);

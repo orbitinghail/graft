@@ -1,0 +1,26 @@
+app = "metastore"
+primary_region = "sea"
+
+kill_signal = "SIGINT"
+kill_timeout = 60
+
+[build]
+build-target = "metastore"
+
+[http_service]
+internal_port = 3001
+force_https = true
+auto_stop_machines = "suspend"
+auto_start_machines = true
+min_machines_running = 0
+
+[http_service.concurrency]
+type = "requests"
+soft_limit = 200
+
+[[http_service.checks]]
+grace_period = "5s"
+interval = "30s"
+method = "GET"
+timeout = "5s"
+path = "/metastore/v1/health"

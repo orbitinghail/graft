@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
-use axum::{routing::post, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use object_store::ObjectStore;
 
 use crate::volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater};
 
 mod commit;
+mod health;
 mod pull_commits;
 mod pull_offsets;
 mod snapshot;
@@ -43,6 +47,7 @@ where
     O: ObjectStore + Sync + Send + 'static,
 {
     Router::new()
+        .route("/metastore/v1/health", get(health::handler))
         .route("/metastore/v1/snapshot", post(snapshot::handler))
         .route("/metastore/v1/pull_offsets", post(pull_offsets::handler))
         .route("/metastore/v1/pull_commits", post(pull_commits::handler))

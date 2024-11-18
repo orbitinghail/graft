@@ -2,7 +2,10 @@ use graft_client::MetaStoreClient;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 
-use axum::{routing::post, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use object_store::ObjectStore;
 
 use crate::{
@@ -14,6 +17,7 @@ use crate::{
     volume::{catalog::VolumeCatalog, updater::VolumeCatalogUpdater},
 };
 
+mod health;
 mod read_pages;
 mod write_pages;
 
@@ -76,6 +80,7 @@ where
     C: Cache + Sync + Send + 'static,
 {
     Router::new()
+        .route("/pagestore/v1/health", get(health::handler))
         .route("/pagestore/v1/read_pages", post(read_pages::handler))
         .route("/pagestore/v1/write_pages", post(write_pages::handler))
 }
