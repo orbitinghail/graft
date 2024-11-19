@@ -1,7 +1,11 @@
 use std::{
     fmt::{self, Debug, Display},
     ops::{Add, Div, Mul, Range, Rem, Shl, Shr, Sub},
+    str::FromStr,
 };
+
+use serde::{Deserialize, Deserializer, Serialize};
+use thiserror::Error;
 
 struct NamedByteUnit {
     value: ByteUnit,
@@ -119,9 +123,79 @@ impl Display for ByteUnit {
         write!(f, "{} B", value.0)
     }
 }
+
 impl Debug for ByteUnit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ByteUnitParseError {
+    #[error("Invalid format: got {0}, expected <number> [<unit>]")]
+    InvalidFormat(String),
+
+    #[error("Invalid number: {0}")]
+    InvalidNumber(String),
+
+    #[error("Unknown unit: {0}")]
+    UnknownUnit(String),
+}
+
+impl FromStr for ByteUnit {
+    type Err = ByteUnitParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        let mut parts = s.split_ascii_whitespace();
+        let number = parts
+            .next()
+            .ok_or(ByteUnitParseError::InvalidFormat(s.to_string()))?;
+
+        let unit = parts.next().unwrap_or("B").to_uppercase();
+
+        let value = number
+            .parse::<u64>()
+            .map_err(|_| ByteUnitParseError::InvalidNumber(number.into()))?;
+
+        Ok(match unit.as_str() {
+            "B" => ByteUnit(value),
+            "KB" => ByteUnit::from_kb(value),
+            "MB" => ByteUnit::from_mb(value),
+            "GB" => ByteUnit::from_gb(value),
+            "TB" => ByteUnit::from_tb(value),
+            "PB" => ByteUnit::from_pb(value),
+            "EB" => ByteUnit::from_eb(value),
+            _ => return Err(ByteUnitParseError::UnknownUnit(unit)),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for ByteUnit {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let s = String::deserialize(deserializer)?;
+            FromStr::from_str(&s).map_err(serde::de::Error::custom)
+        } else {
+            let bytes = u64::deserialize(deserializer)?;
+            Ok(ByteUnit(bytes))
+        }
+    }
+}
+
+impl Serialize for ByteUnit {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if serializer.is_human_readable() {
+            self.to_string().serialize(serializer)
+        } else {
+            self.0.serialize(serializer)
+        }
     }
 }
 
@@ -300,5 +374,64 @@ mod tests {
         const X: ByteUnit = ByteUnit::from_kb(4);
         let arr: [u8; X.as_usize()] = [0; X.as_usize()];
         assert_eq!(arr.len(), 4 * 1024);
+    }
+
+    #[test]
+    fn test_parse() {
+        let cases = [
+            ByteUnit::new(0),
+            ByteUnit::from_kb(10),
+            ByteUnit::from_mb(10),
+            ByteUnit::from_gb(10),
+            ByteUnit::from_tb(10),
+            ByteUnit::from_pb(10),
+            ByteUnit::from_eb(10),
+        ];
+
+        // for each case, check that it roundtrips through display then parse
+        for &unit in &cases {
+            let s = format!("{}", unit);
+            let parsed = s.parse::<ByteUnit>().unwrap();
+            println!("parsed `{}` into {}", s, parsed);
+            assert_eq!(unit, parsed);
+        }
+
+        // some valid cases that exercise the parser's flexibility
+        let nonstandard_cases = [
+            ("0", "no unit", ByteUnit::new(0)),
+            ("    0", "no unit prefix whitespace", ByteUnit::new(0)),
+            ("0 ", "no unit trailing whitespace", ByteUnit::new(0)),
+            (" 0 ", "no unit both whitespace", ByteUnit::new(0)),
+            ("0  kb", "lowercase", ByteUnit::new(0)),
+            ("5  kb", "lowercase kb", ByteUnit::from_kb(5)),
+            (" 5 \t kb  ", "lots of whitespace", ByteUnit::from_kb(5)),
+        ];
+
+        // check that each case parses
+        for &(s, desc, expected) in &nonstandard_cases {
+            let parsed = s.parse::<ByteUnit>().unwrap();
+            println!("parsed `{}` into {}", s, parsed);
+            assert_eq!(parsed, expected, "{}", desc);
+        }
+
+        let invalid_cases = [
+            ("", "empty string", "Invalid format"),
+            ("    ", "only whitespace", "Invalid format"),
+            ("12.2", "decimal number", "Invalid number"),
+            ("12.2 kb", "decimal number", "Invalid number"),
+            ("123 xb", "unknown unit", "Unknown unit"),
+        ];
+
+        // check that each case fails to parse, and the error contains the expected message
+        for &(s, desc, expected) in &invalid_cases {
+            let parsed = s.parse::<ByteUnit>();
+            println!("parsed `{}` into {:?}", s, parsed);
+            assert!(parsed.is_err(), "{}", desc);
+            assert!(
+                parsed.unwrap_err().to_string().contains(expected),
+                "{}",
+                desc
+            );
+        }
     }
 }

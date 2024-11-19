@@ -9,6 +9,7 @@ use graft_core::{
     hash_table::{HTEntry, HashTable},
     SegmentId,
 };
+use serde::{Deserialize, Serialize};
 use tokio::{fs::File, sync::RwLock};
 
 use super::atomic_file::write_file_atomic;
@@ -42,6 +43,18 @@ impl Deref for MappedSegment<'_> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DiskCacheConfig {
+    /// The path to the directory where the cache will be stored.
+    pub path: PathBuf,
+
+    /// The maximum amount of space that the cache can use.
+    pub space_limit: ByteUnit,
+
+    /// The maximum number of mmap'ed segments.
+    pub open_limit: usize,
+}
+
 pub struct DiskCache {
     dir: PathBuf,
 
@@ -61,14 +74,14 @@ impl DiskCache {
     /// **Parameters:**
     /// - `space_limit` The maximum amount of space that the cache can use.
     /// - `open_limit` The maximum number of mmap'ed segments.
-    pub fn new<P: AsRef<Path>>(dir: &P, space_limit: ByteUnit, open_limit: usize) -> Self {
-        let dir = canonicalize(dir).expect("failed to canonicalize cache directory");
+    pub fn new(config: DiskCacheConfig) -> Self {
+        let dir = canonicalize(config.path).expect("failed to canonicalize cache directory");
         tracing::info!("Opening disk cache at {:?}", dir);
         Self {
             dir,
-            space_limit,
+            space_limit: config.space_limit,
             segments: Default::default(),
-            mmap_pool: ResourcePool::new(open_limit),
+            mmap_pool: ResourcePool::new(config.open_limit),
         }
     }
 }

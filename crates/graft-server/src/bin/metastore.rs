@@ -7,10 +7,22 @@ use graft_server::{
         task::ApiServerTask,
     },
     supervisor::Supervisor,
-    volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
+    volume::{
+        catalog::{VolumeCatalog, VolumeCatalogConfig},
+        store::VolumeStore,
+        updater::VolumeCatalogUpdater,
+    },
 };
 use object_store::memory::InMemory;
+use serde::Deserialize;
 use tokio::{net::TcpListener, select, signal::ctrl_c};
+use twelf::config;
+
+#[config]
+#[derive(Debug)]
+struct Config {
+    catalog: VolumeCatalogConfig,
+}
 
 #[tokio::main]
 async fn main() {

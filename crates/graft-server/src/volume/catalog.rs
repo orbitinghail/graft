@@ -1,4 +1,8 @@
-use std::{fmt::Debug, ops::RangeBounds, path::Path};
+use std::{
+    fmt::Debug,
+    ops::RangeBounds,
+    path::{Path, PathBuf},
+};
 
 use bytes::Bytes;
 use fjall::{
@@ -9,6 +13,7 @@ use graft_core::{
     lsn::LSN,
 };
 use graft_proto::common::v1::SegmentInfo;
+use serde::{Deserialize, Serialize};
 use splinter::SplinterRef;
 use tryiter::TryIteratorExt;
 use zerocopy::{FromBytes, TryFromBytes};
@@ -41,6 +46,21 @@ pub enum VolumeCatalogErr {
 
 type Result<T> = std::result::Result<T, VolumeCatalogErr>;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VolumeCatalogConfig {
+    /// path to the directory where the catalog will be stored
+    pub path: PathBuf,
+
+    /// whether the catalog is temporary and should be deleted when closed
+    pub temporary: bool,
+}
+
+impl From<VolumeCatalogConfig> for Config {
+    fn from(value: VolumeCatalogConfig) -> Self {
+        Config::new(value.path).temporary(value.temporary)
+    }
+}
+
 #[derive(Clone)]
 pub struct VolumeCatalog {
     keyspace: Keyspace,
@@ -54,14 +74,21 @@ pub struct VolumeCatalog {
 
 impl VolumeCatalog {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::open_config(Config::new(path))
+        Self::open_config(VolumeCatalogConfig {
+            path: path.as_ref().to_path_buf(),
+            temporary: false,
+        })
     }
 
     pub fn open_temporary() -> Result<Self> {
-        Self::open_config(Config::new(tempfile::tempdir()?).temporary(true))
+        Self::open_config(VolumeCatalogConfig {
+            path: tempfile::tempdir()?.into_path(),
+            temporary: true,
+        })
     }
 
-    pub fn open_config(config: Config) -> Result<Self> {
+    pub fn open_config(config: VolumeCatalogConfig) -> Result<Self> {
+        let config: Config = config.into();
         let keyspace = config.open()?;
 
         let volumes = keyspace.open_partition("volumes", PartitionCreateOptions::default())?;

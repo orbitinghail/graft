@@ -9,15 +9,29 @@ use graft_server::{
         task::ApiServerTask,
     },
     segment::{
-        bus::Bus, cache::disk::DiskCache, loader::SegmentLoader, uploader::SegmentUploaderTask,
+        bus::Bus,
+        cache::disk::{DiskCache, DiskCacheConfig},
+        loader::SegmentLoader,
+        uploader::SegmentUploaderTask,
         writer::SegmentWriterTask,
     },
     supervisor::Supervisor,
-    volume::{catalog::VolumeCatalog, updater::VolumeCatalogUpdater},
+    volume::{
+        catalog::{VolumeCatalog, VolumeCatalogConfig},
+        updater::VolumeCatalogUpdater,
+    },
 };
 use object_store::memory::InMemory;
 use rlimit::Resource;
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
+use twelf::config;
+
+#[config]
+#[derive(Debug)]
+struct Config {
+    catalog: VolumeCatalogConfig,
+    cache: DiskCacheConfig,
+}
 
 #[tokio::main]
 async fn main() {
@@ -26,20 +40,31 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
-    // eventually make these configurable and persistent
-    let cache_dir = tempfile::tempdir().expect("failed to create temporary directory");
-    let cache_size = ByteUnit::from_gb(1);
-    let cache_open_limit = rlimit::getrlimit(Resource::NOFILE)
-        .expect("failed to get nofile limit")
-        .0 as usize
-        / 2;
+    let config = Config {
+        catalog: VolumeCatalogConfig {
+            path: tempfile::tempdir()
+                .expect("failed to create temporary directory")
+                .into_path(),
+            temporary: true,
+        },
+        cache: DiskCacheConfig {
+            path: tempfile::tempdir()
+                .expect("failed to create temporary directory")
+                .into_path(),
+            space_limit: ByteUnit::from_gb(1),
+            open_limit: rlimit::getrlimit(Resource::NOFILE)
+                .expect("failed to get nofile limit")
+                .0 as usize
+                / 2,
+        },
+    };
 
-    assert!(cache_open_limit > 128, "cache_open_limit is too low");
+    assert!(config.cache.open_limit > 128, "cache_open_limit is too low");
 
     let mut supervisor = Supervisor::default();
 
     let store = Arc::new(InMemory::default());
-    let cache = Arc::new(DiskCache::new(&cache_dir, cache_size, cache_open_limit));
+    let cache = Arc::new(DiskCache::new(config.cache));
     let catalog = VolumeCatalog::open_temporary().unwrap();
     let loader = SegmentLoader::new(store.clone(), cache.clone(), 8);
     let updater = VolumeCatalogUpdater::new(8);
