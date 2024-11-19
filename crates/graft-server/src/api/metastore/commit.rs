@@ -4,7 +4,6 @@ use axum::extract::State;
 use graft_core::{lsn::LSN, offset::Offset, SegmentId, VolumeId};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
 use itertools::Itertools;
-use object_store::ObjectStore;
 use splinter::{ops::Merge, Splinter, SplinterRef};
 
 use crate::{
@@ -14,8 +13,8 @@ use crate::{
 
 use super::MetastoreApiState;
 
-pub async fn handler<O: ObjectStore>(
-    State(state): State<Arc<MetastoreApiState<O>>>,
+pub async fn handler(
+    State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<CommitRequest>,
 ) -> Result<ProtoResponse<CommitResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;

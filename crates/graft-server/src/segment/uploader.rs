@@ -12,14 +12,14 @@ use super::{
     cache::Cache,
 };
 
-pub struct SegmentUploaderTask<O, C> {
+pub struct SegmentUploaderTask<C> {
     input: mpsc::Receiver<StoreSegmentReq>,
     output: Bus<CommitSegmentReq>,
-    store: Arc<O>,
+    store: Arc<dyn ObjectStore>,
     cache: Arc<C>,
 }
 
-impl<O: ObjectStore, C: Cache> SupervisedTask for SegmentUploaderTask<O, C> {
+impl<C: Cache> SupervisedTask for SegmentUploaderTask<C> {
     fn cfg(&self) -> TaskCfg {
         TaskCfg { name: "segment-uploader" }
     }
@@ -41,11 +41,11 @@ impl<O: ObjectStore, C: Cache> SupervisedTask for SegmentUploaderTask<O, C> {
     }
 }
 
-impl<O: ObjectStore, C: Cache> SegmentUploaderTask<O, C> {
+impl<C: Cache> SegmentUploaderTask<C> {
     pub fn new(
         input: mpsc::Receiver<StoreSegmentReq>,
         output: Bus<CommitSegmentReq>,
-        store: Arc<O>,
+        store: Arc<dyn ObjectStore>,
         cache: Arc<C>,
     ) -> Self {
         Self { input, output, store, cache }

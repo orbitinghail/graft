@@ -6,7 +6,6 @@ use graft_proto::{
     common::v1::LsnRange,
     metastore::v1::{PullOffsetsRequest, PullOffsetsResponse},
 };
-use object_store::ObjectStore;
 use splinter::{ops::Merge, Splinter};
 use tryiter::TryIteratorExt;
 
@@ -14,8 +13,8 @@ use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
 use super::MetastoreApiState;
 
-pub async fn handler<O: ObjectStore>(
-    State(state): State<Arc<MetastoreApiState<O>>>,
+pub async fn handler(
+    State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<PullOffsetsRequest>,
 ) -> Result<ProtoResponse<PullOffsetsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;

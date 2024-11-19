@@ -37,7 +37,9 @@ toml = "0.8.19"
 twelf = { version = "0.15", default-features = false, features = [
     "toml",
     "env",
+    "default_trait",
 ] }
+url = { version = "2.5.3", features = ["serde"] }
 
 
 [dev-dependencies]

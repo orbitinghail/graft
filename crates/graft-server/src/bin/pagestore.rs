@@ -8,6 +8,7 @@ use graft_server::{
         pagestore::{pagestore_router, PagestoreApiState},
         task::ApiServerTask,
     },
+    object_store_util::ObjectStoreConfig,
     segment::{
         bus::Bus,
         cache::disk::{DiskCache, DiskCacheConfig},
@@ -21,16 +22,33 @@ use graft_server::{
         updater::VolumeCatalogUpdater,
     },
 };
-use object_store::memory::InMemory;
 use rlimit::Resource;
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
-use twelf::config;
+use twelf::{config, Layer};
 
 #[config]
 #[derive(Debug)]
 struct Config {
     catalog: VolumeCatalogConfig,
     cache: DiskCacheConfig,
+    object_store: ObjectStoreConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            catalog: Default::default(),
+            cache: DiskCacheConfig {
+                path: None,
+                space_limit: ByteUnit::from_gb(1),
+                open_limit: rlimit::getrlimit(Resource::NOFILE)
+                    .expect("failed to get nofile limit")
+                    .0 as usize
+                    / 2,
+            },
+            object_store: Default::default(),
+        }
+    }
 }
 
 #[tokio::main]
@@ -40,31 +58,25 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
-    let config = Config {
-        catalog: VolumeCatalogConfig {
-            path: tempfile::tempdir()
-                .expect("failed to create temporary directory")
-                .into_path(),
-            temporary: true,
-        },
-        cache: DiskCacheConfig {
-            path: tempfile::tempdir()
-                .expect("failed to create temporary directory")
-                .into_path(),
-            space_limit: ByteUnit::from_gb(1),
-            open_limit: rlimit::getrlimit(Resource::NOFILE)
-                .expect("failed to get nofile limit")
-                .0 as usize
-                / 2,
-        },
-    };
+    let config = Config::with_layers(&[
+        Layer::DefaultTrait,
+        Layer::Toml("pagestore.toml".into()),
+        Layer::Env(Some("PAGESTORE_".to_string())),
+    ])
+    .expect("failed to load configuration");
+
+    tracing::info!(?config, "loaded configuration");
 
     assert!(config.cache.open_limit > 128, "cache_open_limit is too low");
 
+    let store = config
+        .object_store
+        .build()
+        .expect("failed to build object store");
+
     let mut supervisor = Supervisor::default();
 
-    let store = Arc::new(InMemory::default());
-    let cache = Arc::new(DiskCache::new(config.cache));
+    let cache = Arc::new(DiskCache::new(config.cache).expect("failed to create disk cache"));
     let catalog = VolumeCatalog::open_temporary().unwrap();
     let loader = SegmentLoader::new(store.clone(), cache.clone(), 8);
     let updater = VolumeCatalogUpdater::new(8);

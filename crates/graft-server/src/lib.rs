@@ -27,6 +27,7 @@ pub mod volume {
 }
 
 pub mod limiter;
+pub mod object_store_util;
 pub mod resource_pool;
 pub mod supervisor;
 

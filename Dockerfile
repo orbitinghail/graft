@@ -23,8 +23,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 FROM gcr.io/distroless/cc AS metastore
 COPY --from=builder /app/target/release/metastore /metastore
+COPY ./deploy/metastore/metastore.toml /metastore.toml
 CMD ["/metastore"]
 
 FROM gcr.io/distroless/cc AS pagestore
 COPY --from=builder /app/target/release/pagestore /pagestore
+COPY ./deploy/pagestore/pagestore.toml /pagestore.toml
 CMD ["/pagestore"]

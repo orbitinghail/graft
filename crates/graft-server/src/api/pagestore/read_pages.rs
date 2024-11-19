@@ -4,7 +4,6 @@ use axum::{extract::State, response::IntoResponse};
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
 use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesResponse};
-use object_store::ObjectStore;
 use splinter::{ops::Cut, Splinter};
 
 use crate::segment::cache::Cache;
@@ -14,8 +13,8 @@ use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
 use super::PagestoreApiState;
 
-pub async fn handler<O: ObjectStore, C: Cache>(
-    State(state): State<Arc<PagestoreApiState<O, C>>>,
+pub async fn handler<C: Cache>(
+    State(state): State<Arc<PagestoreApiState<C>>>,
     Protobuf(req): Protobuf<ReadPagesRequest>,
 ) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
@@ -90,7 +89,7 @@ mod tests {
     use bytes::Bytes;
     use graft_core::{gid::SegmentId, offset::Offset, page::Page};
     use graft_proto::common::v1::SegmentInfo;
-    use object_store::{memory::InMemory, path::Path};
+    use object_store::{memory::InMemory, path::Path, ObjectStore};
     use prost::Message;
     use tokio::sync::mpsc;
     use tracing_test::traced_test;

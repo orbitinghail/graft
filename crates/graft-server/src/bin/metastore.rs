@@ -6,6 +6,7 @@ use graft_server::{
         metastore::{metastore_router, MetastoreApiState},
         task::ApiServerTask,
     },
+    object_store_util::ObjectStoreConfig,
     supervisor::Supervisor,
     volume::{
         catalog::{VolumeCatalog, VolumeCatalogConfig},
@@ -13,15 +14,14 @@ use graft_server::{
         updater::VolumeCatalogUpdater,
     },
 };
-use object_store::memory::InMemory;
-use serde::Deserialize;
 use tokio::{net::TcpListener, select, signal::ctrl_c};
-use twelf::config;
+use twelf::{config, Layer};
 
 #[config]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Config {
     catalog: VolumeCatalogConfig,
+    object_store: ObjectStoreConfig,
 }
 
 #[tokio::main]
@@ -31,16 +31,28 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
-    let mut supervisor = Supervisor::default();
+    let config = Config::with_layers(&[
+        Layer::DefaultTrait,
+        Layer::Toml("metastore.toml".into()),
+        Layer::Env(Some("METASTORE_".to_string())),
+    ])
+    .expect("failed to load configuration");
 
-    let store = Arc::new(InMemory::default());
+    tracing::info!(?config, "loaded configuration");
+
+    let store = config
+        .object_store
+        .build()
+        .expect("failed to build object store");
     let store = Arc::new(VolumeStore::new(store));
-    let catalog = VolumeCatalog::open_temporary().unwrap();
+    let catalog =
+        VolumeCatalog::open_config(config.catalog).expect("failed to open volume catalog");
     let updater = VolumeCatalogUpdater::new(8);
 
     let state = Arc::new(MetastoreApiState::new(store, catalog, updater));
     let router = metastore_router().with_state(state);
 
+    let mut supervisor = Supervisor::default();
     supervisor.spawn(ApiServerTask::new(
         TcpListener::bind("0.0.0.0:3001").await.unwrap(),
         router,

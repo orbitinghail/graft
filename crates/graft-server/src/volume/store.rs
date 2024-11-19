@@ -24,12 +24,12 @@ pub enum VolumeStoreErr {
     CommitKeyParseErr(#[from] CommitKeyParseErr),
 }
 
-pub struct VolumeStore<O> {
-    store: Arc<O>,
+pub struct VolumeStore {
+    store: Arc<dyn ObjectStore>,
 }
 
-impl<O: ObjectStore> VolumeStore<O> {
-    pub fn new(store: Arc<O>) -> Self {
+impl VolumeStore {
+    pub fn new(store: Arc<dyn ObjectStore>) -> Self {
         Self { store }
     }
 

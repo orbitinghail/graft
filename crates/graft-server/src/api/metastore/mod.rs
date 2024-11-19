@@ -4,7 +4,6 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use object_store::ObjectStore;
 
 use crate::volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater};
 
@@ -14,22 +13,22 @@ mod pull_commits;
 mod pull_offsets;
 mod snapshot;
 
-pub struct MetastoreApiState<O> {
-    store: Arc<VolumeStore<O>>,
+pub struct MetastoreApiState {
+    store: Arc<VolumeStore>,
     catalog: VolumeCatalog,
     updater: VolumeCatalogUpdater,
 }
 
-impl<O> MetastoreApiState<O> {
+impl MetastoreApiState {
     pub fn new(
-        store: Arc<VolumeStore<O>>,
+        store: Arc<VolumeStore>,
         catalog: VolumeCatalog,
         updater: VolumeCatalogUpdater,
     ) -> Self {
         Self { store, catalog, updater }
     }
 
-    pub fn store(&self) -> &VolumeStore<O> {
+    pub fn store(&self) -> &VolumeStore {
         &self.store
     }
 
@@ -42,10 +41,7 @@ impl<O> MetastoreApiState<O> {
     }
 }
 
-pub fn metastore_router<O>() -> Router<Arc<MetastoreApiState<O>>>
-where
-    O: ObjectStore + Sync + Send + 'static,
-{
+pub fn metastore_router() -> Router<Arc<MetastoreApiState>> {
     Router::new()
         .route("/metastore/v1/health", get(health::handler))
         .route("/metastore/v1/snapshot", post(snapshot::handler))

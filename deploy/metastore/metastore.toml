@@ -1,0 +1,4 @@
+[object_store]
+type = "s3_compatable"
+bucket = "graft-primary"
+prefix = "metastore"

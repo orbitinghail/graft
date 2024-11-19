@@ -5,7 +5,6 @@ use futures::TryStreamExt;
 use graft_client::MetaStoreClient;
 use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::common::v1::LsnRange;
-use object_store::ObjectStore;
 
 use crate::limiter::Limiter;
 
@@ -37,9 +36,9 @@ impl VolumeCatalogUpdater {
     }
 
     /// Load the specified volume snapshot, updating the catalog if necessary.
-    pub async fn snapshot<O: ObjectStore>(
+    pub async fn snapshot(
         &self,
-        store: &VolumeStore<O>,
+        store: &VolumeStore,
         catalog: &VolumeCatalog,
         vid: &VolumeId,
         lsn: Option<LSN>,
@@ -63,9 +62,9 @@ impl VolumeCatalogUpdater {
         }
     }
 
-    pub async fn update_catalog_from_store<O: ObjectStore>(
+    pub async fn update_catalog_from_store(
         &self,
-        store: &VolumeStore<O>,
+        store: &VolumeStore,
         catalog: &VolumeCatalog,
         vid: &VolumeId,
         min_lsn: Option<LSN>,
@@ -115,9 +114,9 @@ impl VolumeCatalogUpdater {
         Ok(())
     }
 
-    pub async fn update_catalog_from_store_in_range<O: ObjectStore, R: RangeBounds<LSN>>(
+    pub async fn update_catalog_from_store_in_range<R: RangeBounds<LSN>>(
         &self,
-        store: &VolumeStore<O>,
+        store: &VolumeStore,
         catalog: &VolumeCatalog,
         vid: &VolumeId,
         lsns: &R,

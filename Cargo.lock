@@ -931,6 +931,7 @@ dependencies = [
  "tracing-test",
  "tryiter",
  "twelf",
+ "url",
  "zerocopy 0.8.10",
 ]
 
@@ -2987,6 +2988,7 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
+ "serde",
 ]
 
 [[package]]

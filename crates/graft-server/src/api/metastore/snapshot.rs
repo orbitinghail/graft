@@ -3,14 +3,13 @@ use std::sync::Arc;
 use axum::extract::State;
 use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::metastore::v1::{SnapshotRequest, SnapshotResponse};
-use object_store::ObjectStore;
 
 use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
 use super::MetastoreApiState;
 
-pub async fn handler<O: ObjectStore>(
-    State(state): State<Arc<MetastoreApiState<O>>>,
+pub async fn handler(
+    State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<SnapshotRequest>,
 ) -> Result<ProtoResponse<SnapshotResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;

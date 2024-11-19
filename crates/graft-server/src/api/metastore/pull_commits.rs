@@ -7,7 +7,6 @@ use graft_proto::{
     metastore::v1::{PullCommitsRequest, PullCommitsResponse},
 };
 use itertools::Itertools;
-use object_store::ObjectStore;
 use tryiter::TryIteratorExt;
 
 use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
@@ -18,8 +17,8 @@ use super::MetastoreApiState;
 /// latest LSN (inclusive). This method will also return the latest Snapshot of
 /// the Volume. If the provided LSN is missing or before the last checkpoint,
 /// only segments starting at the last checkpoint will be returned.
-pub async fn handler<O: ObjectStore>(
-    State(state): State<Arc<MetastoreApiState<O>>>,
+pub async fn handler(
+    State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<PullCommitsRequest>,
 ) -> Result<ProtoResponse<PullCommitsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;

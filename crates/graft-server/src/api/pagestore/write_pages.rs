@@ -17,8 +17,8 @@ use crate::api::{error::ApiErr, extractors::Protobuf};
 
 use super::PagestoreApiState;
 
-pub async fn handler<O, C>(
-    State(state): State<Arc<PagestoreApiState<O, C>>>,
+pub async fn handler<C>(
+    State(state): State<Arc<PagestoreApiState<C>>>,
     Protobuf(req): Protobuf<WritePagesRequest>,
 ) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;

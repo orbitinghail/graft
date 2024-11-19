@@ -6,7 +6,6 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use object_store::ObjectStore;
 
 use crate::{
     segment::{
@@ -21,21 +20,21 @@ mod health;
 mod read_pages;
 mod write_pages;
 
-pub struct PagestoreApiState<O, C> {
+pub struct PagestoreApiState<C> {
     page_tx: mpsc::Sender<WritePageReq>,
     commit_bus: Bus<CommitSegmentReq>,
     catalog: VolumeCatalog,
-    loader: SegmentLoader<O, C>,
+    loader: SegmentLoader<C>,
     metastore: MetaStoreClient,
     updater: VolumeCatalogUpdater,
 }
 
-impl<O, C> PagestoreApiState<O, C> {
+impl<C> PagestoreApiState<C> {
     pub fn new(
         page_tx: mpsc::Sender<WritePageReq>,
         commit_bus: Bus<CommitSegmentReq>,
         catalog: VolumeCatalog,
-        loader: SegmentLoader<O, C>,
+        loader: SegmentLoader<C>,
         metastore: MetaStoreClient,
         updater: VolumeCatalogUpdater,
     ) -> Self {
@@ -61,7 +60,7 @@ impl<O, C> PagestoreApiState<O, C> {
         &self.catalog
     }
 
-    pub fn loader(&self) -> &SegmentLoader<O, C> {
+    pub fn loader(&self) -> &SegmentLoader<C> {
         &self.loader
     }
 
@@ -74,9 +73,8 @@ impl<O, C> PagestoreApiState<O, C> {
     }
 }
 
-pub fn pagestore_router<O, C>() -> Router<Arc<PagestoreApiState<O, C>>>
+pub fn pagestore_router<C>() -> Router<Arc<PagestoreApiState<C>>>
 where
-    O: ObjectStore + Sync + Send + 'static,
     C: Cache + Sync + Send + 'static,
 {
     Router::new()

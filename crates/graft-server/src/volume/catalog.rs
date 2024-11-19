@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    io,
     ops::RangeBounds,
     path::{Path, PathBuf},
 };
@@ -46,18 +47,23 @@ pub enum VolumeCatalogErr {
 
 type Result<T> = std::result::Result<T, VolumeCatalogErr>;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct VolumeCatalogConfig {
     /// path to the directory where the catalog will be stored
-    pub path: PathBuf,
-
-    /// whether the catalog is temporary and should be deleted when closed
-    pub temporary: bool,
+    /// if not provided, a temporary directory will be created
+    pub path: Option<PathBuf>,
 }
 
-impl From<VolumeCatalogConfig> for Config {
-    fn from(value: VolumeCatalogConfig) -> Self {
-        Config::new(value.path).temporary(value.temporary)
+impl TryFrom<VolumeCatalogConfig> for Config {
+    type Error = io::Error;
+
+    fn try_from(value: VolumeCatalogConfig) -> std::result::Result<Self, Self::Error> {
+        let (path, temporary) = if let Some(path) = value.path {
+            (path, false)
+        } else {
+            (tempfile::tempdir()?.into_path(), true)
+        };
+        Ok(Config::new(path).temporary(temporary))
     }
 }
 
@@ -74,21 +80,15 @@ pub struct VolumeCatalog {
 
 impl VolumeCatalog {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::open_config(VolumeCatalogConfig {
-            path: path.as_ref().to_path_buf(),
-            temporary: false,
-        })
+        Self::open_config(VolumeCatalogConfig { path: Some(path.as_ref().to_path_buf()) })
     }
 
     pub fn open_temporary() -> Result<Self> {
-        Self::open_config(VolumeCatalogConfig {
-            path: tempfile::tempdir()?.into_path(),
-            temporary: true,
-        })
+        Self::open_config(VolumeCatalogConfig { path: None })
     }
 
     pub fn open_config(config: VolumeCatalogConfig) -> Result<Self> {
-        let config: Config = config.into();
+        let config: Config = config.try_into()?;
         let keyspace = config.open()?;
 
         let volumes = keyspace.open_partition("volumes", PartitionCreateOptions::default())?;

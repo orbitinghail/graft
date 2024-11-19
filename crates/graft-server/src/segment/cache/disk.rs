@@ -1,8 +1,4 @@
-use std::{
-    fs::canonicalize,
-    ops::Deref,
-    path::{Path, PathBuf},
-};
+use std::{fs::canonicalize, io, ops::Deref, path::PathBuf};
 
 use graft_core::{
     byte_unit::ByteUnit,
@@ -19,7 +15,7 @@ use super::Cache;
 
 struct Segment {
     sid: SegmentId,
-    size: ByteUnit,
+    _size: ByteUnit,
     mmap_handle: ResourceHandle,
 }
 
@@ -46,7 +42,8 @@ impl Deref for MappedSegment<'_> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DiskCacheConfig {
     /// The path to the directory where the cache will be stored.
-    pub path: PathBuf,
+    /// if not provided, a temporary directory will be created
+    pub path: Option<PathBuf>,
 
     /// The maximum amount of space that the cache can use.
     pub space_limit: ByteUnit,
@@ -59,7 +56,7 @@ pub struct DiskCache {
     dir: PathBuf,
 
     /// The maximum amount of space that the cache can use.
-    space_limit: ByteUnit,
+    _space_limit: ByteUnit,
 
     /// Index of cached segments.
     segments: RwLock<HashTable<Segment>>,
@@ -74,15 +71,19 @@ impl DiskCache {
     /// **Parameters:**
     /// - `space_limit` The maximum amount of space that the cache can use.
     /// - `open_limit` The maximum number of mmap'ed segments.
-    pub fn new(config: DiskCacheConfig) -> Self {
-        let dir = canonicalize(config.path).expect("failed to canonicalize cache directory");
+    pub fn new(config: DiskCacheConfig) -> io::Result<Self> {
+        let dir = if let Some(path) = config.path {
+            canonicalize(path)?
+        } else {
+            tempfile::tempdir()?.into_path()
+        };
         tracing::info!("Opening disk cache at {:?}", dir);
-        Self {
+        Ok(Self {
             dir,
-            space_limit: config.space_limit,
+            _space_limit: config.space_limit,
             segments: Default::default(),
             mmap_pool: ResourcePool::new(config.open_limit),
-        }
+        })
     }
 }
 
@@ -105,7 +106,7 @@ impl Cache for DiskCache {
         // insert the segment into the cache
         self.segments.write().await.insert(Segment {
             sid: sid.clone(),
-            size: data.len().into(),
+            _size: data.len().into(),
             mmap_handle: Default::default(),
         });
 
