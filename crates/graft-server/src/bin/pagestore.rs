@@ -21,9 +21,9 @@ use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     tracing::info!("starting pagestore");
 
-    tracing_subscriber::fmt::init();
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
     // eventually make these configurable and persistent

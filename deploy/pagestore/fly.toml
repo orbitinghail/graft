@@ -1,14 +1,14 @@
-app = "graft-metastore"
+app = "graft-pagestore"
 primary_region = "sea"
 
 kill_signal = "SIGINT"
 kill_timeout = 60
 
 [build]
-build-target = "metastore"
+build-target = "pagestore"
 
 [http_service]
-internal_port = 3001
+internal_port = 3000
 force_https = true
 auto_stop_machines = "suspend"
 auto_start_machines = true
@@ -23,4 +23,4 @@ grace_period = "10s"
 interval = "30s"
 method = "GET"
 timeout = "5s"
-path = "/metastore/v1/health"
+path = "/pagestore/v1/health"
