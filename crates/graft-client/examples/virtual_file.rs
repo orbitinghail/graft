@@ -201,11 +201,11 @@ async fn main() -> anyhow::Result<()> {
         volumes: keyspace.open_partition("volumes", Default::default())?,
         pages: keyspace.open_partition("pages", Default::default())?,
         metastore: MetaStoreClient::new(
-            Url::from_str("http://localhost:3001/metastore/v1/")?,
+            Url::from_str("https://graft-metastore.fly.dev/metastore/v1/")?,
             client.clone(),
         ),
         pagestore: PageStoreClient::new(
-            Url::from_str("http://localhost:3000/pagestore/v1/")?,
+            Url::from_str("https://graft-pagestore.fly.dev/pagestore/v1/")?,
             client,
         ),
     };

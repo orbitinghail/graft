@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use futures::FutureExt;
 use graft_core::SegmentId;
 use object_store::{path::Path, ObjectStore};
@@ -62,11 +63,11 @@ impl<C: Cache> SegmentUploaderTask<C> {
         let upload_task = self
             .store
             .put(&path, segment.clone().into())
-            .map(|inner| inner.map_err(|e| anyhow::anyhow!(e)));
+            .map(|inner| inner.context("failed to upload segment"));
         let cache_task = self
             .cache
             .put(&sid, segment)
-            .map(|inner| inner.map_err(|e| anyhow::anyhow!(e)));
+            .map(|inner| inner.context("failed to cache segment"));
 
         tokio::try_join!(upload_task, cache_task)?;
 

@@ -21,12 +21,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     cargo build --release --bins
 
-FROM gcr.io/distroless/cc AS metastore
+FROM gcr.io/distroless/cc:debug AS metastore
 COPY --from=builder /app/target/release/metastore /metastore
 COPY ./deploy/metastore/metastore.toml /metastore.toml
-CMD ["/metastore"]
+ENTRYPOINT ["/metastore"]
 
-FROM gcr.io/distroless/cc AS pagestore
+FROM gcr.io/distroless/cc:debug AS pagestore
 COPY --from=builder /app/target/release/pagestore /pagestore
 COPY ./deploy/pagestore/pagestore.toml /pagestore.toml
-CMD ["/pagestore"]
+ENTRYPOINT ["/pagestore"]

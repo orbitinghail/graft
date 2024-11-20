@@ -24,3 +24,7 @@ interval = "30s"
 method = "GET"
 timeout = "5s"
 path = "/metastore/v1/health"
+
+[env]
+RUST_LOG = "debug"
+RUST_BACKTRACE = 1
