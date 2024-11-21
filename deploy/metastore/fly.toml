@@ -26,5 +26,5 @@ timeout = "5s"
 path = "/metastore/v1/health"
 
 [env]
-RUST_LOG = "debug"
+RUST_LOG = "trace"
 RUST_BACKTRACE = 1

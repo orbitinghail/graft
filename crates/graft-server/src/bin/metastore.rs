@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{fs::exists, sync::Arc, time::Duration};
 
 use futures::FutureExt;
 use graft_server::{
@@ -18,10 +18,22 @@ use tokio::{net::TcpListener, select, signal::ctrl_c};
 use twelf::{config, Layer};
 
 #[config]
-#[derive(Debug, Default)]
+#[derive(Debug)]
+#[serde(deny_unknown_fields)]
 struct Config {
     catalog: VolumeCatalogConfig,
-    object_store: ObjectStoreConfig,
+    objectstore: ObjectStoreConfig,
+    port: u16,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            catalog: Default::default(),
+            objectstore: Default::default(),
+            port: 3001,
+        }
+    }
 }
 
 #[tokio::main]
@@ -31,17 +43,23 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
-    let config = Config::with_layers(&[
+    let mut layers = vec![
         Layer::DefaultTrait,
-        Layer::Toml("metastore.toml".into()),
         Layer::Env(Some("METASTORE_".to_string())),
-    ])
-    .expect("failed to load configuration");
+    ];
+
+    if exists("metastore.toml").is_ok_and(|p| p) {
+        // insert the toml layer at the second position, after the default trait
+        // and before loading env vars
+        layers.insert(1, Layer::Toml("metastore.toml".into()));
+    }
+
+    let config = Config::with_layers(&layers).expect("failed to load configuration");
 
     tracing::info!(?config, "loaded configuration");
 
     let store = config
-        .object_store
+        .objectstore
         .build()
         .expect("failed to build object store");
     let store = Arc::new(VolumeStore::new(store));
@@ -52,9 +70,12 @@ async fn main() {
     let state = Arc::new(MetastoreApiState::new(store, catalog, updater));
     let router = metastore_router().with_state(state);
 
+    let addr = format!("0.0.0.0:{}", config.port);
+    tracing::info!("listening on {}", addr);
+
     let mut supervisor = Supervisor::default();
     supervisor.spawn(ApiServerTask::new(
-        TcpListener::bind("0.0.0.0:3001").await.unwrap(),
+        TcpListener::bind(addr).await.unwrap(),
         router,
     ));
 

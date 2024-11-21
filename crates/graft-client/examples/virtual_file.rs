@@ -1,4 +1,4 @@
-use std::{io::Read, str::FromStr};
+use std::io::Read;
 
 use bytes::{BufMut, Bytes, BytesMut};
 use clap::{Parser, Subcommand};
@@ -22,12 +22,24 @@ struct Cli {
     /// The volume id to operate on
     vid: Option<VolumeId>,
 
+    #[command(subcommand)]
+    command: Commands,
+
     /// Specify a client id to differentiate between multiple clients
     #[arg(short, long)]
     client_id: Option<String>,
 
-    #[command(subcommand)]
-    command: Commands,
+    /// Use localhost for the metastore and pagestore URLs
+    #[arg(short, long)]
+    localhost: bool,
+
+    /// The metastore root URL (without any trailing path)
+    #[arg(short, long, default_value = "https://graft-metastore.fly.dev")]
+    metastore: Url,
+
+    /// The pagestore root URL (without any trailing path)
+    #[arg(short, long, default_value = "https://graft-pagestore.fly.dev")]
+    pagestore: Url,
 }
 
 #[derive(Subcommand, PartialEq)]
@@ -120,7 +132,9 @@ async fn read_page(ctx: &Context, vid: &VolumeId, page: Offset) -> anyhow::Resul
     }
 
     // Otherwise read the page from Graft
+
     if let Some(snapshot) = get_snapshot(ctx, vid).await? {
+        println!("reading page {} from pagestore", page);
         let pages = ctx
             .pagestore
             .read_pages(
@@ -190,24 +204,23 @@ fn print_page(page: Page) {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = Cli::parse();
+    let mut args = Cli::parse();
     let client_id = args.client_id.unwrap_or_else(|| "default".to_string());
 
     let config = Config::new(format!("/tmp/virtual_file_cache_{client_id}"));
     let keyspace = fjall::Keyspace::open(config)?;
     let client = reqwest::Client::new();
 
+    if args.localhost {
+        args.metastore = Url::parse("http://localhost:3001")?;
+        args.pagestore = Url::parse("http://localhost:3000")?;
+    }
+
     let ctx = Context {
         volumes: keyspace.open_partition("volumes", Default::default())?,
         pages: keyspace.open_partition("pages", Default::default())?,
-        metastore: MetaStoreClient::new(
-            Url::from_str("https://graft-metastore.fly.dev/metastore/v1/")?,
-            client.clone(),
-        ),
-        pagestore: PageStoreClient::new(
-            Url::from_str("https://graft-pagestore.fly.dev/pagestore/v1/")?,
-            client,
-        ),
+        metastore: MetaStoreClient::new(args.metastore, client.clone())?,
+        pagestore: PageStoreClient::new(args.pagestore, client)?,
     };
 
     let Some(vid) = args.vid else {

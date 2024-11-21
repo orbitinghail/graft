@@ -13,11 +13,11 @@ use zerocopy::{
 pub const COMMIT_MAGIC: U32<LittleEndian> = U32::from_bytes([0x31, 0x99, 0xBF, 0x00]);
 
 pub fn commit_key_prefix(vid: &VolumeId) -> Path {
-    format!("volumes/{}/", vid.pretty()).into()
+    Path::parse(format!("volumes/{}", vid.pretty())).expect("invalid object_store path")
 }
 
 pub fn commit_key(vid: &VolumeId, lsn: LSN) -> Path {
-    format!("{}/{:0>18x}", commit_key_prefix(vid), lsn).into()
+    commit_key_prefix(vid).child(format!("{:0>18x}", lsn))
 }
 
 fn time_to_millis(time: SystemTime) -> u64 {

@@ -1,7 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{fs::exists, sync::Arc, time::Duration};
 
 use futures::{select, FutureExt};
-use graft_client::MetaStoreClient;
+use graft_client::{ClientConfig, MetaStoreClient};
 use graft_core::byte_unit::ByteUnit;
 use graft_server::{
     api::{
@@ -28,10 +28,13 @@ use twelf::{config, Layer};
 
 #[config]
 #[derive(Debug)]
+#[serde(deny_unknown_fields)]
 struct Config {
     catalog: VolumeCatalogConfig,
     cache: DiskCacheConfig,
-    object_store: ObjectStoreConfig,
+    objectstore: ObjectStoreConfig,
+    port: u16,
+    metastore: ClientConfig,
 }
 
 impl Default for Config {
@@ -46,7 +49,11 @@ impl Default for Config {
                     .0 as usize
                     / 2,
             },
-            object_store: Default::default(),
+            objectstore: Default::default(),
+            port: 3000,
+            metastore: ClientConfig {
+                endpoint: "http://localhost:3001".parse().unwrap(),
+            },
         }
     }
 }
@@ -58,19 +65,25 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
-    let config = Config::with_layers(&[
+    let mut layers = vec![
         Layer::DefaultTrait,
-        Layer::Toml("pagestore.toml".into()),
         Layer::Env(Some("PAGESTORE_".to_string())),
-    ])
-    .expect("failed to load configuration");
+    ];
+
+    if exists("pagestore.toml").is_ok_and(|p| p) {
+        // insert the toml layer at the second position, after the default trait
+        // and before loading env vars
+        layers.insert(1, Layer::Toml("pagestore.toml".into()));
+    }
+
+    let config = Config::with_layers(&layers).expect("failed to load configuration");
 
     tracing::info!(?config, "loaded configuration");
 
     assert!(config.cache.open_limit > 128, "cache_open_limit is too low");
 
     let store = config
-        .object_store
+        .objectstore
         .build()
         .expect("failed to build object store");
 
@@ -85,7 +98,8 @@ async fn main() {
     let (store_tx, store_rx) = mpsc::channel(8);
     let commit_bus = Bus::new(128);
 
-    let metastore = MetaStoreClient::default();
+    let metastore =
+        MetaStoreClient::new_config(config.metastore).expect("failed to build metastore client");
 
     let api_state = Arc::new(PagestoreApiState::new(
         page_tx,
@@ -105,8 +119,11 @@ async fn main() {
 
     supervisor.spawn(SegmentUploaderTask::new(store_rx, commit_bus, store, cache));
 
+    let addr = format!("0.0.0.0:{}", config.port);
+    tracing::info!("listening on {}", addr);
+
     supervisor.spawn(ApiServerTask::new(
-        TcpListener::bind("0.0.0.0:3000").await.unwrap(),
+        TcpListener::bind(addr).await.unwrap(),
         router,
     ));
 

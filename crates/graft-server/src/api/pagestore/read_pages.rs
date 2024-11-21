@@ -47,6 +47,11 @@ pub async fn handler<C: Cache>(
         let (sid, splinter) = result?;
 
         let cut = offsets.cut(&splinter);
+        tracing::trace!(
+            sid = sid.pretty(),
+            cut_size = cut.cardinality(),
+            "checking segment for offset"
+        );
         if !cut.is_empty() {
             loading.push(
                 state
@@ -87,12 +92,14 @@ mod tests {
     use axum::handler::Handler;
     use axum_test::TestServer;
     use bytes::Bytes;
+    use graft_client::MetaStoreClient;
     use graft_core::{gid::SegmentId, offset::Offset, page::Page};
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{memory::InMemory, path::Path, ObjectStore};
     use prost::Message;
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
+    use url::Url;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
@@ -129,7 +136,11 @@ mod tests {
             commit_bus,
             catalog.clone(),
             loader,
-            Default::default(),
+            MetaStoreClient::new(
+                Url::parse("http://localhost:3000").unwrap(),
+                Default::default(),
+            )
+            .unwrap(),
             VolumeCatalogUpdater::new(10),
         ));
 

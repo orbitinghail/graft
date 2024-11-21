@@ -15,8 +15,16 @@ use graft_proto::{
 };
 use prost::Message;
 use reqwest::{header::CONTENT_TYPE, Url};
+use serde::{Deserialize, Serialize};
 use splinter::SplinterRef;
 use thiserror::Error;
+use url::ParseError;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ClientConfig {
+    /// The root URL (without any trailing path)
+    pub endpoint: Url,
+}
 
 #[derive(Debug, Error)]
 pub enum ClientErr {
@@ -66,22 +74,20 @@ async fn prost_request<Req: Message, Resp: Message + Default>(
 }
 
 pub struct MetaStoreClient {
+    /// The metastore root URL (without any trailing path)
     endpoint: Url,
     http: reqwest::Client,
 }
 
-impl Default for MetaStoreClient {
-    fn default() -> Self {
-        Self {
-            endpoint: Url::parse("http://localhost:3001/metastore/v1/").unwrap(),
-            http: Default::default(),
-        }
-    }
-}
-
 impl MetaStoreClient {
-    pub fn new(endpoint: Url, http: reqwest::Client) -> Self {
-        Self { endpoint, http }
+    pub fn new(endpoint: Url, http: reqwest::Client) -> Result<Self, ParseError> {
+        let endpoint = endpoint.join("metastore/v1/")?;
+        Ok(Self { endpoint, http })
+    }
+
+    pub fn new_config(config: ClientConfig) -> Result<Self, ParseError> {
+        let endpoint = config.endpoint.join("metastore/v1/")?;
+        Ok(Self { endpoint, http: Default::default() })
     }
 
     pub async fn snapshot(
@@ -159,18 +165,15 @@ pub struct PageStoreClient {
     http: reqwest::Client,
 }
 
-impl Default for PageStoreClient {
-    fn default() -> Self {
-        Self {
-            endpoint: Url::parse("http://localhost:3030/pagestore/v1/").unwrap(),
-            http: Default::default(),
-        }
-    }
-}
-
 impl PageStoreClient {
-    pub fn new(endpoint: Url, http: reqwest::Client) -> Self {
-        Self { endpoint, http }
+    pub fn new(endpoint: Url, http: reqwest::Client) -> Result<Self, ParseError> {
+        let endpoint = endpoint.join("pagestore/v1/")?;
+        Ok(Self { endpoint, http })
+    }
+
+    pub fn new_config(config: ClientConfig) -> Result<Self, ParseError> {
+        let endpoint = config.endpoint.join("pagestore/v1/")?;
+        Ok(Self { endpoint, http: Default::default() })
     }
 
     pub async fn read_pages(

@@ -16,6 +16,8 @@ reqwest = { version = "0.12" }
 tokio = { version = "1" }
 thiserror = "2.0"
 futures = "0.3.31"
+url = { version = "2.5.3", features = ["serde"] }
+serde = { version = "1.0.215", features = ["derive"] }
 
 [dev-dependencies]
 fjall = "2.4"

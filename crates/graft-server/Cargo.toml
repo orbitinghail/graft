@@ -40,6 +40,7 @@ twelf = { version = "0.15", default-features = false, features = [
     "default_trait",
 ] }
 url = { version = "2.5.3", features = ["serde"] }
+clap = { version = "4.5.21", features = ["derive"] }
 
 
 [dev-dependencies]

@@ -87,11 +87,13 @@ mod tests {
     use axum::handler::Handler;
     use axum_test::TestServer;
     use bytes::Bytes;
+    use graft_client::MetaStoreClient;
     use graft_proto::pagestore::v1::PageAtOffset;
     use object_store::memory::InMemory;
     use splinter::SplinterRef;
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
+    use url::Url;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
@@ -127,7 +129,11 @@ mod tests {
             commit_bus,
             catalog,
             loader,
-            Default::default(),
+            MetaStoreClient::new(
+                Url::parse("http://localhost:3000").unwrap(),
+                Default::default(),
+            )
+            .unwrap(),
             VolumeCatalogUpdater::new(10),
         ));
 

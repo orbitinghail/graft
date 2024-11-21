@@ -69,11 +69,14 @@ impl VolumeCatalogUpdater {
         vid: &VolumeId,
         min_lsn: Option<LSN>,
     ) -> Result<(), UpdateErr> {
+        tracing::debug!(min_lsn, "updating catalog for volume {vid:?}");
+
         // read the latest lsn for the volume in the catalog
         let initial_lsn = catalog.latest_snapshot(vid)?.map(|s| s.lsn());
 
         // if catalog lsn >= lsn_at_least, then no update is needed
         if initial_lsn.is_some_and(|l1| min_lsn.is_some_and(|l2| l1 >= l2)) {
+            tracing::debug!(initial_lsn, "catalog for volume {vid:?} is up-to-date");
             return Ok(());
         }
 
@@ -96,19 +99,35 @@ impl VolumeCatalogUpdater {
             // update if it meets the minimum lsn requirement
             (Some(catalog_lsn), Some(min_lsn)) => catalog_lsn >= min_lsn,
         } {
+            tracing::debug!(
+                catalog_lsn,
+                min_lsn,
+                "catalog for volume {vid:?} is up-to-date"
+            );
             return Ok(());
         }
 
-        // update the catalog
-        let mut batch = catalog.batch_insert();
-        let mut commits = store.replay_unordered(
-            vid.clone(),
-            LsnRange::from_bounds(&(catalog_lsn.unwrap_or_default()..)),
-        );
-        while let Some(commit) = commits.try_next().await? {
+        // we only need to reply commits that happened after the last snapshot
+        let start_lsn = if let Some(catalog_lsn) = catalog_lsn {
+            catalog_lsn + 1
+        } else {
+            0
+        };
+
+        // update the catalog from the store
+        let mut commits =
+            store.replay_unordered(vid.clone(), LsnRange::from_bounds(&(start_lsn..)));
+
+        // only create a transaction if we have commits to replay
+        if let Some(commit) = commits.try_next().await? {
+            let mut batch = catalog.batch_insert();
             batch.insert_commit(commit)?;
+            while let Some(commit) = commits.try_next().await? {
+                tracing::trace!(lsn = commit.meta().lsn(), "replaying commit");
+                batch.insert_commit(commit)?;
+            }
+            batch.commit()?;
         }
-        batch.commit()?;
 
         // return; dropping the permit and allowing other updates to proceed
         Ok(())
@@ -183,10 +202,15 @@ impl VolumeCatalogUpdater {
             return Ok(());
         }
 
+        // we only need to reply commits that happened after the last snapshot
+        let start_lsn = if let Some(catalog_lsn) = catalog_lsn {
+            catalog_lsn + 1
+        } else {
+            0
+        };
+
         // update the catalog from the client
-        let commits = client
-            .pull_commits(vid, catalog_lsn.unwrap_or_default()..)
-            .await?;
+        let commits = client.pull_commits(vid, start_lsn..).await?;
 
         let mut batch = catalog.batch_insert();
         for commit in commits {

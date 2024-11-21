@@ -861,10 +861,12 @@ dependencies = [
  "prost",
  "prost-types",
  "reqwest",
+ "serde",
  "splinter",
  "thiserror 2.0.3",
  "tokio",
  "tryiter",
+ "url",
  "zerocopy 0.8.10",
 ]
 
@@ -904,6 +906,7 @@ dependencies = [
  "axum",
  "axum-test",
  "bytes",
+ "clap",
  "fjall",
  "foldhash",
  "futures",

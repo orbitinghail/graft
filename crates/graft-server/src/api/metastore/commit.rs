@@ -3,7 +3,6 @@ use std::{sync::Arc, time::SystemTime};
 use axum::extract::State;
 use graft_core::{lsn::LSN, offset::Offset, SegmentId, VolumeId};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
-use itertools::Itertools;
 use splinter::{ops::Merge, Splinter, SplinterRef};
 
 use crate::{
@@ -47,10 +46,8 @@ pub async fn handler(
         commit.write_offsets(sid, offsets.inner());
     }
 
-    // this commit is a checkpoint if the splinter is contiguous, and it's last offset == last_offset
-    let is_contiguous = all_offsets.iter().tuple_windows().all(|(a, b)| a + 1 == b);
-    let has_last_offset = all_offsets.last() == Some(last_offset);
-    let checkpoint = if is_contiguous && has_last_offset {
+    // this commit is a checkpoint if the splinter contains all lsns up to the last offset
+    let checkpoint = if all_offsets.iter().eq(0..=last_offset) {
         commit_lsn
     } else {
         snapshot.map(|s| s.checkpoint()).unwrap_or_default()

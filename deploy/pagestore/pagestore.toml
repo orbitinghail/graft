@@ -1,4 +1,7 @@
-[object_store]
+[objectstore]
 type = "s3_compatable"
 bucket = "graft-primary"
 prefix = "pagestore"
+
+[metastore]
+endpoint = "https://graft-metastore.fly.dev"

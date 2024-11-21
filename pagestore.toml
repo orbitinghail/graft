@@ -1,0 +1,8 @@
+[objectstore]
+type = "memory"
+# type = "s3_compatable"
+# bucket = "graft-primary"
+# prefix = "pagestore"
+
+[metastore]
+endpoint = "http://localhost:3001"

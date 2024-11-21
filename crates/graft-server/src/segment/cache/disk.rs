@@ -100,7 +100,10 @@ impl Cache for DiskCache {
             Ok(()) => (),
             // we don't need to update self.segments if the file already exists
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
-            Err(e) => return Err(e),
+            Err(e) => {
+                tracing::error!("failed to write segment {:?} to disk: {:?}", sid, e);
+                return Err(e);
+            }
         }
 
         // insert the segment into the cache

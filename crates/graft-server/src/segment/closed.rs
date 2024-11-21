@@ -1,7 +1,7 @@
 //! A closed segment is immutable and serialized. It can be directly mapped into
 //! memory and read from in an efficient way.
 
-use std::{error::Error, fmt::Debug};
+use std::fmt::Debug;
 
 use graft_core::{
     byte_unit::ByteUnit,
@@ -199,8 +199,8 @@ pub enum SegmentValidationErr {
     Magic,
     #[error("index size too large")]
     IndexSize,
-    #[error("invalid index: {source}")]
-    Index { source: Box<dyn Error> },
+    #[error("invalid index: {error}")]
+    Index { error: String },
     #[error("page storage length must be a multiple of {}", PAGESIZE)]
     PageStorageSize,
 }
@@ -239,7 +239,7 @@ impl<'a> ClosedSegment<'a> {
             rest.split_at((rest.len() - index_size).as_usize())
         };
         let index = odht::HashTable::<SegmentIndex, _>::from_raw_bytes(index_bytes)
-            .map_err(|source| SegmentValidationErr::Index { source })?;
+            .map_err(|source| SegmentValidationErr::Index { error: source.to_string() })?;
 
         if page_data.len() % PAGESIZE != 0 {
             return Err(SegmentValidationErr::PageStorageSize);
@@ -265,6 +265,17 @@ impl<'a> ClosedSegment<'a> {
             (&self.page_data[start.range(end)])
                 .try_into()
                 .expect("invalid page")
+        })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (VolumeId, Offset, Page)> + '_ {
+        self.index.iter().map(move |(key, local_offset)| {
+            let start = local_offset.get() * PAGESIZE;
+            let end = start + PAGESIZE;
+            let page = (&self.page_data[start.range(end)])
+                .try_into()
+                .expect("invalid page");
+            (key.vid, key.offset.get(), page)
         })
     }
 }
