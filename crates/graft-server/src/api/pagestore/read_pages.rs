@@ -47,11 +47,6 @@ pub async fn handler<C: Cache>(
         let (sid, splinter) = result?;
 
         let cut = offsets.cut(&splinter);
-        tracing::trace!(
-            sid = sid.pretty(),
-            cut_size = cut.cardinality(),
-            "checking segment for offset"
-        );
         if !cut.is_empty() {
             loading.push(
                 state

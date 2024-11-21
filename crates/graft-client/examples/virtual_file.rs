@@ -132,9 +132,7 @@ async fn read_page(ctx: &Context, vid: &VolumeId, page: Offset) -> anyhow::Resul
     }
 
     // Otherwise read the page from Graft
-
     if let Some(snapshot) = get_snapshot(ctx, vid).await? {
-        println!("reading page {} from pagestore", page);
         let pages = ctx
             .pagestore
             .read_pages(

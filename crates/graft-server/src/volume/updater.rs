@@ -123,7 +123,6 @@ impl VolumeCatalogUpdater {
             let mut batch = catalog.batch_insert();
             batch.insert_commit(commit)?;
             while let Some(commit) = commits.try_next().await? {
-                tracing::trace!(lsn = commit.meta().lsn(), "replaying commit");
                 batch.insert_commit(commit)?;
             }
             batch.commit()?;
