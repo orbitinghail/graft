@@ -1,6 +1,3 @@
-next:
-- test live version of graft with the virtual file util
-
 Upcoming:
 - consider switching pagestore to websockets or http streaming bodies
 - end to end testing framework

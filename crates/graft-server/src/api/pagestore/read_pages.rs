@@ -22,6 +22,8 @@ pub async fn handler<C: Cache>(
     let mut offsets = Splinter::from_bytes(req.offsets)?;
     let num_offsets = offsets.cardinality();
 
+    tracing::info!(?vid, lsn, num_offsets, "pagestore/v1/read_pages");
+
     let snapshot = state.catalog().latest_snapshot(&vid)?;
     let checkpoint = snapshot
         .as_ref()

@@ -15,6 +15,8 @@ pub async fn handler(
     let vid: VolumeId = req.vid.try_into()?;
     let lsn: Option<LSN> = req.lsn;
 
+    tracing::info!(?vid, lsn, "metastore/v1/snapshot");
+
     let snapshot = state
         .updater
         .snapshot(&state.store, &state.catalog, &vid, lsn)

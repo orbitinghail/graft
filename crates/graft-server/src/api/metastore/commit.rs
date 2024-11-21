@@ -20,6 +20,14 @@ pub async fn handler(
     let snapshot_lsn: Option<LSN> = req.snapshot_lsn;
     let last_offset: Offset = req.last_offset;
 
+    tracing::info!(
+        ?vid,
+        snapshot_lsn,
+        last_offset,
+        num_segments = req.segments.len(),
+        "metastore/v1/commit"
+    );
+
     // load the Volume's latest snapshot
     let snapshot = state
         .updater

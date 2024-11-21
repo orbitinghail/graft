@@ -22,11 +22,13 @@ pub async fn handler<C>(
     Protobuf(req): Protobuf<WritePagesRequest>,
 ) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
+    let expected_pages = req.pages.len();
 
     // subscribe to the broadcast channel
     let mut commit_rx = state.subscribe_commits();
 
-    let expected_pages = req.pages.len();
+    tracing::info!(?vid, expected_pages, "pagestore/v1/write_pages");
+
     let mut seen = HashSet::with_capacity(req.pages.len());
     for page in req.pages {
         let offset: Offset = page.offset;

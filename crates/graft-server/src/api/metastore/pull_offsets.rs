@@ -20,6 +20,8 @@ pub async fn handler(
     let vid: VolumeId = req.vid.try_into()?;
     let lsns: LsnRange = req.range.unwrap_or_default();
 
+    tracing::info!(?vid, ?lsns, "metastore/v1/pull_offsets");
+
     // load the snapshot at the end of the lsn range
     let snapshot = state
         .updater
