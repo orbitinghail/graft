@@ -13,6 +13,7 @@ use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
 use super::PagestoreApiState;
 
+#[tracing::instrument(name = "pagestore/v1/read_pages", skip(state, req))]
 pub async fn handler<C: Cache>(
     State(state): State<Arc<PagestoreApiState<C>>>,
     Protobuf(req): Protobuf<ReadPagesRequest>,
@@ -22,7 +23,7 @@ pub async fn handler<C: Cache>(
     let mut offsets = Splinter::from_bytes(req.offsets)?;
     let num_offsets = offsets.cardinality();
 
-    tracing::info!(?vid, lsn, num_offsets, "pagestore/v1/read_pages");
+    tracing::info!(?vid, lsn, num_offsets);
 
     let snapshot = state.catalog().latest_snapshot(&vid)?;
     let checkpoint = snapshot

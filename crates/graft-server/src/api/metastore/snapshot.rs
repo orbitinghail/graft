@@ -8,6 +8,7 @@ use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
 use super::MetastoreApiState;
 
+#[tracing::instrument(name = "metastore/v1/snapshot", skip(state, req))]
 pub async fn handler(
     State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<SnapshotRequest>,
@@ -15,7 +16,7 @@ pub async fn handler(
     let vid: VolumeId = req.vid.try_into()?;
     let lsn: Option<LSN> = req.lsn;
 
-    tracing::info!(?vid, lsn, "metastore/v1/snapshot");
+    tracing::info!(?vid, lsn);
 
     let snapshot = state
         .updater

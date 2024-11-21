@@ -178,3 +178,14 @@ impl From<LsnRange> for Range<LSN> {
         start..end
     }
 }
+
+impl Display for LsnRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.start(), self.end_exclusive()) {
+            (Some(start), Some(end)) => write!(f, "[{}..{})", start, end),
+            (Some(start), None) => write!(f, "[{}..)", start),
+            (None, Some(end)) => write!(f, "(..{})", end),
+            (None, None) => write!(f, "(..)"),
+        }
+    }
+}

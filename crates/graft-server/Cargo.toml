@@ -17,7 +17,7 @@ zerocopy = { version = "0.8", features = ["derive"] }
 anyhow = "1.0"
 thiserror = "2.0"
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
+tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter"] }
 object_store = { version = "0.11.0", features = ["aws"] }
 bytes = "1.7.2"
 memmap2 = "0.9.5"

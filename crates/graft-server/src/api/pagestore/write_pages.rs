@@ -17,6 +17,7 @@ use crate::api::{error::ApiErr, extractors::Protobuf};
 
 use super::PagestoreApiState;
 
+#[tracing::instrument(name = "pagestore/v1/write_pages", skip(state, req))]
 pub async fn handler<C>(
     State(state): State<Arc<PagestoreApiState<C>>>,
     Protobuf(req): Protobuf<WritePagesRequest>,
@@ -27,7 +28,7 @@ pub async fn handler<C>(
     // subscribe to the broadcast channel
     let mut commit_rx = state.subscribe_commits();
 
-    tracing::info!(?vid, expected_pages, "pagestore/v1/write_pages");
+    tracing::info!(?vid, expected_pages);
 
     let mut seen = HashSet::with_capacity(req.pages.len());
     for page in req.pages {

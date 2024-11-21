@@ -15,6 +15,7 @@ use graft_server::{
     },
 };
 use tokio::{net::TcpListener, select, signal::ctrl_c};
+use tracing_subscriber::{fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter};
 use twelf::{config, Layer};
 
 #[config]
@@ -38,7 +39,12 @@ impl Default for Config {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_span_events(FmtSpan::CLOSE)
+        .finish()
+        .try_init()
+        .expect("failed to initialize tracing subscriber");
     tracing::info!("starting metastore");
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");

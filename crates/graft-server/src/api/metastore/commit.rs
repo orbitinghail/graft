@@ -12,6 +12,7 @@ use crate::{
 
 use super::MetastoreApiState;
 
+#[tracing::instrument(name = "metastore/v1/commit", skip(state, req))]
 pub async fn handler(
     State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<CommitRequest>,
@@ -25,7 +26,6 @@ pub async fn handler(
         snapshot_lsn,
         last_offset,
         num_segments = req.segments.len(),
-        "metastore/v1/commit"
     );
 
     // load the Volume's latest snapshot

@@ -17,6 +17,7 @@ use super::MetastoreApiState;
 /// latest LSN (inclusive). This method will also return the latest Snapshot of
 /// the Volume. If the provided LSN is missing or before the last checkpoint,
 /// only segments starting at the last checkpoint will be returned.
+#[tracing::instrument(name = "metastore/v1/pull_commits", skip(state, req))]
 pub async fn handler(
     State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<PullCommitsRequest>,
@@ -24,7 +25,7 @@ pub async fn handler(
     let vid: VolumeId = req.vid.try_into()?;
     let lsns: LsnRange = req.range.unwrap_or_default();
 
-    tracing::info!(?vid, ?lsns, "metastore/v1/pull_commits");
+    tracing::info!(?vid, ?lsns);
 
     // load the snapshot at the end of the lsn range
     let snapshot = state

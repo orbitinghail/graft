@@ -13,6 +13,7 @@ use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
 use super::MetastoreApiState;
 
+#[tracing::instrument(name = "metastore/v1/pull_offsets", skip(state, req))]
 pub async fn handler(
     State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<PullOffsetsRequest>,
@@ -20,7 +21,7 @@ pub async fn handler(
     let vid: VolumeId = req.vid.try_into()?;
     let lsns: LsnRange = req.range.unwrap_or_default();
 
-    tracing::info!(?vid, ?lsns, "metastore/v1/pull_offsets");
+    tracing::info!(?vid, ?lsns);
 
     // load the snapshot at the end of the lsn range
     let snapshot = state
