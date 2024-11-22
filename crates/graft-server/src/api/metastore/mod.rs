@@ -7,8 +7,9 @@ use axum::{
 
 use crate::volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater};
 
+use super::health;
+
 mod commit;
-mod health;
 mod pull_commits;
 mod pull_offsets;
 mod snapshot;

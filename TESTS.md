@@ -2,7 +2,7 @@ Keep track of things to test in this file.
 
 # Concurrent writers to the same Volume
 
-Lots of issues to test here. However, from the PageStore's perspective we need to carefully think of the correct semantics in order to allow the rest of the system to work correctly.
+Lots of issues to test here. However, from the Pagestore's perspective we need to carefully think of the correct semantics in order to allow the rest of the system to work correctly.
 
 Interesting cases:
 1. two writers write to different portions of the same volume, their writes go into the same set of segments, both commit

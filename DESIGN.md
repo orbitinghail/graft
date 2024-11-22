@@ -7,19 +7,19 @@ Transactional lazy replication to the edge. Optimized for scale and cost over la
 - [High Level Architecture](#high-level-architecture)
 - [Glossary](#glossary)
 - [GIDs](#gids)
-- [MetaStore](#metastore)
-  - [MetaStore Storage](#metastore-storage)
+- [Metastore](#metastore)
+  - [Metastore Storage](#metastore-storage)
   - [Storage Layout](#storage-layout)
   - [API](#api)
   - [Checkpointing](#checkpointing)
   - [Garbage Collection](#garbage-collection)
   - [API Keys](#api-keys)
-- [PageStore](#pagestore)
+- [Pagestore](#pagestore)
   - [Storage Layout](#storage-layout-1)
   - [Segment Layout](#segment-layout)
   - [Segment Cache](#segment-cache)
   - [API](#api-1)
-  - [PageStore internal dataflow](#pagestore-internal-dataflow)
+  - [Pagestore internal dataflow](#pagestore-internal-dataflow)
 - [Volume Router](#volume-router)
 - [Client](#client)
   - [Initialization](#initialization)
@@ -59,14 +59,14 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
 - **Graft**  
   The set of Offsets which have changed between any two Snapshots.
 
-- **MetaStore**  
+- **Metastore**  
   A service which stores Volume metadata including the log of segments per Volume. This service is also responsible for coordinating GC, authn, authz, and background tasks.
 
-- **PageStore**  
-  A service which stores pages keyed by `[volume id]/[offset]/[lsn]`. It can efficiently retrieve the latest LSN for a given Offset that is less than or equal to a specified LSN, allowing the PageStore to read the state of a Volume at any Snapshot.
+- **Pagestore**  
+  A service which stores pages keyed by `[volume id]/[offset]/[lsn]`. It can efficiently retrieve the latest LSN for a given Offset that is less than or equal to a specified LSN, allowing the Pagestore to read the state of a Volume at any Snapshot.
 
 - **Replica Client**  
-  A node that keeps up with changes to a Volume over time. May subscribe the MetaStore to receive Grafts, or periodically poll for updates. Notably, Graft Replicas lazily retrieve Pages they want rather than downloading all changes.
+  A node that keeps up with changes to a Volume over time. May subscribe the Metastore to receive Grafts, or periodically poll for updates. Notably, Graft Replicas lazily retrieve Pages they want rather than downloading all changes.
 
 - **Lite Client**  
   An embedded client optimized for reading or writing to a volume without any state. Generally has a very small (or non-existant) cache and does not subscribe to updates. Used in "fire and forget" workloads.
@@ -109,12 +109,12 @@ Following the prefix is a 48 bit timestamp encoding milliseconds since the unix 
 
 Finally there are 72 bits of random noise allowing up to `2^72` Gids to be generated per millisecond.
 
-# MetaStore
+# Metastore
 A service which stores Volume metadata including the log of segments per Volume. This service is also responsible for coordinating GC, authn, authz, and background tasks.
 
-## MetaStore Storage
+## Metastore Storage
 
-The MetaStore will store it's data in a key value store. For now we will use object storage directly. Each commit to a volume will be a separate file, stored in a way that makes it easy for downstream consumers to quickly get up to date.
+The Metastore will store it's data in a key value store. For now we will use object storage directly. Each commit to a volume will be a separate file, stored in a way that makes it easy for downstream consumers to quickly get up to date.
 
 ## Storage Layout
 
@@ -156,7 +156,7 @@ A checkpoint may be created by issuing a commit that covers the entire offset ra
 ## Checkpointing
 Checkpointing a Volume involves picking a LSN to checkpoint at and producing a complete image of the Volume at that LSN. It replaces any single-LSN segments at the specified LSN for the Volume.
 
-Checkpoints are created whenever a configurable amount of data has changed since the last checkpoint and when the checkpoint would be of an acceptable size. The MetaStore issues and monitors checkpoint jobs.
+Checkpoints are created whenever a configurable amount of data has changed since the last checkpoint and when the checkpoint would be of an acceptable size. The Metastore issues and monitors checkpoint jobs.
 
 Checkpoint Job Algorithm:
 ```
@@ -165,7 +165,7 @@ Checkpoint Job Algorithm:
 3. for any unchanged segments from previous checkpoint, simply re-emit those segments at the checkpoint LSN
 4. rewrite any changed segments by merging in new offsets
 5. emit changed segments at checkpoint LSN
-6. commit checkpoint to MetaStore
+6. commit checkpoint to Metastore
 ```
 
 We should have a special Segment type which is optimized for storing checkpoints. A checkpoint segment contains a single contiguous range of offsets for a single volume. It may be desirable to separate them from regular segments in storage to make them more efficient to find.
@@ -176,11 +176,11 @@ We will keep around multiple checkpoints for a Volume in order to support some c
 Once a segment is no longer referenced by any commit it can be deleted. A grace period will be used to provide safety while we gain confidence in the correctness of the system. To do this we can mark a segment for deletion with a timestamp, and then only delete it once the grace period has elapsed.
 
 ## API Keys
-For now we will proceed without authentication. Eventually, the MetaStore will manage API keys, and associate them with Organizations. Authentication across the distributed system will be handled via Signed Tokens to ensure that the PageStore and MetaStore can validate tokens without centralized communication.
+For now we will proceed without authentication. Eventually, the Metastore will manage API keys, and associate them with Organizations. Authentication across the distributed system will be handled via Signed Tokens to ensure that the Pagestore and Metastore can validate tokens without centralized communication.
 
-# PageStore
+# Pagestore
 
-The PageStore is responsible for storing and looking up Pages in Segments stored in Blob Storage Services like S3 or Tigris.
+The Pagestore is responsible for storing and looking up Pages in Segments stored in Blob Storage Services like S3 or Tigris.
 
 ## Storage Layout
 
@@ -211,20 +211,20 @@ A serialized ODHT (https://docs.rs/odht). Built as a regular in-memory HT while 
 The Index is a map from `(Volume ID, Offset)` to the Page offset in the file. 
 
 ## Segment Cache
-The PageStore must cache recently read Segments in order to minimize round trips to Object Storage and improve performance. The disk cache should have a configurable target max size, and remove the least recently accessed Segment to reclaim space.
+The Pagestore must cache recently read Segments in order to minimize round trips to Object Storage and improve performance. The disk cache should have a configurable target max size, and remove the least recently accessed Segment to reclaim space.
 
 In addition, we should have a memory based cache. One option is to read all of the Segment indexes into memory, and leave page caching up to the kernel. Research needs to be done on if this approach is feasible given the planned compute sizes.
 
 ## API
 
 **`read_pages(Volume ID, LSN, offsets)`**  
-First, updates our segment index if we haven't seen this Volume ID/LSN before by querying the MetaStore for new Segments.
+First, updates our segment index if we haven't seen this Volume ID/LSN before by querying the Metastore for new Segments.
 
 Then selects a list of Segment candidates by querying the Segment index for all Segments that contain LSN's up to the target LSN for the specific Volume ID and overlaps with the requested offsets.
 
 Finally, queries the index of each matching Segment, which may require downloading and caching the Segment from Object Storage. As the node finds the most recent matching LSN for each offset, some of the Segment candidates may be skippable (if they no longer overlap with outstanding offsets). Pages are sent back to the client as they are found in a stream. Each page is prefixed with a header containing it's offset and length.
 
-If the PageStore encounters missing Segments, it must update the Segment index. It's possible that the client is querying a LSN which is older than the oldest checkpoint in which case we will fail the request.
+If the Pagestore encounters missing Segments, it must update the Segment index. It's possible that the client is querying a LSN which is older than the oldest checkpoint in which case we will fail the request.
 
 > Important: Segments with overlapping offset and version ranges must be iterated in an order determined by the metastore. This is to handle the case that a single transaction wrote the same offset multiple times at the same LSN.
 
@@ -233,15 +233,15 @@ Writes a set of Pages for a Volume. Returns a list of new Segments: `[(segment I
 
 The writePages request will fail if the client submits the same offset multiple times. This ensures that every segment generated by a request does not intersect.
 
-Newly written segments may be cached on disk, but not added to the Segment index. This is because the pagestore doesn't yet know if the Segments have been accepted by the MetaStore, and additionally doesn't know their assigned LSN.
+Newly written segments may be cached on disk, but not added to the Segment index. This is because the pagestore doesn't yet know if the Segments have been accepted by the Metastore, and additionally doesn't know their assigned LSN.
 
-## PageStore internal dataflow
+## Pagestore internal dataflow
 
 https://app.excalidraw.com/s/65i7nRDHAIV/1GVOEpCLvJ0
 
 # Volume Router
 
-In order to scale the MetaStore around the world, we need a globally available routing system to determine where each Volume lives. This allows the MetaStore to be entirely region local which is simpler, faster, and cheaper than backing it with some kind of globally available database.
+In order to scale the Metastore around the world, we need a globally available routing system to determine where each Volume lives. This allows the Metastore to be entirely region local which is simpler, faster, and cheaper than backing it with some kind of globally available database.
 
 The only data we will need to make globally available is where each Volume lives. We can solve this in a number of ways:
 
@@ -254,7 +254,7 @@ I'm still undecided, but leaning towards using CF as a volume registry to increa
 Graft Clients support reading and writing to Volumes.
 
 ## Initialization
-To start, a Client must open a Volume at either a specific or the latest LSN. This entails sending a `getSnapshotMetadata` request to the MetaStore. If the Client has cached state for this Volume, it can instead run `pullOffsets(last LSN)` to become aware of changed offsets while retrieving the snapshot.
+To start, a Client must open a Volume at either a specific or the latest LSN. This entails sending a `getSnapshotMetadata` request to the Metastore. If the Client has cached state for this Volume, it can instead run `pullOffsets(last LSN)` to become aware of changed offsets while retrieving the snapshot.
 
 ## Local Storage
 Clients will cache Pages keyed by `[volume id]/[offset]/[LSN]`. Pages which are known of (via `pullOffsets`) but not yet retrieved will point at a 'missing token'.
@@ -275,12 +275,12 @@ To write to a volume we:
 1. Snapshot the volume at the latest LSN
 2. Notify GC not to checkpoint past the snapshot LSN
 3. Read through local storage, fetching pages as needed
-4. Write new pages directly to the PageStore keeping track of new segments
+4. Write new pages directly to the Pagestore keeping track of new segments
    - Write through local storage, but be prepared to rollback if needed
-5. Commit new segments and offsets to the MetaStore
+5. Commit new segments and offsets to the Metastore
 6. Record the new Snapshot locally as the latest snapshot (which should implictly commit changes to local storage)
 
-> Note on concurrent writers: If it's possible that other writers may be concurrently accessing the volume, then first we need to query the MetaStore for the latest Volume snapshot. This may be out of date by the time we commit, so Volume concurrency must be extremely low for this to work. A future iteration on the MetaStore will increase concurrency via inspecting the read/write sets of concurrent txns.
+> Note on concurrent writers: If it's possible that other writers may be concurrently accessing the volume, then first we need to query the Metastore for the latest Volume snapshot. This may be out of date by the time we commit, so Volume concurrency must be extremely low for this to work. A future iteration on the Metastore will increase concurrency via inspecting the read/write sets of concurrent txns.
 
 > Note on offline/async writers: It's possible to perform writes offline/async and then commit at a later point. This has some tradeoffs. On the plus side, we can make progress without waiting for the network. We can also coalesce multiple local transactions into a single network transaction. On the down side, this requires some form of local durability, makes local storage a source of truth for some subset of the data, and does not handle concurrency very well. In theory mvcc optimistic concurrency would still work so long as the writers never overlapped their read/write sets. But in general, concurrency would not be recommended.
 
@@ -291,7 +291,7 @@ Supporting Lite Clients is desirable to help enable edge serverless workloads wh
 
 # Implementation Details
 
-The MetaStore and PageStore will be written in Rust using Tokio.
+The Metastore and Pagestore will be written in Rust using Tokio.
 
 The Client will be a Rust library, optimized to use a minimum amount of resources and be embedded into other libraries. The primary targets will be:
 - shared object to be used with SQLite

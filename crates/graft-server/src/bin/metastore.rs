@@ -1,11 +1,14 @@
 use std::{fs::exists, sync::Arc, time::Duration};
 
+use axum::middleware::{from_fn, from_fn_with_state};
 use futures::FutureExt;
 use graft_server::{
     api::{
         metastore::{metastore_router, MetastoreApiState},
+        metrics::{metrics_layer, metrics_layer_static},
         task::ApiServerTask,
     },
+    metrics::registry::MetastoreRegistry,
     object_store_util::ObjectStoreConfig,
     supervisor::Supervisor,
     volume::{
@@ -49,6 +52,9 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
+    // setup metrics
+    let registry = MetastoreRegistry::default();
+
     let mut layers = vec![
         Layer::DefaultTrait,
         Layer::Env(Some("METASTORE_".to_string())),
@@ -75,6 +81,7 @@ async fn main() {
 
     let state = Arc::new(MetastoreApiState::new(store, catalog, updater));
     let router = metastore_router().with_state(state);
+    // .layer(from_fn(metrics_layer_static));
 
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("listening on {}", addr);

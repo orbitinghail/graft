@@ -90,7 +90,7 @@ mod tests {
     use axum::handler::Handler;
     use axum_test::TestServer;
     use bytes::Bytes;
-    use graft_client::MetaStoreClient;
+    use graft_client::MetastoreClient;
     use graft_core::{gid::SegmentId, offset::Offset, page::Page};
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{memory::InMemory, path::Path, ObjectStore};
@@ -134,7 +134,7 @@ mod tests {
             commit_bus,
             catalog.clone(),
             loader,
-            MetaStoreClient::new(
+            MetastoreClient::new(
                 Url::parse("http://localhost:3000").unwrap(),
                 Default::default(),
             )

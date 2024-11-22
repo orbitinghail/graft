@@ -38,7 +38,7 @@ Once we can produce one single-volume optimal Segment. The rest of the data is d
 2. Collect offsets and rLSNs per Volume from Segments into candidate chunks. Care should be taken to always include all Segments from a Snapshot to handle duplicate offsets. Stop collection once the largest chunk is larger than min_bucket size.
 3. Partition any chunks larger than max_bucket by offset and LSN until all chunks are smaller than max_bucket size.
 4. Iterate through chunks from largest to smallest, emitting Segments as they reach min_bucket size.
-5. Commit added/removed segments to each MetaStore
+5. Commit added/removed segments to each Metastore
 6. Delete all removed segments
 
 # Page deltas

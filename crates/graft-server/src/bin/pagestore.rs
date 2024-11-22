@@ -1,7 +1,7 @@
 use std::{fs::exists, sync::Arc, time::Duration};
 
 use futures::{select, FutureExt};
-use graft_client::{ClientConfig, MetaStoreClient};
+use graft_client::{ClientConfig, MetastoreClient};
 use graft_core::byte_unit::ByteUnit;
 use graft_server::{
     api::{
@@ -105,7 +105,7 @@ async fn main() {
     let commit_bus = Bus::new(128);
 
     let metastore =
-        MetaStoreClient::new_config(config.metastore).expect("failed to build metastore client");
+        MetastoreClient::new_config(config.metastore).expect("failed to build metastore client");
 
     let api_state = Arc::new(PagestoreApiState::new(
         page_tx,

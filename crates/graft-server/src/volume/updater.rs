@@ -2,7 +2,7 @@ use std::ops::RangeBounds;
 
 use foldhash::fast::RandomState;
 use futures::TryStreamExt;
-use graft_client::MetaStoreClient;
+use graft_client::MetastoreClient;
 use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::common::v1::LsnRange;
 
@@ -166,7 +166,7 @@ impl VolumeCatalogUpdater {
 
     pub async fn update_catalog_from_client(
         &self,
-        client: &MetaStoreClient,
+        client: &MetastoreClient,
         catalog: &VolumeCatalog,
         vid: &VolumeId,
         min_lsn: Option<LSN>,

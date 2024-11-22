@@ -3,7 +3,7 @@ use std::io::Read;
 use bytes::{BufMut, Bytes, BytesMut};
 use clap::{Parser, Subcommand};
 use fjall::Config;
-use graft_client::{MetaStoreClient, PageStoreClient};
+use graft_client::{MetastoreClient, PagestoreClient};
 use graft_core::{
     offset::Offset,
     page::{Page, EMPTY_PAGE, PAGESIZE},
@@ -70,8 +70,8 @@ fn page_key(volume_id: &VolumeId, offset: Offset) -> String {
 struct Context {
     volumes: fjall::Partition,
     pages: fjall::Partition,
-    metastore: MetaStoreClient,
-    pagestore: PageStoreClient,
+    metastore: MetastoreClient,
+    pagestore: PagestoreClient,
 }
 
 async fn get_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<Snapshot>> {
@@ -217,8 +217,8 @@ async fn main() -> anyhow::Result<()> {
     let ctx = Context {
         volumes: keyspace.open_partition("volumes", Default::default())?,
         pages: keyspace.open_partition("pages", Default::default())?,
-        metastore: MetaStoreClient::new(args.metastore, client.clone())?,
-        pagestore: PageStoreClient::new(args.pagestore, client)?,
+        metastore: MetastoreClient::new(args.metastore, client.clone())?,
+        pagestore: PagestoreClient::new(args.pagestore, client)?,
     };
 
     let Some(vid) = args.vid else {

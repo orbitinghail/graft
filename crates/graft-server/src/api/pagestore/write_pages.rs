@@ -90,7 +90,7 @@ mod tests {
     use axum::handler::Handler;
     use axum_test::TestServer;
     use bytes::Bytes;
-    use graft_client::MetaStoreClient;
+    use graft_client::MetastoreClient;
     use graft_proto::pagestore::v1::PageAtOffset;
     use object_store::memory::InMemory;
     use splinter::SplinterRef;
@@ -132,7 +132,7 @@ mod tests {
             commit_bus,
             catalog,
             loader,
-            MetaStoreClient::new(
+            MetastoreClient::new(
                 Url::parse("http://localhost:3000").unwrap(),
                 Default::default(),
             )

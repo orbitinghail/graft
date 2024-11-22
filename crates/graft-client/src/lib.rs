@@ -73,13 +73,13 @@ async fn prost_request<Req: Message, Resp: Message + Default>(
     }
 }
 
-pub struct MetaStoreClient {
+pub struct MetastoreClient {
     /// The metastore root URL (without any trailing path)
     endpoint: Url,
     http: reqwest::Client,
 }
 
-impl MetaStoreClient {
+impl MetastoreClient {
     pub fn new(endpoint: Url, http: reqwest::Client) -> Result<Self, ParseError> {
         let endpoint = endpoint.join("metastore/v1/")?;
         Ok(Self { endpoint, http })
@@ -160,12 +160,12 @@ impl MetaStoreClient {
     }
 }
 
-pub struct PageStoreClient {
+pub struct PagestoreClient {
     endpoint: Url,
     http: reqwest::Client,
 }
 
-impl PageStoreClient {
+impl PagestoreClient {
     pub fn new(endpoint: Url, http: reqwest::Client) -> Result<Self, ParseError> {
         let endpoint = endpoint.join("pagestore/v1/")?;
         Ok(Self { endpoint, http })

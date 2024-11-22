@@ -12,7 +12,9 @@ pub mod segment {
 pub mod api {
     pub mod error;
     pub mod extractors;
+    pub mod health;
     pub mod metastore;
+    pub mod metrics;
     pub mod pagestore;
     pub mod response;
     pub mod task;
@@ -24,6 +26,11 @@ pub mod volume {
     pub mod kv;
     pub mod store;
     pub mod updater;
+}
+
+pub mod metrics {
+    pub mod registry;
+    pub mod split_gauge;
 }
 
 pub mod limiter;
