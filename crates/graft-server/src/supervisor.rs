@@ -41,7 +41,7 @@ pub trait SupervisedTask {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Supervisor {
     shutdown: CancellationToken,
     tasks: JoinSet<(TaskCfg, anyhow::Result<()>)>,

@@ -927,7 +927,6 @@ dependencies = [
  "graft-proto",
  "hashbrown 0.15.1",
  "itertools 0.13.0",
- "lasso",
  "measured",
  "memmap2",
  "nix",
@@ -1398,16 +1397,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lasso"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e14eda50a3494b3bf7b9ce51c52434a761e383d7238ce1dd5dcec2fbc13e9fb"
-dependencies = [
- "dashmap",
- "hashbrown 0.14.5",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1511,7 +1500,6 @@ dependencies = [
  "crossbeam-utils",
  "hashbrown 0.14.5",
  "itoa",
- "lasso",
  "measured-derive",
  "memchr",
  "parking_lot",

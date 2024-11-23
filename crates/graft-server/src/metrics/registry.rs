@@ -1,17 +1,11 @@
-use std::sync::Arc;
+use std::{result::Result, sync::Arc};
 
 use measured::MetricGroup;
 
-use crate::api::metrics::HttpMetrics;
+use crate::segment::writer::SegmentWriterMetrics;
 
-#[derive(MetricGroup, Default)]
+#[derive(Default, MetricGroup)]
 pub struct Registry {
-    #[metric(namespace = "http")]
-    http: Option<Arc<HttpMetrics>>,
-}
-
-impl Registry {
-    pub fn register_http(&mut self, http: Arc<HttpMetrics>) {
-        self.http = Some(http);
-    }
+    #[metric(namespace = "segment_writer")]
+    pub segment_writer: Option<Arc<SegmentWriterMetrics>>,
 }

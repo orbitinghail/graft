@@ -1,7 +1,11 @@
 //! A Segment writer is a task which builds open segments and passes them on
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
+use measured::{Counter, MetricGroup};
 use tokio::{sync::mpsc, time::sleep};
 
 use super::{
@@ -10,7 +14,17 @@ use super::{
 };
 use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 
+#[derive(MetricGroup, Default)]
+pub struct SegmentWriterMetrics {
+    /// Number of page writes
+    page_writes: Counter,
+
+    /// Number of segments that have been flushed
+    flushed_segments: Counter,
+}
+
 pub struct SegmentWriterTask {
+    metrics: Arc<SegmentWriterMetrics>,
     input: mpsc::Receiver<WritePageReq>,
     output: mpsc::Sender<StoreSegmentReq>,
 
@@ -59,6 +73,7 @@ impl SegmentWriterTask {
         flush_interval: Duration,
     ) -> Self {
         Self {
+            metrics: Default::default(),
             input,
             output,
             segment: Default::default(),
@@ -69,6 +84,7 @@ impl SegmentWriterTask {
 
     async fn handle_page_request(&mut self, req: WritePageReq) -> anyhow::Result<()> {
         tracing::debug!("handling request: {:?}", req);
+        self.metrics.page_writes.inc();
 
         // if the segment is full, flush it and start a new one
         if self.segment.is_full() {
@@ -90,6 +106,8 @@ impl SegmentWriterTask {
                     segment: std::mem::take(&mut self.segment),
                 })
                 .await?;
+
+            self.metrics.flushed_segments.inc();
         }
 
         // update next_flush
