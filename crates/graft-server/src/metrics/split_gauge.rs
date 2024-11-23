@@ -1,16 +1,18 @@
 use std::io::Write;
 
 use measured::{
+    label::LabelGroupSet,
     metric::{
         counter::CounterState,
         group::Encoding,
         name::{MetricNameEncoder, Suffix},
-        Metric, MetricEncoding, MetricLockGuard,
+        Metric, MetricEncoding, MetricVec,
     },
     text::{MetricType, TextEncoder},
 };
 
 pub type SplitGauge = Metric<SplitGaugeState>;
+pub type SplitGaugeVec<L> = MetricVec<SplitGaugeState, L>;
 
 /// SplitGaugeExt provides a set of convenience methods for working with SplitGauge metrics.
 pub trait SplitGaugeExt {
@@ -18,7 +20,13 @@ pub trait SplitGaugeExt {
     fn inc_by(&self, value: u64);
     fn dec(&self);
     fn dec_by(&self, value: u64);
-    fn guard(&self) -> SplitGaugeGuard<'_>;
+}
+
+pub trait SplitGaugeVecExt<L: LabelGroupSet> {
+    fn inc(&self, label: L::Group<'_>);
+    fn inc_by(&self, label: L::Group<'_>, value: u64);
+    fn dec(&self, label: L::Group<'_>);
+    fn dec_by(&self, label: L::Group<'_>, value: u64);
 }
 
 impl SplitGaugeExt for SplitGauge {
@@ -41,12 +49,27 @@ impl SplitGaugeExt for SplitGauge {
     fn dec_by(&self, value: u64) {
         self.get_metric().dec_by(value);
     }
+}
+
+impl<L: LabelGroupSet> SplitGaugeVecExt<L> for SplitGaugeVec<L> {
+    #[inline]
+    fn inc(&self, label: <L as LabelGroupSet>::Group<'_>) {
+        self.inc_by(label, 1);
+    }
 
     #[inline]
-    fn guard(&self) -> SplitGaugeGuard<'_> {
-        let state = self.get_metric();
-        state.inc();
-        SplitGaugeGuard { state }
+    fn inc_by(&self, label: <L as LabelGroupSet>::Group<'_>, value: u64) {
+        self.get_metric(self.with_labels(label)).inc_by(value);
+    }
+
+    #[inline]
+    fn dec(&self, label: <L as LabelGroupSet>::Group<'_>) {
+        self.dec_by(label, 1);
+    }
+
+    #[inline]
+    fn dec_by(&self, label: <L as LabelGroupSet>::Group<'_>, value: u64) {
+        self.get_metric(self.with_labels(label)).dec_by(value);
     }
 }
 
@@ -134,16 +157,5 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for SplitGaugeState {
         self.dec
             .collect_into(&(), labels.by_ref(), name.by_ref().with_suffix(Inc), enc)?;
         Ok(())
-    }
-}
-
-/// SplitGaugeGuard is a guard that decrements the SplitGauge metric when dropped.
-pub struct SplitGaugeGuard<'a> {
-    state: MetricLockGuard<'a, SplitGaugeState>,
-}
-
-impl<'a> Drop for SplitGaugeGuard<'a> {
-    fn drop(&mut self) {
-        self.state.dec();
     }
 }

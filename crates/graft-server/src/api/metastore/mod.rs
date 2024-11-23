@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use axum::routing::post;
 
 use crate::volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater};
 
-use super::health;
+use super::routes::Routes;
 
 mod commit;
 mod pull_commits;
@@ -42,11 +39,11 @@ impl MetastoreApiState {
     }
 }
 
-pub fn metastore_router() -> Router<Arc<MetastoreApiState>> {
-    Router::new()
-        .route("/metastore/v1/health", get(health::handler))
-        .route("/metastore/v1/snapshot", post(snapshot::handler))
-        .route("/metastore/v1/pull_offsets", post(pull_offsets::handler))
-        .route("/metastore/v1/pull_commits", post(pull_commits::handler))
-        .route("/metastore/v1/commit", post(commit::handler))
+pub fn metastore_routes() -> Routes<Arc<MetastoreApiState>> {
+    vec![
+        ("/metastore/v1/snapshot", post(snapshot::handler)),
+        ("/metastore/v1/pull_offsets", post(pull_offsets::handler)),
+        ("/metastore/v1/pull_commits", post(pull_commits::handler)),
+        ("/metastore/v1/commit", post(commit::handler)),
+    ]
 }

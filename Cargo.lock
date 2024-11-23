@@ -943,7 +943,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml 0.8.19",
- "tower",
  "tracing",
  "tracing-subscriber",
  "tracing-test",

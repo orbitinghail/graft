@@ -2,10 +2,7 @@ use graft_client::MetastoreClient;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use axum::routing::post;
 
 use crate::{
     segment::{
@@ -16,7 +13,7 @@ use crate::{
     volume::{catalog::VolumeCatalog, updater::VolumeCatalogUpdater},
 };
 
-use super::health;
+use super::routes::Routes;
 
 mod read_pages;
 mod write_pages;
@@ -74,12 +71,12 @@ impl<C> PagestoreApiState<C> {
     }
 }
 
-pub fn pagestore_router<C>() -> Router<Arc<PagestoreApiState<C>>>
+pub fn pagestore_routes<C>() -> Routes<Arc<PagestoreApiState<C>>>
 where
     C: Cache + Sync + Send + 'static,
 {
-    Router::new()
-        .route("/pagestore/v1/health", get(health::handler))
-        .route("/pagestore/v1/read_pages", post(read_pages::handler))
-        .route("/pagestore/v1/write_pages", post(write_pages::handler))
+    vec![
+        ("/pagestore/v1/read_pages", post(read_pages::handler)),
+        ("/pagestore/v1/write_pages", post(write_pages::handler)),
+    ]
 }

@@ -17,6 +17,7 @@ pub mod api {
     pub mod metrics;
     pub mod pagestore;
     pub mod response;
+    pub mod routes;
     pub mod task;
 }
 

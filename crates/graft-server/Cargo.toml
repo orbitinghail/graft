@@ -42,8 +42,7 @@ twelf = { version = "0.15", default-features = false, features = [
 url = { version = "2.5.3", features = ["serde"] }
 clap = { version = "4.5.21", features = ["derive"] }
 measured = { version = "0.0.22", features = ["lasso"] }
-lasso = "0.7.3"
-tower = "0.5.1"
+lasso = "0.7"
 
 
 [dev-dependencies]

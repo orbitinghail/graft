@@ -5,9 +5,11 @@ use graft_client::{ClientConfig, MetastoreClient};
 use graft_core::byte_unit::ByteUnit;
 use graft_server::{
     api::{
-        pagestore::{pagestore_router, PagestoreApiState},
+        pagestore::{pagestore_routes, PagestoreApiState},
+        routes::build_router,
         task::ApiServerTask,
     },
+    metrics::registry::Registry,
     object_store_util::ObjectStoreConfig,
     segment::{
         bus::Bus,
@@ -71,6 +73,8 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
+    let registry = Registry::default();
+
     let mut layers = vec![
         Layer::DefaultTrait,
         Layer::Env(Some("PAGESTORE_".to_string())),
@@ -107,7 +111,7 @@ async fn main() {
     let metastore =
         MetastoreClient::new_config(config.metastore).expect("failed to build metastore client");
 
-    let api_state = Arc::new(PagestoreApiState::new(
+    let state = Arc::new(PagestoreApiState::new(
         page_tx,
         commit_bus.clone(),
         catalog.clone(),
@@ -115,7 +119,7 @@ async fn main() {
         metastore,
         updater,
     ));
-    let router = pagestore_router().with_state(api_state);
+    let router = build_router(registry, state, pagestore_routes());
 
     supervisor.spawn(SegmentWriterTask::new(
         page_rx,
