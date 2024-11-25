@@ -73,7 +73,7 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
-    let registry = Registry::default();
+    let mut registry = Registry::default();
 
     let mut layers = vec![
         Layer::DefaultTrait,
@@ -111,23 +111,25 @@ async fn main() {
     let metastore =
         MetastoreClient::new_config(config.metastore).expect("failed to build metastore client");
 
-    let state = Arc::new(PagestoreApiState::new(
-        page_tx,
-        commit_bus.clone(),
-        catalog.clone(),
-        loader,
-        metastore,
-        updater,
-    ));
-    let router = build_router(registry, state, pagestore_routes());
-
     supervisor.spawn(SegmentWriterTask::new(
+        registry.segment_writer(),
         page_rx,
         store_tx,
         Duration::from_secs(1),
     ));
 
-    supervisor.spawn(SegmentUploaderTask::new(store_rx, commit_bus, store, cache));
+    supervisor.spawn(SegmentUploaderTask::new(
+        registry.segment_uploader(),
+        store_rx,
+        commit_bus.clone(),
+        store,
+        cache,
+    ));
+
+    let state = Arc::new(PagestoreApiState::new(
+        page_tx, commit_bus, catalog, loader, metastore, updater,
+    ));
+    let router = build_router(registry, state, pagestore_routes());
 
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("listening on {}", addr);

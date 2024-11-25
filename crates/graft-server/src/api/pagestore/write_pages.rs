@@ -122,10 +122,22 @@ mod tests {
         let (store_tx, store_rx) = mpsc::channel(8);
         let commit_bus = Bus::new(128);
 
-        SegmentWriterTask::new(page_rx, store_tx, Duration::from_secs(1)).testonly_spawn();
+        SegmentWriterTask::new(
+            Default::default(),
+            page_rx,
+            store_tx,
+            Duration::from_secs(1),
+        )
+        .testonly_spawn();
 
-        SegmentUploaderTask::new(store_rx, commit_bus.clone(), store.clone(), cache.clone())
-            .testonly_spawn();
+        SegmentUploaderTask::new(
+            Default::default(),
+            store_rx,
+            commit_bus.clone(),
+            store.clone(),
+            cache.clone(),
+        )
+        .testonly_spawn();
 
         let state = Arc::new(PagestoreApiState::new(
             page_tx,

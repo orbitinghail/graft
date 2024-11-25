@@ -30,6 +30,7 @@ pub mod volume {
 }
 
 pub mod metrics {
+    pub mod labels;
     pub mod registry;
     pub mod split_gauge;
 }

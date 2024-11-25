@@ -51,8 +51,6 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
-    let registry = Registry::default();
-
     let mut layers = vec![
         Layer::DefaultTrait,
         Layer::Env(Some("METASTORE_".to_string())),
@@ -78,7 +76,7 @@ async fn main() {
     let updater = VolumeCatalogUpdater::new(8);
 
     let state = Arc::new(MetastoreApiState::new(store, catalog, updater));
-    let router = build_router(registry, state, metastore_routes());
+    let router = build_router(Registry::default(), state, metastore_routes());
 
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("listening on {}", addr);

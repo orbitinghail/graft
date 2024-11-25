@@ -68,12 +68,13 @@ impl SupervisedTask for SegmentWriterTask {
 
 impl SegmentWriterTask {
     pub fn new(
+        metrics: Arc<SegmentWriterMetrics>,
         input: mpsc::Receiver<WritePageReq>,
         output: mpsc::Sender<StoreSegmentReq>,
         flush_interval: Duration,
     ) -> Self {
         Self {
-            metrics: Default::default(),
+            metrics,
             input,
             output,
             segment: Default::default(),
@@ -128,7 +129,12 @@ mod tests {
         let (input_tx, input_rx) = mpsc::channel(1);
         let (output_tx, mut output_rx) = mpsc::channel(1);
 
-        let task = SegmentWriterTask::new(input_rx, output_tx, Duration::from_secs(1));
+        let task = SegmentWriterTask::new(
+            Default::default(),
+            input_rx,
+            output_tx,
+            Duration::from_secs(1),
+        );
         task.testonly_spawn();
 
         // add a couple pages

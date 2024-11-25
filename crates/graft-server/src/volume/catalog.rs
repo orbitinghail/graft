@@ -116,8 +116,6 @@ impl VolumeCatalog {
     pub fn contains_range<R: RangeBounds<LSN>>(&self, vid: &VolumeId, lsns: &R) -> Result<bool> {
         let range = CommitKey::range(vid, lsns);
 
-        // TODO: this function isn't working correctly I think
-
         // verify that lsns in the range are contiguous
         let mut cursor = range.start.lsn();
         let mut empty = true;

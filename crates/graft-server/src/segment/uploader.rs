@@ -3,17 +3,40 @@ use std::sync::Arc;
 use anyhow::Context;
 use futures::FutureExt;
 use graft_core::SegmentId;
+use measured::{metric::histogram::Thresholds, CounterVec, Histogram, MetricGroup};
 use object_store::{path::Path, ObjectStore};
 use tokio::sync::mpsc;
 
-use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
+use crate::{
+    metrics::labels::ResultLabelSet,
+    supervisor::{SupervisedTask, TaskCfg, TaskCtx},
+};
 
 use super::{
     bus::{Bus, CommitSegmentReq, StoreSegmentReq},
     cache::Cache,
 };
 
+#[derive(MetricGroup)]
+#[metric(new())]
+pub struct SegmentUploaderMetrics {
+    /// Number of segments uploaded, broken down by result
+    uploaded_segments: CounterVec<ResultLabelSet>,
+
+    /// Size of segments uploaded in bytes
+    // Generates 8 buckets from 128 KiB to 16 MiB
+    #[metric(metadata = Thresholds::exponential_buckets(131_072.0, 2.0))]
+    segment_size_bytes: Histogram<8>,
+}
+
+impl Default for SegmentUploaderMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct SegmentUploaderTask<C> {
+    metrics: Arc<SegmentUploaderMetrics>,
     input: mpsc::Receiver<StoreSegmentReq>,
     output: Bus<CommitSegmentReq>,
     store: Arc<dyn ObjectStore>,
@@ -44,12 +67,13 @@ impl<C: Cache> SupervisedTask for SegmentUploaderTask<C> {
 
 impl<C: Cache> SegmentUploaderTask<C> {
     pub fn new(
+        metrics: Arc<SegmentUploaderMetrics>,
         input: mpsc::Receiver<StoreSegmentReq>,
         output: Bus<CommitSegmentReq>,
         store: Arc<dyn ObjectStore>,
         cache: Arc<C>,
     ) -> Self {
-        Self { input, output, store, cache }
+        Self { metrics, input, output, store, cache }
     }
 
     async fn handle_store_request(&mut self, req: StoreSegmentReq) -> anyhow::Result<()> {
@@ -60,10 +84,17 @@ impl<C: Cache> SegmentUploaderTask<C> {
         let path = Path::from(sid.pretty());
         let (segment, offsets) = segment.serialize();
 
+        self.metrics
+            .segment_size_bytes
+            .observe(segment.len() as f64);
+
         let upload_task = self
             .store
             .put(&path, segment.clone().into())
-            .map(|inner| inner.context("failed to upload segment"));
+            .map(|inner| inner.context("failed to upload segment"))
+            .inspect(|result| {
+                self.metrics.uploaded_segments.inc(result.into());
+            });
         let cache_task = self
             .cache
             .put(&sid, segment)
@@ -97,7 +128,13 @@ mod tests {
         let store = Arc::new(InMemory::default());
         let cache = Arc::new(MemCache::default());
 
-        let task = SegmentUploaderTask::new(input_rx, commit_bus, store.clone(), cache.clone());
+        let task = SegmentUploaderTask::new(
+            Default::default(),
+            input_rx,
+            commit_bus,
+            store.clone(),
+            cache.clone(),
+        );
         task.testonly_spawn();
 
         let mut segment = OpenSegment::default();
