@@ -60,7 +60,12 @@ enum Commands {
     },
     /// Read a page from a volume
     /// This will read the page from Graft at the current LSN if it's not in the cache
-    Read { page: Option<Offset> },
+    Read {
+        page: Option<Offset>,
+
+        #[arg(long)]
+        latest: bool,
+    },
 }
 
 fn page_key(volume_id: &VolumeId, offset: Offset) -> String {
@@ -90,10 +95,13 @@ fn get_cached_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<S
 }
 
 async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<Snapshot>> {
-    // load cached lsn
-    let cached_lsn = get_cached_snapshot(ctx, vid)?.map(|s| s.lsn()).unwrap_or(0);
+    // figure out which lsn to start from
+    let start_lsn = match get_cached_snapshot(ctx, vid)? {
+        Some(snapshot) => snapshot.lsn() + 1,
+        None => 0,
+    };
 
-    match ctx.metastore.pull_offsets(vid, cached_lsn..).await? {
+    match ctx.metastore.pull_offsets(vid, start_lsn..).await? {
         Some((snapshot, _, offsets)) => {
             // clear any changed offsets from the cache
             for offset in offsets.iter() {
@@ -133,6 +141,11 @@ async fn read_page(ctx: &Context, vid: &VolumeId, page: Offset) -> anyhow::Resul
 
     // Otherwise read the page from Graft
     if let Some(snapshot) = get_snapshot(ctx, vid).await? {
+        // if the page is larger then the last offset, return an empty page
+        if page > snapshot.last_offset() {
+            return Ok(EMPTY_PAGE);
+        }
+
         let pages = ctx
             .pagestore
             .read_pages(
@@ -190,14 +203,38 @@ async fn write_page(
 
 /// print all printable characters in the page
 fn print_page(page: Page) {
+    let mut is_empty = true;
     for &byte in page.iter() {
         // if byte is a printable ascii character
         if byte.is_ascii_alphanumeric() || byte.is_ascii_punctuation() || byte.is_ascii_whitespace()
         {
+            is_empty = false;
             print!("{}", byte as char);
         }
     }
+    if is_empty {
+        print!("(empty page)");
+    }
     println!();
+}
+
+fn print_snapshot(snapshot: Option<Snapshot>) {
+    match snapshot {
+        Some(snapshot) => {
+            println!(
+                "vid: {}",
+                snapshot.vid().expect("failed to parse snapshot vid")
+            );
+            println!("lsn: {}", snapshot.lsn());
+            println!("checkpoint: {}", snapshot.checkpoint());
+            println!("last offset: {}", snapshot.last_offset());
+            println!(
+                "unix timestamp: {:?}",
+                snapshot.timestamp.map(|t| t.seconds)
+            );
+        }
+        None => println!("no snapshot found"),
+    }
 }
 
 #[tokio::main]
@@ -233,8 +270,8 @@ async fn main() -> anyhow::Result<()> {
 
     match args.command {
         Commands::New => unreachable!("handled above"),
-        Commands::Show => println!("{:?}", get_snapshot(&ctx, &vid).await?),
-        Commands::Pull => println!("{:?}", pull_snapshot(&ctx, &vid).await?),
+        Commands::Show => print_snapshot(get_snapshot(&ctx, &vid).await?),
+        Commands::Pull => print_snapshot(pull_snapshot(&ctx, &vid).await?),
         Commands::Remove => {
             remove(&ctx, &vid)?;
             println!("removed volume {}", vid);
@@ -264,7 +301,12 @@ async fn main() -> anyhow::Result<()> {
 
             write_page(&ctx, &vid, page.unwrap_or(0), data.freeze()).await?;
         }
-        Commands::Read { page } => print_page(read_page(&ctx, &vid, page.unwrap_or(0)).await?),
+        Commands::Read { page, latest } => {
+            if latest {
+                pull_snapshot(&ctx, &vid).await?;
+            }
+            print_page(read_page(&ctx, &vid, page.unwrap_or(0)).await?)
+        }
     }
 
     Ok(())
