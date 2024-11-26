@@ -10,10 +10,10 @@ crate-type = ["rlib"]
 log = { version = "0.4", features = ["std"] }
 
 [dev-dependencies]
-rusqlite = { version = "0.31", features = ["bundled", "trace", "blob"] }
+rusqlite = { version = "0.32", features = ["bundled", "trace", "blob"] }
 
 [build-dependencies]
-bindgen = "0.69"
+bindgen = "0.70"
 
 [features]
 default = ["static"]
