@@ -1,0 +1,26 @@
+[package]
+name = "sqlite-plugin"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+log = { version = "0.4", features = ["std"] }
+
+[dev-dependencies]
+rusqlite = { version = "0.31", features = ["bundled", "trace", "blob"] }
+
+[build-dependencies]
+bindgen = "0.69"
+
+[features]
+default = ["static"]
+static = []
+dynamic = []
+
+[[example]]
+name = "memvfs"
+crate-type = ["cdylib"]
+required-features = ["dynamic"]
