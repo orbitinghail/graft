@@ -1,7 +1,7 @@
 use std::{fs::exists, sync::Arc, time::Duration};
 
 use futures::{select, FutureExt};
-use graft_client::{ClientConfig, MetastoreClient};
+use graft_client::ClientBuilder;
 use graft_core::byte_unit::ByteUnit;
 use graft_server::{
     api::{
@@ -37,7 +37,7 @@ struct Config {
     cache: DiskCacheConfig,
     objectstore: ObjectStoreConfig,
     port: u16,
-    metastore: ClientConfig,
+    metastore: ClientBuilder,
 }
 
 impl Default for Config {
@@ -54,7 +54,7 @@ impl Default for Config {
             },
             objectstore: Default::default(),
             port: 3000,
-            metastore: ClientConfig {
+            metastore: ClientBuilder {
                 endpoint: "http://localhost:3001".parse().unwrap(),
             },
         }
@@ -108,8 +108,10 @@ async fn main() {
     let (store_tx, store_rx) = mpsc::channel(8);
     let commit_bus = Bus::new(128);
 
-    let metastore =
-        MetastoreClient::new_config(config.metastore).expect("failed to build metastore client");
+    let metastore = config
+        .metastore
+        .build()
+        .expect("failed to build metastore client");
 
     supervisor.spawn(SegmentWriterTask::new(
         registry.segment_writer(),

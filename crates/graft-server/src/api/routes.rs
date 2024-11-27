@@ -4,6 +4,7 @@ use axum::{
     routing::{get, MethodRouter},
     Router,
 };
+use tower_http::compression::CompressionLayer;
 
 use crate::metrics::registry::Registry;
 
@@ -26,8 +27,15 @@ pub fn build_router<S: Send + Sync + Clone + 'static>(
         })
         .with_state(state);
 
+    let compression_layer = CompressionLayer::new()
+        .gzip(true)
+        .deflate(true)
+        .br(true)
+        .zstd(true);
+
     router
         .route("/health", get(health::handler))
         .route("/metrics", get(metrics::handler))
         .with_state(Arc::new(registry))
+        .layer(compression_layer)
 }

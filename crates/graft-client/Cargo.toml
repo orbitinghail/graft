@@ -10,16 +10,15 @@ splinter = { path = "../splinter" }
 
 bytes = "1.8"
 prost = "0.13"
-prost-types = "0.13"
-zerocopy = "0.8"
-reqwest = { version = "0.12" }
-tokio = { version = "1" }
+reqwest = { version = "0.12", features = ["brotli"] }
 thiserror = "2.0"
 futures = "0.3.31"
 url = { version = "2.5.3", features = ["serde"] }
 serde = { version = "1.0.215", features = ["derive"] }
+log = "0.4"
 
 [dev-dependencies]
+env_logger = "0.11"
 fjall = "2.4"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"

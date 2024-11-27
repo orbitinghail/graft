@@ -20,10 +20,35 @@ use splinter::SplinterRef;
 use thiserror::Error;
 use url::ParseError;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ClientConfig {
+#[derive(Debug, Error)]
+pub enum ClientBuildErr {
+    #[error("failed to build reqwest client: {0}")]
+    ReqwestErr(#[from] reqwest::Error),
+
+    #[error("failed to parse URL: {0}")]
+    UrlParseErr(#[from] ParseError),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientBuilder {
     /// The root URL (without any trailing path)
     pub endpoint: Url,
+}
+
+impl ClientBuilder {
+    pub fn new(endpoint: Url) -> Self {
+        Self { endpoint }
+    }
+
+    fn http(&self) -> reqwest::Result<reqwest::Client> {
+        reqwest::Client::builder().brotli(true).build()
+    }
+
+    pub fn build<T: TryFrom<ClientBuilder, Error = ClientBuildErr>>(
+        self,
+    ) -> Result<T, ClientBuildErr> {
+        self.try_into()
+    }
 }
 
 #[derive(Debug, Error)]
@@ -55,16 +80,15 @@ async fn prost_request<Req: Message, Resp: Message + Default>(
     url: Url,
     req: Req,
 ) -> Result<Resp, ClientErr> {
-    let (success, body) = http
+    let req = http
         .post(url)
         .body(req.encode_to_vec())
-        .header(CONTENT_TYPE, "application/x-protobuf")
-        .send()
-        .and_then(|resp| {
-            let success = resp.status().is_success();
-            resp.bytes().map_ok(move |b| (success, b))
-        })
-        .await?;
+        .header(CONTENT_TYPE, "application/x-protobuf");
+    log::trace!("sending request: {:?}", req);
+    let resp = req.send().await?;
+    log::trace!("received response: {:?}", resp);
+    let success = resp.status().is_success();
+    let body = resp.bytes().await?;
     if success {
         Ok(Resp::decode(body)?)
     } else {
@@ -79,17 +103,17 @@ pub struct MetastoreClient {
     http: reqwest::Client,
 }
 
-impl MetastoreClient {
-    pub fn new(endpoint: Url, http: reqwest::Client) -> Result<Self, ParseError> {
-        let endpoint = endpoint.join("metastore/v1/")?;
+impl TryFrom<ClientBuilder> for MetastoreClient {
+    type Error = ClientBuildErr;
+
+    fn try_from(builder: ClientBuilder) -> Result<Self, Self::Error> {
+        let endpoint = builder.endpoint.join("metastore/v1/")?;
+        let http = builder.http()?;
         Ok(Self { endpoint, http })
     }
+}
 
-    pub fn new_config(config: ClientConfig) -> Result<Self, ParseError> {
-        let endpoint = config.endpoint.join("metastore/v1/")?;
-        Ok(Self { endpoint, http: Default::default() })
-    }
-
+impl MetastoreClient {
     pub async fn snapshot(
         &self,
         vid: &VolumeId,
@@ -165,17 +189,17 @@ pub struct PagestoreClient {
     http: reqwest::Client,
 }
 
-impl PagestoreClient {
-    pub fn new(endpoint: Url, http: reqwest::Client) -> Result<Self, ParseError> {
-        let endpoint = endpoint.join("pagestore/v1/")?;
+impl TryFrom<ClientBuilder> for PagestoreClient {
+    type Error = ClientBuildErr;
+
+    fn try_from(builder: ClientBuilder) -> Result<Self, Self::Error> {
+        let endpoint = builder.endpoint.join("pagestore/v1/")?;
+        let http = builder.http()?;
         Ok(Self { endpoint, http })
     }
+}
 
-    pub fn new_config(config: ClientConfig) -> Result<Self, ParseError> {
-        let endpoint = config.endpoint.join("pagestore/v1/")?;
-        Ok(Self { endpoint, http: Default::default() })
-    }
-
+impl PagestoreClient {
     pub async fn read_pages(
         &self,
         vid: &VolumeId,

@@ -1,6 +1,12 @@
-use axum::{body::Body, http::Response, response::IntoResponse};
+use axum::{
+    body::Body,
+    http::{header, Response},
+    response::IntoResponse,
+};
 use bytes::BytesMut;
 use prost::Message;
+
+use super::extractors::CONTENT_TYPE_PROTOBUF;
 
 pub struct ProtoResponse<M> {
     msg: M,
@@ -19,6 +25,9 @@ impl<M: Message> IntoResponse for ProtoResponse<M> {
             .encode(&mut buf)
             .expect("insufficient buffer capacity");
 
-        buf.freeze().into_response()
+        let headers = [(header::CONTENT_TYPE, CONTENT_TYPE_PROTOBUF)];
+        let body = buf.freeze();
+
+        (headers, body).into_response()
     }
 }

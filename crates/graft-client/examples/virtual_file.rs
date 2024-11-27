@@ -3,7 +3,7 @@ use std::io::Read;
 use bytes::{BufMut, Bytes, BytesMut};
 use clap::{Parser, Subcommand};
 use fjall::Config;
-use graft_client::{MetastoreClient, PagestoreClient};
+use graft_client::{ClientBuilder, MetastoreClient, PagestoreClient};
 use graft_core::{
     offset::Offset,
     page::{Page, EMPTY_PAGE, PAGESIZE},
@@ -239,23 +239,24 @@ fn print_snapshot(snapshot: Option<Snapshot>) {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     let mut args = Cli::parse();
     let client_id = args.client_id.unwrap_or_else(|| "default".to_string());
 
     let config = Config::new(format!("/tmp/virtual_file_cache_{client_id}"));
     let keyspace = fjall::Keyspace::open(config)?;
-    let client = reqwest::Client::new();
 
     if args.localhost {
-        args.metastore = Url::parse("http://localhost:3001")?;
-        args.pagestore = Url::parse("http://localhost:3000")?;
+        args.metastore = Url::parse("http://127.0.0.1:3001")?;
+        args.pagestore = Url::parse("http://127.0.0.1:3000")?;
     }
 
     let ctx = Context {
         volumes: keyspace.open_partition("volumes", Default::default())?,
         pages: keyspace.open_partition("pages", Default::default())?,
-        metastore: MetastoreClient::new(args.metastore, client.clone())?,
-        pagestore: PagestoreClient::new(args.pagestore, client)?,
+        metastore: ClientBuilder::new(args.metastore).build()?,
+        pagestore: ClientBuilder::new(args.pagestore).build()?,
     };
 
     let Some(vid) = args.vid else {

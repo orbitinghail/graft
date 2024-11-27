@@ -1,4 +1,7 @@
-use sqlite_plugin::vfs::{Vfs, VfsHandle};
+use sqlite_plugin::{
+    flags::{AccessFlags, OpenOpts},
+    vfs::{Vfs, VfsHandle, VfsResult},
+};
 
 pub struct FileHandle {}
 
@@ -23,44 +26,27 @@ impl GraftVfs {
 impl Vfs for GraftVfs {
     type Handle = FileHandle;
 
-    fn open(
-        &mut self,
-        path: Option<String>,
-        opts: sqlite_plugin::flags::OpenOpts,
-    ) -> sqlite_plugin::vfs::VfsResult<Self::Handle> {
+    fn open(&mut self, path: Option<String>, opts: OpenOpts) -> VfsResult<Self::Handle> {
         todo!()
     }
 
-    fn delete(&mut self, path: &str) -> sqlite_plugin::vfs::VfsResult<()> {
+    fn delete(&mut self, path: &str) -> VfsResult<()> {
         todo!()
     }
 
-    fn access(
-        &mut self,
-        path: &str,
-        flags: sqlite_plugin::flags::AccessFlags,
-    ) -> sqlite_plugin::vfs::VfsResult<bool> {
+    fn access(&mut self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         todo!()
     }
 
-    fn file_size(&mut self, handle: &mut Self::Handle) -> sqlite_plugin::vfs::VfsResult<usize> {
+    fn file_size(&mut self, handle: &mut Self::Handle) -> VfsResult<usize> {
         todo!()
     }
 
-    fn truncate(
-        &mut self,
-        handle: &mut Self::Handle,
-        size: usize,
-    ) -> sqlite_plugin::vfs::VfsResult<()> {
+    fn truncate(&mut self, handle: &mut Self::Handle, size: usize) -> VfsResult<()> {
         todo!()
     }
 
-    fn write(
-        &mut self,
-        handle: &mut Self::Handle,
-        offset: usize,
-        buf: &[u8],
-    ) -> sqlite_plugin::vfs::VfsResult<usize> {
+    fn write(&mut self, handle: &mut Self::Handle, offset: usize, buf: &[u8]) -> VfsResult<usize> {
         todo!()
     }
 
@@ -69,11 +55,11 @@ impl Vfs for GraftVfs {
         handle: &mut Self::Handle,
         offset: usize,
         buf: &mut [u8],
-    ) -> sqlite_plugin::vfs::VfsResult<usize> {
+    ) -> VfsResult<usize> {
         todo!()
     }
 
-    fn close(&mut self, handle: &mut Self::Handle) -> sqlite_plugin::vfs::VfsResult<()> {
+    fn close(&mut self, handle: &mut Self::Handle) -> VfsResult<()> {
         todo!()
     }
 }
