@@ -1,0 +1,28 @@
+[package]
+name = "graft-sqlite"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "graft"
+crate-type = ["cdylib"]
+
+[dependencies]
+graft-core = { path = "../graft-core" }
+graft-client = { path = "../graft-client" }
+graft-proto = { path = "../graft-proto" }
+
+log = "0.4"
+
+[dev-dependencies]
+rusqlite = { version = "0.32", features = ["bundled", "trace"] }
+
+[dependencies.sqlite-plugin]
+path = "../sqlite-plugin"
+default-features = false
+features = ["dynamic"]
+
+[dev-dependencies.sqlite-plugin]
+path = "../sqlite-plugin"
+default-features = false
+features = ["static"]

@@ -1020,6 +1020,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "graft-sqlite"
+version = "0.1.0"
+dependencies = [
+ "graft-client",
+ "graft-core",
+ "graft-proto",
+ "log",
+ "rusqlite",
+ "sqlite-plugin",
+]
+
+[[package]]
 name = "guardian"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
