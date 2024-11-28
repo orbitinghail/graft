@@ -11,16 +11,19 @@ splinter = { path = "../splinter" }
 bytes = "1.8"
 prost = "0.13"
 reqwest = { version = "0.12", features = ["brotli"] }
+tokio = { version = "1" }
 thiserror = "2.0"
 futures = "0.3.31"
 url = { version = "2.5.3", features = ["serde"] }
+tryiter = "0.2.0"
 serde = { version = "1.0.215", features = ["derive"] }
 log = "0.4"
+fjall = "2.4"
+tempfile = "3.12.0"
+zerocopy = "0.8"
 
 [dev-dependencies]
 env_logger = "0.11"
-fjall = "2.4"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 clap = { version = "4.5.20", features = ["derive"] }
-tryiter = "0.2.0"

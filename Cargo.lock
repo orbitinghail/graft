@@ -1040,10 +1040,12 @@ dependencies = [
  "reqwest",
  "serde",
  "splinter",
+ "tempfile",
  "thiserror 2.0.3",
  "tokio",
  "tryiter",
  "url",
+ "zerocopy 0.8.11",
 ]
 
 [[package]]
