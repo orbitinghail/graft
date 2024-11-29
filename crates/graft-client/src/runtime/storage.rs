@@ -92,6 +92,9 @@ pub struct FjallStorage {
 
     /// maps from (VolumeId, Offset, LSN) to Page|MarkPending
     pages: fjall::Partition,
+
+    /// maps from (VolumeId, Offset, Local LSN) to Page
+    pending: fjall::Partition,
 }
 
 impl FjallStorage {
@@ -110,7 +113,11 @@ impl FjallStorage {
             "pages",
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
-        Ok(FjallStorage { keyspace, volumes, pages })
+        let pending = keyspace.open_partition(
+            "pending",
+            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+        )?;
+        Ok(FjallStorage { keyspace, volumes, pages, pending })
     }
 }
 
