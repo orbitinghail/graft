@@ -50,7 +50,7 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
 - **Offset**  
   The position of a page within a volume, measured in terms of page numbers rather than bytes. The offset represents the index of the page, with the first page in the volume having an offset of 0.
 
-- **LSN**  
+- **LSN** (Log Sequence Number)
   A monotonically increasing number that tracks changes to a Volume. Each transaction results in a new LSN, which is greater than all previous LSNs for the Volume.
 
 - **Snapshot**  

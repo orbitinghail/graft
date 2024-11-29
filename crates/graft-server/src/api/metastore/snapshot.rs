@@ -14,9 +14,9 @@ pub async fn handler(
     Protobuf(req): Protobuf<SnapshotRequest>,
 ) -> Result<ProtoResponse<SnapshotResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let lsn: Option<LSN> = req.lsn;
+    let lsn: Option<LSN> = req.lsn.map(Into::into);
 
-    tracing::info!(?vid, lsn);
+    tracing::info!(?vid, ?lsn);
 
     let snapshot = state
         .updater
@@ -98,7 +98,7 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has a commit
-        let meta = CommitMeta::new(0, 0, 0, SystemTime::now());
+        let meta = CommitMeta::new(LSN::ZERO, LSN::ZERO, 0, SystemTime::now());
         let mut commit = CommitBuilder::default();
         commit.write_offsets(
             SegmentId::random(),

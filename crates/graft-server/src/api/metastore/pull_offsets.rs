@@ -66,7 +66,7 @@ mod tests {
 
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
-    use graft_core::SegmentId;
+    use graft_core::{lsn::LSN, SegmentId};
     use object_store::memory::InMemory;
     use prost::Message;
     use tracing_test::traced_test;
@@ -116,7 +116,7 @@ mod tests {
         // case 2: catalog is empty, store has 10 commits
         let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
         for lsn in 0u64..10 {
-            let meta = CommitMeta::new(lsn, 0, 0, SystemTime::now());
+            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, 0, SystemTime::now());
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), &offsets);
             let commit = commit.build(vid.clone(), meta);
@@ -124,7 +124,7 @@ mod tests {
         }
 
         // request the last 5 segments
-        let lsns = 5..10;
+        let lsns = LSN::new(5)..LSN::new(10);
         let req = PullOffsetsRequest {
             vid: vid.copy_to_bytes(),
             range: Some(LsnRange::from_bounds(&lsns)),

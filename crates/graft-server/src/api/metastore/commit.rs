@@ -18,12 +18,12 @@ pub async fn handler(
     Protobuf(req): Protobuf<CommitRequest>,
 ) -> Result<ProtoResponse<CommitResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let snapshot_lsn: Option<LSN> = req.snapshot_lsn;
+    let snapshot_lsn: Option<LSN> = req.snapshot_lsn.map(Into::into);
     let last_offset: Offset = req.last_offset;
 
     tracing::info!(
         ?vid,
-        snapshot_lsn,
+        ?snapshot_lsn,
         last_offset,
         num_segments = req.segments.len(),
     );
@@ -35,8 +35,8 @@ pub async fn handler(
         .await?;
 
     let commit_lsn = match (snapshot_lsn, snapshot.as_ref().map(|s| s.lsn())) {
-        (None, None) => 0,
-        (Some(snapshot), Some(latest)) if snapshot == latest => latest + 1,
+        (None, None) => Default::default(),
+        (Some(snapshot), Some(latest)) if snapshot == latest => latest.next(),
 
         // in every other case, the commit is out of sync
         // TODO: implement page based MVCC
@@ -135,7 +135,7 @@ mod tests {
             assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
 
             // check the commit in the store and the catalog
-            let commit = store.get_commit(vid.clone(), i).await.unwrap();
+            let commit = store.get_commit(vid.clone(), i.into()).await.unwrap();
             assert_eq!(commit.meta().lsn(), i);
 
             let snapshot = catalog.latest_snapshot(&vid).unwrap().unwrap();

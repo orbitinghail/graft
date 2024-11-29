@@ -17,7 +17,7 @@ pub fn commit_key_prefix(vid: &VolumeId) -> Path {
 }
 
 pub fn commit_key(vid: &VolumeId, lsn: LSN) -> Path {
-    commit_key_prefix(vid).child(format!("{:0>18x}", lsn))
+    commit_key_prefix(vid).child(lsn.format_fixed_hex())
 }
 
 fn time_to_millis(time: SystemTime) -> u64 {
@@ -50,11 +50,12 @@ pub fn parse_commit_key(key: &Path) -> Result<(VolumeId, LSN), CommitKeyParseErr
         .ok_or_else(|| CommitKeyParseErr::Structure(key.clone()))?
         .as_ref()
         .parse()?;
-    let lsn: LSN = parts
-        .next()
-        .ok_or_else(|| CommitKeyParseErr::Structure(key.clone()))?
-        .as_ref()
-        .parse()?;
+    let lsn: LSN = LSN::from_hex(
+        parts
+            .next()
+            .ok_or_else(|| CommitKeyParseErr::Structure(key.clone()))?
+            .as_ref(),
+    )?;
     // ensure there are no trailing parts
     if parts.next().is_some() {
         return Err(CommitKeyParseErr::Structure(key.clone()));
@@ -97,12 +98,12 @@ impl CommitMeta {
 
     #[inline]
     pub fn lsn(&self) -> LSN {
-        self.lsn.get()
+        self.lsn.into()
     }
 
     #[inline]
     pub fn checkpoint(&self) -> LSN {
-        self.checkpoint_lsn.get()
+        self.checkpoint_lsn.into()
     }
 
     #[inline]

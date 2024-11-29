@@ -38,7 +38,11 @@ impl PagestoreClient {
         offsets: Bytes,
     ) -> Result<Vec<PageAtOffset>, ClientErr> {
         let url = self.endpoint.join("read_pages").unwrap();
-        let req = ReadPagesRequest { vid: vid.copy_to_bytes(), lsn, offsets };
+        let req = ReadPagesRequest {
+            vid: vid.copy_to_bytes(),
+            lsn: lsn.into(),
+            offsets,
+        };
         prost_request::<_, ReadPagesResponse>(&self.http, url, req)
             .map_ok(|r| r.pages)
             .await

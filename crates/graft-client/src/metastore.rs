@@ -46,7 +46,10 @@ impl MetastoreClient {
         lsn: Option<LSN>,
     ) -> Result<Option<Snapshot>, error::ClientErr> {
         let url = self.endpoint.join("snapshot").unwrap();
-        let req = SnapshotRequest { vid: vid.copy_to_bytes(), lsn };
+        let req = SnapshotRequest {
+            vid: vid.copy_to_bytes(),
+            lsn: lsn.map(Into::into),
+        };
         match prost_request::<_, SnapshotResponse>(&self.http, url, req).await {
             Ok(resp) => Ok(resp.snapshot),
             Err(err) if err.is_snapshot_missing() => Ok(None),
@@ -104,7 +107,7 @@ impl MetastoreClient {
         let url = self.endpoint.join("commit").unwrap();
         let req = CommitRequest {
             vid: vid.copy_to_bytes(),
-            snapshot_lsn: snapshot,
+            snapshot_lsn: snapshot.map(Into::into),
             last_offset,
             segments,
         };

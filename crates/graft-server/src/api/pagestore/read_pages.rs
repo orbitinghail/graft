@@ -19,11 +19,11 @@ pub async fn handler<C: Cache>(
     Protobuf(req): Protobuf<ReadPagesRequest>,
 ) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let lsn: LSN = req.lsn;
+    let lsn: LSN = req.lsn.into();
     let mut offsets = Splinter::from_bytes(req.offsets)?;
     let num_offsets = offsets.cardinality();
 
-    tracing::info!(?vid, lsn, num_offsets);
+    tracing::info!(?vid, ?lsn, num_offsets);
 
     let snapshot = state.catalog().latest_snapshot(&vid)?;
     let checkpoint = snapshot
@@ -146,7 +146,7 @@ mod tests {
             .unwrap();
 
         // setup test data
-        let lsn: LSN = 2;
+        let lsn: LSN = 2.into();
         let vid = VolumeId::random();
 
         // segment 1 is in the store
@@ -174,7 +174,7 @@ mod tests {
         batch
             .insert_snapshot(
                 vid.clone(),
-                CommitMeta::new(lsn, 0, 4, SystemTime::now()),
+                CommitMeta::new(lsn, LSN::ZERO, 4, SystemTime::now()),
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),
@@ -192,7 +192,7 @@ mod tests {
         // we are finally able to test read_pages :)
         let req = ReadPagesRequest {
             vid: vid.copy_to_bytes(),
-            lsn,
+            lsn: lsn.into(),
             offsets: (0u32..=4).collect::<Splinter>().serialize_to_bytes(),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;

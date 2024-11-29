@@ -6,7 +6,6 @@ use graft_proto::{
     common::v1::{Commit, LsnRange, SegmentInfo},
     metastore::v1::{PullCommitsRequest, PullCommitsResponse},
 };
-use itertools::Itertools;
 use tryiter::TryIteratorExt;
 
 use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
@@ -42,7 +41,7 @@ pub async fn handler(
     let start_lsn = lsns.start().unwrap_or(checkpoint).max(checkpoint);
 
     // calculate the resolved lsn range
-    let lsns = start_lsn..=snapshot.lsn();
+    let lsns = LsnRange::from_bounds(&(start_lsn..=snapshot.lsn()));
 
     // ensure the catalog contains the requested LSNs
     state
@@ -79,7 +78,7 @@ mod tests {
 
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
-    use graft_core::SegmentId;
+    use graft_core::{lsn::LSN, SegmentId};
     use object_store::memory::InMemory;
     use prost::Message;
     use splinter::Splinter;
@@ -133,7 +132,7 @@ mod tests {
             .collect::<Splinter>()
             .serialize_to_bytes();
         for lsn in 0u64..10 {
-            let meta = CommitMeta::new(lsn, 0, 0, SystemTime::now());
+            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, 0, SystemTime::now());
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), offsets);
             let commit = commit.build(vid.clone(), meta);
@@ -141,7 +140,7 @@ mod tests {
         }
 
         // request the last 5 commits
-        let lsns = 5..10;
+        let lsns = LSN::new(5)..LSN::new(10);
         let req = PullCommitsRequest {
             vid: vid.copy_to_bytes(),
             range: Some(LsnRange::from_bounds(&lsns)),

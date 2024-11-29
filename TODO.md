@@ -13,10 +13,6 @@ Upcoming:
 - garbage collection
 - authentication (api keys)
 
-# is lsn the right name?
-
-we don't really have a log in the traditional sense... so perhaps SeqNo would be more suited for Graft?
-
 # local storage & syncing
 
 - storage will separate remotely committed pages from locally committed pages.

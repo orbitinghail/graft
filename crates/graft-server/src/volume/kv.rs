@@ -18,7 +18,7 @@ pub struct CommitKey {
 
 impl CommitKey {
     pub fn new(vid: VolumeId, lsn: LSN) -> Self {
-        Self { vid, lsn: U64::new(lsn) }
+        Self { vid, lsn: lsn.into() }
     }
 
     #[inline]
@@ -28,18 +28,18 @@ impl CommitKey {
 
     #[inline]
     pub fn lsn(&self) -> LSN {
-        self.lsn.get()
+        self.lsn.into()
     }
 
     pub fn range<R: RangeBounds<LSN>>(vid: &VolumeId, lsns: &R) -> Range<CommitKey> {
         Range {
             start: match lsns.start_bound() {
                 std::ops::Bound::Included(lsn) => CommitKey::new(vid.clone(), *lsn),
-                std::ops::Bound::Excluded(lsn) => CommitKey::new(vid.clone(), *lsn + 1),
-                std::ops::Bound::Unbounded => CommitKey::new(vid.clone(), 0),
+                std::ops::Bound::Excluded(lsn) => CommitKey::new(vid.clone(), lsn.next()),
+                std::ops::Bound::Unbounded => CommitKey::new(vid.clone(), LSN::ZERO),
             },
             end: match lsns.end_bound() {
-                std::ops::Bound::Included(lsn) => CommitKey::new(vid.clone(), *lsn + 1),
+                std::ops::Bound::Included(lsn) => CommitKey::new(vid.clone(), lsn.next()),
                 std::ops::Bound::Excluded(lsn) => CommitKey::new(vid.clone(), *lsn),
                 std::ops::Bound::Unbounded => CommitKey::new(vid.clone(), LSN::MAX),
             },
@@ -88,7 +88,7 @@ impl SegmentKey {
     }
 
     pub fn lsn(&self) -> LSN {
-        self.commit.lsn.get()
+        self.commit.lsn.into()
     }
 
     pub fn sid(&self) -> &SegmentId {

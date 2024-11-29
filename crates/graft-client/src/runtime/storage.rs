@@ -42,7 +42,7 @@ impl PageKey {
 
     #[inline]
     pub fn lsn(&self) -> LSN {
-        self.lsn.get()
+        self.lsn.into()
     }
 }
 

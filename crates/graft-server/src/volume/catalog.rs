@@ -127,7 +127,7 @@ impl VolumeCatalog {
             if key.lsn() != cursor {
                 return Ok(false);
             }
-            cursor += 1;
+            cursor = cursor.next();
             empty = false;
         }
         Ok(!empty)

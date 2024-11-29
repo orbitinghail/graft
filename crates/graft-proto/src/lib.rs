@@ -52,8 +52,8 @@ impl Snapshot {
     ) -> Self {
         Self {
             vid: vid.copy_to_bytes(),
-            lsn,
-            checkpoint_lsn,
+            lsn: lsn.into(),
+            checkpoint_lsn: checkpoint_lsn.into(),
             last_offset,
             timestamp: Some(timestamp.into()),
         }
@@ -64,11 +64,11 @@ impl Snapshot {
     }
 
     pub fn lsn(&self) -> LSN {
-        self.lsn
+        self.lsn.into()
     }
 
     pub fn checkpoint(&self) -> LSN {
-        self.checkpoint_lsn
+        self.checkpoint_lsn.into()
     }
 
     pub fn last_offset(&self) -> u32 {
@@ -83,8 +83,8 @@ impl Snapshot {
 impl LsnBound {
     fn as_bound(&self) -> Bound<&LSN> {
         match &self.bound {
-            Some(lsn_bound::Bound::Included(lsn)) => Bound::Included(lsn),
-            Some(lsn_bound::Bound::Excluded(lsn)) => Bound::Excluded(lsn),
+            Some(lsn_bound::Bound::Included(lsn)) => Bound::Included(lsn.into()),
+            Some(lsn_bound::Bound::Excluded(lsn)) => Bound::Excluded(lsn.into()),
             None => Bound::Unbounded,
         }
     }
@@ -93,8 +93,8 @@ impl LsnBound {
 impl From<Bound<&LSN>> for LsnBound {
     fn from(bound: Bound<&LSN>) -> Self {
         let bound = match bound {
-            Bound::Included(lsn) => Some(lsn_bound::Bound::Included(*lsn)),
-            Bound::Excluded(lsn) => Some(lsn_bound::Bound::Excluded(*lsn)),
+            Bound::Included(lsn) => Some(lsn_bound::Bound::Included(lsn.into())),
+            Bound::Excluded(lsn) => Some(lsn_bound::Bound::Excluded(lsn.into())),
             Bound::Unbounded => None,
         };
         Self { bound }
@@ -130,38 +130,38 @@ impl LsnRange {
 
     pub fn try_len(&self) -> Option<usize> {
         let start = self.start()?;
-        let end = self.end()?;
-        end.checked_sub(start).map(|len| len as usize)
+        let end = self.end_exclusive()?;
+        end.since(&start).map(|len| len as usize)
     }
 
     pub fn start(&self) -> Option<LSN> {
         self.start.and_then(|b| match b.bound {
-            Some(lsn_bound::Bound::Included(lsn)) => Some(lsn),
-            Some(lsn_bound::Bound::Excluded(lsn)) => Some(lsn + 1),
+            Some(lsn_bound::Bound::Included(lsn)) => Some(lsn.into()),
+            Some(lsn_bound::Bound::Excluded(lsn)) => Some((lsn + 1).into()),
             None => None,
         })
     }
 
     pub fn start_exclusive(&self) -> Option<LSN> {
         self.start.and_then(|b| match b.bound {
-            Some(lsn_bound::Bound::Included(lsn)) => lsn.checked_sub(1),
-            Some(lsn_bound::Bound::Excluded(lsn)) => Some(lsn),
+            Some(lsn_bound::Bound::Included(lsn)) => lsn.checked_sub(1).map(Into::into),
+            Some(lsn_bound::Bound::Excluded(lsn)) => Some(lsn.into()),
             None => None,
         })
     }
 
     pub fn end(&self) -> Option<LSN> {
         self.end.and_then(|b| match b.bound {
-            Some(lsn_bound::Bound::Included(lsn)) => Some(lsn),
-            Some(lsn_bound::Bound::Excluded(lsn)) => Some(lsn.saturating_sub(1)),
+            Some(lsn_bound::Bound::Included(lsn)) => Some(lsn.into()),
+            Some(lsn_bound::Bound::Excluded(lsn)) => Some(lsn.saturating_sub(1).into()),
             None => None,
         })
     }
 
     pub fn end_exclusive(&self) -> Option<LSN> {
         self.end.and_then(|b| match b.bound {
-            Some(lsn_bound::Bound::Included(lsn)) => lsn.checked_add(1),
-            Some(lsn_bound::Bound::Excluded(lsn)) => Some(lsn),
+            Some(lsn_bound::Bound::Included(lsn)) => lsn.checked_add(1).map(Into::into),
+            Some(lsn_bound::Bound::Excluded(lsn)) => Some(lsn.into()),
             None => None,
         })
     }
@@ -173,7 +173,7 @@ impl LsnRange {
 
 impl From<LsnRange> for Range<LSN> {
     fn from(range: LsnRange) -> Self {
-        let start = range.start().unwrap_or(0);
+        let start = range.start().unwrap_or_default();
         let end = range.end_exclusive().unwrap_or(LSN::MAX);
         start..end
     }
@@ -187,5 +187,19 @@ impl Display for LsnRange {
             (None, Some(end)) => write!(f, "(..{})", end),
             (None, None) => write!(f, "(..)"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use graft_core::lsn::LSN;
+
+    #[test]
+    fn test_lsn_range_try_len() {
+        let range = LsnRange::from_bounds(&(LSN::new(0)..LSN::new(5)));
+        assert_eq!(range.try_len(), Some(5));
+        let range = LsnRange::from_bounds(&(LSN::new(0)..=LSN::new(5)));
+        assert_eq!(range.try_len(), Some(6));
     }
 }
