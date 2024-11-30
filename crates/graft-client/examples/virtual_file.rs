@@ -95,11 +95,10 @@ fn get_cached_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<S
 }
 
 async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<Snapshot>> {
-    // figure out which lsn to start from
-    let start_lsn = match get_cached_snapshot(ctx, vid)? {
-        Some(snapshot) => snapshot.lsn().next(),
-        None => Default::default(),
-    };
+    // pull starting at the next LSN after the last cached snapshot
+    let start_lsn = get_cached_snapshot(ctx, vid)?
+        .and_then(|s| s.lsn().next())
+        .unwrap_or_default();
 
     match ctx.metastore.pull_offsets(vid, start_lsn..).await? {
         Some((snapshot, _, offsets)) => {

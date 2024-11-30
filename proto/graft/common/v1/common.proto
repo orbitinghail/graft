@@ -38,14 +38,7 @@ message Commit {
   repeated SegmentInfo segments = 2;
 }
 
-message LsnBound {
-  oneof bound {
-    uint64 included = 1;
-    uint64 excluded = 2;
-  }
-}
-
 message LsnRange {
-  LsnBound start = 1;
-  LsnBound end = 2;
+  uint64 inclusive_start = 1;
+  uint64 inclusive_end = 2;
 }

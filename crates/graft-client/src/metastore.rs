@@ -65,7 +65,7 @@ impl MetastoreClient {
         let url = self.endpoint.join("pull_offsets").unwrap();
         let req = PullOffsetsRequest {
             vid: vid.copy_to_bytes(),
-            range: Some(LsnRange::from_bounds(&range)),
+            range: Some(range.into()),
         };
         match prost_request::<_, PullOffsetsResponse>(&self.http, url, req).await {
             Ok(resp) => {
@@ -90,7 +90,7 @@ impl MetastoreClient {
         let url = self.endpoint.join("pull_commits").unwrap();
         let req = PullCommitsRequest {
             vid: vid.copy_to_bytes(),
-            range: Some(LsnRange::from_bounds(&range)),
+            range: Some(range.into()),
         };
         prost_request::<_, PullCommitsResponse>(&self.http, url, req)
             .map_ok(|resp| resp.commits)

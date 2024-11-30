@@ -35,8 +35,8 @@ pub async fn handler(
         .await?;
 
     let commit_lsn = match (snapshot_lsn, snapshot.as_ref().map(|s| s.lsn())) {
-        (None, None) => Default::default(),
-        (Some(snapshot), Some(latest)) if snapshot == latest => latest.next(),
+        (None, None) => LSN::ZERO,
+        (Some(snapshot), Some(latest)) if snapshot == latest => latest.saturating_next(),
 
         // in every other case, the commit is out of sync
         // TODO: implement page based MVCC

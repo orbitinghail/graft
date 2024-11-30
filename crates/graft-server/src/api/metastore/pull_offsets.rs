@@ -1,11 +1,8 @@
-use std::sync::Arc;
+use std::{ops::RangeInclusive, sync::Arc};
 
 use axum::extract::State;
-use graft_core::VolumeId;
-use graft_proto::{
-    common::v1::LsnRange,
-    metastore::v1::{PullOffsetsRequest, PullOffsetsResponse},
-};
+use graft_core::{lsn::LSN, VolumeId};
+use graft_proto::metastore::v1::{PullOffsetsRequest, PullOffsetsResponse};
 use splinter::{ops::Merge, Splinter};
 use tryiter::TryIteratorExt;
 
@@ -19,23 +16,31 @@ pub async fn handler(
     Protobuf(req): Protobuf<PullOffsetsRequest>,
 ) -> Result<ProtoResponse<PullOffsetsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let lsns: LsnRange = req.range.unwrap_or_default();
+    let lsns: Option<RangeInclusive<LSN>> = req.range.map(Into::into);
 
     tracing::info!(?vid, ?lsns);
 
     // load the snapshot at the end of the lsn range
     let snapshot = state
         .updater
-        .snapshot(&state.store, &state.catalog, &vid, lsns.end())
+        .snapshot(
+            &state.store,
+            &state.catalog,
+            &vid,
+            lsns.as_ref().map(|l| *l.end()),
+        )
         .await?;
 
     let Some(snapshot) = snapshot else {
-        return Err(ApiErr::SnapshotMissing(vid, lsns.end()));
+        return Err(ApiErr::SnapshotMissing(vid, lsns.map(|l| *l.end())));
     };
 
     // resolve the start of the range; skipping up to the last checkpoint if needed
     let checkpoint = snapshot.checkpoint();
-    let start_lsn = lsns.start().unwrap_or(checkpoint).max(checkpoint);
+    let start_lsn = lsns
+        .map(|l| *l.start())
+        .unwrap_or(checkpoint)
+        .max(checkpoint);
 
     // calculate the resolved lsn range
     let lsns = start_lsn..=snapshot.lsn();
@@ -55,7 +60,7 @@ pub async fn handler(
 
     Ok(ProtoResponse::new(PullOffsetsResponse {
         snapshot: Some(snapshot.into_snapshot(&vid)),
-        range: Some(LsnRange::from_bounds(&lsns)),
+        range: Some(lsns.into()),
         offsets: splinter.serialize_to_bytes(),
     }))
 }
@@ -115,7 +120,7 @@ mod tests {
 
         // case 2: catalog is empty, store has 10 commits
         let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
-        for lsn in 0u64..10 {
+        for lsn in 0u64..=9 {
             let meta = CommitMeta::new(lsn.into(), LSN::ZERO, 0, SystemTime::now());
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), &offsets);
@@ -124,10 +129,10 @@ mod tests {
         }
 
         // request the last 5 segments
-        let lsns = LSN::new(5)..LSN::new(10);
+        let lsns = LSN::new(5)..=LSN::new(9);
         let req = PullOffsetsRequest {
             vid: vid.copy_to_bytes(),
-            range: Some(LsnRange::from_bounds(&lsns)),
+            range: Some(lsns.clone().into()),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = PullOffsetsResponse::decode(resp.into_bytes()).unwrap();
@@ -135,7 +140,7 @@ mod tests {
         assert_eq!(snapshot.lsn, 9);
         assert_eq!(snapshot.last_offset, 0);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
-        assert_eq!(resp.range.map(|r| r.canonical()), Some(lsns));
+        assert_eq!(resp.range.map(|r| r.into()), Some(lsns));
         let splinter = Splinter::from_bytes(resp.offsets).unwrap();
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);

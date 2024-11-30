@@ -1,9 +1,12 @@
-use std::sync::Arc;
+use std::{ops::RangeInclusive, sync::Arc};
 
 use axum::extract::State;
-use graft_core::VolumeId;
+use graft_core::{
+    lsn::{LSNRangeExt, LSN},
+    VolumeId,
+};
 use graft_proto::{
-    common::v1::{Commit, LsnRange, SegmentInfo},
+    common::v1::{Commit, SegmentInfo},
     metastore::v1::{PullCommitsRequest, PullCommitsResponse},
 };
 use tryiter::TryIteratorExt;
@@ -22,26 +25,34 @@ pub async fn handler(
     Protobuf(req): Protobuf<PullCommitsRequest>,
 ) -> Result<ProtoResponse<PullCommitsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let lsns: LsnRange = req.range.unwrap_or_default();
+    let lsns: Option<RangeInclusive<LSN>> = req.range.map(Into::into);
 
     tracing::info!(?vid, ?lsns);
 
     // load the snapshot at the end of the lsn range
     let snapshot = state
         .updater
-        .snapshot(&state.store, &state.catalog, &vid, lsns.end())
+        .snapshot(
+            &state.store,
+            &state.catalog,
+            &vid,
+            lsns.as_ref().map(|l| *l.end()),
+        )
         .await?;
 
     let Some(snapshot) = snapshot else {
-        return Err(ApiErr::SnapshotMissing(vid, lsns.end()));
+        return Err(ApiErr::SnapshotMissing(vid, lsns.map(|l| *l.end())));
     };
 
     // resolve the start of the range; skipping up to the last checkpoint if needed
     let checkpoint = snapshot.checkpoint();
-    let start_lsn = lsns.start().unwrap_or(checkpoint).max(checkpoint);
+    let start_lsn = lsns
+        .map(|l| *l.start())
+        .unwrap_or(checkpoint)
+        .max(checkpoint);
 
     // calculate the resolved lsn range
-    let lsns = LsnRange::from_bounds(&(start_lsn..=snapshot.lsn()));
+    let lsns = start_lsn..=snapshot.lsn();
 
     // ensure the catalog contains the requested LSNs
     state
@@ -143,7 +154,7 @@ mod tests {
         let lsns = LSN::new(5)..LSN::new(10);
         let req = PullCommitsRequest {
             vid: vid.copy_to_bytes(),
-            range: Some(LsnRange::from_bounds(&lsns)),
+            range: Some(lsns.into()),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = PullCommitsResponse::decode(resp.into_bytes()).unwrap();

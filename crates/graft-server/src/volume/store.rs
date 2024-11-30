@@ -1,9 +1,10 @@
-use std::ops::RangeBounds;
-use std::{future::ready, sync::Arc};
+use std::{future::ready, ops::RangeBounds, sync::Arc};
 
 use futures::{stream::FuturesUnordered, Stream, TryStreamExt};
-use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::common::v1::LsnRange;
+use graft_core::{
+    lsn::{LSNRangeExt, LSN},
+    VolumeId,
+};
 use object_store::ObjectStore;
 
 use crate::volume::commit::{commit_key_prefix, CommitValidationErr};
@@ -40,12 +41,12 @@ impl VolumeStore {
     }
 
     /// Replay all commits for a volume contained by the specified LSN range.
-    pub fn replay_unordered(
-        &self,
+    pub fn replay_unordered<'a, R: RangeBounds<LSN> + 'a>(
+        &'a self,
         vid: VolumeId,
-        range: LsnRange,
+        range: &'a R,
     ) -> impl Stream<Item = Result<Commit, VolumeStoreErr>> + '_ {
-        let stream = if let Some(from_lsn) = range.start_exclusive() {
+        let stream = if let Some(from_lsn) = range.try_start_exclusive() {
             self.store
                 .list_with_offset(Some(&commit_key_prefix(&vid)), &commit_key(&vid, from_lsn))
         } else {

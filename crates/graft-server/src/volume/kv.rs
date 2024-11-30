@@ -4,7 +4,7 @@ use std::{
 };
 
 use graft_core::{
-    lsn::LSN,
+    lsn::{LSNRangeExt, LSN},
     {SegmentId, VolumeId},
 };
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, BE, U64};
@@ -32,18 +32,9 @@ impl CommitKey {
     }
 
     pub fn range<R: RangeBounds<LSN>>(vid: &VolumeId, lsns: &R) -> Range<CommitKey> {
-        Range {
-            start: match lsns.start_bound() {
-                std::ops::Bound::Included(lsn) => CommitKey::new(vid.clone(), *lsn),
-                std::ops::Bound::Excluded(lsn) => CommitKey::new(vid.clone(), lsn.next()),
-                std::ops::Bound::Unbounded => CommitKey::new(vid.clone(), LSN::ZERO),
-            },
-            end: match lsns.end_bound() {
-                std::ops::Bound::Included(lsn) => CommitKey::new(vid.clone(), lsn.next()),
-                std::ops::Bound::Excluded(lsn) => CommitKey::new(vid.clone(), *lsn),
-                std::ops::Bound::Unbounded => CommitKey::new(vid.clone(), LSN::MAX),
-            },
-        }
+        let start = CommitKey::new(vid.clone(), lsns.try_start().unwrap_or(LSN::ZERO));
+        let end = CommitKey::new(vid.clone(), lsns.try_end_exclusive().unwrap_or(LSN::MAX));
+        start..end
     }
 }
 

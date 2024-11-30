@@ -1,4 +1,8 @@
-use std::{fmt::Display, num::ParseIntError};
+use std::{
+    fmt::Display,
+    num::ParseIntError,
+    ops::{Bound, RangeBounds, RangeInclusive},
+};
 
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -25,6 +29,7 @@ pub struct LSN(u64);
 impl LSN {
     pub const ZERO: Self = Self(0);
     pub const MAX: Self = Self(u64::MAX);
+    pub const ALL: RangeInclusive<Self> = Self::ZERO..=Self::MAX;
 
     #[inline]
     pub fn new(lsn: u64) -> Self {
@@ -32,8 +37,23 @@ impl LSN {
     }
 
     #[inline]
-    pub fn next(&self) -> Self {
-        Self(self.0 + 1)
+    pub fn next(&self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
+    }
+
+    #[inline]
+    pub fn saturating_next(&self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+
+    #[inline]
+    pub fn prev(&self) -> Option<Self> {
+        self.0.checked_sub(1).map(Self)
+    }
+
+    #[inline]
+    pub fn saturating_prev(&self) -> Self {
+        Self(self.0.saturating_sub(1))
     }
 
     /// Returns the difference between this LSN and another LSN.
@@ -119,6 +139,54 @@ impl<E: zerocopy::ByteOrder> From<zerocopy::U64<E>> for LSN {
     }
 }
 
+pub trait LSNRangeExt {
+    fn try_len(&self) -> Option<usize>;
+    fn try_start(&self) -> Option<LSN>;
+    fn try_start_exclusive(&self) -> Option<LSN>;
+    fn try_end(&self) -> Option<LSN>;
+    fn try_end_exclusive(&self) -> Option<LSN>;
+}
+
+impl<T: RangeBounds<LSN>> LSNRangeExt for T {
+    fn try_len(&self) -> Option<usize> {
+        let start = self.try_start()?;
+        let end = self.try_end_exclusive()?;
+        end.since(&start).map(|len| len as usize)
+    }
+
+    fn try_start(&self) -> Option<LSN> {
+        match self.start_bound() {
+            Bound::Included(lsn) => Some(*lsn),
+            Bound::Excluded(lsn) => Some(lsn.saturating_next()),
+            Bound::Unbounded => None,
+        }
+    }
+
+    fn try_start_exclusive(&self) -> Option<LSN> {
+        match self.start_bound() {
+            Bound::Included(lsn) => lsn.prev(),
+            Bound::Excluded(lsn) => Some(*lsn),
+            Bound::Unbounded => None,
+        }
+    }
+
+    fn try_end(&self) -> Option<LSN> {
+        match self.end_bound() {
+            Bound::Included(lsn) => Some(*lsn),
+            Bound::Excluded(lsn) => Some(lsn.saturating_prev()),
+            Bound::Unbounded => None,
+        }
+    }
+
+    fn try_end_exclusive(&self) -> Option<LSN> {
+        match self.end_bound() {
+            Bound::Included(lsn) => lsn.next(),
+            Bound::Excluded(lsn) => Some(*lsn),
+            Bound::Unbounded => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,6 +194,6 @@ mod tests {
     #[test]
     fn test_lsn_next() {
         let lsn = LSN::new(0);
-        assert_eq!(lsn.next(), 1);
+        assert_eq!(lsn.saturating_next(), 1);
     }
 }

@@ -4,7 +4,6 @@ use foldhash::fast::RandomState;
 use futures::TryStreamExt;
 use graft_client::MetastoreClient;
 use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::common::v1::LsnRange;
 
 use crate::limiter::Limiter;
 
@@ -108,15 +107,11 @@ impl VolumeCatalogUpdater {
         }
 
         // we only need to reply commits that happened after the last snapshot
-        let start_lsn = if let Some(catalog_lsn) = catalog_lsn {
-            catalog_lsn.next()
-        } else {
-            LSN::ZERO
-        };
+        let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or_default();
+        let lsns = start_lsn..;
 
         // update the catalog from the store
-        let mut commits =
-            store.replay_unordered(vid.clone(), LsnRange::from_bounds(&(start_lsn..)));
+        let mut commits = store.replay_unordered(vid.clone(), &lsns);
 
         // only create a transaction if we have commits to replay
         if let Some(commit) = commits.try_next().await? {
@@ -154,7 +149,7 @@ impl VolumeCatalogUpdater {
 
         // update the catalog
         let mut batch = catalog.batch_insert();
-        let mut commits = store.replay_unordered(vid.clone(), LsnRange::from_bounds(lsns));
+        let mut commits = store.replay_unordered(vid.clone(), lsns);
         while let Some(commit) = commits.try_next().await? {
             batch.insert_commit(commit)?;
         }
@@ -202,11 +197,7 @@ impl VolumeCatalogUpdater {
         }
 
         // we only need to reply commits that happened after the last snapshot
-        let start_lsn = if let Some(catalog_lsn) = catalog_lsn {
-            catalog_lsn.next()
-        } else {
-            LSN::ZERO
-        };
+        let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or_default();
 
         // update the catalog from the client
         let commits = client.pull_commits(vid, start_lsn..).await?;

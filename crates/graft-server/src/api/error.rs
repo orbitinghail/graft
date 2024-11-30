@@ -20,6 +20,9 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum ApiErr {
+    #[error("invalid request body: {0}")]
+    InvalidRequestBody(String),
+
     #[error("failed to parse id: {0}")]
     GidParseErr(#[from] GidParseErr),
 
@@ -77,6 +80,7 @@ impl IntoResponse for ApiErr {
         tracing::error!(error = ?self, "api error");
 
         let (status, code) = match self {
+            InvalidRequestBody(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             GidParseErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
             DuplicatePageOffset(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
             OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
