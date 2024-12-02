@@ -1,4 +1,7 @@
-use std::time::{Duration, SystemTime};
+use std::{
+    ops::Range,
+    time::{Duration, SystemTime},
+};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{gid::GidParseErr, lsn::LSN, offset::Offset, SegmentId, VolumeId};
@@ -78,12 +81,12 @@ static_assertions::const_assert_eq!(size_of::<CommitHeader>(), 48);
 pub struct CommitMeta {
     lsn: U64<LittleEndian>,
     checkpoint_lsn: U64<LittleEndian>,
-    last_offset: U32<LittleEndian>,
+    page_count: U32<LittleEndian>,
     timestamp: U64<LittleEndian>,
 }
 
 impl CommitMeta {
-    pub fn new(lsn: LSN, checkpoint: LSN, last_offset: Offset, timestamp: SystemTime) -> Self {
+    pub fn new(lsn: LSN, checkpoint: LSN, page_count: u32, timestamp: SystemTime) -> Self {
         assert!(
             checkpoint <= lsn,
             "checkpoint must be less than or equal to lsn"
@@ -91,7 +94,7 @@ impl CommitMeta {
         Self {
             lsn: lsn.into(),
             checkpoint_lsn: checkpoint.into(),
-            last_offset: last_offset.into(),
+            page_count: page_count.into(),
             timestamp: time_to_millis(timestamp).into(),
         }
     }
@@ -107,8 +110,12 @@ impl CommitMeta {
     }
 
     #[inline]
-    pub fn last_offset(&self) -> Offset {
-        self.last_offset.get()
+    pub fn page_count(&self) -> u32 {
+        self.page_count.get()
+    }
+
+    pub fn offsets(&self) -> Range<Offset> {
+        0..self.page_count()
     }
 
     #[inline]
@@ -126,7 +133,7 @@ impl CommitMeta {
             vid,
             self.lsn(),
             self.checkpoint(),
-            self.last_offset(),
+            self.page_count(),
             self.system_time(),
         )
     }
@@ -143,7 +150,7 @@ impl From<Snapshot> for CommitMeta {
         Self::new(
             snapshot.lsn(),
             snapshot.checkpoint(),
-            snapshot.last_offset(),
+            snapshot.page_count(),
             snapshot
                 .system_time()
                 .unwrap_or_default()

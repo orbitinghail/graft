@@ -11,7 +11,7 @@ pub type Result<T> = std::result::Result<T, ClientErr>;
 pub struct Snapshot {
     lsn: LSN,
     checkpoint_lsn: LSN,
-    last_offset: Offset,
+    page_count: u32,
 }
 
 #[derive(Clone)]

@@ -87,7 +87,7 @@ pub enum FjallStorageErr {
 pub struct FjallStorage {
     keyspace: fjall::Keyspace,
 
-    /// maps from VolumeId to (lsn, checkpoint_lsn, last_offset)
+    /// maps from VolumeId to (lsn, checkpoint_lsn, page_count)
     volumes: fjall::Partition,
 
     /// maps from (VolumeId, Offset, LSN) to Page|MarkPending

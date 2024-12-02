@@ -143,7 +143,7 @@ mod tests {
             .collect::<Splinter>()
             .serialize_to_bytes();
         for lsn in 0u64..10 {
-            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, 0, SystemTime::now());
+            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, 1, SystemTime::now());
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), offsets);
             let commit = commit.build(vid.clone(), meta);
@@ -162,7 +162,7 @@ mod tests {
         let last_commit = resp.commits.last().unwrap();
         let snapshot = last_commit.snapshot.as_ref().unwrap();
         assert_eq!(snapshot.lsn(), 9);
-        assert_eq!(snapshot.last_offset(), 0);
+        assert_eq!(snapshot.page_count(), 1);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
         for segment in &last_commit.segments {
             assert_eq!(segment.offsets, offsets);

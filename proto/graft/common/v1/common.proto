@@ -29,7 +29,7 @@ message Snapshot {
   bytes vid = 1;
   uint64 lsn = 2;
   uint64 checkpoint_lsn = 3;
-  uint32 last_offset = 4;
+  uint32 page_count = 4;
   google.protobuf.Timestamp timestamp = 5;
 }
 

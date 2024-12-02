@@ -98,7 +98,7 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has a commit
-        let meta = CommitMeta::new(LSN::ZERO, LSN::ZERO, 0, SystemTime::now());
+        let meta = CommitMeta::new(LSN::ZERO, LSN::ZERO, 1, SystemTime::now());
         let mut commit = CommitBuilder::default();
         commit.write_offsets(
             SegmentId::random(),
@@ -116,7 +116,7 @@ mod tests {
         let snapshot = resp.snapshot.unwrap();
         assert_eq!(snapshot.vid().unwrap(), &vid);
         assert_eq!(snapshot.lsn(), 0);
-        assert_eq!(snapshot.last_offset(), 0);
+        assert_eq!(snapshot.page_count(), 1);
         assert!(snapshot.timestamp.is_some());
     }
 }

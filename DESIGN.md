@@ -148,7 +148,7 @@ Retrieve the snapshot at the end of the given LSN range along with a Splinter co
 **`pull_commits(VolumeId, LSN Range)`**  
 Retrieve all of the commits to the Volume in the provided LSN Range. If the start of the range is Unbounded, it will be set to the last checkpoint.  Returns: graft.metastore.v1.PullSegmentsResponse
 
-**`commit(VolumeId, Snapshot LSN, last_offset, segments)`**  
+**`commit(VolumeId, Snapshot LSN, page_count, segments)`**  
 Commit changes to a Volume if it is safe to do so. The provided Snapshot LSN is the snapshot the commit was based on. Returns the newly committed Snapshot metadata on success.
 
 A checkpoint may be created by issuing a commit that covers the entire offset range of the volume.

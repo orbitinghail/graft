@@ -25,12 +25,10 @@ pub async fn handler<C: Cache>(
 
     tracing::info!(?vid, ?lsn, num_offsets);
 
-    let snapshot = state.catalog().latest_snapshot(&vid)?;
-    let checkpoint = snapshot
-        .as_ref()
-        .map(|s| s.checkpoint())
-        .unwrap_or_default();
-    let needs_update = snapshot.is_none() || snapshot.is_some_and(|s| s.lsn() < lsn);
+    let (checkpoint, needs_update) = match state.catalog().latest_snapshot(&vid)? {
+        Some(s) => (s.checkpoint(), s.lsn() < lsn),
+        None => (LSN::ZERO, true),
+    };
 
     if needs_update {
         // update the catalog from the metastore
@@ -42,8 +40,8 @@ pub async fn handler<C: Cache>(
 
     let mut loading = FuturesUnordered::new();
 
-    // TODO: If we know the last_offset in the requested LSN, we can skip
-    // returning any offsets that are greater than that.
+    // TODO: For security we should prevent a request from loading any pages outside of the snapshot.
+    // this requires looking up the snapshot's page count
 
     let segments = state.catalog().scan_segments(&vid, &(checkpoint..=lsn));
     for result in segments {

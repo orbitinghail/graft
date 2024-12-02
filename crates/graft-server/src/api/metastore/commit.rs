@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use axum::extract::State;
-use graft_core::{lsn::LSN, offset::Offset, SegmentId, VolumeId};
+use graft_core::{lsn::LSN, SegmentId, VolumeId};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
 use splinter::{ops::Merge, Splinter, SplinterRef};
 
@@ -19,12 +19,12 @@ pub async fn handler(
 ) -> Result<ProtoResponse<CommitResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let snapshot_lsn: Option<LSN> = req.snapshot_lsn.map(Into::into);
-    let last_offset: Offset = req.last_offset;
+    let page_count = req.page_count;
 
     tracing::info!(
         ?vid,
         ?snapshot_lsn,
-        last_offset,
+        page_count,
         num_segments = req.segments.len(),
     );
 
@@ -55,13 +55,13 @@ pub async fn handler(
     }
 
     // this commit is a checkpoint if the splinter contains all lsns up to the last offset
-    let checkpoint = if all_offsets.iter().eq(0..=last_offset) {
+    let checkpoint = if all_offsets.iter().eq(0..page_count) {
         commit_lsn
     } else {
         snapshot.map(|s| s.checkpoint()).unwrap_or_default()
     };
 
-    let meta = CommitMeta::new(commit_lsn, checkpoint, last_offset, SystemTime::now());
+    let meta = CommitMeta::new(commit_lsn, checkpoint, page_count, SystemTime::now());
     let commit = commit.build(vid.clone(), meta.clone());
 
     // commit the new snapshot to the store
@@ -121,7 +121,7 @@ mod tests {
             let commit = CommitRequest {
                 vid: vid.copy_to_bytes(),
                 snapshot_lsn: (i != 0).then(|| i - 1),
-                last_offset: 0,
+                page_count: 1,
                 segments: vec![SegmentInfo::new(&SegmentId::random(), offsets.clone())],
             };
 
@@ -131,7 +131,7 @@ mod tests {
             let snapshot = resp.snapshot.unwrap();
             assert_eq!(snapshot.vid().unwrap(), &vid);
             assert_eq!(snapshot.lsn(), i);
-            assert_eq!(snapshot.last_offset(), 0);
+            assert_eq!(snapshot.page_count(), 1);
             assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
 
             // check the commit in the store and the catalog

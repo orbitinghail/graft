@@ -121,7 +121,7 @@ mod tests {
         // case 2: catalog is empty, store has 10 commits
         let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
         for lsn in 0u64..=9 {
-            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, 0, SystemTime::now());
+            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, 1, SystemTime::now());
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), &offsets);
             let commit = commit.build(vid.clone(), meta);
@@ -137,8 +137,8 @@ mod tests {
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = PullOffsetsResponse::decode(resp.into_bytes()).unwrap();
         let snapshot = resp.snapshot.unwrap();
-        assert_eq!(snapshot.lsn, 9);
-        assert_eq!(snapshot.last_offset, 0);
+        assert_eq!(snapshot.lsn(), 9);
+        assert_eq!(snapshot.page_count(), 1);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
         assert_eq!(resp.range.map(|r| r.into()), Some(lsns));
         let splinter = Splinter::from_bytes(resp.offsets).unwrap();

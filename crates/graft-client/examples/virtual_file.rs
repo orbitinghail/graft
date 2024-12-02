@@ -140,8 +140,8 @@ async fn read_page(ctx: &Context, vid: &VolumeId, page: Offset) -> anyhow::Resul
 
     // Otherwise read the page from Graft
     if let Some(snapshot) = get_snapshot(ctx, vid).await? {
-        // if the page is larger then the last offset, return an empty page
-        if page > snapshot.last_offset() {
+        // if the page is not contained by the snapshot, return an empty page
+        if !snapshot.offsets().contains(&page) {
             return Ok(EMPTY_PAGE);
         }
 
@@ -188,7 +188,9 @@ async fn write_page(
         .commit(
             vid,
             snapshot.as_ref().map(|s| s.lsn()),
-            snapshot.map(|s| s.last_offset().max(page)).unwrap_or(page),
+            snapshot
+                .map(|s| s.page_count().max(page + 1))
+                .unwrap_or(page + 1),
             segments,
         )
         .await?;
@@ -226,7 +228,7 @@ fn print_snapshot(snapshot: Option<Snapshot>) {
             );
             println!("lsn: {}", snapshot.lsn());
             println!("checkpoint: {}", snapshot.checkpoint());
-            println!("last offset: {}", snapshot.last_offset());
+            println!("page count: {}", snapshot.page_count());
             println!(
                 "unix timestamp: {:?}",
                 snapshot.timestamp.map(|t| t.seconds)

@@ -71,7 +71,7 @@ impl TryFrom<VolumeCatalogConfig> for Config {
 pub struct VolumeCatalog {
     keyspace: Keyspace,
 
-    /// maps kv::CommitKey { vid, lsn } to CommitMeta { lsn, last_offset, timestamp }
+    /// maps kv::CommitKey { vid, lsn } to CommitMeta { lsn, page_count, timestamp }
     volumes: Partition,
 
     /// maps kv::SegmentKey { CommitKey { vid, lsn }, sid} to OffsetSet
