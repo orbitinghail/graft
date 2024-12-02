@@ -12,7 +12,7 @@ use common::v1::{Commit, GraftErr, LsnRange, SegmentInfo, Snapshot};
 use graft_core::{
     gid::GidParseErr,
     lsn::{LSNRangeExt, LSN},
-    offset::Offset,
+    page_offset::PageOffset,
     SegmentId, VolumeId,
 };
 use prost_types::TimestampError;
@@ -81,7 +81,7 @@ impl Snapshot {
     }
 
     /// Returns the range of page offsets in the snapshot.
-    pub fn offsets(&self) -> Range<Offset> {
+    pub fn offsets(&self) -> Range<PageOffset> {
         0..self.page_count
     }
 

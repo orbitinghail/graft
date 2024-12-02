@@ -5,8 +5,8 @@ use clap::{Parser, Subcommand};
 use fjall::Config;
 use graft_client::{ClientBuilder, MetastoreClient, PagestoreClient};
 use graft_core::{
-    offset::Offset,
     page::{Page, EMPTY_PAGE, PAGESIZE},
+    page_offset::PageOffset,
     VolumeId,
 };
 use graft_proto::{common::v1::Snapshot, pagestore::v1::PageAtOffset};
@@ -55,20 +55,20 @@ enum Commands {
     /// Write a page to a volume
     /// This synchronously writes to Graft and updates the cache
     Write {
-        page: Option<Offset>,
+        page: Option<PageOffset>,
         data: Option<BytesMut>,
     },
     /// Read a page from a volume
     /// This will read the page from Graft at the current LSN if it's not in the cache
     Read {
-        page: Option<Offset>,
+        page: Option<PageOffset>,
 
         #[arg(long)]
         latest: bool,
     },
 }
 
-fn page_key(volume_id: &VolumeId, offset: Offset) -> String {
+fn page_key(volume_id: &VolumeId, offset: PageOffset) -> String {
     format!("{}/{:0>8}", volume_id.pretty(), offset)
 }
 
@@ -128,7 +128,7 @@ fn remove(ctx: &Context, vid: &VolumeId) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn read_page(ctx: &Context, vid: &VolumeId, page: Offset) -> anyhow::Result<Page> {
+async fn read_page(ctx: &Context, vid: &VolumeId, page: PageOffset) -> anyhow::Result<Page> {
     // Check if we have the page in the cache
     if let Some(page) = ctx
         .pages
@@ -167,7 +167,7 @@ async fn read_page(ctx: &Context, vid: &VolumeId, page: Offset) -> anyhow::Resul
 async fn write_page(
     ctx: &Context,
     vid: &VolumeId,
-    page: Offset,
+    page: PageOffset,
     data: Bytes,
 ) -> anyhow::Result<()> {
     // remove the page from the cache in case the write fails

@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use graft_core::{offset::Offset, page::Page, SegmentId, VolumeId};
+use graft_core::{page_offset::PageOffset, page::Page, SegmentId, VolumeId};
 use tokio::sync::broadcast::{self, error::SendError};
 
 use super::{offsets_map::OffsetsMap, open::OpenSegment};
@@ -11,12 +11,12 @@ use super::{offsets_map::OffsetsMap, open::OpenSegment};
 #[derive(Debug)]
 pub struct WritePageReq {
     pub vid: VolumeId,
-    pub offset: Offset,
+    pub offset: PageOffset,
     pub page: Page,
 }
 
 impl WritePageReq {
-    pub fn new(vid: VolumeId, offset: Offset, page: Page) -> Self {
+    pub fn new(vid: VolumeId, offset: PageOffset, page: Page) -> Self {
         Self { vid, offset, page }
     }
 }

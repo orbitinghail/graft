@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use graft_core::{lsn::LSN, offset::Offset, page::Page, VolumeId};
+use graft_core::{lsn::LSN, page_offset::PageOffset, page::Page, VolumeId};
 
 use crate::ClientErr;
 
@@ -36,7 +36,7 @@ impl<S: Storage> RuntimeHandle<S> {
     }
 
     /// Return a specific page at a specific LSN
-    pub fn read(&self, vid: VolumeId, lsn: LSN, offset: Offset) -> Result<Page> {
+    pub fn read(&self, vid: VolumeId, lsn: LSN, offset: PageOffset) -> Result<Page> {
         todo!()
     }
 
@@ -52,13 +52,13 @@ impl<S: Storage> RuntimeHandle<S> {
 
 pub struct Transaction<S> {
     snapshot: Option<Snapshot>,
-    memtable: BTreeMap<Offset, Page>,
+    memtable: BTreeMap<PageOffset, Page>,
     inner: Arc<RuntimeInner<S>>,
 }
 
 impl<S: Storage> Transaction<S> {
     /// Read a page
-    pub fn read(&self, offset: Offset) -> Result<Page> {
+    pub fn read(&self, offset: PageOffset) -> Result<Page> {
         if let Some(page) = self.memtable.get(&offset) {
             return Ok(page.clone());
         }
@@ -66,7 +66,7 @@ impl<S: Storage> Transaction<S> {
     }
 
     /// Write a page
-    pub fn write(&mut self, offset: Offset, page: Page) {
+    pub fn write(&mut self, offset: PageOffset, page: Page) {
         self.memtable.insert(offset, page);
     }
 

@@ -5,7 +5,7 @@ use std::{
 };
 
 use fjall::{KvSeparationOptions, PartitionCreateOptions};
-use graft_core::{lsn::LSN, offset::Offset, VolumeId};
+use graft_core::{lsn::LSN, page_offset::PageOffset, VolumeId};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, BE, U32, U64};
 
 pub trait Storage {
@@ -22,7 +22,7 @@ struct PageKey {
 
 impl PageKey {
     #[inline]
-    fn new(vid: VolumeId, offset: Offset, lsn: LSN) -> Self {
+    fn new(vid: VolumeId, offset: PageOffset, lsn: LSN) -> Self {
         Self {
             vid,
             offset: offset.into(),
@@ -36,7 +36,7 @@ impl PageKey {
     }
 
     #[inline]
-    pub fn offset(&self) -> Offset {
+    pub fn offset(&self) -> PageOffset {
         self.offset.get()
     }
 

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 use graft_core::{
     byte_unit::ByteUnit,
-    offset::Offset,
+    page_offset::PageOffset,
     page::{Page, PAGESIZE},
     VolumeId,
 };
@@ -99,7 +99,7 @@ pub struct SegmentIndexKey {
 }
 
 impl SegmentIndexKey {
-    pub fn new(vid: VolumeId, offset: Offset) -> Self {
+    pub fn new(vid: VolumeId, offset: PageOffset) -> Self {
         Self { vid, offset: U32::new(offset) }
     }
 }
@@ -257,7 +257,7 @@ impl<'a> ClosedSegment<'a> {
         self.len() == 0
     }
 
-    pub fn find_page(&self, vid: VolumeId, offset: Offset) -> Option<Page> {
+    pub fn find_page(&self, vid: VolumeId, offset: PageOffset) -> Option<Page> {
         let key = SegmentIndexKey::new(vid, offset);
         self.index.get(&key).map(|local_offset| {
             let start = local_offset.get() * PAGESIZE;
@@ -268,7 +268,7 @@ impl<'a> ClosedSegment<'a> {
         })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (VolumeId, Offset, Page)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (VolumeId, PageOffset, Page)> + '_ {
         self.index.iter().map(move |(key, local_offset)| {
             let start = local_offset.get() * PAGESIZE;
             let end = start + PAGESIZE;

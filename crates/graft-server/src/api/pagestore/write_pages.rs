@@ -2,7 +2,7 @@ use std::{sync::Arc, vec};
 
 use axum::{extract::State, response::IntoResponse};
 use bytes::BytesMut;
-use graft_core::{offset::Offset, page::Page, VolumeId};
+use graft_core::{page_offset::PageOffset, page::Page, VolumeId};
 use graft_proto::{
     common::v1::SegmentInfo,
     pagestore::v1::{WritePagesRequest, WritePagesResponse},
@@ -32,7 +32,7 @@ pub async fn handler<C>(
 
     let mut seen = HashSet::with_capacity(req.pages.len());
     for page in req.pages {
-        let offset: Offset = page.offset;
+        let offset: PageOffset = page.offset;
         let page: Page = page.data.try_into()?;
 
         if seen.contains(&offset) {

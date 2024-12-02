@@ -89,7 +89,7 @@ mod tests {
     use axum_test::TestServer;
     use bytes::Bytes;
     use graft_client::ClientBuilder;
-    use graft_core::{gid::SegmentId, offset::Offset, page::Page};
+    use graft_core::{gid::SegmentId, page_offset::PageOffset, page::Page};
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{memory::InMemory, path::Path, ObjectStore};
     use prost::Message;
@@ -107,7 +107,7 @@ mod tests {
 
     use super::*;
 
-    fn mksegment(pages: Vec<(VolumeId, Offset, Page)>) -> (Bytes, OffsetsMap) {
+    fn mksegment(pages: Vec<(VolumeId, PageOffset, Page)>) -> (Bytes, OffsetsMap) {
         let mut segment = OpenSegment::default();
         for (vid, off, page) in pages {
             segment.insert(vid, off, page).unwrap();

@@ -5,8 +5,8 @@ use axum::{
 use graft_core::{
     gid::{GidParseErr, VolumeId},
     lsn::LSN,
-    offset::Offset,
     page::PageSizeErr,
+    page_offset::PageOffset,
 };
 use graft_proto::common::v1::{GraftErr, GraftErrCode};
 use splinter::DecodeErr;
@@ -30,7 +30,7 @@ pub enum ApiErr {
     PageSizeErr(#[from] PageSizeErr),
 
     #[error("duplicate page offset detected: {0}")]
-    DuplicatePageOffset(Offset),
+    DuplicatePageOffset(PageOffset),
 
     #[error("failed to parse offsets: {0}")]
     OffsetsDecodeErr(#[from] DecodeErr),

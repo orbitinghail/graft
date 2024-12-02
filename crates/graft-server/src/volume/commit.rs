@@ -4,7 +4,7 @@ use std::{
 };
 
 use bytes::{BufMut, Bytes, BytesMut};
-use graft_core::{gid::GidParseErr, lsn::LSN, offset::Offset, SegmentId, VolumeId};
+use graft_core::{gid::GidParseErr, lsn::LSN, page_offset::PageOffset, SegmentId, VolumeId};
 use graft_proto::common::v1::Snapshot;
 use object_store::{path::Path, PutPayload};
 use splinter::SplinterRef;
@@ -114,7 +114,7 @@ impl CommitMeta {
         self.page_count.get()
     }
 
-    pub fn offsets(&self) -> Range<Offset> {
+    pub fn offsets(&self) -> Range<PageOffset> {
         0..self.page_count()
     }
 

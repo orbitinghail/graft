@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, fmt::Debug};
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{
     byte_unit::ByteUnit,
-    offset::Offset,
+    page_offset::PageOffset,
     page::{Page, PAGESIZE},
     VolumeId,
 };
@@ -26,7 +26,7 @@ pub struct SegmentFullErr;
 
 #[derive(Default)]
 pub struct OpenSegment {
-    index: BTreeMap<(VolumeId, Offset), Page>,
+    index: BTreeMap<(VolumeId, PageOffset), Page>,
 }
 
 impl Debug for OpenSegment {
@@ -43,7 +43,7 @@ impl OpenSegment {
     pub fn insert(
         &mut self,
         vid: VolumeId,
-        offset: Offset,
+        offset: PageOffset,
         page: Page,
     ) -> Result<(), SegmentFullErr> {
         if self.index.len() >= SEGMENT_MAX_PAGES {
@@ -72,7 +72,7 @@ impl OpenSegment {
         self.index.len() >= SEGMENT_MAX_PAGES
     }
 
-    pub fn find_page(&self, vid: VolumeId, offset: Offset) -> Option<&Page> {
+    pub fn find_page(&self, vid: VolumeId, offset: PageOffset) -> Option<&Page> {
         self.index.get(&(vid, offset))
     }
 
@@ -223,7 +223,7 @@ mod tests {
 
         // insert one more page; should fail
         let err = open_segment
-            .insert(vid.clone(), Offset::MAX, page.clone())
+            .insert(vid.clone(), PageOffset::MAX, page.clone())
             .expect_err("expected segment to be full");
         assert_eq!(err, SegmentFullErr);
     }

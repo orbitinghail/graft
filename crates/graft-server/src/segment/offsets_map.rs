@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fmt::Debug};
 
 use bytes::Bytes;
-use graft_core::{offset::Offset, VolumeId};
+use graft_core::{page_offset::PageOffset, VolumeId};
 use splinter::{Splinter, SplinterRef};
 
 #[derive(Default)]
@@ -37,7 +37,7 @@ impl OffsetsMap {
         self.0.get(vid)
     }
 
-    pub fn contains(&self, vid: &VolumeId, offset: Offset) -> bool {
+    pub fn contains(&self, vid: &VolumeId, offset: PageOffset) -> bool {
         self.0
             .get(vid)
             .map(|splinter| splinter.contains(offset))
@@ -46,7 +46,7 @@ impl OffsetsMap {
 }
 
 impl OffsetsMapBuilder {
-    pub fn insert(&mut self, vid: VolumeId, offset: Offset) {
+    pub fn insert(&mut self, vid: VolumeId, offset: PageOffset) {
         if let Some(current) = &self.vid {
             if *current != vid {
                 assert!(vid > *current, "Volumes must be inserted in order by ID");
