@@ -71,7 +71,7 @@ mod tests {
 
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
-    use graft_core::{lsn::LSN, SegmentId};
+    use graft_core::{lsn::LSN, page_count::PageCount, SegmentId};
     use object_store::memory::InMemory;
     use prost::Message;
     use tracing_test::traced_test;
@@ -121,7 +121,7 @@ mod tests {
         // case 2: catalog is empty, store has 10 commits
         let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
         for lsn in 0u64..=9 {
-            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, 1, SystemTime::now());
+            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, PageCount::new(1), SystemTime::now());
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), &offsets);
             let commit = commit.build(vid.clone(), meta);

@@ -1,9 +1,10 @@
+// pull in the generated types
 include!("mod.rs");
 
 use std::{
     error::Error,
     fmt::Display,
-    ops::{Range, RangeBounds, RangeInclusive},
+    ops::{RangeBounds, RangeInclusive},
     time::SystemTime,
 };
 
@@ -12,7 +13,8 @@ use common::v1::{Commit, GraftErr, LsnRange, SegmentInfo, Snapshot};
 use graft_core::{
     gid::GidParseErr,
     lsn::{LSNRangeExt, LSN},
-    page_offset::PageOffset,
+    page_count::PageCount,
+    page_range::PageRange,
     SegmentId, VolumeId,
 };
 use prost_types::TimestampError;
@@ -52,14 +54,14 @@ impl Snapshot {
         vid: &VolumeId,
         lsn: LSN,
         checkpoint_lsn: LSN,
-        page_count: u32,
+        page_count: PageCount,
         timestamp: SystemTime,
     ) -> Self {
         Self {
             vid: vid.copy_to_bytes(),
             lsn: lsn.into(),
             checkpoint_lsn: checkpoint_lsn.into(),
-            page_count,
+            page_count: page_count.into(),
             timestamp: Some(timestamp.into()),
         }
     }
@@ -76,13 +78,13 @@ impl Snapshot {
         self.checkpoint_lsn.into()
     }
 
-    pub fn page_count(&self) -> u32 {
-        self.page_count
+    pub fn page_count(&self) -> PageCount {
+        self.page_count.into()
     }
 
     /// Returns the range of page offsets in the snapshot.
-    pub fn offsets(&self) -> Range<PageOffset> {
-        0..self.page_count
+    pub fn offsets(&self) -> PageRange {
+        self.page_count().offsets()
     }
 
     pub fn system_time(&self) -> Result<Option<SystemTime>, TimestampError> {

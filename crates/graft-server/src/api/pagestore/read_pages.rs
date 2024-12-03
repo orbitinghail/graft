@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::{extract::State, response::IntoResponse};
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
+use graft_core::page_offset::PageOffset;
 use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesResponse};
 use splinter::{ops::Cut, Splinter};
@@ -70,7 +71,7 @@ pub async fn handler<C: Cache>(
 
         for offset in cut.iter() {
             let page = segment
-                .find_page(vid.clone(), offset)
+                .find_page(vid.clone(), PageOffset::new(offset))
                 .expect("failed to find expected offset in segment; index out of sync");
             result
                 .pages
@@ -89,7 +90,7 @@ mod tests {
     use axum_test::TestServer;
     use bytes::Bytes;
     use graft_client::ClientBuilder;
-    use graft_core::{gid::SegmentId, page_offset::PageOffset, page::Page};
+    use graft_core::{gid::SegmentId, page::Page, page_count::PageCount, page_offset::PageOffset};
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{memory::InMemory, path::Path, ObjectStore};
     use prost::Message;
@@ -150,9 +151,9 @@ mod tests {
         // segment 1 is in the store
         let sid1 = SegmentId::random();
         let (segment, offsets1) = mksegment(vec![
-            (vid.clone(), 0, Page::test_filled(0)),
-            (vid.clone(), 1, Page::test_filled(1)),
-            (vid.clone(), 2, Page::test_filled(2)),
+            (vid.clone(), PageOffset::new(0), Page::test_filled(0)),
+            (vid.clone(), PageOffset::new(1), Page::test_filled(1)),
+            (vid.clone(), PageOffset::new(2), Page::test_filled(2)),
         ]);
         store
             .put(&Path::from(sid1.pretty()), segment.into())
@@ -162,8 +163,8 @@ mod tests {
         // segment 2 is already in the cache
         let sid2 = SegmentId::random();
         let (segment, offsets2) = mksegment(vec![
-            (vid.clone(), 3, Page::test_filled(3)),
-            (vid.clone(), 4, Page::test_filled(4)),
+            (vid.clone(), PageOffset::new(3), Page::test_filled(3)),
+            (vid.clone(), PageOffset::new(4), Page::test_filled(4)),
         ]);
         cache.put(&sid2, segment).await.unwrap();
 
@@ -172,7 +173,7 @@ mod tests {
         batch
             .insert_snapshot(
                 vid.clone(),
-                CommitMeta::new(lsn, LSN::ZERO, 4, SystemTime::now()),
+                CommitMeta::new(lsn, LSN::ZERO, PageCount::new(4), SystemTime::now()),
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),

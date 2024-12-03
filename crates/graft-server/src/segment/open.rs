@@ -5,8 +5,8 @@ use std::{collections::BTreeMap, fmt::Debug};
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{
     byte_unit::ByteUnit,
-    page_offset::PageOffset,
     page::{Page, PAGESIZE},
+    page_offset::PageOffset,
     VolumeId,
 };
 use itertools::Itertools;
@@ -127,12 +127,22 @@ mod tests {
         let page0 = Page::test_filled(1);
         let page1 = Page::test_filled(2);
 
-        open_segment.insert(vid.clone(), 0, page0.clone()).unwrap();
-        open_segment.insert(vid.clone(), 1, page1.clone()).unwrap();
+        open_segment
+            .insert(vid.clone(), PageOffset::new(0), page0.clone())
+            .unwrap();
+        open_segment
+            .insert(vid.clone(), PageOffset::new(1), page1.clone())
+            .unwrap();
 
         // ensure that we can query pages in the open_segment
-        assert_eq!(open_segment.find_page(vid.clone(), 0), Some(&page0));
-        assert_eq!(open_segment.find_page(vid.clone(), 1), Some(&page1));
+        assert_eq!(
+            open_segment.find_page(vid.clone(), PageOffset::new(0)),
+            Some(&page0)
+        );
+        assert_eq!(
+            open_segment.find_page(vid.clone(), PageOffset::new(1)),
+            Some(&page1)
+        );
 
         let expected_size = open_segment.encoded_size();
 
@@ -144,15 +154,21 @@ mod tests {
 
         assert_eq!(closed_segment.len(), 2);
         assert!(!closed_segment.is_empty());
-        assert_eq!(closed_segment.find_page(vid.clone(), 0), Some(page0));
-        assert_eq!(closed_segment.find_page(vid.clone(), 1), Some(page1));
+        assert_eq!(
+            closed_segment.find_page(vid.clone(), PageOffset::new(0)),
+            Some(page0)
+        );
+        assert_eq!(
+            closed_segment.find_page(vid.clone(), PageOffset::new(1)),
+            Some(page1)
+        );
 
         // validate the offsets map
         assert!(!offsets.is_empty());
-        assert!(offsets.contains(&vid, 0));
-        assert!(offsets.contains(&vid, 1));
-        assert!(!offsets.contains(&vid, 2));
-        assert!(!offsets.contains(&VolumeId::random(), 0));
+        assert!(offsets.contains(&vid, PageOffset::new(0)));
+        assert!(offsets.contains(&vid, PageOffset::new(1)));
+        assert!(!offsets.contains(&vid, PageOffset::new(2)));
+        assert!(!offsets.contains(&VolumeId::random(), PageOffset::new(0)));
     }
 
     #[test]
@@ -187,7 +203,7 @@ mod tests {
         let num_pages = SEGMENT_MAX_PAGES as u32;
         for i in 0..num_pages {
             open_segment
-                .insert(vid.clone(), i * 2, page.clone())
+                .insert(vid.clone(), (i * 2).into(), page.clone())
                 .unwrap();
         }
 
@@ -199,7 +215,7 @@ mod tests {
 
         assert!(!offsets.is_empty());
         for i in 0..num_pages {
-            assert!(offsets.contains(&vid, i * 2));
+            assert!(offsets.contains(&vid, (i * 2).into()));
         }
 
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
@@ -217,7 +233,7 @@ mod tests {
         let num_pages = SEGMENT_MAX_PAGES as u32;
         for i in 0..num_pages {
             open_segment
-                .insert(vid.clone(), i * 2, page.clone())
+                .insert(vid.clone(), (i * 2).into(), page.clone())
                 .unwrap();
         }
 

@@ -40,7 +40,7 @@ impl OffsetsMap {
     pub fn contains(&self, vid: &VolumeId, offset: PageOffset) -> bool {
         self.0
             .get(vid)
-            .map(|splinter| splinter.contains(offset))
+            .map(|splinter| splinter.contains(offset.into()))
             .unwrap_or(false)
     }
 }
@@ -61,7 +61,7 @@ impl OffsetsMapBuilder {
             self.vid = Some(vid);
         }
 
-        self.splinter.insert(offset)
+        self.splinter.insert(offset.into())
     }
 
     pub fn build(self) -> OffsetsMap {

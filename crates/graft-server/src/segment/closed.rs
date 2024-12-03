@@ -5,8 +5,8 @@ use std::fmt::Debug;
 
 use graft_core::{
     byte_unit::ByteUnit,
-    page_offset::PageOffset,
     page::{Page, PAGESIZE},
+    page_offset::PageOffset,
     VolumeId,
 };
 use odht::FxHashFn;
@@ -100,7 +100,7 @@ pub struct SegmentIndexKey {
 
 impl SegmentIndexKey {
     pub fn new(vid: VolumeId, offset: PageOffset) -> Self {
-        Self { vid, offset: U32::new(offset) }
+        Self { vid, offset: offset.into() }
     }
 }
 
@@ -275,7 +275,7 @@ impl<'a> ClosedSegment<'a> {
             let page = (&self.page_data[start.range(end)])
                 .try_into()
                 .expect("invalid page");
-            (key.vid, key.offset.get(), page)
+            (key.vid, key.offset.into(), page)
         })
     }
 }

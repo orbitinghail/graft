@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use graft_core::{lsn::LSN, page_offset::PageOffset, page::Page, VolumeId};
+use graft_core::{lsn::LSN, page::Page, page_count::PageCount, page_offset::PageOffset, VolumeId};
 
 use crate::ClientErr;
 
@@ -11,7 +11,7 @@ pub type Result<T> = std::result::Result<T, ClientErr>;
 pub struct Snapshot {
     lsn: LSN,
     checkpoint_lsn: LSN,
-    page_count: u32,
+    page_count: PageCount,
 }
 
 #[derive(Clone)]

@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use axum::extract::State;
-use graft_core::{lsn::LSN, SegmentId, VolumeId};
+use graft_core::{lsn::LSN, page_count::PageCount, page_offset::PageOffset, SegmentId, VolumeId};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
 use splinter::{ops::Merge, Splinter, SplinterRef};
 
@@ -19,12 +19,12 @@ pub async fn handler(
 ) -> Result<ProtoResponse<CommitResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let snapshot_lsn: Option<LSN> = req.snapshot_lsn.map(Into::into);
-    let page_count = req.page_count;
+    let page_count: PageCount = req.page_count.into();
 
     tracing::info!(
         ?vid,
         ?snapshot_lsn,
-        page_count,
+        ?page_count,
         num_segments = req.segments.len(),
     );
 
@@ -55,7 +55,11 @@ pub async fn handler(
     }
 
     // this commit is a checkpoint if the splinter contains all lsns up to the last offset
-    let checkpoint = if all_offsets.iter().eq(0..page_count) {
+    let checkpoint = if all_offsets
+        .iter()
+        .map(PageOffset::new)
+        .eq(page_count.offsets())
+    {
         commit_lsn
     } else {
         snapshot.map(|s| s.checkpoint()).unwrap_or_default()

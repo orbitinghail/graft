@@ -38,7 +38,7 @@ mod tests {
 
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
-    use graft_core::SegmentId;
+    use graft_core::{page_count::PageCount, SegmentId};
     use object_store::memory::InMemory;
     use prost::Message;
     use splinter::Splinter;
@@ -98,7 +98,7 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has a commit
-        let meta = CommitMeta::new(LSN::ZERO, LSN::ZERO, 1, SystemTime::now());
+        let meta = CommitMeta::new(LSN::ZERO, LSN::ZERO, PageCount::new(1), SystemTime::now());
         let mut commit = CommitBuilder::default();
         commit.write_offsets(
             SegmentId::random(),

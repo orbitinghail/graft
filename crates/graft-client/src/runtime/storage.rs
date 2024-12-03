@@ -37,7 +37,7 @@ impl PageKey {
 
     #[inline]
     pub fn offset(&self) -> PageOffset {
-        self.offset.get()
+        self.offset.into()
     }
 
     #[inline]

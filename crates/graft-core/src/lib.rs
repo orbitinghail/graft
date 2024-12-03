@@ -5,6 +5,7 @@ pub mod lsn;
 pub mod page;
 pub mod page_count;
 pub mod page_offset;
+pub mod page_range;
 
 pub use gid::{SegmentId, VolumeId};
 

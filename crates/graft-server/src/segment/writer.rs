@@ -120,7 +120,7 @@ impl SegmentWriterTask {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{page::Page, VolumeId};
+    use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 
     use super::*;
 
@@ -145,7 +145,7 @@ mod tests {
         input_tx
             .send(WritePageReq {
                 vid: vid.clone(),
-                offset: 0,
+                offset: PageOffset::new(0),
                 page: page0.clone(),
             })
             .await
@@ -154,7 +154,7 @@ mod tests {
         input_tx
             .send(WritePageReq {
                 vid: vid.clone(),
-                offset: 1,
+                offset: PageOffset::new(1),
                 page: page1.clone(),
             })
             .await
@@ -163,7 +163,17 @@ mod tests {
         // wait for the flush
         let req = output_rx.recv().await.unwrap();
 
-        assert_eq!(req.segment.find_page(vid.clone(), 0).unwrap(), &page0);
-        assert_eq!(req.segment.find_page(vid.clone(), 1).unwrap(), &page1);
+        assert_eq!(
+            req.segment
+                .find_page(vid.clone(), PageOffset::new(0))
+                .unwrap(),
+            &page0
+        );
+        assert_eq!(
+            req.segment
+                .find_page(vid.clone(), PageOffset::new(1))
+                .unwrap(),
+            &page1
+        );
     }
 }

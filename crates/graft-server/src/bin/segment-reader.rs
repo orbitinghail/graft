@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{arg, Parser, Subcommand};
-use graft_core::{page::Page, VolumeId};
+use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 use graft_server::segment::closed::ClosedSegment;
 
 #[derive(Parser)]
@@ -27,8 +27,8 @@ enum Commands {
         vid: VolumeId,
 
         /// The offset of the page
-        #[arg(default_value_t = 0)]
-        offset: u32,
+        #[arg(default_value_t = PageOffset::ZERO)]
+        offset: PageOffset,
     },
 }
 

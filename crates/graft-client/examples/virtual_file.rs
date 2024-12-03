@@ -1,4 +1,5 @@
 use std::io::Read;
+use std::ops::RangeBounds;
 
 use bytes::{BufMut, Bytes, BytesMut};
 use clap::{Parser, Subcommand};
@@ -55,13 +56,13 @@ enum Commands {
     /// Write a page to a volume
     /// This synchronously writes to Graft and updates the cache
     Write {
-        page: Option<PageOffset>,
+        offset: Option<PageOffset>,
         data: Option<BytesMut>,
     },
     /// Read a page from a volume
     /// This will read the page from Graft at the current LSN if it's not in the cache
     Read {
-        page: Option<PageOffset>,
+        offset: Option<PageOffset>,
 
         #[arg(long)]
         latest: bool,
@@ -104,7 +105,7 @@ async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<S
         Some((snapshot, _, offsets)) => {
             // clear any changed offsets from the cache
             for offset in offsets.iter() {
-                ctx.pages.remove(page_key(vid, offset))?;
+                ctx.pages.remove(page_key(vid, offset.into()))?;
             }
 
             // update the cache with the new snapshot
@@ -128,11 +129,11 @@ fn remove(ctx: &Context, vid: &VolumeId) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn read_page(ctx: &Context, vid: &VolumeId, page: PageOffset) -> anyhow::Result<Page> {
+async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> anyhow::Result<Page> {
     // Check if we have the page in the cache
     if let Some(page) = ctx
         .pages
-        .get(page_key(vid, page))?
+        .get(page_key(vid, offset))?
         .map(|p| Page::try_from(p.as_ref()))
     {
         return Ok(page?);
@@ -141,7 +142,7 @@ async fn read_page(ctx: &Context, vid: &VolumeId, page: PageOffset) -> anyhow::R
     // Otherwise read the page from Graft
     if let Some(snapshot) = get_snapshot(ctx, vid).await? {
         // if the page is not contained by the snapshot, return an empty page
-        if !snapshot.offsets().contains(&page) {
+        if !snapshot.offsets().contains(&offset) {
             return Ok(EMPTY_PAGE);
         }
 
@@ -150,13 +151,13 @@ async fn read_page(ctx: &Context, vid: &VolumeId, page: PageOffset) -> anyhow::R
             .read_pages(
                 vid,
                 snapshot.lsn(),
-                Splinter::from_iter([page]).serialize_to_bytes(),
+                Splinter::from_iter([offset]).serialize_to_bytes(),
             )
             .await?;
 
         if let Some(p) = pages.into_iter().next() {
-            assert_eq!(p.offset, page, "unexpected page: {:?}", p);
-            ctx.pages.insert(page_key(vid, p.offset), &p.data)?;
+            assert_eq!(offset, p.offset, "unexpected page: {:?}", p);
+            ctx.pages.insert(page_key(vid, p.offset.into()), &p.data)?;
             return Ok(Page::try_from(p.data)?);
         }
     }
@@ -167,11 +168,11 @@ async fn read_page(ctx: &Context, vid: &VolumeId, page: PageOffset) -> anyhow::R
 async fn write_page(
     ctx: &Context,
     vid: &VolumeId,
-    page: PageOffset,
+    offset: PageOffset,
     data: Bytes,
 ) -> anyhow::Result<()> {
     // remove the page from the cache in case the write fails
-    ctx.pages.remove(page_key(vid, page))?;
+    ctx.pages.remove(page_key(vid, offset))?;
 
     // read the current snapshot lsn
     let snapshot = get_snapshot(ctx, vid).await?;
@@ -179,7 +180,13 @@ async fn write_page(
     // first we upload the page to the page store
     let segments = ctx
         .pagestore
-        .write_pages(vid, vec![PageAtOffset { offset: page, data: data.clone() }])
+        .write_pages(
+            vid,
+            vec![PageAtOffset {
+                offset: offset.into(),
+                data: data.clone(),
+            }],
+        )
         .await?;
 
     // then we commit the new segments to the metastore
@@ -189,15 +196,15 @@ async fn write_page(
             vid,
             snapshot.as_ref().map(|s| s.lsn()),
             snapshot
-                .map(|s| s.page_count().max(page + 1))
-                .unwrap_or(page + 1),
+                .map(|s| s.page_count().max(offset.pages()))
+                .unwrap_or(offset.pages()),
             segments,
         )
         .await?;
 
     // Update the cache with the new page and snapshot
     ctx.volumes.insert(vid, snapshot.encode_to_vec())?;
-    ctx.pages.insert(page_key(vid, page), &data)?;
+    ctx.pages.insert(page_key(vid, offset), &data)?;
 
     Ok(())
 }
@@ -278,7 +285,7 @@ async fn main() -> anyhow::Result<()> {
             remove(&ctx, &vid)?;
             println!("removed volume {}", vid);
         }
-        Commands::Write { page, data } => {
+        Commands::Write { offset, data } => {
             let mut data = if let Some(data) = data {
                 data
             } else {
@@ -301,13 +308,13 @@ async fn main() -> anyhow::Result<()> {
             // fill the remainder of the page with zeros
             data.resize(PAGESIZE.as_usize(), 0);
 
-            write_page(&ctx, &vid, page.unwrap_or(0), data.freeze()).await?;
+            write_page(&ctx, &vid, offset.unwrap_or_default(), data.freeze()).await?;
         }
-        Commands::Read { page, latest } => {
+        Commands::Read { offset, latest } => {
             if latest {
                 pull_snapshot(&ctx, &vid).await?;
             }
-            print_page(read_page(&ctx, &vid, page.unwrap_or(0)).await?)
+            print_page(read_page(&ctx, &vid, offset.unwrap_or_default()).await?)
         }
     }
 

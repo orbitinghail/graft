@@ -89,7 +89,7 @@ mod tests {
 
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
-    use graft_core::{lsn::LSN, SegmentId};
+    use graft_core::{lsn::LSN, page_count::PageCount, SegmentId};
     use object_store::memory::InMemory;
     use prost::Message;
     use splinter::Splinter;
@@ -143,7 +143,7 @@ mod tests {
             .collect::<Splinter>()
             .serialize_to_bytes();
         for lsn in 0u64..10 {
-            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, 1, SystemTime::now());
+            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, PageCount::new(1), SystemTime::now());
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), offsets);
             let commit = commit.build(vid.clone(), meta);

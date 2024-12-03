@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use futures::TryFutureExt;
 use graft_core::lsn::LSN;
+use graft_core::page_count::PageCount;
 use graft_core::VolumeId;
 use graft_proto::common::v1::Commit;
 use graft_proto::common::v1::LsnRange;
@@ -100,14 +101,14 @@ impl MetastoreClient {
         &self,
         vid: &VolumeId,
         snapshot: Option<LSN>,
-        page_count: u32,
+        page_count: PageCount,
         segments: Vec<SegmentInfo>,
     ) -> Result<Snapshot, error::ClientErr> {
         let url = self.endpoint.join("commit").unwrap();
         let req = CommitRequest {
             vid: vid.copy_to_bytes(),
             snapshot_lsn: snapshot.map(Into::into),
-            page_count,
+            page_count: page_count.into(),
             segments,
         };
         prost_request::<_, CommitResponse>(&self.http, url, req)

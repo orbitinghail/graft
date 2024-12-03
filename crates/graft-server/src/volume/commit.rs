@@ -1,10 +1,9 @@
-use std::{
-    ops::Range,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 
 use bytes::{BufMut, Bytes, BytesMut};
-use graft_core::{gid::GidParseErr, lsn::LSN, page_offset::PageOffset, SegmentId, VolumeId};
+use graft_core::{
+    gid::GidParseErr, lsn::LSN, page_count::PageCount, page_range::PageRange, SegmentId, VolumeId,
+};
 use graft_proto::common::v1::Snapshot;
 use object_store::{path::Path, PutPayload};
 use splinter::SplinterRef;
@@ -86,7 +85,7 @@ pub struct CommitMeta {
 }
 
 impl CommitMeta {
-    pub fn new(lsn: LSN, checkpoint: LSN, page_count: u32, timestamp: SystemTime) -> Self {
+    pub fn new(lsn: LSN, checkpoint: LSN, page_count: PageCount, timestamp: SystemTime) -> Self {
         assert!(
             checkpoint <= lsn,
             "checkpoint must be less than or equal to lsn"
@@ -110,12 +109,12 @@ impl CommitMeta {
     }
 
     #[inline]
-    pub fn page_count(&self) -> u32 {
-        self.page_count.get()
+    pub fn page_count(&self) -> PageCount {
+        self.page_count.into()
     }
 
-    pub fn offsets(&self) -> Range<PageOffset> {
-        0..self.page_count()
+    pub fn offsets(&self) -> PageRange {
+        self.page_count().offsets()
     }
 
     #[inline]
