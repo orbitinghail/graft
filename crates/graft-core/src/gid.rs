@@ -9,7 +9,7 @@ use bytes::Bytes;
 use prefix::Prefix;
 use thiserror::Error;
 use time::GidTimestamp;
-use zerocopy::{try_transmute, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::byte_unit::ByteUnit;
 
@@ -19,25 +19,35 @@ mod prefix;
 mod time;
 
 #[derive(
-    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, IntoBytes, TryFromBytes, Immutable, KnownLayout,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    IntoBytes,
+    TryFromBytes,
+    Immutable,
+    KnownLayout,
+    Unaligned,
 )]
 #[repr(C)]
-pub struct Gid<const P: u8> {
-    prefix: Prefix,
+pub struct Gid<P: Prefix> {
+    prefix: P,
     ts: GidTimestamp,
     random: [u8; 9],
 }
 
-pub type VolumeId = Gid<{ Prefix::Volume.as_u8() }>;
-pub type SegmentId = Gid<{ Prefix::Segment.as_u8() }>;
-pub type ClientId = Gid<{ Prefix::Client.as_u8() }>;
+pub type VolumeId = Gid<prefix::Volume>;
+pub type SegmentId = Gid<prefix::Segment>;
+pub type ClientId = Gid<prefix::Client>;
 
 static_assertions::assert_eq_size!(VolumeId, [u8; GID_SIZE.as_usize()]);
 
-impl<const P: u8> Gid<P> {
+impl<P: Prefix> Gid<P> {
     pub fn random() -> Self {
         Self {
-            prefix: Prefix::from_u8(P),
+            prefix: P::default(),
             ts: GidTimestamp::now(),
             random: rand::random(),
         }
@@ -60,19 +70,19 @@ impl<const P: u8> Gid<P> {
     }
 }
 
-impl<const P: u8> Display for Gid<P> {
+impl<P: Prefix> Display for Gid<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.pretty())
     }
 }
 
-impl<const P: u8> Debug for Gid<P> {
+impl<P: Prefix> Debug for Gid<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.short())
     }
 }
 
-impl<const P: u8> AsRef<[u8]> for Gid<P> {
+impl<P: Prefix> AsRef<[u8]> for Gid<P> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
@@ -90,20 +100,11 @@ pub enum GidParseErr {
     InvalidLayout,
 }
 
-impl<const P: u8> TryFrom<[u8; GID_SIZE.as_usize()]> for Gid<P> {
-    type Error = GidParseErr;
-
-    fn try_from(value: [u8; GID_SIZE.as_usize()]) -> Result<Self, Self::Error> {
-        try_transmute!(value).map_err(|_| GidParseErr::InvalidLayout)
-    }
-}
-
-impl<const P: u8> FromStr for Gid<P> {
+impl<P: Prefix> FromStr for Gid<P> {
     type Err = GidParseErr;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        // To calculate this compute ceil(16 * (log2(256) / log2(58))) + 1
-        // The format is the prefix byte followed by up to 22 base58 characters
+        // To calculate this compute ceil(16 * (log2(256) / log2(58)))
         static MAX_ENCODED_LEN: usize = 22;
 
         // Note: we require that Gid's always are their maximum length
@@ -121,7 +122,7 @@ impl<const P: u8> FromStr for Gid<P> {
     }
 }
 
-impl<const P: u8> TryFrom<Bytes> for Gid<P> {
+impl<P: Prefix> TryFrom<Bytes> for Gid<P> {
     type Error = GidParseErr;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
@@ -129,12 +130,11 @@ impl<const P: u8> TryFrom<Bytes> for Gid<P> {
             return Err(GidParseErr::InvalidLength);
         }
 
-        let bytes: [u8; GID_SIZE.as_usize()] = value.as_ref().try_into().unwrap();
-        bytes.try_into()
+        Gid::<P>::try_read_from_bytes(&value).map_err(|_| GidParseErr::InvalidLayout)
     }
 }
 
-impl<'a, const P: u8> TryFrom<&'a [u8]> for &'a Gid<P> {
+impl<'a, P: Prefix> TryFrom<&'a [u8]> for &'a Gid<P> {
     type Error = GidParseErr;
 
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
@@ -143,6 +143,14 @@ impl<'a, const P: u8> TryFrom<&'a [u8]> for &'a Gid<P> {
         }
 
         Gid::<P>::try_ref_from_bytes(value).map_err(|_| GidParseErr::InvalidLayout)
+    }
+}
+
+impl<P: Prefix> TryFrom<[u8; GID_SIZE.as_usize()]> for Gid<P> {
+    type Error = GidParseErr;
+
+    fn try_from(value: [u8; GID_SIZE.as_usize()]) -> Result<Self, Self::Error> {
+        Gid::<P>::try_read_from_bytes(&value).map_err(|_| GidParseErr::InvalidLayout)
     }
 }
 
@@ -162,7 +170,7 @@ mod tests {
     #[test]
     fn test_size() {
         let g = SegmentId {
-            prefix: Prefix::Segment,
+            prefix: Default::default(),
             ts: GidTimestamp::now(),
             random: [0x00; 9],
         };
@@ -170,7 +178,7 @@ mod tests {
         assert_eq!(g.pretty().len(), 22);
 
         let g = VolumeId {
-            prefix: Prefix::Volume,
+            prefix: Default::default(),
             ts: GidTimestamp::now(),
             random: [0xff; 9],
         };
@@ -233,5 +241,9 @@ mod tests {
             let result: Result<VolumeId, _> = case.try_into();
             assert_eq!(result, Err(GidParseErr::InvalidLayout));
         }
+
+        // wrong prefix
+        let raw = mkgid(prefix::Segment::Value as u8, SystemTime::now(), random());
+        assert_eq!(VolumeId::try_from(raw), Err(GidParseErr::InvalidLayout));
     }
 }

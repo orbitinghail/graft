@@ -2,13 +2,12 @@ use bytes::Bytes;
 use futures::TryFutureExt;
 use graft_core::lsn::LSN;
 use graft_core::VolumeId;
-use graft_proto::common::v1::SegmentInfo;
-use graft_proto::pagestore::v1::PageAtLsn;
-use graft_proto::pagestore::v1::PageAtOffset;
-use graft_proto::pagestore::v1::ReadPagesRequest;
-use graft_proto::pagestore::v1::ReadPagesResponse;
-use graft_proto::pagestore::v1::WritePagesRequest;
-use graft_proto::pagestore::v1::WritePagesResponse;
+use graft_proto::{
+    common::v1::SegmentInfo,
+    pagestore::v1::{
+        PageAtOffset, ReadPagesRequest, ReadPagesResponse, WritePagesRequest, WritePagesResponse,
+    },
+};
 use reqwest::Url;
 
 use crate::builder::ClientBuildErr;
@@ -37,7 +36,7 @@ impl PagestoreClient {
         vid: &VolumeId,
         lsn: LSN,
         offsets: Bytes,
-    ) -> Result<Vec<PageAtLsn>, ClientErr> {
+    ) -> Result<Vec<PageAtOffset>, ClientErr> {
         let url = self.endpoint.join("read_pages").unwrap();
         let req = ReadPagesRequest {
             vid: vid.copy_to_bytes(),

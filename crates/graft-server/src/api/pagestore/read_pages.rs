@@ -4,7 +4,7 @@ use axum::{extract::State, response::IntoResponse};
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
 use graft_core::page_offset::PageOffset;
 use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::pagestore::v1::{PageAtLsn, ReadPagesRequest, ReadPagesResponse};
+use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesResponse};
 use splinter::{ops::Cut, Splinter};
 
 use crate::segment::cache::Cache;
@@ -50,12 +50,12 @@ pub async fn handler<C: Cache>(
 
         let cut = offsets.cut(&splinter);
         if !cut.is_empty() {
-            let (sid, lsn) = (key.sid().clone(), key.lsn());
+            let sid = key.sid().clone();
             loading.push(
                 state
                     .loader()
                     .load_segment(sid)
-                    .map(move |result| result.map(|segment| (lsn, segment, cut)))
+                    .map(move |result| result.map(|segment| (segment, cut)))
                     .boxed(),
             );
         }
@@ -67,18 +67,16 @@ pub async fn handler<C: Cache>(
     }
 
     let mut result = ReadPagesResponse { pages: Vec::with_capacity(num_offsets) };
-    while let Some((lsn, segment, cut)) = loading.try_next().await? {
+    while let Some((segment, cut)) = loading.try_next().await? {
         let segment = ClosedSegment::from_bytes(&segment)?;
 
         for offset in cut.iter() {
             let page = segment
                 .find_page(vid.clone(), PageOffset::new(offset))
                 .expect("failed to find expected offset in segment; index out of sync");
-            result.pages.push(PageAtLsn {
-                lsn: lsn.into(),
-                offset,
-                data: page.into(),
-            });
+            result
+                .pages
+                .push(PageAtOffset { offset, data: page.into() });
         }
     }
 
@@ -215,10 +213,7 @@ mod tests {
         assert_eq!(resp.pages.len(), 5);
         // sort by offset to make the test deterministic
         resp.pages.sort_by_key(|p| p.offset);
-        for (PageAtLsn { lsn: actual_lsn, offset, data }, expected) in
-            resp.pages.into_iter().zip(0..)
-        {
-            assert_eq!(lsn, actual_lsn);
+        for (PageAtOffset { offset, data }, expected) in resp.pages.into_iter().zip(0..) {
             assert_eq!(offset, expected);
             assert_eq!(
                 data,

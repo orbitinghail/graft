@@ -45,7 +45,7 @@ impl VolumeStore {
         &'a self,
         vid: VolumeId,
         range: &'a R,
-    ) -> impl Stream<Item = Result<Commit, VolumeStoreErr>> + '_ {
+    ) -> impl Stream<Item = Result<Commit, VolumeStoreErr>> + 'a {
         let stream = if let Some(from_lsn) = range.try_start_exclusive() {
             self.store
                 .list_with_offset(Some(&commit_key_prefix(&vid)), &commit_key(&vid, from_lsn))

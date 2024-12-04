@@ -1,20 +1,13 @@
 use bytes::Bytes;
 use futures::TryFutureExt;
-use graft_core::lsn::LSN;
-use graft_core::page_count::PageCount;
-use graft_core::VolumeId;
-use graft_proto::common::v1::Commit;
-use graft_proto::common::v1::LsnRange;
-use graft_proto::common::v1::SegmentInfo;
-use graft_proto::common::v1::Snapshot;
-use graft_proto::metastore::v1::CommitRequest;
-use graft_proto::metastore::v1::CommitResponse;
-use graft_proto::metastore::v1::PullCommitsRequest;
-use graft_proto::metastore::v1::PullCommitsResponse;
-use graft_proto::metastore::v1::PullOffsetsRequest;
-use graft_proto::metastore::v1::PullOffsetsResponse;
-use graft_proto::metastore::v1::SnapshotRequest;
-use graft_proto::metastore::v1::SnapshotResponse;
+use graft_core::{lsn::LSN, page_count::PageCount, VolumeId};
+use graft_proto::{
+    common::v1::{Commit, LsnRange, SegmentInfo, Snapshot},
+    metastore::v1::{
+        CommitRequest, CommitResponse, PullCommitsRequest, PullCommitsResponse, PullOffsetsRequest,
+        PullOffsetsResponse, SnapshotRequest, SnapshotResponse,
+    },
+};
 use reqwest::Url;
 use splinter::SplinterRef;
 use std::ops::RangeBounds;

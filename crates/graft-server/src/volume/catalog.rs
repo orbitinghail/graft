@@ -169,6 +169,7 @@ impl VolumeCatalog {
     }
 
     /// scan the catalog for commits in the specified Volume in order by lsn
+    #[allow(clippy::type_complexity)]
     pub fn scan_volume<R: RangeBounds<LSN>>(
         &self,
         vid: &VolumeId,
