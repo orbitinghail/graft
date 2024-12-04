@@ -13,10 +13,13 @@ use common::v1::{Commit, GraftErr, LsnRange, SegmentInfo, Snapshot};
 use graft_core::{
     gid::GidParseErr,
     lsn::{LSNRangeExt, LSN},
+    page::{Page, PageSizeErr},
     page_count::PageCount,
+    page_offset::PageOffset,
     page_range::PageRange,
     SegmentId, VolumeId,
 };
+use pagestore::v1::{PageAtLsn, PageAtOffset};
 use prost_types::TimestampError;
 
 pub use graft::*;
@@ -103,5 +106,34 @@ impl<T: RangeBounds<LSN>> From<T> for LsnRange {
         let inclusive_start = range.try_start().unwrap_or(LSN::ZERO).into();
         let inclusive_end = range.try_end().unwrap_or(LSN::MAX).into();
         Self { inclusive_start, inclusive_end }
+    }
+}
+
+impl PageAtLsn {
+    #[inline]
+    pub fn lsn(&self) -> LSN {
+        self.lsn.into()
+    }
+
+    #[inline]
+    pub fn offset(&self) -> PageOffset {
+        self.offset.into()
+    }
+
+    #[inline]
+    pub fn page(&self) -> Result<Page, PageSizeErr> {
+        self.data.clone().try_into()
+    }
+}
+
+impl PageAtOffset {
+    #[inline]
+    pub fn offset(&self) -> PageOffset {
+        self.offset.into()
+    }
+
+    #[inline]
+    pub fn page(&self) -> Result<Page, PageSizeErr> {
+        self.data.clone().try_into()
     }
 }

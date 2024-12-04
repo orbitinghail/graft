@@ -10,17 +10,23 @@ message ReadPagesRequest {
 }
 
 message ReadPagesResponse {
-  repeated PageAtOffset pages = 1;
+  repeated PageAtLsn pages = 1;
 }
 
-message PageAtOffset {
-  uint32 offset = 1;
-  bytes data = 2;
+message PageAtLsn {
+  uint64 lsn = 1;
+  uint32 offset = 2;
+  bytes data = 3;
 }
 
 message WritePagesRequest {
   bytes vid = 1;
   repeated PageAtOffset pages = 2;
+}
+
+message PageAtOffset {
+  uint32 offset = 1;
+  bytes data = 2;
 }
 
 message WritePagesResponse {

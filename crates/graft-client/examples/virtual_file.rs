@@ -156,9 +156,10 @@ async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> anyhow:
             .await?;
 
         if let Some(p) = pages.into_iter().next() {
-            assert_eq!(offset, p.offset, "unexpected page: {:?}", p);
-            ctx.pages.insert(page_key(vid, p.offset.into()), &p.data)?;
-            return Ok(Page::try_from(p.data)?);
+            assert_eq!(offset, p.offset(), "unexpected page: {:?}", p);
+            let page = p.page()?;
+            ctx.pages.insert(page_key(vid, p.offset()), &page)?;
+            return Ok(page);
         }
     }
 

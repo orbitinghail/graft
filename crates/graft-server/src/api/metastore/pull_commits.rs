@@ -67,9 +67,9 @@ pub async fn handler(
     let mut scan = state.catalog.scan_volume(&vid, &lsns);
     while let Some((meta, mut segments)) = scan.try_next()? {
         let mut segment_infos = Vec::default();
-        while let Some((sid, splinter)) = segments.try_next()? {
+        while let Some((key, splinter)) = segments.try_next()? {
             segment_infos.push(SegmentInfo {
-                sid: sid.copy_to_bytes(),
+                sid: key.sid().copy_to_bytes(),
                 offsets: splinter.into_inner(),
             });
         }

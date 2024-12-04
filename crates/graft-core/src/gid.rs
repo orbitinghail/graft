@@ -30,6 +30,7 @@ pub struct Gid<const P: u8> {
 
 pub type VolumeId = Gid<{ Prefix::Volume.as_u8() }>;
 pub type SegmentId = Gid<{ Prefix::Segment.as_u8() }>;
+pub type ClientId = Gid<{ Prefix::Client.as_u8() }>;
 
 static_assertions::assert_eq_size!(VolumeId, [u8; GID_SIZE.as_usize()]);
 

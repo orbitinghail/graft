@@ -21,6 +21,12 @@ impl Deref for Page {
     }
 }
 
+impl AsRef<[u8]> for Page {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("invalid page size: {size}; expected: {PAGESIZE}")]
 pub struct PageSizeErr {

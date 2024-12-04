@@ -4,7 +4,7 @@ use axum::{extract::State, response::IntoResponse};
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
 use graft_core::page_offset::PageOffset;
 use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesResponse};
+use graft_proto::pagestore::v1::{PageAtLsn, ReadPagesRequest, ReadPagesResponse};
 use splinter::{ops::Cut, Splinter};
 
 use crate::segment::cache::Cache;
@@ -46,15 +46,16 @@ pub async fn handler<C: Cache>(
 
     let segments = state.catalog().scan_segments(&vid, &(checkpoint..=lsn));
     for result in segments {
-        let (sid, splinter) = result?;
+        let (key, splinter) = result?;
 
         let cut = offsets.cut(&splinter);
         if !cut.is_empty() {
+            let (sid, lsn) = (key.sid().clone(), key.lsn());
             loading.push(
                 state
                     .loader()
                     .load_segment(sid)
-                    .map(|result| result.map(|segment| (segment, cut)))
+                    .map(move |result| result.map(|segment| (lsn, segment, cut)))
                     .boxed(),
             );
         }
@@ -66,16 +67,18 @@ pub async fn handler<C: Cache>(
     }
 
     let mut result = ReadPagesResponse { pages: Vec::with_capacity(num_offsets) };
-    while let Some((segment, cut)) = loading.try_next().await? {
+    while let Some((lsn, segment, cut)) = loading.try_next().await? {
         let segment = ClosedSegment::from_bytes(&segment)?;
 
         for offset in cut.iter() {
             let page = segment
                 .find_page(vid.clone(), PageOffset::new(offset))
                 .expect("failed to find expected offset in segment; index out of sync");
-            result
-                .pages
-                .push(PageAtOffset { offset, data: page.into() });
+            result.pages.push(PageAtLsn {
+                lsn: lsn.into(),
+                offset,
+                data: page.into(),
+            });
         }
     }
 
@@ -108,12 +111,12 @@ mod tests {
 
     use super::*;
 
-    fn mksegment(pages: Vec<(VolumeId, PageOffset, Page)>) -> (Bytes, OffsetsMap) {
+    fn mksegment(sid: &SegmentId, pages: Vec<(VolumeId, PageOffset, Page)>) -> (Bytes, OffsetsMap) {
         let mut segment = OpenSegment::default();
         for (vid, off, page) in pages {
             segment.insert(vid, off, page).unwrap();
         }
-        segment.serialize()
+        segment.serialize(sid.clone())
     }
 
     #[tokio::test(start_paused = true)]
@@ -150,11 +153,14 @@ mod tests {
 
         // segment 1 is in the store
         let sid1 = SegmentId::random();
-        let (segment, offsets1) = mksegment(vec![
-            (vid.clone(), PageOffset::new(0), Page::test_filled(0)),
-            (vid.clone(), PageOffset::new(1), Page::test_filled(1)),
-            (vid.clone(), PageOffset::new(2), Page::test_filled(2)),
-        ]);
+        let (segment, offsets1) = mksegment(
+            &sid1,
+            vec![
+                (vid.clone(), PageOffset::new(0), Page::test_filled(0)),
+                (vid.clone(), PageOffset::new(1), Page::test_filled(1)),
+                (vid.clone(), PageOffset::new(2), Page::test_filled(2)),
+            ],
+        );
         store
             .put(&Path::from(sid1.pretty()), segment.into())
             .await
@@ -162,10 +168,13 @@ mod tests {
 
         // segment 2 is already in the cache
         let sid2 = SegmentId::random();
-        let (segment, offsets2) = mksegment(vec![
-            (vid.clone(), PageOffset::new(3), Page::test_filled(3)),
-            (vid.clone(), PageOffset::new(4), Page::test_filled(4)),
-        ]);
+        let (segment, offsets2) = mksegment(
+            &sid2,
+            vec![
+                (vid.clone(), PageOffset::new(3), Page::test_filled(3)),
+                (vid.clone(), PageOffset::new(4), Page::test_filled(4)),
+            ],
+        );
         cache.put(&sid2, segment).await.unwrap();
 
         // notify the catalog about the segments
@@ -206,7 +215,10 @@ mod tests {
         assert_eq!(resp.pages.len(), 5);
         // sort by offset to make the test deterministic
         resp.pages.sort_by_key(|p| p.offset);
-        for (PageAtOffset { offset, data }, expected) in resp.pages.into_iter().zip(0..) {
+        for (PageAtLsn { lsn: actual_lsn, offset, data }, expected) in
+            resp.pages.into_iter().zip(0..)
+        {
+            assert_eq!(lsn, actual_lsn);
             assert_eq!(offset, expected);
             assert_eq!(
                 data,

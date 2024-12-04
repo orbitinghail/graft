@@ -7,7 +7,7 @@ use graft_core::{
     byte_unit::ByteUnit,
     page::{Page, PAGESIZE},
     page_offset::PageOffset,
-    VolumeId,
+    SegmentId, VolumeId,
 };
 use itertools::Itertools;
 use thiserror::Error;
@@ -80,7 +80,7 @@ impl OpenSegment {
         closed_segment_size(self.index.len())
     }
 
-    pub fn serialize(self) -> (Bytes, OffsetsMap) {
+    pub fn serialize(self, sid: SegmentId) -> (Bytes, OffsetsMap) {
         let mut buf = BytesMut::with_capacity(self.encoded_size().as_usize());
         let mut index_builder = SegmentIndex::builder(self.index.len());
         let mut offsets_builder = OffsetsMap::builder();
@@ -97,12 +97,12 @@ impl OpenSegment {
 
         // build the header and write the index if it's not inline
         let header_page = if index_builder.is_inline() {
-            SegmentHeaderPage::new_with_inline_index(index_builder)
+            SegmentHeaderPage::new_with_inline_index(sid, index_builder)
         } else {
             let index_bytes = index_builder.as_bytes();
             let index_size: ByteUnit = index_bytes.len().into();
             data.put_slice(index_bytes);
-            SegmentHeaderPage::new(index_size)
+            SegmentHeaderPage::new(sid, index_size)
         };
 
         // write the header
@@ -146,12 +146,14 @@ mod tests {
 
         let expected_size = open_segment.encoded_size();
 
-        let (buf, offsets) = open_segment.serialize();
+        let sid = SegmentId::random();
+        let (buf, offsets) = open_segment.serialize(sid.clone());
 
         assert_eq!(buf.len(), expected_size);
 
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
 
+        assert_eq!(closed_segment.sid(), &sid);
         assert_eq!(closed_segment.len(), 2);
         assert!(!closed_segment.is_empty());
         assert_eq!(
@@ -176,7 +178,7 @@ mod tests {
         let open_segment = OpenSegment::default();
         let expected_size = open_segment.encoded_size();
 
-        let (buf, offsets) = open_segment.serialize();
+        let (buf, offsets) = open_segment.serialize(SegmentId::random());
 
         assert_eq!(buf.len(), expected_size);
         assert!(offsets.is_empty());
@@ -209,7 +211,7 @@ mod tests {
 
         let expected_size = open_segment.encoded_size();
 
-        let (buf, offsets) = open_segment.serialize();
+        let (buf, offsets) = open_segment.serialize(SegmentId::random());
 
         assert_eq!(buf.len(), expected_size);
 

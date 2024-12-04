@@ -18,7 +18,7 @@ url = { version = "2.5.3", features = ["serde"] }
 tryiter = "0.2.0"
 serde = { version = "1.0.215", features = ["derive"] }
 log = "0.4"
-fjall = "2.4"
+fjall = { version = "2.4", features = ["bytes"] }
 tempfile = "3.12.0"
 zerocopy = "0.8"
 

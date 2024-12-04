@@ -82,7 +82,7 @@ impl<C: Cache> SegmentUploaderTask<C> {
         let segment = req.segment;
         let sid = SegmentId::random();
         let path = Path::from(sid.pretty());
-        let (segment, offsets) = segment.serialize();
+        let (segment, offsets) = segment.serialize(sid.clone());
 
         self.metrics
             .segment_size_bytes
