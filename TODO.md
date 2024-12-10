@@ -13,7 +13,7 @@ Upcoming:
 - authentication (api keys)
 
 # client id
-A basic form of idempotency should be provided via the commit process taking a client id. This can be used to reject duplicate commits. For now, since we are single writer, this can only affect the most recent commit. If we build multi-writer we will need to scan back through all commits since the snapshot - but we will probably have to do that anyways for MVCC.
+A basic form of idempotency should be provided via the commit process taking a client id. This can be used to reject duplicate commits.
 
 # local storage & syncing
 
@@ -22,30 +22,25 @@ Graft clients can choose whether they want to sync or async commit to the remote
 For now we are using Fjall as our client storage layer. We allocate three Fjall partitions:
 
 volumes:
-  This maps VolumeId to its latest Volume Snapshot:
-    - local lsn: the latest local lsn
-    - sync lsn: the latest local lsn that has been synced to the server
-    - remote lsn: the latest seen remote lsn
-    - checkpoint lsn: the latest checkpoint lsn
-    - page count: the page count at the local lsn
+  This maps each VolumeId to a set of snapshots used to track the volume's state:
+    local: the latest local snapshot, updated by writes
+    sync: the last local snapshot synced to the server
+    remote: the latest remote snapshot
+    checkpoint: the latest remote checkpoint
 
 pages:
-  This maps from (VolumeId, Offset, LSN) to either a page, or a PendingMark.
-  The PendingMark is a short unique value that signals the page has changed at this (VolumeId, Offset, LSN) but has not been downloaded.
-  The LSN is always the local LSN. this sometimes may also happen to be the remote LSN.
+  This maps from (VolumeId, Offset, LSN) to a PageValue.
+  PageValue considers empty values to be pending pages.
+  The LSN is local to this client.
 
 commits:
   This stores metadata for each local commit that has yet to sync to the server.
   (VolumeId, LSN) -> Splinter of all modified offsets by this commit
 
-  This partition also stores sync status per volume.
-  VolumeId -> SyncStatus:
-    - `status: Idle|Syncing(Range<LSN>)`
-
 read snapshot:
   Take a copy of the latest Volume snapshot from the volumes partition.
   To read a page, the client opens a reverse iterater on the pages partition starting from the snapshot local lsn and returns the first matched page.
-  If the client encounters a PendingMark, it fetches the page:
+  If the client encounters a PendingPage, it fetches the page:
     Query the prefetcher for additional pages to fetch
       this returns a list of page partition keys
     Request page offsets at the snapshot's remote lsn.
@@ -68,14 +63,14 @@ sync from local to remote
   take the sync lock if needed
   take a read snapshot
   gather all commits between the last synced LSN and the latest local LSN
-  update sync status = `Syncing(Range<LSN>)`
+  update volume/sync snapshot to the latest local LSN
   start a fjall batch
   for each commit:
     flush the commit's pages to the Graft Pagestore
     remove the commit (in the batch)
   commit segments to the Graft Metastore
   on success
-    write the updated sync LSN and remote LSN to the volume snapshot (batch)
+    update volume/remote Snapshot to the volume snapshot (in the batch)
     commit the batch
   on concurrent write failure:
     this means that someone else has written to the volume concurrently
@@ -83,14 +78,19 @@ sync from local to remote
   on transient failure:
     retry a few times, before aborting and trying again later
   crash recovery:
-    if the graft client crashes between committing remotely and committing the batch, we will need to recover.
-    for each volume:
+    if the graft client crashes during the sync process before we are able to commit locally, we will need to recover.
+    we can detect recovery is needed at boot by checking if there are any local commits earlier than the volume/sync snapshot
+    for any volume that needs recovery:
       request the latest remote snapshot
-      if snapshot.remote_lsn != remote.lsn
-        the remote snapshot has changed, it may have been due to our commit
-          we can detect this by checking the remote snapshots client id
-          if it's us, then we can safely assume we committed
-            update our snapshot, cleanup resolved commits in the commits partition based on the syncing lsn range
+      if local.remote_lsn != remote.lsn && local.client_id == remote.client_id:
+        the remote snapshot has changed due to our commit
+        cleanup local commits up to the sync snapshot
+      else if client ids don't match:
+        someone else committed, possibly after our commit
+        to figure this out we would need to ask the server to determine if our commit landed, this would require another server endpoint, or for pull offsets to return all relevant client ids. for now we will just crash
+      else if remote lsn matches local remote lsn:
+        in this case, our last sync did not go through
+        restart the sync process
 
 # Volume Write/Replicate example
 

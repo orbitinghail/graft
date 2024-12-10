@@ -45,6 +45,8 @@ pub type ClientId = Gid<prefix::Client>;
 static_assertions::assert_eq_size!(VolumeId, [u8; GID_SIZE.as_usize()]);
 
 impl<P: Prefix> Gid<P> {
+    pub const SIZE: ByteUnit = GID_SIZE;
+
     pub fn random() -> Self {
         Self {
             prefix: P::default(),

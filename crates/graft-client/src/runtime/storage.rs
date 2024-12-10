@@ -1,78 +1,13 @@
-use std::{
-    fmt::{Debug, Display},
-    io,
-    path::Path,
-};
+use std::{io, path::Path};
 
 use fjall::{KvSeparationOptions, PartitionCreateOptions};
-use graft_core::{lsn::LSN, page_offset::PageOffset, VolumeId};
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, BE, U32, U64};
 
 pub trait Storage {
     type Error;
 }
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
-#[repr(C, packed)]
-struct PageKey {
-    vid: VolumeId,
-    offset: U32<BE>,
-    lsn: U64<BE>,
-}
-
-impl PageKey {
-    #[inline]
-    fn new(vid: VolumeId, offset: PageOffset, lsn: LSN) -> Self {
-        Self {
-            vid,
-            offset: offset.into(),
-            lsn: lsn.into(),
-        }
-    }
-
-    #[inline]
-    pub fn vid(&self) -> &VolumeId {
-        &self.vid
-    }
-
-    #[inline]
-    pub fn offset(&self) -> PageOffset {
-        self.offset.into()
-    }
-
-    #[inline]
-    pub fn lsn(&self) -> LSN {
-        self.lsn.into()
-    }
-}
-
-impl AsRef<[u8]> for PageKey {
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
-
-impl Display for PageKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}@{}", self.vid.short(), self.offset, self.lsn)
-    }
-}
-
-impl Debug for PageKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(self, f)
-    }
-}
-
-impl Clone for PageKey {
-    fn clone(&self) -> Self {
-        Self {
-            vid: self.vid.clone(),
-            offset: self.offset,
-            lsn: self.lsn,
-        }
-    }
-}
+mod page;
+mod snapshot;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FjallStorageErr {
@@ -87,11 +22,17 @@ pub enum FjallStorageErr {
 pub struct FjallStorage {
     keyspace: fjall::Keyspace,
 
-    /// maps from VolumeId to (lsn, checkpoint_lsn, page_count)
+    /// Used to store volume attributes
+    /// maps from (VolumeId, SnapshotKind) to Snapshot
     volumes: fjall::Partition,
 
-    /// maps from (VolumeId, Offset, LSN) to Page|MarkPending
+    /// Used to store page contents
+    /// maps from (VolumeId, Offset, LSN) to PageValue
     pages: fjall::Partition,
+
+    /// Used to track changes made by local commits.
+    /// maps from (VolumeId, LSN) to Splinter of written offsets
+    commits: fjall::Partition,
 }
 
 impl FjallStorage {
@@ -110,7 +51,11 @@ impl FjallStorage {
             "pages",
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
-        Ok(FjallStorage { keyspace, volumes, pages })
+        let commits = keyspace.open_partition(
+            "commits",
+            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+        )?;
+        Ok(FjallStorage { keyspace, volumes, pages, commits })
     }
 }
 

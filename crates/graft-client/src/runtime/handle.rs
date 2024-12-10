@@ -1,18 +1,13 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use graft_core::{lsn::LSN, page::Page, page_count::PageCount, page_offset::PageOffset, VolumeId};
+use graft_core::{lsn::LSN, page::Page, page_offset::PageOffset, VolumeId};
+use graft_proto::common::v1::Snapshot;
 
 use crate::ClientErr;
 
 use super::storage::Storage;
 
 pub type Result<T> = std::result::Result<T, ClientErr>;
-
-pub struct Snapshot {
-    lsn: LSN,
-    checkpoint_lsn: LSN,
-    page_count: PageCount,
-}
 
 #[derive(Clone)]
 pub struct RuntimeHandle<S> {
