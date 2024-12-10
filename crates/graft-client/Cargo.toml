@@ -15,7 +15,6 @@ tokio = { version = "1" }
 thiserror = "2.0"
 futures = "0.3.31"
 url = { version = "2.5.3", features = ["serde"] }
-tryiter = "0.2.0"
 serde = { version = "1.0.215", features = ["derive"] }
 log = "0.4"
 fjall = { version = "2.4", features = ["bytes"] }
@@ -27,3 +26,4 @@ env_logger = "0.11"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 clap = { version = "4.5.20", features = ["derive"] }
+tryiter = "0.2.0"
