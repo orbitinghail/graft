@@ -172,7 +172,7 @@ impl<'a> BlockRef<'a> {
     }
 }
 
-impl<'a> CopyToOwned for BlockRef<'a> {
+impl CopyToOwned for BlockRef<'_> {
     type Owned = Block;
 
     fn copy_to_owned(&self) -> Self::Owned {

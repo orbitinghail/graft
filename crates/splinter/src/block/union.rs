@@ -28,7 +28,7 @@ impl<'a> Union<BlockRef<'a>> for Block {
 }
 
 // BlockRef <> Block
-impl<'a> Union<Block> for BlockRef<'a> {
+impl Union<Block> for BlockRef<'_> {
     type Output = Block;
 
     #[inline]
@@ -38,11 +38,11 @@ impl<'a> Union<Block> for BlockRef<'a> {
 }
 
 // BlockRef <> BlockRef
-impl<'a, 'b> Union<BlockRef<'b>> for BlockRef<'a> {
+impl<'a> Union<BlockRef<'a>> for BlockRef<'_> {
     type Output = Block;
 
     #[inline]
-    fn union(&self, rhs: &BlockRef<'b>) -> Self::Output {
+    fn union(&self, rhs: &BlockRef<'a>) -> Self::Output {
         self.copy_to_owned().union(rhs)
     }
 }

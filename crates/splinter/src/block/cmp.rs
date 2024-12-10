@@ -12,8 +12,8 @@ impl PartialEq<Block> for Block {
 }
 
 // BlockRef == BlockRef
-impl<'a, 'b> PartialEq<BlockRef<'b>> for BlockRef<'a> {
-    fn eq(&self, other: &BlockRef<'b>) -> bool {
+impl<'a> PartialEq<BlockRef<'a>> for BlockRef<'_> {
+    fn eq(&self, other: &BlockRef<'a>) -> bool {
         use BlockRef::*;
 
         match (self, other) {
@@ -26,7 +26,7 @@ impl<'a, 'b> PartialEq<BlockRef<'b>> for BlockRef<'a> {
 }
 
 // BlockRef == Block
-impl<'a> PartialEq<Block> for BlockRef<'a> {
+impl PartialEq<Block> for BlockRef<'_> {
     fn eq(&self, other: &Block) -> bool {
         match self.resolve_bitmap() {
             Left(bitmap) => bitmap == &other.bitmap,

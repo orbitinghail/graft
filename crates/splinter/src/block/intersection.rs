@@ -28,7 +28,7 @@ impl<'a> Intersection<BlockRef<'a>> for Block {
 }
 
 // BlockRef <> Block
-impl<'a> Intersection<Block> for BlockRef<'a> {
+impl Intersection<Block> for BlockRef<'_> {
     type Output = Block;
 
     #[inline]
@@ -38,11 +38,11 @@ impl<'a> Intersection<Block> for BlockRef<'a> {
 }
 
 // BlockRef <> BlockRef
-impl<'a, 'b> Intersection<BlockRef<'b>> for BlockRef<'a> {
+impl<'a> Intersection<BlockRef<'a>> for BlockRef<'_> {
     type Output = Block;
 
     #[inline]
-    fn intersection(&self, rhs: &BlockRef<'b>) -> Self::Output {
+    fn intersection(&self, rhs: &BlockRef<'a>) -> Self::Output {
         self.copy_to_owned().intersection(rhs)
     }
 }

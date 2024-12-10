@@ -39,7 +39,7 @@ pub struct ResourcePoolGuard<'a, T> {
     notify_drop: Arc<Notify>,
 }
 
-impl<'a, T> Deref for ResourcePoolGuard<'a, T> {
+impl<T> Deref for ResourcePoolGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -48,7 +48,7 @@ impl<'a, T> Deref for ResourcePoolGuard<'a, T> {
     }
 }
 
-impl<'a, T> Drop for ResourcePoolGuard<'a, T> {
+impl<T> Drop for ResourcePoolGuard<'_, T> {
     fn drop(&mut self) {
         self.notify_drop.notify_waiters();
     }
