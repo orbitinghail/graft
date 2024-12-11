@@ -2,6 +2,7 @@ pub mod segment {
     pub mod bus;
     pub mod cache;
     pub mod closed;
+    pub mod index;
     pub mod loader;
     pub mod offsets_map;
     pub mod open;

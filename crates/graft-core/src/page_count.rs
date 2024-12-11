@@ -29,7 +29,7 @@ use crate::page_range::PageRange;
 pub struct PageCount(u32);
 
 impl PageCount {
-    pub const EMPTY: Self = Self(0);
+    pub const ZERO: Self = Self(0);
     pub const ONE: Self = Self(1);
     pub const MAX: Self = Self(u32::MAX);
 
@@ -38,8 +38,18 @@ impl PageCount {
         Self(page_count)
     }
 
+    #[inline]
     pub fn offsets(&self) -> PageRange {
         PageRange::new(0, self.0)
+    }
+
+    #[inline]
+    pub fn incr(&mut self) {
+        self.0 = self.0.checked_add(1).expect("page count overflow");
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.0 as usize
     }
 }
 
@@ -110,13 +120,13 @@ impl Add for PageCount {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
+        Self(self.0.checked_add(rhs.0).expect("page count overflow"))
     }
 }
 
 impl AddAssign for PageCount {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
+        self.0 = self.0.checked_add(rhs.0).expect("page count overflow");
     }
 }
 
@@ -124,12 +134,12 @@ impl Sub for PageCount {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
+        Self(self.0.saturating_sub(rhs.0))
     }
 }
 
 impl SubAssign for PageCount {
     fn sub_assign(&mut self, rhs: Self) {
-        self.0 -= rhs.0;
+        self.0 = self.0.saturating_sub(rhs.0);
     }
 }

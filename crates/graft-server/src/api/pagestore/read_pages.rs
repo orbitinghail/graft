@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::{extract::State, response::IntoResponse};
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
-use graft_core::page_offset::PageOffset;
 use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesResponse};
 use splinter::{ops::Cut, Splinter};
@@ -72,7 +71,7 @@ pub async fn handler<C: Cache>(
 
         for offset in cut.iter() {
             let page = segment
-                .find_page(vid.clone(), PageOffset::new(offset))
+                .find_page(vid.clone(), offset.into())
                 .expect("failed to find expected offset in segment; index out of sync");
             result
                 .pages

@@ -191,24 +191,33 @@ The Pagestore is responsible for storing and looking up Pages in Segments stored
 
 ## Segment Layout
 
-A Segment is a binary file composed of three sections: Header, Data, Index.
-The Index is only included if it's larger than what can fit in the Header.
+A Segment is a binary file composed of three sections: Pages, Index, Footer.
+
+**Footer**
+The footer is stored at the end of the Segment.
 
 ```
-Header (Page Size)
-  magic
-  version
-  index_offset (if 0, then inline)
-  [Index inlined]
+Footer (32 bytes)
+  magic: u32
+  sid: SegmentId
+  index_size: u32
+  _padding: 8 bytes
 ```
 
-**Data**  
-List of Pages stored back to back immediately after the Header
+**Pages**
+List of Pages stored back to back starting at the beginning of the segment.
 
 **Index**  
-A serialized ODHT (https://docs.rs/odht). Built as a regular in-memory HT while collecting Pages, and then compressed into an on-disk ODHT via from_iterator (max_load_factor=100%).
+A SegmentIndex which has two sections: a Volume Index and a list of PageOffsets.
 
-The Index is a map from `(Volume ID, Offset)` to the Page offset in the file. 
+The Volume Index is a list of (VolumeId, Start, Pages) tuples.
+    VolumeId: The VolumeId for this set of pages
+    Start: The position of the first page and page offset for this Volume
+    Pages: The number of pages stored in this Segment for this Volume
+
+The VolumeId Table is sorted by VolumeId.
+
+The list of PageOffsets is stored in the same order as pages are stored in the segment, and the index requires that each set of Offsets corresponding to a Volume is sorted.
 
 ## Segment Cache
 The Pagestore must cache recently read Segments in order to minimize round trips to Object Storage and improve performance. The disk cache should have a configurable target max size, and remove the least recently accessed Segment to reclaim space.
