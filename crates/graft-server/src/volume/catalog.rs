@@ -9,7 +9,7 @@ use bytes::Bytes;
 use fjall::{
     Batch, Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice,
 };
-use graft_core::{gid::VolumeId, lsn::LSN};
+use graft_core::{gid::VolumeId, lsn::LSN, zerocopy_err::ZerocopyErr};
 use graft_proto::common::v1::SegmentInfo;
 use serde::{Deserialize, Serialize};
 use splinter::SplinterRef;
@@ -33,7 +33,10 @@ pub enum VolumeCatalogErr {
     IoErr(#[from] std::io::Error),
 
     #[error("Failed to decode entry into type {target}")]
-    DecodeErr { target: &'static str },
+    DecodeErr {
+        target: &'static str,
+        source: ZerocopyErr,
+    },
 
     #[error(transparent)]
     SplinterErr(#[from] splinter::DecodeErr),
@@ -119,8 +122,9 @@ impl VolumeCatalog {
 
         for kv in self.volumes.range(range) {
             let (key, _) = kv?;
-            let key = CommitKey::try_ref_from_bytes(&key)
-                .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitKey" })?;
+            let key = CommitKey::try_ref_from_bytes(&key).map_err(|err| {
+                VolumeCatalogErr::DecodeErr { target: "CommitKey", source: err.into() }
+            })?;
             if key.lsn() != cursor {
                 return Ok(false);
             }
@@ -136,8 +140,10 @@ impl VolumeCatalog {
         self.volumes
             .get(CommitKey::new(vid, lsn))?
             .map(|bytes| {
-                CommitMeta::read_from_bytes(&bytes)
-                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitMeta" })
+                CommitMeta::read_from_bytes(&bytes).map_err(|err| VolumeCatalogErr::DecodeErr {
+                    target: "CommitMeta",
+                    source: err.into(),
+                })
             })
             .transpose()
     }
@@ -150,8 +156,10 @@ impl VolumeCatalog {
             .next_back()
             .transpose()?
             .map(|(_, bytes)| {
-                CommitMeta::read_from_bytes(&bytes)
-                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitMeta" })
+                CommitMeta::read_from_bytes(&bytes).map_err(|err| VolumeCatalogErr::DecodeErr {
+                    target: "CommitMeta",
+                    source: err.into(),
+                })
             })
             .transpose()
     }
@@ -185,10 +193,12 @@ impl VolumeCatalog {
             .range(range)
             .err_into::<VolumeCatalogErr>()
             .map_ok(|(key, meta)| {
-                let key = CommitKey::try_read_from_bytes(&key)
-                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitKey" })?;
-                let meta = CommitMeta::read_from_bytes(&meta)
-                    .map_err(|_| VolumeCatalogErr::DecodeErr { target: "CommitMeta" })?;
+                let key = CommitKey::try_read_from_bytes(&key).map_err(|err| {
+                    VolumeCatalogErr::DecodeErr { target: "CommitKey", source: err.into() }
+                })?;
+                let meta = CommitMeta::read_from_bytes(&meta).map_err(|err| {
+                    VolumeCatalogErr::DecodeErr { target: "CommitMeta", source: err.into() }
+                })?;
 
                 // scan segments for this commit
                 let segments = self.segments.prefix(key);
@@ -252,8 +262,9 @@ impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> SegmentsQueryIter<I> {
         entry: fjall::Result<(Slice, Slice)>,
     ) -> Result<(SegmentKey, SplinterRef<Bytes>)> {
         let (key, value) = entry?;
-        let key = SegmentKey::try_read_from_bytes(&key)
-            .map_err(|_| VolumeCatalogErr::DecodeErr { target: "SegmentKey" })?;
+        let key = SegmentKey::try_read_from_bytes(&key).map_err(|err| {
+            VolumeCatalogErr::DecodeErr { target: "SegmentKey", source: err.into() }
+        })?;
         let val = SplinterRef::from_bytes(Bytes::from(value))?;
         Ok((key, val))
     }

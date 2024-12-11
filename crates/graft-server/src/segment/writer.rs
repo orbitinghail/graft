@@ -88,7 +88,7 @@ impl SegmentWriterTask {
         self.metrics.page_writes.inc();
 
         // if the segment is full, flush it and start a new one
-        if self.segment.is_full() {
+        if !self.segment.has_space_for(&req.vid) {
             self.handle_flush().await?;
         }
 
@@ -164,15 +164,11 @@ mod tests {
         let req = output_rx.recv().await.unwrap();
 
         assert_eq!(
-            req.segment
-                .find_page(vid.clone(), PageOffset::new(0))
-                .unwrap(),
+            req.segment.find_page(&vid, PageOffset::new(0)).unwrap(),
             &page0
         );
         assert_eq!(
-            req.segment
-                .find_page(vid.clone(), PageOffset::new(1))
-                .unwrap(),
+            req.segment.find_page(&vid, PageOffset::new(1)).unwrap(),
             &page1
         );
     }

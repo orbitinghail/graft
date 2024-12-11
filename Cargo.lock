@@ -1097,7 +1097,6 @@ dependencies = [
  "memmap2",
  "nix",
  "object_store",
- "odht",
  "prost",
  "rlimit",
  "serde",
@@ -1895,14 +1894,6 @@ dependencies = [
  "tracing",
  "url",
  "walkdir",
-]
-
-[[package]]
-name = "odht"
-version = "0.3.1"
-source = "git+https://github.com/carlsverre/odht.git#69e112ff3a9b13cc96364ac273486bb7dca47c68"
-dependencies = [
- "cfg-if",
 ]
 
 [[package]]

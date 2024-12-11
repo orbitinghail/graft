@@ -45,12 +45,16 @@ impl ByteUnit {
         self.0
     }
 
-    pub const fn as_usize(&self) -> usize {
-        self.0 as usize
-    }
-
     pub const fn as_u32(&self) -> u32 {
         self.0 as u32
+    }
+
+    pub const fn as_u16(&self) -> u16 {
+        self.0 as u16
+    }
+
+    pub const fn as_usize(&self) -> usize {
+        self.0 as usize
     }
 
     const fn as_f64(&self) -> f64 {

@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use bytes::Buf;
 use futures::FutureExt;
 use graft_core::SegmentId;
 use measured::{metric::histogram::Thresholds, CounterVec, Histogram, MetricGroup};
-use object_store::{path::Path, ObjectStore};
+use object_store::{path::Path, ObjectStore, PutPayload};
 use tokio::sync::mpsc;
 
 use crate::{
@@ -86,11 +87,11 @@ impl<C: Cache> SegmentUploaderTask<C> {
 
         self.metrics
             .segment_size_bytes
-            .observe(segment.len() as f64);
+            .observe(segment.remaining() as f64);
 
         let upload_task = self
             .store
-            .put(&path, segment.clone().into())
+            .put(&path, PutPayload::from_iter(segment.iter().cloned()))
             .map(|inner| inner.context("failed to upload segment"))
             .inspect(|result| {
                 self.metrics.uploaded_segments.inc(result.into());
@@ -160,7 +161,7 @@ mod tests {
         let bytes = obj.bytes().await.unwrap();
         let segment = ClosedSegment::from_bytes(&bytes).unwrap();
 
-        assert_eq!(segment.len(), 2);
+        assert_eq!(segment.pages(), 2);
         assert_eq!(
             segment.find_page(vid.clone(), PageOffset::new(0)),
             Some(page0)

@@ -2,14 +2,16 @@ use std::time::{Duration, SystemTime};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use graft_core::{
-    gid::GidParseErr, lsn::LSN, page_count::PageCount, page_range::PageRange, SegmentId, VolumeId,
+    gid::GidParseErr, lsn::LSN, page_count::PageCount, page_range::PageRange,
+    zerocopy_err::ZerocopyErr, SegmentId, VolumeId,
 };
 use graft_proto::common::v1::Snapshot;
 use object_store::{path::Path, PutPayload};
 use splinter::SplinterRef;
 use thiserror::Error;
 use zerocopy::{
-    FromBytes, Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32, U64,
+    ConvertError, FromBytes, Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32,
+    U64,
 };
 
 pub const COMMIT_MAGIC: U32<LittleEndian> = U32::from_bytes([0x31, 0x99, 0xBF, 0x00]);
@@ -188,10 +190,17 @@ impl CommitBuilder {
 
 #[derive(Debug, Error)]
 pub enum CommitValidationErr {
-    #[error("segment must be at least {} bytes", size_of::<CommitHeader>())]
-    TooSmall,
+    #[error("corrupt commit header: {0}")]
+    Corrupt(#[from] ZerocopyErr),
+
     #[error("invalid magic number")]
     Magic,
+}
+
+impl<A, S, V> From<ConvertError<A, S, V>> for CommitValidationErr {
+    fn from(value: ConvertError<A, S, V>) -> Self {
+        Self::Corrupt(value.into())
+    }
 }
 
 #[derive(Clone)]
@@ -203,8 +212,7 @@ pub struct Commit {
 impl Commit {
     pub fn from_bytes(mut data: Bytes) -> Result<Self, CommitValidationErr> {
         let header = data.split_to(size_of::<CommitHeader>());
-        let header = CommitHeader::try_read_from_bytes(&header)
-            .map_err(|_| CommitValidationErr::TooSmall)?;
+        let header = CommitHeader::try_read_from_bytes(&header)?;
 
         if header.magic != COMMIT_MAGIC {
             return Err(CommitValidationErr::Magic);
@@ -235,11 +243,17 @@ impl Commit {
 
 #[derive(Debug, Error)]
 pub enum OffsetsValidationErr {
-    #[error("offsets must be at least {} bytes", size_of::<OffsetsHeader>())]
-    TooSmall,
+    #[error("corrupt offsets header: {0}")]
+    Corrupt(#[from] ZerocopyErr),
 
     #[error(transparent)]
     SplinterDecodeErr(#[from] splinter::DecodeErr),
+}
+
+impl<A, S, V> From<ConvertError<A, S, V>> for OffsetsValidationErr {
+    fn from(value: ConvertError<A, S, V>) -> Self {
+        Self::Corrupt(value.into())
+    }
 }
 
 pub struct OffsetsIter<'a> {
@@ -256,8 +270,7 @@ impl<'a> OffsetsIter<'a> {
         }
 
         // read the next header
-        let (header, rest) = OffsetsHeader::try_ref_from_prefix(self.offsets)
-            .map_err(|_| OffsetsValidationErr::TooSmall)?;
+        let (header, rest) = OffsetsHeader::try_ref_from_prefix(self.offsets)?;
 
         // read the splinter
         let (splinter, rest) = rest.split_at(header.size.get() as usize);

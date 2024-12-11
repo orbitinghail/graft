@@ -2,7 +2,7 @@ use bytes::{Bytes, BytesMut};
 use std::fmt::Debug;
 use zerocopy::{
     little_endian::{U16, U32},
-    FromBytes, Immutable, IntoBytes, KnownLayout, Ref, Unaligned,
+    ConvertError, FromBytes, Immutable, IntoBytes, KnownLayout, Ref, Unaligned,
 };
 
 use crate::{
@@ -173,14 +173,18 @@ where
     pub fn from_bytes(data: T) -> Result<Self, DecodeErr> {
         use DecodeErr::*;
 
-        let (header, _) = Ref::<_, Header>::from_prefix(data.as_ref())
-            .map_err(|_| InvalidLength { ty: "Header", size: size_of::<Header>() })?;
+        let (header, _) = Ref::<_, Header>::from_prefix(data.as_ref()).map_err(|err| {
+            debug_assert!(matches!(err, ConvertError::Size(_)));
+            InvalidLength { ty: "Header", size: size_of::<Header>() }
+        })?;
         if header.magic != SPLINTER_MAGIC {
             return Err(InvalidMagic);
         }
 
-        let (_, footer) = Ref::<_, Footer>::from_suffix(data.as_ref())
-            .map_err(|_| InvalidLength { ty: "Footer", size: size_of::<Footer>() })?;
+        let (_, footer) = Ref::<_, Footer>::from_suffix(data.as_ref()).map_err(|err| {
+            debug_assert!(matches!(err, ConvertError::Size(_)));
+            InvalidLength { ty: "Footer", size: size_of::<Footer>() }
+        })?;
         let partitions = footer.partitions.get() as usize;
 
         Ok(SplinterRef { data, partitions })

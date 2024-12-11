@@ -46,19 +46,19 @@ impl OffsetsMap {
 }
 
 impl OffsetsMapBuilder {
-    pub fn insert(&mut self, vid: VolumeId, offset: PageOffset) {
+    pub fn insert(&mut self, vid: &VolumeId, offset: PageOffset) {
         if let Some(current) = &self.vid {
-            if *current != vid {
-                assert!(vid > *current, "Volumes must be inserted in order by ID");
+            if current != vid {
+                assert!(vid > current, "Volumes must be inserted in order by ID");
 
                 let splinter = std::mem::take(&mut self.splinter);
                 self.map
                     .0
                     .insert(current.clone(), splinter.serialize_to_splinter_ref());
-                self.vid = Some(vid);
+                self.vid = Some(vid.clone());
             }
         } else {
-            self.vid = Some(vid);
+            self.vid = Some(vid.clone());
         }
 
         self.splinter.insert(offset.into())

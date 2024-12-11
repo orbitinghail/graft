@@ -5,7 +5,7 @@
 
 use std::{future::Future, io, ops::Deref};
 
-use bytes::Bytes;
+use bytes::Buf;
 use graft_core::SegmentId;
 
 pub mod atomic_file;
@@ -17,7 +17,11 @@ pub trait Cache: Send + Sync {
     where
         Self: 'a;
 
-    fn put(&self, sid: &SegmentId, data: Bytes) -> impl Future<Output = io::Result<()>> + Send;
+    fn put<T: Buf + Send + 'static>(
+        &self,
+        sid: &SegmentId,
+        data: T,
+    ) -> impl Future<Output = io::Result<()>> + Send;
 
     fn get(
         &self,

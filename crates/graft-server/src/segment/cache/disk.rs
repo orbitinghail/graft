@@ -1,5 +1,6 @@
 use std::{fs::canonicalize, io, ops::Deref, path::PathBuf};
 
+use bytes::Buf;
 use graft_core::{
     byte_unit::ByteUnit,
     hash_table::{HTEntry, HashTable},
@@ -90,13 +91,15 @@ impl DiskCache {
 impl Cache for DiskCache {
     type Item<'a> = MappedSegment<'a>;
 
-    async fn put(&self, sid: &SegmentId, data: bytes::Bytes) -> std::io::Result<()> {
+    async fn put<T: Buf + Send + 'static>(&self, sid: &SegmentId, data: T) -> std::io::Result<()> {
         let path = self.dir.join(sid.pretty());
 
         tracing::debug!("writing segment {:?} to disk at path {:?}", sid, path);
 
+        let data_size = data.remaining().into();
+
         // optimistically write the file to disk, aborting if it already exists
-        match write_file_atomic(&path, &data).await {
+        match write_file_atomic(&path, data).await {
             Ok(()) => (),
             // we don't need to update self.segments if the file already exists
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
@@ -109,7 +112,7 @@ impl Cache for DiskCache {
         // insert the segment into the cache
         self.segments.write().await.insert(Segment {
             sid: sid.clone(),
-            _size: data.len().into(),
+            _size: data_size,
             mmap_handle: Default::default(),
         });
 

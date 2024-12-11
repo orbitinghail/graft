@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use graft_core::{
     hash_table::{HTEntry, HashTable},
     SegmentId,
@@ -27,12 +27,16 @@ pub struct MemCache {
 }
 
 impl Cache for MemCache {
-    type Item<'a> = Bytes
+    type Item<'a>
+        = Bytes
     where
         Self: 'a;
 
-    async fn put(&self, sid: &SegmentId, data: Bytes) -> std::io::Result<()> {
+    async fn put<T: Buf + Send + 'static>(&self, sid: &SegmentId, data: T) -> std::io::Result<()> {
         let mut segments = self.segments.write().await;
+        let mut buf = BytesMut::with_capacity(data.remaining());
+        buf.put(data);
+        let data = buf.freeze();
         segments.insert(Segment { sid: sid.clone(), data });
         Ok(())
     }

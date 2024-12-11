@@ -15,35 +15,25 @@
 
 use std::mem::size_of;
 
-use bytes::{Buf, BytesMut};
-use graft_core::{page_count::PageCount, page_offset::PageOffset, VolumeId};
-use thiserror::Error;
-use zerocopy::{little_endian::U32, ConvertError, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use bytes::BytesMut;
+use graft_core::{
+    byte_unit::ByteUnit, page_count::PageCount, page_offset::PageOffset, zerocopy_err::ZerocopyErr,
+    VolumeId,
+};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+
+use crate::bytes_vec::BytesVec;
 
 #[derive(Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone)]
 #[repr(C)]
 struct VolumeMeta {
     vid: VolumeId,
-    start: U32,
-    pages: PageCount,
-}
 
-impl VolumeMeta {
-    fn add_page(&mut self) {
-        self.pages.incr();
-    }
-}
+    /// The position of the first page for this Volume in the segment
+    start: u16,
 
-#[derive(Debug, Error)]
-pub enum SegmentIndexErr {
-    #[error("Invalid Alignment")]
-    InvalidAlignment,
-
-    #[error("Invalid Size")]
-    InvalidSize,
-
-    #[error("Corrupt Segment Index")]
-    Corrupt,
+    /// The number of pages stored in this Segment for this Volume
+    pages: u16,
 }
 
 pub struct SegmentIndex<'a> {
@@ -52,26 +42,21 @@ pub struct SegmentIndex<'a> {
 }
 
 impl<'a> SegmentIndex<'a> {
-    pub fn from_bytes(data: &'a [u8], volumes: usize) -> Result<Self, SegmentIndexErr> {
+    pub fn from_bytes(data: &'a [u8], volumes: usize) -> Result<Self, ZerocopyErr> {
         let volume_index_size = volumes * size_of::<VolumeMeta>();
         assert!(data.len() >= volume_index_size);
         let (volume_index, page_offsets) = data.split_at(volume_index_size);
-
-        let volume_index =
-            <[VolumeMeta]>::try_ref_from_bytes(volume_index).map_err(|err| match err {
-                ConvertError::Alignment(_) => SegmentIndexErr::InvalidAlignment,
-                ConvertError::Size(_) => SegmentIndexErr::InvalidSize,
-                ConvertError::Validity(_) => SegmentIndexErr::Corrupt,
-            })?;
-
-        let page_offsets =
-            <[PageOffset]>::try_ref_from_bytes(page_offsets).map_err(|err| match err {
-                ConvertError::Alignment(_) => SegmentIndexErr::InvalidAlignment,
-                ConvertError::Size(_) => SegmentIndexErr::InvalidSize,
-                ConvertError::Validity(_) => SegmentIndexErr::Corrupt,
-            })?;
-
+        let volume_index = <[VolumeMeta]>::try_ref_from_bytes(volume_index)?;
+        let page_offsets = <[PageOffset]>::try_ref_from_bytes(page_offsets)?;
         Ok(Self { volume_index, page_offsets })
+    }
+
+    pub fn pages(&self) -> PageCount {
+        PageCount::new(self.page_offsets.len() as u32)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.page_offsets.is_empty()
     }
 
     /// Lookup the local offset of a page by (VolumeId, PageOffset)
@@ -84,12 +69,22 @@ impl<'a> SegmentIndex<'a> {
 
         let meta = &self.volume_index[meta_idx];
 
-        let start = meta.start.get() as usize;
-        let end = start + meta.pages.as_usize();
+        let start = meta.start as usize;
+        let end = start + (meta.pages as usize);
 
         let relative_offset = self.page_offsets[start..end].binary_search(&offset).ok()?;
 
         Some(start + relative_offset)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&VolumeId, PageOffset)> {
+        self.volume_index.iter().flat_map(|meta| {
+            let start = meta.start as usize;
+            let end = start + (meta.pages as usize);
+            self.page_offsets[start..end]
+                .iter()
+                .map(move |offset| (&meta.vid, *offset))
+        })
     }
 }
 
@@ -99,37 +94,46 @@ pub struct SegmentIndexBuilder {
     page_offsets: BytesMut,
 
     current: Option<VolumeMeta>,
-    pages: PageCount,
+    pages: u16,
     last_offset: Option<PageOffset>,
 }
 
 impl SegmentIndexBuilder {
-    pub fn new_with_capacity(num_volumes: usize, pages: PageCount) -> Self {
+    pub fn new_with_capacity(volume_capacity: usize, page_capacity: usize) -> Self {
         Self {
-            volume_index: BytesMut::with_capacity(num_volumes * size_of::<VolumeMeta>()),
-            page_offsets: BytesMut::with_capacity(pages.as_usize() * size_of::<PageOffset>()),
+            volume_index: BytesMut::with_capacity(volume_capacity * size_of::<VolumeMeta>()),
+            page_offsets: BytesMut::with_capacity(page_capacity * size_of::<PageOffset>()),
             current: None,
-            pages: PageCount::ZERO,
+            pages: 0,
             last_offset: None,
         }
     }
 
-    pub fn insert(&mut self, vid: VolumeId, offset: PageOffset) {
+    pub fn serialized_size(num_volumes: usize, num_pages: PageCount) -> ByteUnit {
+        let volume_index_size = (num_volumes * size_of::<VolumeMeta>()) as u64;
+        let page_offsets_size = (num_pages.as_usize() * size_of::<PageOffset>()) as u64;
+        ByteUnit::new(volume_index_size + page_offsets_size)
+    }
+
+    pub fn insert(&mut self, vid: &VolumeId, offset: PageOffset) {
         let current = self.current.get_or_insert_with(|| VolumeMeta {
             vid: vid.clone(),
-            start: self.pages.into(),
-            pages: PageCount::ZERO,
+            start: self.pages,
+            pages: 0,
         });
 
         // If the VolumeId has changed, write the current VolumeMeta to the volume_index
-        if current.vid != vid {
-            assert!(vid > current.vid, "Volumes must be inserted in order by ID");
+        if &current.vid != vid {
+            assert!(
+                vid > &current.vid,
+                "Volumes must be inserted in order by ID"
+            );
             let last = std::mem::replace(
                 current,
                 VolumeMeta {
                     vid: vid.clone(),
-                    start: self.pages.into(),
-                    pages: PageCount::ZERO,
+                    start: self.pages,
+                    pages: 0,
                 },
             );
             self.volume_index.extend_from_slice(last.as_bytes());
@@ -148,23 +152,21 @@ impl SegmentIndexBuilder {
         self.page_offsets.extend_from_slice(offset.as_bytes());
 
         // Increment page counters
-        current.add_page();
-        self.pages.incr();
+        current.pages = current.pages.checked_add(1).expect("pages overflow");
+        self.pages = self.pages.checked_add(1).expect("pages overflow");
     }
 
-    pub fn finish(self) -> impl Buf {
+    pub fn finish(self) -> BytesVec {
         let mut volume_index = self.volume_index;
         if let Some(current) = self.current {
             volume_index.extend_from_slice(current.as_bytes());
         }
-        volume_index.freeze().chain(self.page_offsets.freeze())
+        vec![volume_index.freeze(), self.page_offsets.freeze()].into()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
-
     use super::*;
 
     #[test]
@@ -177,14 +179,13 @@ mod tests {
         // insert 100 offsets for each vid
         for vid in &vids {
             for i in 0..100 {
-                builder.insert(vid.clone(), PageOffset::new(i));
+                builder.insert(&vid, PageOffset::new(i));
             }
         }
 
-        let mut data = builder.finish();
-        let bytes: Bytes = data.copy_to_bytes(data.remaining());
+        let data = builder.finish().into_bytes();
         let index =
-            SegmentIndex::from_bytes(&bytes, vids.len()).expect("failed to load segment index");
+            SegmentIndex::from_bytes(&data, vids.len()).expect("failed to load segment index");
 
         // lookup all the offsets
         for (volume_offset, vid) in vids.iter().enumerate() {

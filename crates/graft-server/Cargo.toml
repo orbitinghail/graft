@@ -11,7 +11,6 @@ graft-client = { path = "../graft-client" }
 tryiter = "0.2"
 splinter = { path = "../splinter" }
 tokio = { version = "1.40.0", features = ["full", "test-util"] }
-odht = { git = "https://github.com/carlsverre/odht.git" }
 static_assertions = "1.1.0"
 zerocopy = { version = "0.8", features = ["derive"] }
 anyhow = "1.0"

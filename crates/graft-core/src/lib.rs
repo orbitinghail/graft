@@ -6,6 +6,7 @@ pub mod page;
 pub mod page_count;
 pub mod page_offset;
 pub mod page_range;
+pub mod zerocopy_err;
 
 pub use gid::{SegmentId, VolumeId};
 

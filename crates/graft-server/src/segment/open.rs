@@ -2,21 +2,19 @@
 
 use std::{collections::BTreeMap, fmt::Debug};
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::Buf;
 use graft_core::{
-    byte_unit::ByteUnit,
-    page::{Page, PAGESIZE},
-    page_offset::PageOffset,
-    SegmentId, VolumeId,
+    byte_unit::ByteUnit, page::Page, page_count::PageCount, page_offset::PageOffset, SegmentId,
+    VolumeId,
 };
-use itertools::Itertools;
 use thiserror::Error;
 use zerocopy::IntoBytes;
 
+use crate::bytes_vec::BytesVec;
+
 use super::{
-    closed::{
-        closed_segment_size, SegmentHeaderPage, SegmentIndex, SegmentIndexKey, SEGMENT_MAX_PAGES,
-    },
+    closed::{closed_segment_size, SegmentFooter, SEGMENT_MAX_PAGES, SEGMENT_MAX_VOLUMES},
+    index::SegmentIndexBuilder,
     offsets_map::OffsetsMap,
 };
 
@@ -26,38 +24,51 @@ pub struct SegmentFullErr;
 
 #[derive(Default)]
 pub struct OpenSegment {
-    index: BTreeMap<(VolumeId, PageOffset), Page>,
+    index: BTreeMap<VolumeId, BTreeMap<PageOffset, Page>>,
 }
 
 impl Debug for OpenSegment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut out = f.debug_struct("OpenSegment");
-        for (count, vid) in self.index.keys().map(|(vid, _)| vid).dedup_with_count() {
-            out.field(&vid.short(), &count);
+        for (vid, pages) in &self.index {
+            out.field(&vid.short(), &pages.len());
         }
         out.finish()
     }
 }
 
 impl OpenSegment {
+    /// returns true if the segment can accept another page for the specified volume
+    pub fn has_space_for(&self, vid: &VolumeId) -> bool {
+        match self.index.get(vid) {
+            Some(_) => self.pages() < SEGMENT_MAX_PAGES,
+            None => self.volumes() < SEGMENT_MAX_VOLUMES && self.pages() < SEGMENT_MAX_PAGES,
+        }
+    }
+
     pub fn insert(
         &mut self,
         vid: VolumeId,
         offset: PageOffset,
         page: Page,
     ) -> Result<(), SegmentFullErr> {
-        if self.index.len() >= SEGMENT_MAX_PAGES {
+        if !self.has_space_for(&vid) {
             return Err(SegmentFullErr);
         }
-
-        self.index.insert((vid, offset), page);
+        self.index.entry(vid).or_default().insert(offset, page);
         Ok(())
     }
 
     #[inline]
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub fn volumes(&self) -> usize {
         self.index.len()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn pages(&self) -> PageCount {
+        PageCount::new(self.index.values().map(|p| p.len() as u32).sum())
     }
 
     #[inline]
@@ -66,51 +77,42 @@ impl OpenSegment {
         self.index.is_empty()
     }
 
-    #[inline]
-    #[must_use]
-    pub fn is_full(&self) -> bool {
-        self.index.len() >= SEGMENT_MAX_PAGES
+    #[cfg(test)]
+    pub fn find_page(&self, vid: &VolumeId, offset: PageOffset) -> Option<&Page> {
+        self.index.get(vid)?.get(&offset)
     }
 
-    pub fn find_page(&self, vid: VolumeId, offset: PageOffset) -> Option<&Page> {
-        self.index.get(&(vid, offset))
+    pub fn serialized_size(&self) -> ByteUnit {
+        closed_segment_size(self.volumes(), self.pages())
     }
 
-    pub fn encoded_size(&self) -> ByteUnit {
-        closed_segment_size(self.index.len())
-    }
-
-    pub fn serialize(self, sid: SegmentId) -> (Bytes, OffsetsMap) {
-        let mut buf = BytesMut::with_capacity(self.encoded_size().as_usize());
-        let mut index_builder = SegmentIndex::builder(self.index.len());
+    pub fn serialize(self, sid: SegmentId) -> (BytesVec, OffsetsMap) {
+        let volumes = self.volumes();
+        let pages = self.pages();
+        // +2 for the index, +1 for the footer
+        let mut data = BytesVec::with_capacity(pages.as_usize() + 2 + 1);
+        let mut index_builder = SegmentIndexBuilder::new_with_capacity(volumes, self.index.len());
         let mut offsets_builder = OffsetsMap::builder();
 
-        // split the buffer into header and data
-        let mut data = buf.split_off(PAGESIZE.as_usize());
-
         // write pages to buffer while building index
-        for (local_offset, ((vid, off), page)) in (0_u16..).zip(self.index.into_iter()) {
-            data.put_slice(&page);
-            index_builder.insert(SegmentIndexKey::new(vid.clone(), off), local_offset);
-            offsets_builder.insert(vid, off);
+        for (vid, pages) in self.index {
+            for (off, page) in pages {
+                data.put(page.into());
+                index_builder.insert(&vid, off);
+                offsets_builder.insert(&vid, off);
+            }
         }
 
-        // build the header and write the index if it's not inline
-        let header_page = if index_builder.is_inline() {
-            SegmentHeaderPage::new_with_inline_index(sid, index_builder)
-        } else {
-            let index_bytes = index_builder.as_bytes();
-            let index_size: ByteUnit = index_bytes.len().into();
-            data.put_slice(index_bytes);
-            SegmentHeaderPage::new(sid, index_size)
-        };
+        // write out the index
+        let index_bytes = index_builder.finish();
+        let index_size = index_bytes.remaining().into();
+        data.append(index_bytes);
 
-        // write the header
-        buf.put_slice(header_page.as_bytes());
+        // write out the footer
+        let footer = SegmentFooter::new(sid, volumes, index_size);
+        data.put_slice(footer.as_bytes());
 
-        // unsplit the segment and freeze it
-        buf.unsplit(data);
-        (buf.freeze(), offsets_builder.build())
+        (data, offsets_builder.build())
     }
 }
 
@@ -136,25 +138,26 @@ mod tests {
 
         // ensure that we can query pages in the open_segment
         assert_eq!(
-            open_segment.find_page(vid.clone(), PageOffset::new(0)),
+            open_segment.find_page(&vid, PageOffset::new(0)),
             Some(&page0)
         );
         assert_eq!(
-            open_segment.find_page(vid.clone(), PageOffset::new(1)),
+            open_segment.find_page(&vid, PageOffset::new(1)),
             Some(&page1)
         );
 
-        let expected_size = open_segment.encoded_size();
+        let expected_size = open_segment.serialized_size();
 
         let sid = SegmentId::random();
         let (buf, offsets) = open_segment.serialize(sid.clone());
 
-        assert_eq!(buf.len(), expected_size);
+        assert_eq!(buf.remaining(), expected_size);
 
+        let buf = buf.into_bytes();
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
 
         assert_eq!(closed_segment.sid(), &sid);
-        assert_eq!(closed_segment.len(), 2);
+        assert_eq!(closed_segment.pages(), 2);
         assert!(!closed_segment.is_empty());
         assert_eq!(
             closed_segment.find_page(vid.clone(), PageOffset::new(0)),
@@ -176,22 +179,20 @@ mod tests {
     #[test]
     fn test_zero_length_segment() {
         let open_segment = OpenSegment::default();
-        let expected_size = open_segment.encoded_size();
+        let expected_size = open_segment.serialized_size();
 
         let (buf, offsets) = open_segment.serialize(SegmentId::random());
 
-        assert_eq!(buf.len(), expected_size);
+        assert_eq!(buf.remaining(), expected_size);
         assert!(offsets.is_empty());
 
-        assert_eq!(
-            buf.len(),
-            PAGESIZE,
-            "an empty segment should fit in the page header"
-        );
+        // an empty segment should just be a footer
+        assert_eq!(expected_size, size_of::<SegmentFooter>());
 
+        let buf = buf.into_bytes();
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
 
-        assert_eq!(closed_segment.len(), 0);
+        assert_eq!(closed_segment.pages(), 0);
         assert!(closed_segment.is_empty());
     }
 
@@ -199,49 +200,74 @@ mod tests {
     fn test_full_segment() {
         let mut open_segment = OpenSegment::default();
 
-        let vid = VolumeId::random();
-        let page = Page::test_filled(1);
+        // generate many volumes
+        let vids = (0..SEGMENT_MAX_VOLUMES)
+            .map(|_| VolumeId::random())
+            .collect::<Vec<_>>();
 
-        let num_pages = SEGMENT_MAX_PAGES as u32;
-        for i in 0..num_pages {
+        // insert SEGMENT_MAX_PAGES pages while cycling through the volumes
+        let page = Page::test_filled(1);
+        let mut vid_cycle = vids.iter().cycle();
+        for offset in SEGMENT_MAX_PAGES.offsets() {
             open_segment
-                .insert(vid.clone(), (i * 2).into(), page.clone())
+                .insert(vid_cycle.next().unwrap().clone(), offset, page.clone())
                 .unwrap();
         }
 
-        let expected_size = open_segment.encoded_size();
+        // the segment should not be able to accept any more pages for any volume
+        assert!(!open_segment.has_space_for(&vids[0]));
+        assert!(!open_segment.has_space_for(&VolumeId::random()));
 
+        let expected_size = open_segment.serialized_size();
         let (buf, offsets) = open_segment.serialize(SegmentId::random());
-
-        assert_eq!(buf.len(), expected_size);
+        assert_eq!(buf.remaining(), expected_size);
 
         assert!(!offsets.is_empty());
-        for i in 0..num_pages {
-            assert!(offsets.contains(&vid, (i * 2).into()));
+        let mut vid_cycle = vids.iter().cycle();
+        for offset in SEGMENT_MAX_PAGES.offsets() {
+            assert!(offsets.contains(vid_cycle.next().unwrap(), offset));
         }
 
+        let buf = buf.into_bytes();
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
-
-        assert_eq!(closed_segment.len(), num_pages as usize);
+        assert_eq!(closed_segment.pages(), SEGMENT_MAX_PAGES);
     }
 
     #[test]
     fn test_overfull_segment() {
         let mut open_segment = OpenSegment::default();
 
-        let vid = VolumeId::random();
+        // generate many volumes
+        let vids = (0..SEGMENT_MAX_VOLUMES)
+            .map(|_| VolumeId::random())
+            .collect::<Vec<_>>();
         let page = Page::test_filled(1);
 
-        let num_pages = SEGMENT_MAX_PAGES as u32;
-        for i in 0..num_pages {
+        // fill the segment with one fewer page than the max
+        let mut vid_cycle = vids.iter().cycle();
+        for offset in (SEGMENT_MAX_PAGES - PageCount::ONE).offsets() {
             open_segment
-                .insert(vid.clone(), (i * 2).into(), page.clone())
+                .insert(vid_cycle.next().unwrap().clone(), offset, page.clone())
                 .unwrap();
         }
 
+        // the segment should be able to accept one more page for an existing volume
+        assert!(open_segment.has_space_for(&vids[0]));
+        // but not for a new volume
+        assert!(!open_segment.has_space_for(&VolumeId::random()));
+
+        // insert a page for the last volume
+        open_segment
+            .insert(vids[0].clone(), PageOffset::MAX, page.clone())
+            .expect("expected segment to accept one more page");
+
+        // the segment should not be able to accept any more pages for any volume
+        assert!(!open_segment.has_space_for(&vids[0]));
+        assert!(!open_segment.has_space_for(&VolumeId::random()));
+
         // insert one more page; should fail
         let err = open_segment
-            .insert(vid.clone(), PageOffset::MAX, page.clone())
+            .insert(vids[0].clone(), PageOffset::MAX, page.clone())
             .expect_err("expected segment to be full");
         assert_eq!(err, SegmentFullErr);
     }

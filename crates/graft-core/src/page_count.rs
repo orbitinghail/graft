@@ -34,7 +34,7 @@ impl PageCount {
     pub const MAX: Self = Self(u32::MAX);
 
     #[inline]
-    pub fn new(page_count: u32) -> Self {
+    pub const fn new(page_count: u32) -> Self {
         Self(page_count)
     }
 

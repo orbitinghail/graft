@@ -198,10 +198,11 @@ The footer is stored at the end of the Segment.
 
 ```
 Footer (32 bytes)
-  magic: u32
   sid: SegmentId
-  index_size: u32
+  volumes: u16
+  index_size: u16
   _padding: 8 bytes
+  magic: u32
 ```
 
 **Pages**

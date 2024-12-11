@@ -36,6 +36,7 @@ pub mod metrics {
     pub mod split_gauge;
 }
 
+pub mod bytes_vec;
 pub mod limiter;
 pub mod object_store_util;
 pub mod resource_pool;

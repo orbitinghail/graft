@@ -92,13 +92,14 @@ mod tests {
     use graft_client::ClientBuilder;
     use graft_core::{gid::SegmentId, page::Page, page_count::PageCount, page_offset::PageOffset};
     use graft_proto::common::v1::SegmentInfo;
-    use object_store::{memory::InMemory, path::Path, ObjectStore};
+    use object_store::{memory::InMemory, path::Path, ObjectStore, PutPayload};
     use prost::Message;
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
+        bytes_vec::BytesVec,
         segment::{
             bus::Bus, cache::mem::MemCache, loader::SegmentLoader, offsets_map::OffsetsMap,
             open::OpenSegment,
@@ -108,7 +109,10 @@ mod tests {
 
     use super::*;
 
-    fn mksegment(sid: &SegmentId, pages: Vec<(VolumeId, PageOffset, Page)>) -> (Bytes, OffsetsMap) {
+    fn mksegment(
+        sid: &SegmentId,
+        pages: Vec<(VolumeId, PageOffset, Page)>,
+    ) -> (BytesVec, OffsetsMap) {
         let mut segment = OpenSegment::default();
         for (vid, off, page) in pages {
             segment.insert(vid, off, page).unwrap();
@@ -159,7 +163,10 @@ mod tests {
             ],
         );
         store
-            .put(&Path::from(sid1.pretty()), segment.into())
+            .put(
+                &Path::from(sid1.pretty()),
+                PutPayload::from_iter(segment.iter().cloned()),
+            )
             .await
             .unwrap();
 
