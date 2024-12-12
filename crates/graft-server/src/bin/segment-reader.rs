@@ -2,7 +2,11 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{arg, Parser, Subcommand};
-use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{
+    page::{Page, PAGESIZE},
+    page_offset::PageOffset,
+    VolumeId,
+};
 use graft_server::segment::closed::ClosedSegment;
 
 #[derive(Parser)]
@@ -32,8 +36,8 @@ enum Commands {
     },
 }
 
-fn print_page(page: Page) {
-    for &byte in page.iter() {
+fn print_page(page: Page, max: usize) {
+    for &byte in page.iter().take(max) {
         // if byte is a printable ascii character
         if byte.is_ascii_alphanumeric() || byte.is_ascii_punctuation() || byte.is_ascii_whitespace()
         {
@@ -44,10 +48,23 @@ fn print_page(page: Page) {
 }
 
 fn print_segment(segment: &ClosedSegment) {
+    println!("Segment ID: {}", segment.sid());
+    println!("Pages: {}", segment.pages());
+
+    // print table headers: Volume id, offset, length, page_prefix
+    println!(
+        "{:<10} {:<10} {:<10} Prefix",
+        "Volume ID", "Offset", "Empty"
+    );
+
     for (vid, offset, page) in segment.iter() {
-        let page_empty = page.iter().all(|&b| b == 0);
-        println!("{}: {} empty={}", vid, offset, page_empty);
-        print_page(page);
+        print!(
+            "{:<10} {:<10} {:<10} ",
+            vid.short(),
+            offset,
+            page.iter().all(|&b| b == 0)
+        );
+        print_page(page, 10);
     }
 }
 
@@ -59,10 +76,13 @@ fn main() -> Result<()> {
     let segment = ClosedSegment::from_bytes(&data)?;
 
     match cli.command {
-        Commands::Print => print_segment(&segment),
+        Commands::Print => {
+            println!("Segment size: {}", data.len());
+            print_segment(&segment)
+        }
         Commands::Read { vid, offset } => {
             if let Some(page) = segment.find_page(vid, offset) {
-                print_page(page)
+                print_page(page, PAGESIZE.as_usize())
             } else {
                 eprintln!("page not found")
             }

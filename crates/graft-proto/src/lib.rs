@@ -4,7 +4,7 @@ include!("mod.rs");
 use std::{
     error::Error,
     fmt::Display,
-    ops::{RangeBounds, RangeInclusive},
+    ops::{Bound, RangeBounds},
     time::SystemTime,
 };
 
@@ -95,17 +95,32 @@ impl Snapshot {
     }
 }
 
-impl From<LsnRange> for RangeInclusive<LSN> {
-    fn from(range: LsnRange) -> Self {
-        range.inclusive_start.into()..=range.inclusive_end.into()
+impl LsnRange {
+    pub fn from_range<T: RangeBounds<LSN>>(range: T) -> Self {
+        let inclusive_start = range.try_start().unwrap_or(LSN::ZERO).into();
+        let inclusive_end = range.try_end().map(|lsn| lsn.into());
+        Self { inclusive_start, inclusive_end }
+    }
+
+    pub fn start(&self) -> LSN {
+        self.inclusive_start.into()
+    }
+
+    pub fn end(&self) -> Option<LSN> {
+        self.inclusive_end.map(|end| end.into())
     }
 }
 
-impl<T: RangeBounds<LSN>> From<T> for LsnRange {
-    fn from(range: T) -> Self {
-        let inclusive_start = range.try_start().unwrap_or(LSN::ZERO).into();
-        let inclusive_end = range.try_end().unwrap_or(LSN::MAX).into();
-        Self { inclusive_start, inclusive_end }
+impl RangeBounds<LSN> for LsnRange {
+    fn start_bound(&self) -> Bound<&LSN> {
+        Bound::Included((&self.inclusive_start).into())
+    }
+
+    fn end_bound(&self) -> Bound<&LSN> {
+        self.inclusive_end
+            .as_ref()
+            .map(|end| Bound::Included(end.into()))
+            .unwrap_or(Bound::Unbounded)
     }
 }
 

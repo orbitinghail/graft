@@ -40,5 +40,5 @@ message Commit {
 
 message LsnRange {
   uint64 inclusive_start = 1;
-  uint64 inclusive_end = 2;
+  optional uint64 inclusive_end = 2;
 }

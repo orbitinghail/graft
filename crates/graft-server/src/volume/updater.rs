@@ -1,6 +1,5 @@
 use std::ops::RangeBounds;
 
-use foldhash::fast::RandomState;
 use futures::TryStreamExt;
 use graft_client::MetastoreClient;
 use graft_core::{lsn::LSN, VolumeId};
@@ -26,7 +25,7 @@ pub enum UpdateErr {
 }
 
 pub struct VolumeCatalogUpdater {
-    limiter: Limiter<VolumeId, RandomState>,
+    limiter: Limiter<VolumeId>,
 }
 
 impl VolumeCatalogUpdater {

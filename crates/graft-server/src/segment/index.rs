@@ -99,10 +99,10 @@ pub struct SegmentIndexBuilder {
 }
 
 impl SegmentIndexBuilder {
-    pub fn new_with_capacity(volume_capacity: usize, page_capacity: usize) -> Self {
+    pub fn new_with_capacity(volumes: usize, pages: PageCount) -> Self {
         Self {
-            volume_index: BytesMut::with_capacity(volume_capacity * size_of::<VolumeMeta>()),
-            page_offsets: BytesMut::with_capacity(page_capacity * size_of::<PageOffset>()),
+            volume_index: BytesMut::with_capacity(volumes * size_of::<VolumeMeta>()),
+            page_offsets: BytesMut::with_capacity(pages.as_usize() * size_of::<PageOffset>()),
             current: None,
             pages: 0,
             last_offset: None,
@@ -179,7 +179,7 @@ mod tests {
         // insert 100 offsets for each vid
         for vid in &vids {
             for i in 0..100 {
-                builder.insert(&vid, PageOffset::new(i));
+                builder.insert(vid, PageOffset::new(i));
             }
         }
 

@@ -1,8 +1,11 @@
-use std::{ops::RangeInclusive, sync::Arc};
+use std::sync::Arc;
 
 use axum::extract::State;
-use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::metastore::v1::{PullOffsetsRequest, PullOffsetsResponse};
+use graft_core::VolumeId;
+use graft_proto::{
+    common::v1::LsnRange,
+    metastore::v1::{PullOffsetsRequest, PullOffsetsResponse},
+};
 use splinter::{ops::Merge, Splinter};
 use tryiter::TryIteratorExt;
 
@@ -16,29 +19,25 @@ pub async fn handler(
     Protobuf(req): Protobuf<PullOffsetsRequest>,
 ) -> Result<ProtoResponse<PullOffsetsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let lsns: Option<RangeInclusive<LSN>> = req.range.map(Into::into);
+    let lsns = req.range;
+    let end_lsn = lsns.and_then(|l| l.end());
 
     tracing::info!(?vid, ?lsns);
 
     // load the snapshot at the end of the lsn range
     let snapshot = state
         .updater
-        .snapshot(
-            &state.store,
-            &state.catalog,
-            &vid,
-            lsns.as_ref().map(|l| *l.end()),
-        )
+        .snapshot(&state.store, &state.catalog, &vid, end_lsn)
         .await?;
 
     let Some(snapshot) = snapshot else {
-        return Err(ApiErr::SnapshotMissing(vid, lsns.map(|l| *l.end())));
+        return Err(ApiErr::SnapshotMissing(vid, end_lsn));
     };
 
     // resolve the start of the range; skipping up to the last checkpoint if needed
     let checkpoint = snapshot.checkpoint();
     let start_lsn = lsns
-        .map(|l| *l.start())
+        .map(|l| l.start())
         .unwrap_or(checkpoint)
         .max(checkpoint);
 
@@ -60,7 +59,7 @@ pub async fn handler(
 
     Ok(ProtoResponse::new(PullOffsetsResponse {
         snapshot: Some(snapshot.into_snapshot(&vid)),
-        range: Some(lsns.into()),
+        range: Some(LsnRange::from_range(lsns)),
         offsets: splinter.serialize_to_bytes(),
     }))
 }
@@ -132,7 +131,7 @@ mod tests {
         let lsns = LSN::new(5)..=LSN::new(9);
         let req = PullOffsetsRequest {
             vid: vid.copy_to_bytes(),
-            range: Some(lsns.clone().into()),
+            range: Some(LsnRange::from_range(lsns.clone())),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = PullOffsetsResponse::decode(resp.into_bytes()).unwrap();
@@ -140,7 +139,7 @@ mod tests {
         assert_eq!(snapshot.lsn(), 9);
         assert_eq!(snapshot.page_count(), 1);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
-        assert_eq!(resp.range.map(|r| r.into()), Some(lsns));
+        assert_eq!(resp.range.map(|r| r.start()..=r.end().unwrap()), Some(lsns));
         let splinter = Splinter::from_bytes(resp.offsets).unwrap();
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);

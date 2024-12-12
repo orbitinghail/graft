@@ -1,3 +1,4 @@
+use foldhash::fast::RandomState;
 use std::{
     hash::{BuildHasher, Hash},
     marker::PhantomData,
@@ -16,7 +17,7 @@ pub struct LimiterPermit<'a> {
 /// shared by all possible keys. This means that it's possible that two
 /// concurrent acquires for different keys may attempt to acquire the same
 /// permit. This decision may be revisited in the future.
-pub struct Limiter<K, H> {
+pub struct Limiter<K, H = RandomState> {
     permits: Box<[Mutex<()>]>,
     hasher: H,
     _phantom: PhantomData<K>,

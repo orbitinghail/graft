@@ -104,7 +104,7 @@ impl<C: Cache> SegmentUploaderTask<C> {
         tokio::try_join!(upload_task, cache_task)?;
 
         self.output
-            .publish(CommitSegmentReq { sid, offsets: Arc::new(offsets) })?;
+            .publish(CommitSegmentReq { sid, offsets: Arc::new(offsets) });
 
         Ok(())
     }

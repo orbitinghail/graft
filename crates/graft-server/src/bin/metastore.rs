@@ -27,6 +27,7 @@ struct Config {
     catalog: VolumeCatalogConfig,
     objectstore: ObjectStoreConfig,
     port: u16,
+    catalog_update_concurrency: usize,
 }
 
 impl Default for Config {
@@ -35,6 +36,7 @@ impl Default for Config {
             catalog: Default::default(),
             objectstore: Default::default(),
             port: 3001,
+            catalog_update_concurrency: 16,
         }
     }
 }
@@ -73,7 +75,7 @@ async fn main() {
     let store = Arc::new(VolumeStore::new(store));
     let catalog =
         VolumeCatalog::open_config(config.catalog).expect("failed to open volume catalog");
-    let updater = VolumeCatalogUpdater::new(8);
+    let updater = VolumeCatalogUpdater::new(config.catalog_update_concurrency);
 
     let state = Arc::new(MetastoreApiState::new(store, catalog, updater));
     let router = build_router(Registry::default(), state, metastore_routes());

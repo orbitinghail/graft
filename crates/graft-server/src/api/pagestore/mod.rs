@@ -1,10 +1,12 @@
 use graft_client::MetastoreClient;
+use graft_core::VolumeId;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 
 use axum::routing::post;
 
 use crate::{
+    limiter::Limiter,
     segment::{
         bus::{Bus, CommitSegmentReq, WritePageReq},
         cache::Cache,
@@ -25,6 +27,7 @@ pub struct PagestoreApiState<C> {
     loader: SegmentLoader<C>,
     metastore: MetastoreClient,
     updater: VolumeCatalogUpdater,
+    volume_write_limiter: Limiter<VolumeId>,
 }
 
 impl<C> PagestoreApiState<C> {
@@ -35,6 +38,7 @@ impl<C> PagestoreApiState<C> {
         loader: SegmentLoader<C>,
         metastore: MetastoreClient,
         updater: VolumeCatalogUpdater,
+        write_concurrency: usize,
     ) -> Self {
         Self {
             page_tx,
@@ -43,6 +47,7 @@ impl<C> PagestoreApiState<C> {
             loader,
             metastore,
             updater,
+            volume_write_limiter: Limiter::new(write_concurrency),
         }
     }
 
@@ -68,6 +73,10 @@ impl<C> PagestoreApiState<C> {
 
     pub fn updater(&self) -> &VolumeCatalogUpdater {
         &self.updater
+    }
+
+    pub fn volume_write_limiter(&self) -> &Limiter<VolumeId> {
+        &self.volume_write_limiter
     }
 }
 

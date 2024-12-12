@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
-use graft_core::{page_offset::PageOffset, page::Page, SegmentId, VolumeId};
-use tokio::sync::broadcast::{self, error::SendError};
+use graft_core::{page::Page, page_offset::PageOffset, SegmentId, VolumeId};
+use tokio::sync::broadcast;
 
 use super::{offsets_map::OffsetsMap, open::OpenSegment};
 
@@ -47,8 +47,8 @@ impl<T: Clone> Bus<T> {
         self.tx.subscribe()
     }
 
-    pub fn publish(&self, msg: T) -> Result<(), SendError<T>> {
-        self.tx.send(msg)?;
-        Ok(())
+    pub fn publish(&self, msg: T) {
+        // An error here means there are no receivers, which is fine
+        let _ = self.tx.send(msg);
     }
 }

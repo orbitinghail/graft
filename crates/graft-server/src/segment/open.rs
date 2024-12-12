@@ -91,7 +91,7 @@ impl OpenSegment {
         let pages = self.pages();
         // +2 for the index, +1 for the footer
         let mut data = BytesVec::with_capacity(pages.as_usize() + 2 + 1);
-        let mut index_builder = SegmentIndexBuilder::new_with_capacity(volumes, self.index.len());
+        let mut index_builder = SegmentIndexBuilder::new_with_capacity(volumes, pages);
         let mut offsets_builder = OffsetsMap::builder();
 
         // write pages to buffer while building index

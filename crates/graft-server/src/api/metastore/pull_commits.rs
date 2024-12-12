@@ -1,10 +1,7 @@
-use std::{ops::RangeInclusive, sync::Arc};
+use std::sync::Arc;
 
 use axum::extract::State;
-use graft_core::{
-    lsn::{LSNRangeExt, LSN},
-    VolumeId,
-};
+use graft_core::{lsn::LSNRangeExt, VolumeId};
 use graft_proto::{
     common::v1::{Commit, SegmentInfo},
     metastore::v1::{PullCommitsRequest, PullCommitsResponse},
@@ -15,39 +12,35 @@ use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
 use super::MetastoreApiState;
 
-/// Returns a list of segments added between the provided LSN (exclusive) and the
-/// latest LSN (inclusive). This method will also return the latest Snapshot of
-/// the Volume. If the provided LSN is missing or before the last checkpoint,
-/// only segments starting at the last checkpoint will be returned.
+/// Returns a list of segments added in the lsn range. This method will also
+/// return the latest Snapshot of the Volume. If the provided LSN is missing or
+/// before the last checkpoint, only segments starting at the last checkpoint
+/// will be returned.
 #[tracing::instrument(name = "metastore/v1/pull_commits", skip(state, req))]
 pub async fn handler(
     State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<PullCommitsRequest>,
 ) -> Result<ProtoResponse<PullCommitsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let lsns: Option<RangeInclusive<LSN>> = req.range.map(Into::into);
+    let lsns = req.range;
+    let end_lsn = lsns.and_then(|l| l.end());
 
     tracing::info!(?vid, ?lsns);
 
     // load the snapshot at the end of the lsn range
     let snapshot = state
         .updater
-        .snapshot(
-            &state.store,
-            &state.catalog,
-            &vid,
-            lsns.as_ref().map(|l| *l.end()),
-        )
+        .snapshot(&state.store, &state.catalog, &vid, end_lsn)
         .await?;
 
     let Some(snapshot) = snapshot else {
-        return Err(ApiErr::SnapshotMissing(vid, lsns.map(|l| *l.end())));
+        return Err(ApiErr::SnapshotMissing(vid, end_lsn));
     };
 
     // resolve the start of the range; skipping up to the last checkpoint if needed
     let checkpoint = snapshot.checkpoint();
     let start_lsn = lsns
-        .map(|l| *l.start())
+        .map(|l| l.start())
         .unwrap_or(checkpoint)
         .max(checkpoint);
 
@@ -90,6 +83,7 @@ mod tests {
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
     use graft_core::{lsn::LSN, page_count::PageCount, SegmentId};
+    use graft_proto::common::v1::LsnRange;
     use object_store::memory::InMemory;
     use prost::Message;
     use splinter::Splinter;
@@ -154,7 +148,7 @@ mod tests {
         let lsns = LSN::new(5)..LSN::new(10);
         let req = PullCommitsRequest {
             vid: vid.copy_to_bytes(),
-            range: Some(lsns.into()),
+            range: Some(LsnRange::from_range(lsns)),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = PullCommitsResponse::decode(resp.into_bytes()).unwrap();

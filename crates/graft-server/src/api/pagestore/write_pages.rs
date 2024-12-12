@@ -25,6 +25,9 @@ pub async fn handler<C>(
     let vid: VolumeId = req.vid.try_into()?;
     let expected_pages = req.pages.len();
 
+    // acquire a permit to write to the volume
+    let _permit = state.volume_write_limiter().acquire(&vid).await;
+
     // subscribe to the broadcast channel
     let mut commit_rx = state.subscribe_commits();
 
@@ -147,6 +150,7 @@ mod tests {
                 .build()
                 .unwrap(),
             VolumeCatalogUpdater::new(10),
+            10,
         ));
 
         let server = TestServer::builder()

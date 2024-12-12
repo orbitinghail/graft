@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use foldhash::fast::RandomState;
 use graft_core::SegmentId;
 use object_store::{path::Path, ObjectStore};
 
@@ -11,7 +10,7 @@ pub struct SegmentLoader<C> {
     store: Arc<dyn ObjectStore>,
     cache: Arc<C>,
 
-    download_limiter: Limiter<SegmentId, RandomState>,
+    download_limiter: Limiter<SegmentId>,
 }
 
 impl<C: Cache> SegmentLoader<C> {

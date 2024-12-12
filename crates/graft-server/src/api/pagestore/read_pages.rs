@@ -140,6 +140,7 @@ mod tests {
                 .build()
                 .unwrap(),
             VolumeCatalogUpdater::new(10),
+            10,
         ));
 
         let server = TestServer::builder()

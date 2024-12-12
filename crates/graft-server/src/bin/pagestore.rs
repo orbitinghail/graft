@@ -38,6 +38,10 @@ struct Config {
     objectstore: ObjectStoreConfig,
     port: u16,
     metastore: ClientBuilder,
+
+    catalog_update_concurrency: usize,
+    download_concurrency: usize,
+    write_concurrency: usize,
 }
 
 impl Default for Config {
@@ -57,6 +61,9 @@ impl Default for Config {
             metastore: ClientBuilder {
                 endpoint: "http://localhost:3001".parse().unwrap(),
             },
+            catalog_update_concurrency: 16,
+            download_concurrency: 16,
+            write_concurrency: 16,
         }
     }
 }
@@ -101,8 +108,8 @@ async fn main() {
 
     let cache = Arc::new(DiskCache::new(config.cache).expect("failed to create disk cache"));
     let catalog = VolumeCatalog::open_temporary().unwrap();
-    let loader = SegmentLoader::new(store.clone(), cache.clone(), 8);
-    let updater = VolumeCatalogUpdater::new(8);
+    let loader = SegmentLoader::new(store.clone(), cache.clone(), config.download_concurrency);
+    let updater = VolumeCatalogUpdater::new(config.catalog_update_concurrency);
 
     let (page_tx, page_rx) = mpsc::channel(128);
     let (store_tx, store_rx) = mpsc::channel(8);
@@ -129,7 +136,13 @@ async fn main() {
     ));
 
     let state = Arc::new(PagestoreApiState::new(
-        page_tx, commit_bus, catalog, loader, metastore, updater,
+        page_tx,
+        commit_bus,
+        catalog,
+        loader,
+        metastore,
+        updater,
+        config.write_concurrency,
     ));
     let router = build_router(registry, state, pagestore_routes());
 
