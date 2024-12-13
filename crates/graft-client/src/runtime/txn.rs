@@ -13,6 +13,7 @@ use super::{
     storage::{memtable::Memtable, page::PageValue, snapshot::Snapshot},
 };
 
+#[derive(Clone, Debug)]
 pub struct ReadTxn {
     vid: VolumeId,
     snapshot: Option<Snapshot>,
@@ -53,6 +54,7 @@ impl ReadTxn {
     }
 }
 
+#[derive(Debug)]
 pub struct WriteTxn {
     read_txn: ReadTxn,
     memtable: Memtable,

@@ -2,7 +2,7 @@ use std::collections::{btree_map::IntoIter, BTreeMap};
 
 use graft_core::{page::Page, page_offset::PageOffset};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Memtable {
     pages: BTreeMap<PageOffset, Page>,
 }

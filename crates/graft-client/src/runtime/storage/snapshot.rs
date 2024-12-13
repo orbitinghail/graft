@@ -39,7 +39,7 @@ impl AsRef<[u8]> for SnapshotKey {
     }
 }
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone)]
 #[repr(C)]
 pub struct Snapshot {
     lsn: LSN,

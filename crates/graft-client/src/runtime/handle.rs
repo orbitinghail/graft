@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use graft_core::VolumeId;
 
@@ -46,14 +46,22 @@ impl RuntimeInner {
     }
 }
 
+impl Debug for RuntimeInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Runtime")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use graft_core::page::{Page, EMPTY_PAGE};
 
+    use crate::runtime::storage::StorageErr;
+
     use super::*;
 
     #[test]
-    fn test_runtime_handle() {
+    fn test_read_write_sanity() {
         let storage = Storage::open_temporary().unwrap();
         let handle = RuntimeHandle::new(storage);
 
@@ -93,5 +101,31 @@ mod tests {
 
         // verify the new read txn can read the updated page
         assert_eq!(txn.read(0.into()).unwrap(), page2);
+    }
+
+    #[test]
+    fn test_concurrent_commit_err() {
+        // open two write txns, commit the first, then commit the second
+
+        let storage = Storage::open_temporary().unwrap();
+        let handle = RuntimeHandle::new(storage);
+
+        let vid = VolumeId::random();
+        let page = Page::test_filled(0x42);
+
+        let mut txn1 = handle.write_txn(vid.clone()).unwrap();
+        txn1.write(0.into(), page.clone());
+
+        let mut txn2 = handle.write_txn(vid.clone()).unwrap();
+        txn2.write(0.into(), page.clone());
+
+        let txn1 = txn1.commit().unwrap();
+        assert_eq!(txn1.read(0.into()).unwrap(), page);
+
+        let txn2 = txn2.commit();
+        assert!(matches!(
+            txn2.expect_err("expected concurrent write error"),
+            ClientErr::StorageErr(StorageErr::ConcurrentWrite(_))
+        ));
     }
 }
