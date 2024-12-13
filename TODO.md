@@ -55,7 +55,7 @@ write transaction
   To commit the transaction
     create a fjall batch
     write out our memtable
-    update the volume snapshot <- fail if anyone has touched the snapshot since we started the txn
+    update the volume snapshot
     write out a changed offsets splinter to the commits partition
     commit the batch
 

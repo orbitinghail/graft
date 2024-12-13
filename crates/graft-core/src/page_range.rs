@@ -4,7 +4,9 @@ use crate::{page_count::PageCount, page_offset::PageOffset};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PageRange {
+    /// Inclusive start of the page range
     start: PageOffset,
+    /// Exclusive end of the page range
     end: PageOffset,
 }
 
@@ -14,16 +16,19 @@ impl PageRange {
     }
 
     #[inline]
+    /// Returns the inclusive start of the page range
     pub fn start(&self) -> PageOffset {
         self.start
     }
 
     #[inline]
+    /// Returns the exclusive end of the page range
     pub fn end(&self) -> PageOffset {
         self.end
     }
 
     #[inline]
+    /// Returns the number of pages in the range
     pub fn len(&self) -> PageCount {
         PageCount::new(u32::from(self.end) - u32::from(self.start))
     }

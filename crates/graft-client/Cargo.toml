@@ -22,6 +22,7 @@ tempfile = "3.12.0"
 zerocopy = "0.8"
 
 [dev-dependencies]
+graft-core = { path = "../graft-core", features = ["testutil"] }
 env_logger = "0.11"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"

@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::page_range::PageRange;
+use crate::{page_offset::PageOffset, page_range::PageRange};
 
 #[derive(
     Debug,
@@ -41,6 +41,11 @@ impl PageCount {
     #[inline]
     pub fn offsets(&self) -> PageRange {
         PageRange::new(0, self.0)
+    }
+
+    #[inline]
+    pub fn last_offset(&self) -> Option<PageOffset> {
+        self.0.checked_sub(1).map(PageOffset::new)
     }
 
     #[inline]

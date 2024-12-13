@@ -1,6 +1,8 @@
 use graft_proto::common::v1::{GraftErr, GraftErrCode};
 use thiserror::Error;
 
+use crate::runtime::storage;
+
 #[derive(Debug, Error)]
 pub enum ClientErr {
     #[error("graft error: {0}")]
@@ -14,6 +16,9 @@ pub enum ClientErr {
 
     #[error("failed to parse splinter: {0}")]
     SplinterParseErr(#[from] splinter::DecodeErr),
+
+    #[error("local storage error: {0}")]
+    StorageErr(#[from] storage::StorageErr),
 }
 
 impl ClientErr {

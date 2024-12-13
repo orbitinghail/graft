@@ -47,7 +47,7 @@ impl PageOffset {
     }
 
     pub fn pages(&self) -> PageCount {
-        PageCount::new(self.0 + 1)
+        PageCount::new(self.0.checked_add(1).expect("page count overflow"))
     }
 }
 

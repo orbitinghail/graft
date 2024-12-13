@@ -1055,7 +1055,6 @@ dependencies = [
  "bs58",
  "bytes",
  "foldhash",
- "futures",
  "hashbrown 0.15.2",
  "rand",
  "serde",

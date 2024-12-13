@@ -15,13 +15,14 @@ use zerocopy::Immutable;
 use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 use zerocopy::TryFromBytes;
+use zerocopy::Unaligned;
 use zerocopy::U64;
 
 use zerocopy::BE;
 
 use zerocopy::U32;
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned)]
 #[repr(C)]
 pub struct PageKey {
     vid: VolumeId,
@@ -47,6 +48,11 @@ impl PageKey {
     #[inline]
     pub fn offset(&self) -> PageOffset {
         self.offset.into()
+    }
+
+    #[inline]
+    pub fn set_offset(&mut self, offset: PageOffset) {
+        self.offset = offset.into();
     }
 
     #[inline]

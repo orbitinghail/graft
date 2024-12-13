@@ -1,10 +1,7 @@
 use std::fmt::Debug;
 
 use graft_core::{lsn::LSN, page_count::PageCount, VolumeId};
-use zerocopy::{
-    little_endian::{U32, U64},
-    Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned,
-};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 #[derive(Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned, Clone, Copy)]
 #[repr(u8)]
@@ -52,30 +49,29 @@ impl AsRef<[u8]> for SnapshotKey {
     }
 }
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
 #[repr(C)]
 pub struct Snapshot {
-    lsn: U64,
-    page_count: U32,
+    lsn: LSN,
+    page_count: PageCount,
+    // Padding to align to 8 bytes
+    _padding: [u8; 4],
 }
 
 impl Snapshot {
     #[inline]
     pub fn new(lsn: LSN, page_count: PageCount) -> Self {
-        Self {
-            lsn: lsn.into(),
-            page_count: page_count.into(),
-        }
+        Self { lsn, page_count, _padding: [0; 4] }
     }
 
     #[inline]
     pub fn lsn(&self) -> LSN {
-        self.lsn.into()
+        self.lsn
     }
 
     #[inline]
     pub fn page_count(&self) -> PageCount {
-        self.page_count.into()
+        self.page_count
     }
 }
 
@@ -85,5 +81,17 @@ impl Debug for Snapshot {
             .field("lsn", &self.lsn())
             .field("page_count", &self.page_count())
             .finish()
+    }
+}
+
+impl From<Snapshot> for (LSN, PageCount) {
+    fn from(snapshot: Snapshot) -> Self {
+        (snapshot.lsn, snapshot.page_count)
+    }
+}
+
+impl AsRef<[u8]> for Snapshot {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
     }
 }

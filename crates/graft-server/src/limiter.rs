@@ -5,7 +5,7 @@ use std::{
 };
 use tokio::sync::{Mutex, MutexGuard};
 
-pub struct LimiterPermit<'a> {
+pub struct Permit<'a> {
     _permit: MutexGuard<'a, ()>,
 }
 
@@ -38,10 +38,10 @@ impl<K: Hash, H: BuildHasher> Limiter<K, H> {
         Self { permits, hasher, _phantom: PhantomData }
     }
 
-    pub async fn acquire(&self, key: &K) -> LimiterPermit<'_> {
+    pub async fn acquire(&self, key: &K) -> Permit<'_> {
         let idx = self.hasher.hash_one(key) % self.permits.len() as u64;
         let _permit = self.permits[idx as usize].lock().await;
-        LimiterPermit { _permit }
+        Permit { _permit }
     }
 }
 

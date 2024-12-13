@@ -7,6 +7,7 @@ mod request;
 mod runtime {
     pub mod handle;
     pub mod storage;
+    pub mod txn;
 }
 
 pub use builder::{ClientBuildErr, ClientBuilder};
