@@ -41,23 +41,8 @@ impl PageKey {
     }
 
     #[inline]
-    pub fn vid(&self) -> &VolumeId {
-        &self.vid
-    }
-
-    #[inline]
-    pub fn offset(&self) -> PageOffset {
-        self.offset.into()
-    }
-
-    #[inline]
     pub fn set_offset(&mut self, offset: PageOffset) {
         self.offset = offset.into();
-    }
-
-    #[inline]
-    pub fn lsn(&self) -> LSN {
-        self.lsn.into()
     }
 }
 

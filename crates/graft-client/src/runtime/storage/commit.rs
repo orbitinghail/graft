@@ -13,16 +13,6 @@ impl CommitKey {
     pub fn new(vid: VolumeId, lsn: LSN) -> Self {
         Self { vid, lsn: lsn.into() }
     }
-
-    #[inline]
-    pub fn vid(&self) -> &VolumeId {
-        &self.vid
-    }
-
-    #[inline]
-    pub fn lsn(&self) -> LSN {
-        self.lsn.into()
-    }
 }
 
 impl AsRef<[u8]> for CommitKey {
