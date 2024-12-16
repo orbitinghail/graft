@@ -45,7 +45,11 @@ pub enum VolumeCatalogErr {
     OffsetsValidationErr(#[from] OffsetsValidationErr),
 }
 
-type Result<T> = std::result::Result<T, VolumeCatalogErr>;
+impl From<lsm_tree::Error> for VolumeCatalogErr {
+    fn from(err: lsm_tree::Error) -> Self {
+        VolumeCatalogErr::FjallErr(err.into())
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct VolumeCatalogConfig {
@@ -79,15 +83,15 @@ pub struct VolumeCatalog {
 }
 
 impl VolumeCatalog {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, VolumeCatalogErr> {
         Self::open_config(VolumeCatalogConfig { path: Some(path.as_ref().to_path_buf()) })
     }
 
-    pub fn open_temporary() -> Result<Self> {
+    pub fn open_temporary() -> Result<Self, VolumeCatalogErr> {
         Self::open_config(VolumeCatalogConfig { path: None })
     }
 
-    pub fn open_config(config: VolumeCatalogConfig) -> Result<Self> {
+    pub fn open_config(config: VolumeCatalogConfig) -> Result<Self, VolumeCatalogErr> {
         let config: Config = config.try_into()?;
         let keyspace = config.open()?;
 
@@ -109,18 +113,22 @@ impl VolumeCatalog {
         }
     }
 
-    pub fn contains_snapshot(&self, vid: VolumeId, lsn: LSN) -> Result<bool> {
+    pub fn contains_snapshot(&self, vid: VolumeId, lsn: LSN) -> Result<bool, VolumeCatalogErr> {
         Ok(self.volumes.contains_key(CommitKey::new(vid, lsn))?)
     }
 
-    pub fn contains_range<R: RangeBounds<LSN>>(&self, vid: &VolumeId, lsns: &R) -> Result<bool> {
+    pub fn contains_range<R: RangeBounds<LSN>>(
+        &self,
+        vid: &VolumeId,
+        lsns: &R,
+    ) -> Result<bool, VolumeCatalogErr> {
         let range = CommitKey::range(vid, lsns);
 
         // verify that lsns in the range are contiguous
         let mut cursor = range.start.lsn();
         let mut empty = true;
 
-        for kv in self.volumes.range(range) {
+        for kv in self.volumes.snapshot().range(range) {
             let (key, _) = kv?;
             let key = CommitKey::try_ref_from_bytes(&key).map_err(|err| {
                 VolumeCatalogErr::DecodeErr { target: "CommitKey", source: err.into() }
@@ -136,7 +144,11 @@ impl VolumeCatalog {
 
     /// Return the snapshot for the specified Volume at the provided LSN.
     /// Returns None if no snapshot is found, or the snapshot is corrupt.
-    pub fn snapshot(&self, vid: VolumeId, lsn: LSN) -> Result<Option<CommitMeta>> {
+    pub fn snapshot(
+        &self,
+        vid: VolumeId,
+        lsn: LSN,
+    ) -> Result<Option<CommitMeta>, VolumeCatalogErr> {
         self.volumes
             .get(CommitKey::new(vid, lsn))?
             .map(|bytes| {
@@ -150,18 +162,19 @@ impl VolumeCatalog {
 
     /// Return the latest snapshot for the specified Volume.
     /// Returns None if no snapshot is found, or the snapshot is corrupt.
-    pub fn latest_snapshot(&self, vid: &VolumeId) -> Result<Option<CommitMeta>> {
+    pub fn latest_snapshot(&self, vid: &VolumeId) -> Result<Option<CommitMeta>, VolumeCatalogErr> {
         self.volumes
+            .snapshot()
             .prefix(vid)
-            .next_back()
-            .transpose()?
-            .map(|(_, bytes)| {
+            .rev()
+            .err_into()
+            .map_ok(|(_, bytes)| {
                 CommitMeta::read_from_bytes(&bytes).map_err(|err| VolumeCatalogErr::DecodeErr {
                     target: "CommitMeta",
                     source: err.into(),
                 })
             })
-            .transpose()
+            .try_next()
     }
 
     /// scan the catalog for segments in the specified Volume. Segments are
@@ -170,9 +183,9 @@ impl VolumeCatalog {
         &self,
         vid: &VolumeId,
         lsns: &R,
-    ) -> impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>)>> {
+    ) -> impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>), VolumeCatalogErr>> {
         let range = CommitKey::range(vid, lsns);
-        let scan = self.segments.range(range).rev();
+        let scan = self.segments.snapshot().range(range).rev();
         SegmentsQueryIter { scan }
     }
 
@@ -183,16 +196,21 @@ impl VolumeCatalog {
         vid: &VolumeId,
         lsns: &R,
     ) -> impl Iterator<
-        Item = Result<(
-            CommitMeta,
-            impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>)>>,
-        )>,
+        Item = Result<
+            (
+                CommitMeta,
+                impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>), VolumeCatalogErr>>,
+            ),
+            VolumeCatalogErr,
+        >,
     > + '_ {
+        let seqno = self.keyspace.instant();
         let range = CommitKey::range(vid, lsns);
         self.volumes
+            .snapshot_at(seqno)
             .range(range)
             .err_into::<VolumeCatalogErr>()
-            .map_ok(|(key, meta)| {
+            .map_ok(move |(key, meta)| {
                 let key = CommitKey::try_read_from_bytes(&key).map_err(|err| {
                     VolumeCatalogErr::DecodeErr { target: "CommitKey", source: err.into() }
                 })?;
@@ -201,7 +219,7 @@ impl VolumeCatalog {
                 })?;
 
                 // scan segments for this commit
-                let segments = self.segments.prefix(key);
+                let segments = self.segments.snapshot_at(seqno).prefix(key);
                 let segments = SegmentsQueryIter { scan: segments };
 
                 Ok((meta, segments))
@@ -216,7 +234,7 @@ pub struct VolumeCatalogBatch {
 }
 
 impl VolumeCatalogBatch {
-    pub fn insert_commit(&mut self, commit: Commit) -> Result<()> {
+    pub fn insert_commit(&mut self, commit: Commit) -> Result<(), VolumeCatalogErr> {
         let commit_key = CommitKey::new(commit.vid().clone(), commit.meta().lsn());
 
         self.batch.insert(&self.volumes, &commit_key, commit.meta());
@@ -235,7 +253,7 @@ impl VolumeCatalogBatch {
         vid: VolumeId,
         snapshot: CommitMeta,
         segments: Vec<SegmentInfo>,
-    ) -> Result<()> {
+    ) -> Result<(), VolumeCatalogErr> {
         let commit_key = CommitKey::new(vid, snapshot.lsn());
 
         self.batch.insert(&self.volumes, &commit_key, &snapshot);
@@ -246,7 +264,7 @@ impl VolumeCatalogBatch {
         Ok(())
     }
 
-    pub fn commit(self) -> Result<()> {
+    pub fn commit(self) -> Result<(), VolumeCatalogErr> {
         self.batch.commit()?;
         Ok(())
     }
@@ -256,11 +274,11 @@ pub struct SegmentsQueryIter<I> {
     scan: I,
 }
 
-impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> SegmentsQueryIter<I> {
+impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> SegmentsQueryIter<I> {
     fn next_inner(
         &mut self,
-        entry: fjall::Result<(Slice, Slice)>,
-    ) -> Result<(SegmentKey, SplinterRef<Bytes>)> {
+        entry: Result<(Slice, Slice), lsm_tree::Error>,
+    ) -> Result<(SegmentKey, SplinterRef<Bytes>), VolumeCatalogErr> {
         let (key, value) = entry?;
         let key = SegmentKey::try_read_from_bytes(&key).map_err(|err| {
             VolumeCatalogErr::DecodeErr { target: "SegmentKey", source: err.into() }
@@ -270,8 +288,10 @@ impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> SegmentsQueryIter<I> {
     }
 }
 
-impl<I: Iterator<Item = fjall::Result<(Slice, Slice)>>> Iterator for SegmentsQueryIter<I> {
-    type Item = Result<(SegmentKey, SplinterRef<Bytes>)>;
+impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> Iterator
+    for SegmentsQueryIter<I>
+{
+    type Item = Result<(SegmentKey, SplinterRef<Bytes>), VolumeCatalogErr>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.scan.next().map(|entry| self.next_inner(entry))

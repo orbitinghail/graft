@@ -122,6 +122,8 @@ mod tests {
 
         // let's commit and validate the store 10 times
         for i in 0..10 {
+            tracing::info!(i);
+
             let commit = CommitRequest {
                 vid: vid.copy_to_bytes(),
                 snapshot_lsn: (i != 0).then(|| i - 1),

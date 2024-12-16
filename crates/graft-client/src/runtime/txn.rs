@@ -8,21 +8,18 @@ use graft_core::{
 
 use crate::ClientErr;
 
-use super::{
-    handle::RuntimeInner,
-    storage::{memtable::Memtable, page::PageValue, snapshot::Snapshot},
-};
+use super::storage::{memtable::Memtable, page::PageValue, snapshot::Snapshot, Storage};
 
 #[derive(Clone, Debug)]
 pub struct ReadTxn {
     vid: VolumeId,
     snapshot: Option<Snapshot>,
-    rt: Arc<RuntimeInner>,
+    storage: Arc<Storage>,
 }
 
 impl ReadTxn {
-    pub(crate) fn new(vid: VolumeId, snapshot: Option<Snapshot>, rt: Arc<RuntimeInner>) -> Self {
-        Self { vid, snapshot, rt }
+    pub(crate) fn new(vid: VolumeId, snapshot: Option<Snapshot>, storage: Arc<Storage>) -> Self {
+        Self { vid, snapshot, storage }
     }
 
     /// Return the volume ID for this transaction
@@ -38,8 +35,10 @@ impl ReadTxn {
     /// Read a page from the snapshot
     pub fn read(&self, offset: PageOffset) -> Result<Page, ClientErr> {
         if let Some(snapshot) = &self.snapshot {
-            let storage = self.rt.storage();
-            match storage.read(self.vid.clone(), offset, snapshot.lsn())? {
+            match self
+                .storage
+                .read(self.vid.clone(), offset, snapshot.lsn())?
+            {
                 PageValue::Available(page) => Ok(page),
                 PageValue::Pending => todo!("download page from remote"),
             }
@@ -91,8 +90,8 @@ impl WriteTxn {
     /// Commit the transaction
     pub fn commit(self) -> Result<ReadTxn, ClientErr> {
         let Self { read_txn, memtable } = self;
-        let ReadTxn { vid, snapshot, rt } = read_txn;
-        let snapshot = rt.storage().commit(vid.clone(), snapshot, memtable)?;
-        Ok(ReadTxn::new(vid, Some(snapshot), rt))
+        let ReadTxn { vid, snapshot, storage } = read_txn;
+        let snapshot = storage.commit(vid.clone(), snapshot, memtable)?;
+        Ok(ReadTxn::new(vid, Some(snapshot), storage))
     }
 }

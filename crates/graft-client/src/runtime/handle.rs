@@ -1,28 +1,31 @@
-use std::{fmt::Debug, sync::Arc};
+use std::sync::Arc;
 
 use graft_core::VolumeId;
 
 use crate::ClientErr;
 
 use super::{
-    storage::{snapshot::Snapshot, Storage},
+    storage::{
+        snapshot::{Snapshot, SnapshotKind},
+        Storage,
+    },
     txn::{ReadTxn, WriteTxn},
 };
 
 #[derive(Clone)]
 pub struct RuntimeHandle {
-    rt: Arc<RuntimeInner>,
+    storage: Arc<Storage>,
 }
 
 impl RuntimeHandle {
     pub fn new(storage: Storage) -> Self {
-        Self { rt: Arc::new(RuntimeInner::new(storage)) }
+        Self { storage: Arc::new(storage) }
     }
 
     /// Start a new read transaction at the latest snapshot
     pub fn read_txn(&self, vid: VolumeId) -> Result<ReadTxn, ClientErr> {
-        let snapshot = self.rt.storage.snapshot(vid.clone())?;
-        Ok(ReadTxn::new(vid, snapshot, self.rt.clone()))
+        let snapshot = self.storage.snapshot(vid.clone(), SnapshotKind::Local)?;
+        Ok(ReadTxn::new(vid, snapshot, self.storage.clone()))
     }
 
     /// Start a new write transaction at the latest snapshot
@@ -32,27 +35,7 @@ impl RuntimeHandle {
     }
 
     pub fn snapshot(&self, vid: VolumeId) -> Result<Option<Snapshot>, ClientErr> {
-        Ok(self.rt.storage.snapshot(vid)?)
-    }
-}
-
-pub(crate) struct RuntimeInner {
-    storage: Storage,
-}
-
-impl RuntimeInner {
-    pub fn new(storage: Storage) -> Self {
-        Self { storage }
-    }
-
-    pub fn storage(&self) -> &Storage {
-        &self.storage
-    }
-}
-
-impl Debug for RuntimeInner {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Runtime")
+        Ok(self.storage.snapshot(vid, SnapshotKind::Local)?)
     }
 }
 

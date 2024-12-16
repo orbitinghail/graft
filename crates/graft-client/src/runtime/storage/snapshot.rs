@@ -35,6 +35,16 @@ impl SnapshotKey {
     pub fn new(vid: VolumeId, kind: SnapshotKind) -> Self {
         Self { vid, kind }
     }
+
+    #[inline]
+    pub fn volume_id(&self) -> &VolumeId {
+        &self.vid
+    }
+
+    #[inline]
+    pub fn kind(&self) -> SnapshotKind {
+        self.kind
+    }
 }
 
 impl AsRef<[u8]> for SnapshotKey {

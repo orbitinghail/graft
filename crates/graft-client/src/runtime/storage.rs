@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     io,
     path::Path,
     sync::{Arc, Mutex},
@@ -8,6 +9,7 @@ use bytes::Bytes;
 use commit::CommitKey;
 use fjall::{KvSeparationOptions, PartitionCreateOptions};
 use graft_core::{
+    byte_unit::ByteUnit,
     lsn::LSN,
     page::{PageSizeErr, EMPTY_PAGE},
     page_offset::PageOffset,
@@ -18,12 +20,16 @@ use memtable::Memtable;
 use page::{PageKey, PageValue};
 use snapshot::{Snapshot, SnapshotKey, SnapshotKind};
 use splinter::Splinter;
+use tokio::sync::{futures::Notified, Notify};
+use tryiter::{TryIterator, TryIteratorExt};
+use volume::{SyncDirection, VolumeConfig};
 use zerocopy::{IntoBytes, TryFromBytes};
 
 pub(crate) mod commit;
 pub(crate) mod memtable;
 pub(crate) mod page;
 pub mod snapshot;
+pub mod volume;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageErr {
@@ -33,8 +39,14 @@ pub enum StorageErr {
     #[error(transparent)]
     IoErr(#[from] io::Error),
 
+    #[error("Corrupt key: {0}")]
+    CorruptKey(ZerocopyErr),
+
     #[error("Corrupt snapshot: {0}")]
     CorruptSnapshot(ZerocopyErr),
+
+    #[error("Corrupt volume config: {0}")]
+    CorruptVolumeConfig(ZerocopyErr),
 
     #[error("Corrupt page: {0}")]
     CorruptPage(#[from] PageSizeErr),
@@ -43,13 +55,22 @@ pub enum StorageErr {
     ConcurrentWrite(VolumeId),
 }
 
-#[derive(Clone)]
+impl From<lsm_tree::Error> for StorageErr {
+    fn from(err: lsm_tree::Error) -> Self {
+        StorageErr::FjallErr(err.into())
+    }
+}
+
 pub struct Storage {
     keyspace: fjall::Keyspace,
 
-    /// Used to store volume attributes
-    /// maps from (VolumeId, SnapshotKind) to Snapshot
+    /// Used to store volume configs
+    /// maps from VolumeId to VolumeConfig
     volumes: fjall::Partition,
+
+    /// Used to store volume snapshots
+    /// maps from (VolumeId, SnapshotKind) to Snapshot
+    snapshots: fjall::Partition,
 
     /// Used to store page contents
     /// maps from (VolumeId, Offset, LSN) to PageValue
@@ -61,6 +82,9 @@ pub struct Storage {
 
     /// Used to serialize the Volume commit process
     commit_lock: Arc<Mutex<()>>,
+
+    /// Used to notify subscribers of new commits
+    commit_notify: Notify,
 }
 
 impl Storage {
@@ -75,6 +99,7 @@ impl Storage {
     pub fn open_config(config: fjall::Config) -> Result<Self, StorageErr> {
         let keyspace = config.open()?;
         let volumes = keyspace.open_partition("volumes", Default::default())?;
+        let snapshots = keyspace.open_partition("snapshots", Default::default())?;
         let pages = keyspace.open_partition(
             "pages",
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
@@ -86,15 +111,53 @@ impl Storage {
         Ok(Storage {
             keyspace,
             volumes,
+            snapshots,
             pages,
             commits,
             commit_lock: Default::default(),
+            commit_notify: Default::default(),
         })
     }
 
-    pub fn snapshot(&self, vid: VolumeId) -> Result<Option<Snapshot>, StorageErr> {
-        let key = snapshot::SnapshotKey::new(vid, SnapshotKind::Local);
-        if let Some(snapshot) = self.volumes.get(key)? {
+    pub fn listen_for_commit(&self) -> Notified<'_> {
+        self.commit_notify.notified()
+    }
+
+    pub fn add_volume(&self, vid: VolumeId, config: VolumeConfig) -> Result<(), StorageErr> {
+        Ok(self.volumes.insert(vid, config)?)
+    }
+
+    // pub fn query_volumes(
+    //     &self,
+    //     sync: SyncDirection,
+    // ) -> impl TryIterator<Ok = (VolumeId, VolumeConfig), Err = StorageErr> + '_ {
+    //     // TODO: let's build a query function that can be used by the sync task
+    //     // to generate pull and push jobs. Some ideas:
+    //     // 1. we want to just iterate over volumes and snapshots once, rather
+    //     //    than round tripping for each volume
+    //     // 2. we want to be able to filter volumes by sync direction
+    //     // 3. we want to be able to filter snapshots by snapshot kind
+
+    //     // self.volumes
+    //     //     .snapshot()
+    //     //     .iter()
+    //     //     .err_into()
+    //     //     .map_ok(move |(vid, config)| {
+    //     //         let vid = VolumeId::try_read_from_bytes(&vid)
+    //     //             .map_err(|e| StorageErr::CorruptKey(e.into()))?;
+    //     //         let config = VolumeConfig::try_read_from_bytes(&config)
+    //     //             .map_err(|e| StorageErr::CorruptVolumeConfig(e.into()))?;
+    //     //         Ok((vid, config))
+    //     //     })
+    // }
+
+    pub fn snapshot(
+        &self,
+        vid: VolumeId,
+        kind: SnapshotKind,
+    ) -> Result<Option<Snapshot>, StorageErr> {
+        let key = snapshot::SnapshotKey::new(vid, kind);
+        if let Some(snapshot) = self.snapshots.get(key)? {
             Ok(Some(
                 Snapshot::try_read_from_bytes(&snapshot)
                     .map_err(|e| StorageErr::CorruptSnapshot(e.into()))?,
@@ -116,7 +179,7 @@ impl Storage {
 
         // Search for the latest page between LSN(0) and the requested LSN,
         // returning None if no page is found.
-        if let Some((_, page)) = self.pages.range(range).next_back().transpose()? {
+        if let Some((_, page)) = self.pages.snapshot().range(range).next_back().transpose()? {
             let bytes: Bytes = page.into();
             Ok(bytes.try_into()?)
         } else {
@@ -154,7 +217,7 @@ impl Storage {
         // write out a new volume snapshot
         let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Local);
         let snapshot = Snapshot::new(commit_lsn, max_offset.pages());
-        batch.insert(&self.volumes, snapshot_key, snapshot.as_bytes());
+        batch.insert(&self.snapshots, snapshot_key, snapshot.as_bytes());
 
         // write out a new commit
         let commit_key = CommitKey::new(vid.clone(), commit_lsn);
@@ -165,7 +228,7 @@ impl Storage {
 
         // check to see if the read snapshot is the latest local snapshot while
         // holding the commit lock
-        let latest = self.snapshot(vid.clone())?;
+        let latest = self.snapshot(vid.clone(), SnapshotKind::Local)?;
         if latest.map(|l| l.lsn()) != read_lsn {
             return Err(StorageErr::ConcurrentWrite(vid));
         }
@@ -173,7 +236,18 @@ impl Storage {
         // commit the changes
         batch.commit()?;
 
+        // notify listeners of the new commit
+        self.commit_notify.notify_waiters();
+
         // return the new snapshot
         Ok(snapshot)
+    }
+}
+
+impl Debug for Storage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Storage")
+            .field("disk usage", &ByteUnit::new(self.keyspace.disk_space()))
+            .finish()
     }
 }
