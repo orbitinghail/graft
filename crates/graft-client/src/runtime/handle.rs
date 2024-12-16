@@ -5,7 +5,7 @@ use graft_core::VolumeId;
 use crate::ClientErr;
 
 use super::{
-    storage::Storage,
+    storage::{snapshot::Snapshot, Storage},
     txn::{ReadTxn, WriteTxn},
 };
 
@@ -29,6 +29,10 @@ impl RuntimeHandle {
     pub fn write_txn(&self, vid: VolumeId) -> Result<WriteTxn, ClientErr> {
         let read_tx = self.read_txn(vid)?;
         Ok(WriteTxn::new(read_tx))
+    }
+
+    pub fn snapshot(&self, vid: VolumeId) -> Result<Option<Snapshot>, ClientErr> {
+        Ok(self.rt.storage.snapshot(vid)?)
     }
 }
 
@@ -54,7 +58,10 @@ impl Debug for RuntimeInner {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::page::{Page, EMPTY_PAGE};
+    use graft_core::{
+        lsn::LSN,
+        page::{Page, EMPTY_PAGE},
+    };
 
     use crate::runtime::storage::StorageErr;
 
@@ -82,6 +89,11 @@ mod tests {
         // verify the new read txn can read the page
         assert_eq!(txn.read(0.into()).unwrap(), page);
 
+        // verify the snapshot
+        let snapshot = txn.snapshot().unwrap();
+        assert_eq!(snapshot.lsn(), LSN::ZERO);
+        assert_eq!(snapshot.page_count(), 1);
+
         // open a new write txn, verify it can read the page; write another page
         let mut txn = handle.write_txn(vid.clone()).unwrap();
         assert_eq!(txn.read(0.into()).unwrap(), page);
@@ -93,6 +105,11 @@ mod tests {
         assert_eq!(txn.read(0.into()).unwrap(), page);
         assert_eq!(txn.read(1.into()).unwrap(), page2);
 
+        // verify the snapshot
+        let snapshot = txn.snapshot().unwrap();
+        assert_eq!(snapshot.lsn(), LSN::new(1));
+        assert_eq!(snapshot.page_count(), 2);
+
         // upgrade to a write txn and overwrite the first page
         let mut txn = txn.upgrade().unwrap();
         txn.write(0.into(), page2.clone());
@@ -101,6 +118,11 @@ mod tests {
 
         // verify the new read txn can read the updated page
         assert_eq!(txn.read(0.into()).unwrap(), page2);
+
+        // verify the snapshot
+        let snapshot = txn.snapshot().unwrap();
+        assert_eq!(snapshot.lsn(), LSN::new(2));
+        assert_eq!(snapshot.page_count(), 2);
     }
 
     #[test]
@@ -122,10 +144,17 @@ mod tests {
         let txn1 = txn1.commit().unwrap();
         assert_eq!(txn1.read(0.into()).unwrap(), page);
 
+        // take a snapshot of the volume before committing txn2
+        let pre_commit = handle.snapshot(vid.clone()).unwrap().unwrap();
+
         let txn2 = txn2.commit();
         assert!(matches!(
             txn2.expect_err("expected concurrent write error"),
             ClientErr::StorageErr(StorageErr::ConcurrentWrite(_))
         ));
+
+        // ensure that txn2 did not commit by verifying the snapshot
+        let snapshot = handle.snapshot(vid.clone()).unwrap().unwrap();
+        assert_eq!(pre_commit, snapshot);
     }
 }

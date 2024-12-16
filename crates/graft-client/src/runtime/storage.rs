@@ -131,15 +131,19 @@ impl Storage {
         memtable: Memtable,
     ) -> Result<Snapshot, StorageErr> {
         let mut batch = self.keyspace.batch();
-        let (read_lsn, page_count) = snapshot.map(|s| s.into()).unwrap_or_default();
-        let lsn = read_lsn.next().expect("lsn overflow");
-        let mut max_offset = page_count.last_offset().unwrap_or(PageOffset::ZERO);
+        let read_lsn = snapshot.as_ref().map(|s| s.lsn());
+        let mut max_offset = snapshot
+            .and_then(|s| s.page_count().last_offset())
+            .unwrap_or(PageOffset::ZERO);
+        let commit_lsn = read_lsn
+            .map(|lsn| lsn.next().expect("lsn overflow"))
+            .unwrap_or_default();
 
         // construct a changed offsets splinter
         let mut offsets = Splinter::default();
 
         // write out the memtable
-        let mut page_key = PageKey::new(vid.clone(), PageOffset::ZERO, lsn);
+        let mut page_key = PageKey::new(vid.clone(), PageOffset::ZERO, commit_lsn);
         for (offset, page) in memtable {
             page_key.set_offset(offset);
             max_offset = max_offset.max(offset);
@@ -149,22 +153,21 @@ impl Storage {
 
         // write out a new volume snapshot
         let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Local);
-        let snapshot = Snapshot::new(lsn, max_offset.pages());
+        let snapshot = Snapshot::new(commit_lsn, max_offset.pages());
         batch.insert(&self.volumes, snapshot_key, snapshot.as_bytes());
 
         // write out a new commit
-        let commit_key = CommitKey::new(vid.clone(), lsn);
+        let commit_key = CommitKey::new(vid.clone(), commit_lsn);
         batch.insert(&self.commits, commit_key, offsets.serialize_to_bytes());
 
         // acquire the commit lock
         let _permit = self.commit_lock.lock().expect("commit lock poisoned");
 
-        // check to see if the snapshot is the latest while holding the commit lock
+        // check to see if the read snapshot is the latest local snapshot while
+        // holding the commit lock
         let latest = self.snapshot(vid.clone())?;
-        if let Some(latest) = latest {
-            if latest.lsn() != read_lsn {
-                return Err(StorageErr::ConcurrentWrite(vid));
-            }
+        if latest.map(|l| l.lsn()) != read_lsn {
+            return Err(StorageErr::ConcurrentWrite(vid));
         }
 
         // commit the changes

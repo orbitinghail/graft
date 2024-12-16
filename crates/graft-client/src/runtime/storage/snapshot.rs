@@ -3,7 +3,9 @@ use std::fmt::Debug;
 use graft_core::{lsn::LSN, page_count::PageCount, VolumeId};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
-#[derive(Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned, Clone, Copy)]
+#[derive(
+    Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned, Clone, Copy, PartialEq, Eq,
+)]
 #[repr(u8)]
 pub enum SnapshotKind {
     /// The volume's local snapshot
@@ -19,7 +21,9 @@ pub enum SnapshotKind {
     Checkpoint = 4,
 }
 
-#[derive(Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned, Clone)]
+#[derive(
+    Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned, Clone, PartialEq, Eq,
+)]
 #[repr(C)]
 pub struct SnapshotKey {
     vid: VolumeId,
@@ -39,7 +43,7 @@ impl AsRef<[u8]> for SnapshotKey {
     }
 }
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct Snapshot {
     lsn: LSN,
@@ -71,12 +75,6 @@ impl Debug for Snapshot {
             .field("lsn", &self.lsn())
             .field("page_count", &self.page_count())
             .finish()
-    }
-}
-
-impl From<Snapshot> for (LSN, PageCount) {
-    fn from(snapshot: Snapshot) -> Self {
-        (snapshot.lsn, snapshot.page_count)
     }
 }
 
