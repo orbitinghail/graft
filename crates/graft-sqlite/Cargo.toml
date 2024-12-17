@@ -12,10 +12,10 @@ graft-core = { path = "../graft-core" }
 graft-client = { path = "../graft-client" }
 graft-proto = { path = "../graft-proto" }
 
-log = "0.4"
+log = { workspace = true }
 
 [dev-dependencies]
-rusqlite = { version = "0.32", features = ["bundled", "trace"] }
+rusqlite = { workspace = true, features = ["bundled", "trace"] }
 
 [dependencies.sqlite-plugin]
 path = "../sqlite-plugin"

@@ -8,25 +8,25 @@ graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 splinter = { path = "../splinter" }
 
-bytes = "1.8"
-prost = "0.13"
-reqwest = { version = "0.12", features = ["brotli"] }
-tokio = { version = "1" }
-thiserror = "2.0"
-futures = "0.3.31"
-url = { version = "2.5.3", features = ["serde"] }
-serde = { version = "1.0.215", features = ["derive"] }
-log = "0.4"
-tempfile = "3.12.0"
-zerocopy = "0.8"
-tokio-util = "0.7.13"
-tryiter = "0.3.0"
-fjall = { version = "2.4", features = ["bytes"] }
-lsm-tree = { version = "2.4", features = ["bytes"] }
+bytes = { workspace = true }
+prost = { workspace = true }
+reqwest = { workspace = true, features = ["brotli"] }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+futures = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+log = { workspace = true }
+tempfile = { workspace = true }
+zerocopy = { workspace = true }
+tokio-util = { workspace = true }
+tryiter = { workspace = true }
+fjall = { workspace = true, features = ["bytes"] }
+lsm-tree = { workspace = true, features = ["bytes"] }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
-env_logger = "0.11"
-tokio = { version = "1", features = ["full"] }
-anyhow = "1.0"
-clap = { version = "4.5.20", features = ["derive"] }
+env_logger = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }

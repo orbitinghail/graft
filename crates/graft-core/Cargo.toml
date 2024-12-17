@@ -4,15 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bs58 = "0.5.1"
-bytes = "1.7.1"
-foldhash = "0.1.3"
-hashbrown = "0.15"
-rand = "0.8.5"
-serde = { version = "1.0.215", features = ["derive"] }
-static_assertions = "1.1.0"
-thiserror = "2.0"
-zerocopy = { version = "0.8", features = ["derive"] }
+bs58 = { workspace = true }
+bytes = { workspace = true }
+foldhash = { workspace = true }
+hashbrown = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+static_assertions = { workspace = true }
+thiserror = { workspace = true }
+zerocopy = { workspace = true, features = ["derive"] }
 
 [features]
 default = []

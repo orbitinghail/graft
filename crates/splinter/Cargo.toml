@@ -4,15 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytes = "1.7"
-either = "1.13.0"
-thiserror = "2.0"
-zerocopy = { version = "0.8", features = ["derive"] }
-itertools = "0.13"
+bytes = { workspace = true }
+either = { workspace = true }
+thiserror = { workspace = true }
+zerocopy = { workspace = true, features = ["derive"] }
+itertools = { workspace = true }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-roaring = "0.10"
+criterion = { workspace = true, features = ["html_reports"] }
+roaring = { workspace = true }
 
 [[bench]]
 name = "bitmaps"
