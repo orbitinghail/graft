@@ -59,8 +59,9 @@ impl<P: Prefix> Gid<P> {
         bs58::encode(self.as_bytes()).into_string()
     }
 
+    /// returns only the random portion of the Gid encoded to bs58
     pub fn short(&self) -> String {
-        self.pretty()[..8].to_string()
+        bs58::encode(&self.random).into_string()
     }
 
     pub fn as_time(&self) -> SystemTime {

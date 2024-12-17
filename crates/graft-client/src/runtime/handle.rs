@@ -23,18 +23,18 @@ impl RuntimeHandle {
     }
 
     /// Start a new read transaction at the latest snapshot
-    pub fn read_txn(&self, vid: VolumeId) -> Result<ReadTxn, ClientErr> {
-        let snapshot = self.storage.snapshot(vid.clone(), SnapshotKind::Local)?;
-        Ok(ReadTxn::new(vid, snapshot, self.storage.clone()))
+    pub fn read_txn(&self, vid: &VolumeId) -> Result<ReadTxn, ClientErr> {
+        let snapshot = self.storage.snapshot(vid, SnapshotKind::Local)?;
+        Ok(ReadTxn::new(vid.clone(), snapshot, self.storage.clone()))
     }
 
     /// Start a new write transaction at the latest snapshot
-    pub fn write_txn(&self, vid: VolumeId) -> Result<WriteTxn, ClientErr> {
+    pub fn write_txn(&self, vid: &VolumeId) -> Result<WriteTxn, ClientErr> {
         let read_tx = self.read_txn(vid)?;
         Ok(WriteTxn::new(read_tx))
     }
 
-    pub fn snapshot(&self, vid: VolumeId) -> Result<Option<Snapshot>, ClientErr> {
+    pub fn snapshot(&self, vid: &VolumeId) -> Result<Option<Snapshot>, ClientErr> {
         Ok(self.storage.snapshot(vid, SnapshotKind::Local)?)
     }
 }
@@ -60,11 +60,11 @@ mod tests {
         let page2 = Page::test_filled(0x99);
 
         // open a read txn and verify that no pages are returned
-        let txn = handle.read_txn(vid.clone()).unwrap();
+        let txn = handle.read_txn(&vid).unwrap();
         assert_eq!(txn.read(0.into()).unwrap(), EMPTY_PAGE);
 
         // open a write txn and write a page, verify RYOW, then commit
-        let mut txn = handle.write_txn(vid.clone()).unwrap();
+        let mut txn = handle.write_txn(&vid).unwrap();
         txn.write(0.into(), page.clone());
         assert_eq!(txn.read(0.into()).unwrap(), page);
         let txn = txn.commit().unwrap();
@@ -78,7 +78,7 @@ mod tests {
         assert_eq!(snapshot.page_count(), 1);
 
         // open a new write txn, verify it can read the page; write another page
-        let mut txn = handle.write_txn(vid.clone()).unwrap();
+        let mut txn = handle.write_txn(&vid).unwrap();
         assert_eq!(txn.read(0.into()).unwrap(), page);
         txn.write(1.into(), page2.clone());
         assert_eq!(txn.read(1.into()).unwrap(), page2);
@@ -118,17 +118,17 @@ mod tests {
         let vid = VolumeId::random();
         let page = Page::test_filled(0x42);
 
-        let mut txn1 = handle.write_txn(vid.clone()).unwrap();
+        let mut txn1 = handle.write_txn(&vid).unwrap();
         txn1.write(0.into(), page.clone());
 
-        let mut txn2 = handle.write_txn(vid.clone()).unwrap();
+        let mut txn2 = handle.write_txn(&vid).unwrap();
         txn2.write(0.into(), page.clone());
 
         let txn1 = txn1.commit().unwrap();
         assert_eq!(txn1.read(0.into()).unwrap(), page);
 
         // take a snapshot of the volume before committing txn2
-        let pre_commit = handle.snapshot(vid.clone()).unwrap().unwrap();
+        let pre_commit = handle.snapshot(&vid).unwrap().unwrap();
 
         let txn2 = txn2.commit();
         assert!(matches!(
@@ -137,7 +137,7 @@ mod tests {
         ));
 
         // ensure that txn2 did not commit by verifying the snapshot
-        let snapshot = handle.snapshot(vid.clone()).unwrap().unwrap();
+        let snapshot = handle.snapshot(&vid).unwrap().unwrap();
         assert_eq!(pre_commit, snapshot);
     }
 }

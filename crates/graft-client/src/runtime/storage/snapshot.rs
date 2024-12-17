@@ -9,16 +9,31 @@ use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 #[repr(u8)]
 pub enum SnapshotKind {
     /// The volume's local snapshot
-    Local = 1,
+    Local = 0b0001,
 
     /// The last local snapshot synced to the server
-    Sync = 2,
+    Sync = 0b0010,
 
     /// The latest remote snapshot
-    Remote = 3,
+    Remote = 0b0100,
 
     /// The latest remote checkpoint snapshot
-    Checkpoint = 4,
+    Checkpoint = 0b1000,
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct SnapshotKindMask(u8);
+
+impl SnapshotKindMask {
+    pub const ALL: SnapshotKindMask = SnapshotKindMask(!0);
+
+    pub fn with(self, kind: SnapshotKind) -> Self {
+        SnapshotKindMask(self.0 | kind as u8)
+    }
+
+    pub fn contains(&self, kind: SnapshotKind) -> bool {
+        self.0 & kind as u8 != 0
+    }
 }
 
 #[derive(
@@ -37,7 +52,7 @@ impl SnapshotKey {
     }
 
     #[inline]
-    pub fn volume_id(&self) -> &VolumeId {
+    pub fn vid(&self) -> &VolumeId {
         &self.vid
     }
 
@@ -91,5 +106,33 @@ impl Debug for Snapshot {
 impl AsRef<[u8]> for Snapshot {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+#[derive(Default)]
+pub struct SnapshotSet {
+    local: Option<Snapshot>,
+    sync: Option<Snapshot>,
+    remote: Option<Snapshot>,
+    checkpoint: Option<Snapshot>,
+}
+
+impl SnapshotSet {
+    pub fn insert(&mut self, kind: SnapshotKind, snapshot: Snapshot) {
+        match kind {
+            SnapshotKind::Local => self.local = Some(snapshot),
+            SnapshotKind::Sync => self.sync = Some(snapshot),
+            SnapshotKind::Remote => self.remote = Some(snapshot),
+            SnapshotKind::Checkpoint => self.checkpoint = Some(snapshot),
+        }
+    }
+
+    pub fn get(&self, kind: SnapshotKind) -> Option<&Snapshot> {
+        match kind {
+            SnapshotKind::Local => self.local.as_ref(),
+            SnapshotKind::Sync => self.sync.as_ref(),
+            SnapshotKind::Remote => self.remote.as_ref(),
+            SnapshotKind::Checkpoint => self.checkpoint.as_ref(),
+        }
     }
 }

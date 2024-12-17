@@ -53,6 +53,7 @@ impl SupervisedTask for SegmentWriterTask {
                 }
 
                 _ = sleep(flush_in) => {
+                    tracing::debug!(?self.flush_interval, "flush interval elapsed; flushing segment");
                     self.handle_flush().await?;
                 }
 

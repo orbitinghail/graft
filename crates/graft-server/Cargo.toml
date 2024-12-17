@@ -8,7 +8,7 @@ graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 graft-client = { path = "../graft-client" }
 
-tryiter = "0.2"
+tryiter = "0.3"
 splinter = { path = "../splinter" }
 tokio = { version = "1.40.0", features = ["full", "test-util"] }
 static_assertions = "1.1.0"

@@ -18,7 +18,7 @@ use graft_core::{
 };
 use memtable::Memtable;
 use page::{PageKey, PageValue};
-use snapshot::{Snapshot, SnapshotKey, SnapshotKind};
+use snapshot::{Snapshot, SnapshotKey, SnapshotKind, SnapshotKindMask, SnapshotSet};
 use splinter::Splinter;
 use tokio::sync::{futures::Notified, Notify};
 use tryiter::{TryIterator, TryIteratorExt};
@@ -123,40 +123,78 @@ impl Storage {
         self.commit_notify.notified()
     }
 
-    pub fn add_volume(&self, vid: VolumeId, config: VolumeConfig) -> Result<(), StorageErr> {
+    pub fn add_volume(&self, vid: &VolumeId, config: VolumeConfig) -> Result<(), StorageErr> {
         Ok(self.volumes.insert(vid, config)?)
     }
 
-    // pub fn query_volumes(
-    //     &self,
-    //     sync: SyncDirection,
-    // ) -> impl TryIterator<Ok = (VolumeId, VolumeConfig), Err = StorageErr> + '_ {
-    //     // TODO: let's build a query function that can be used by the sync task
-    //     // to generate pull and push jobs. Some ideas:
-    //     // 1. we want to just iterate over volumes and snapshots once, rather
-    //     //    than round tripping for each volume
-    //     // 2. we want to be able to filter volumes by sync direction
-    //     // 3. we want to be able to filter snapshots by snapshot kind
+    pub fn query_volumes(
+        &self,
+        sync: SyncDirection,
+        kind_mask: SnapshotKindMask,
+    ) -> impl TryIterator<Ok = (VolumeId, SnapshotSet), Err = StorageErr> + '_ {
+        let seqno = self.keyspace.instant();
+        let volumes = self.volumes.snapshot_at(seqno).iter().err_into();
 
-    //     // self.volumes
-    //     //     .snapshot()
-    //     //     .iter()
-    //     //     .err_into()
-    //     //     .map_ok(move |(vid, config)| {
-    //     //         let vid = VolumeId::try_read_from_bytes(&vid)
-    //     //             .map_err(|e| StorageErr::CorruptKey(e.into()))?;
-    //     //         let config = VolumeConfig::try_read_from_bytes(&config)
-    //     //             .map_err(|e| StorageErr::CorruptVolumeConfig(e.into()))?;
-    //     //         Ok((vid, config))
-    //     //     })
-    // }
+        volumes.try_filter_map(move |(vid, config)| {
+            let config = VolumeConfig::try_read_from_bytes(&config)
+                .map_err(|e| StorageErr::CorruptVolumeConfig(e.into()))?;
+            if sync.matches(config.sync()) {
+                let vid = VolumeId::try_read_from_bytes(&vid)
+                    .map_err(|e| StorageErr::CorruptKey(e.into()))?;
+                let set = self.snapshots_with_seqno(seqno, &vid, kind_mask)?;
+                Ok(Some((vid, set)))
+            } else {
+                Ok(None)
+            }
+        })
+    }
+
+    pub fn snapshots(
+        &self,
+        vid: &VolumeId,
+        kind_mask: SnapshotKindMask,
+    ) -> Result<SnapshotSet, StorageErr> {
+        let seqno = self.keyspace.instant();
+        self.snapshots_with_seqno(seqno, vid, kind_mask)
+    }
+
+    fn snapshots_with_seqno(
+        &self,
+        seqno: u64,
+        vid: &VolumeId,
+        kind_mask: SnapshotKindMask,
+    ) -> Result<SnapshotSet, StorageErr> {
+        let mut snapshots = self
+            .snapshots
+            .snapshot_at(seqno)
+            .prefix(vid)
+            .err_into::<StorageErr>()
+            .try_filter_map(move |(k, v)| {
+                let key = SnapshotKey::try_read_from_bytes(&k)
+                    .map_err(|e| StorageErr::CorruptKey(e.into()))?;
+                if kind_mask.contains(key.kind()) {
+                    let val = Snapshot::try_read_from_bytes(&v)
+                        .map_err(|e| StorageErr::CorruptSnapshot(e.into()))?;
+                    Ok(Some((key, val)))
+                } else {
+                    Ok(None)
+                }
+            });
+
+        let mut set = SnapshotSet::default();
+        while let Some((key, snapshot)) = snapshots.try_next()? {
+            assert_eq!(key.vid(), vid);
+            set.insert(key.kind(), snapshot);
+        }
+        Ok(set)
+    }
 
     pub fn snapshot(
         &self,
-        vid: VolumeId,
+        vid: &VolumeId,
         kind: SnapshotKind,
     ) -> Result<Option<Snapshot>, StorageErr> {
-        let key = snapshot::SnapshotKey::new(vid, kind);
+        let key = snapshot::SnapshotKey::new(vid.clone(), kind);
         if let Some(snapshot) = self.snapshots.get(key)? {
             Ok(Some(
                 Snapshot::try_read_from_bytes(&snapshot)
@@ -169,12 +207,12 @@ impl Storage {
 
     pub fn read(
         &self,
-        vid: VolumeId,
+        vid: &VolumeId,
         offset: PageOffset,
         lsn: LSN,
     ) -> Result<PageValue, StorageErr> {
         let zero = PageKey::new(vid.clone(), offset, LSN::ZERO);
-        let key = PageKey::new(vid, offset, lsn);
+        let key = PageKey::new(vid.clone(), offset, lsn);
         let range = zero..=key;
 
         // Search for the latest page between LSN(0) and the requested LSN,
@@ -189,7 +227,7 @@ impl Storage {
 
     pub fn commit(
         &self,
-        vid: VolumeId,
+        vid: &VolumeId,
         snapshot: Option<Snapshot>,
         memtable: Memtable,
     ) -> Result<Snapshot, StorageErr> {
@@ -228,9 +266,9 @@ impl Storage {
 
         // check to see if the read snapshot is the latest local snapshot while
         // holding the commit lock
-        let latest = self.snapshot(vid.clone(), SnapshotKind::Local)?;
+        let latest = self.snapshot(vid, SnapshotKind::Local)?;
         if latest.map(|l| l.lsn()) != read_lsn {
-            return Err(StorageErr::ConcurrentWrite(vid));
+            return Err(StorageErr::ConcurrentWrite(vid.clone()));
         }
 
         // commit the changes
@@ -249,5 +287,73 @@ impl Debug for Storage {
         f.debug_struct("Storage")
             .field("disk usage", &ByteUnit::new(self.keyspace.disk_space()))
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use graft_core::page::Page;
+
+    use super::*;
+
+    #[test]
+    fn test_query_volumes() {
+        let storage = Storage::open_temporary().unwrap();
+
+        let mut memtable = Memtable::default();
+        memtable.insert(0.into(), Page::test_filled(0x42));
+
+        let mut vids = [VolumeId::random(), VolumeId::random()];
+        vids.sort();
+
+        // first volume has two commits, and is configured to pull
+        storage
+            .add_volume(&vids[0], VolumeConfig::new(SyncDirection::Pull))
+            .unwrap();
+        let snapshot = storage.commit(&vids[0], None, memtable.clone()).unwrap();
+        storage
+            .commit(&vids[0], Some(snapshot), memtable.clone())
+            .unwrap();
+
+        // second volume has one commit, and is configured to push
+        storage
+            .add_volume(&vids[1], VolumeConfig::new(SyncDirection::Push))
+            .unwrap();
+        storage.commit(&vids[1], None, memtable.clone()).unwrap();
+
+        // ensure that we can query back out the snapshots
+        let sync = SyncDirection::Both;
+        let mask = SnapshotKindMask::default().with(SnapshotKind::Local);
+        let mut iter = storage.query_volumes(sync, mask);
+
+        // check the first volume
+        let (vid, set) = iter.try_next().unwrap().unwrap();
+        assert_eq!(vid, vids[0]);
+        let snapshot = set.get(SnapshotKind::Local).unwrap();
+        assert_eq!(snapshot.lsn(), LSN::new(1));
+        assert_eq!(snapshot.page_count(), 1);
+
+        // check the second volume
+        let (vid, set) = iter.try_next().unwrap().unwrap();
+        assert_eq!(vid, vids[1]);
+        let snapshot = set.get(SnapshotKind::Local).unwrap();
+        assert_eq!(snapshot.lsn(), LSN::new(0));
+        assert_eq!(snapshot.page_count(), 1);
+
+        assert!(iter.next().is_none());
+
+        // verify that the sync direction filter works
+        let sync = SyncDirection::Push;
+        let mask = SnapshotKindMask::default().with(SnapshotKind::Local);
+        let mut iter = storage.query_volumes(sync, mask);
+
+        // should be the second volume
+        let (vid, set) = iter.try_next().unwrap().unwrap();
+        assert_eq!(vid, vids[1]);
+        let snapshot = set.get(SnapshotKind::Local).unwrap();
+        assert_eq!(snapshot.lsn(), LSN::new(0));
+        assert_eq!(snapshot.page_count(), 1);
+
+        assert!(iter.next().is_none());
     }
 }

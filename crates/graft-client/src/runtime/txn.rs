@@ -35,10 +35,7 @@ impl ReadTxn {
     /// Read a page from the snapshot
     pub fn read(&self, offset: PageOffset) -> Result<Page, ClientErr> {
         if let Some(snapshot) = &self.snapshot {
-            match self
-                .storage
-                .read(self.vid.clone(), offset, snapshot.lsn())?
-            {
+            match self.storage.read(&self.vid, offset, snapshot.lsn())? {
                 PageValue::Available(page) => Ok(page),
                 PageValue::Pending => todo!("download page from remote"),
             }
@@ -91,7 +88,7 @@ impl WriteTxn {
     pub fn commit(self) -> Result<ReadTxn, ClientErr> {
         let Self { read_txn, memtable } = self;
         let ReadTxn { vid, snapshot, storage } = read_txn;
-        let snapshot = storage.commit(vid.clone(), snapshot, memtable)?;
+        let snapshot = storage.commit(&vid, snapshot, memtable)?;
         Ok(ReadTxn::new(vid, Some(snapshot), storage))
     }
 }
