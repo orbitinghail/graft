@@ -10,9 +10,15 @@ graft-client = { path = "../graft-client" }
 splinter = { path = "../splinter" }
 
 tryiter = { workspace = true }
-tokio = { workspace = true, features = ["full", "test-util"] }
+tokio = { workspace = true, features = [
+    "bytes",
+    "rt-multi-thread",
+    "signal",
+    "test-util",
+    "tokio-macros",
+] }
 static_assertions = { workspace = true }
-zerocopy = { workspace = true, features = ["derive"] }
+zerocopy = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
@@ -21,10 +27,10 @@ object_store = { workspace = true, features = ["aws"] }
 bytes = { workspace = true }
 memmap2 = { workspace = true }
 rlimit = { workspace = true }
-nix = { workspace = true, features = ["fs"] }
+nix = { workspace = true }
 hashbrown = { workspace = true }
 futures = { workspace = true }
-axum = { workspace = true, features = ["ws", "http2"] }
+axum = { workspace = true, features = ["http2"] }
 tower-http = { workspace = true, features = ["compression-full"] }
 prost = { workspace = true }
 itertools = { workspace = true }
@@ -34,11 +40,7 @@ tempfile = { workspace = true }
 foldhash = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-twelf = { workspace = true, default-features = false, features = [
-    "toml",
-    "env",
-    "default_trait",
-] }
+twelf = { workspace = true, features = ["default_trait", "env", "toml"] }
 url = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }
 measured = { workspace = true }

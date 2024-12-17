@@ -15,7 +15,7 @@ graft-proto = { path = "../graft-proto" }
 log = { workspace = true }
 
 [dev-dependencies]
-rusqlite = { workspace = true, features = ["bundled", "trace"] }
+rusqlite = { workspace = true }
 
 [dependencies.sqlite-plugin]
 path = "../sqlite-plugin"

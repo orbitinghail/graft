@@ -11,7 +11,7 @@ zerocopy = { workspace = true, features = ["derive"] }
 itertools = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true, features = ["html_reports"] }
+criterion = { workspace = true}
 roaring = { workspace = true }
 
 [[bench]]

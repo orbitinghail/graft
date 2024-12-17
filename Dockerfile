@@ -1,6 +1,8 @@
 FROM rust:1.82 AS base
-RUN cargo install sccache --version 0.8.2
+RUN apt-get update && apt-get install -y mold && rm -rf /var/lib/apt/lists/*
+ENV RUSTFLAGS="-Ctarget-cpu=native -Clink-arg=-fuse-ld=mold"
 RUN cargo install cargo-chef --version 0.1.68
+RUN cargo install sccache --version 0.9.0
 ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
 FROM base AS planner
