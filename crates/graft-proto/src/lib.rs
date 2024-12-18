@@ -9,7 +9,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use common::v1::{Commit, GraftErr, LsnRange, SegmentInfo, Snapshot};
+use common::v1::{Commit, GraftErr, LsnRange, SegmentInfo};
 use graft_core::{
     gid::GidParseErr,
     lsn::{LSNRangeExt, LSN},
@@ -22,6 +22,7 @@ use graft_core::{
 use pagestore::v1::PageAtOffset;
 use prost_types::TimestampError;
 
+pub use graft::common::v1::Snapshot;
 pub use graft::*;
 use splinter::{DecodeErr, SplinterRef};
 
@@ -81,6 +82,10 @@ impl Snapshot {
         self.checkpoint_lsn.into()
     }
 
+    pub fn is_checkpoint(&self) -> bool {
+        self.lsn() == self.checkpoint()
+    }
+
     pub fn page_count(&self) -> PageCount {
         self.page_count.into()
     }
@@ -125,6 +130,10 @@ impl RangeBounds<LSN> for LsnRange {
 }
 
 impl PageAtOffset {
+    pub fn new(offset: PageOffset, page: Page) -> Self {
+        Self { offset: offset.into(), data: page.into() }
+    }
+
     #[inline]
     pub fn offset(&self) -> PageOffset {
         self.offset.into()

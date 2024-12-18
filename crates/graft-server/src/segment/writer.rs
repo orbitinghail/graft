@@ -1,12 +1,12 @@
 //! A Segment writer is a task which builds open segments and passes them on
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::sync::Arc;
 
 use measured::{Counter, MetricGroup};
-use tokio::{sync::mpsc, time::sleep};
+use tokio::{
+    sync::mpsc,
+    time::{sleep_until, Duration, Instant},
+};
 
 use super::{
     bus::{StoreSegmentReq, WritePageReq},
@@ -40,19 +40,12 @@ impl SupervisedTask for SegmentWriterTask {
 
     async fn run(mut self, ctx: TaskCtx) -> anyhow::Result<()> {
         loop {
-            // Three cases:
-            // We receive a page write request
-            // We receive a shutdown signal
-            // Flush interval has passed
-
-            let flush_in = self.next_flush.duration_since(Instant::now());
-
             tokio::select! {
                 Some(req) = self.input.recv() => {
                     self.handle_page_request(req).await?;
                 }
 
-                _ = sleep(flush_in) => {
+                _ = sleep_until(self.next_flush) => {
                     tracing::debug!(?self.flush_interval, "flush interval elapsed; flushing segment");
                     self.handle_flush().await?;
                 }

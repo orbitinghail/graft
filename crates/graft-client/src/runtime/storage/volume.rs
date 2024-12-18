@@ -11,10 +11,11 @@ pub enum SyncDirection {
 }
 
 impl SyncDirection {
-    pub fn matches(&self, sync: SyncDirection) -> bool {
-        match self {
-            SyncDirection::Both => true,
-            _ => self == &sync,
+    pub fn matches(self, other: SyncDirection) -> bool {
+        match (self, other) {
+            (SyncDirection::Both, _) => true,
+            (_, SyncDirection::Both) => true,
+            (a, b) => a == b,
         }
     }
 }

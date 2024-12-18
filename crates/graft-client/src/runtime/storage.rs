@@ -1,16 +1,18 @@
 use std::{
+    collections::HashSet,
     fmt::Debug,
     io,
+    ops::RangeBounds,
     path::Path,
     sync::{Arc, Mutex},
 };
 
 use bytes::Bytes;
 use commit::CommitKey;
-use fjall::{KvSeparationOptions, PartitionCreateOptions};
+use fjall::{KvSeparationOptions, PartitionCreateOptions, Slice};
 use graft_core::{
     byte_unit::ByteUnit,
-    lsn::LSN,
+    lsn::{LSNRangeExt, LSN},
     page::{PageSizeErr, EMPTY_PAGE},
     page_offset::PageOffset,
     zerocopy_err::ZerocopyErr,
@@ -19,8 +21,8 @@ use graft_core::{
 use memtable::Memtable;
 use page::{PageKey, PageValue};
 use snapshot::{Snapshot, SnapshotKey, SnapshotKind, SnapshotKindMask, SnapshotSet};
-use splinter::Splinter;
-use tokio::sync::{futures::Notified, Notify};
+use splinter::{DecodeErr, Splinter, SplinterRef};
+use tokio::sync::broadcast;
 use tryiter::{TryIterator, TryIteratorExt};
 use volume::{SyncDirection, VolumeConfig};
 use zerocopy::{IntoBytes, TryFromBytes};
@@ -50,6 +52,9 @@ pub enum StorageErr {
 
     #[error("Corrupt page: {0}")]
     CorruptPage(#[from] PageSizeErr),
+
+    #[error("Corrupt commit: {0}")]
+    CorruptCommit(#[from] DecodeErr),
 
     #[error("Illegal concurrent write to volume {0}")]
     ConcurrentWrite(VolumeId),
@@ -84,7 +89,7 @@ pub struct Storage {
     commit_lock: Arc<Mutex<()>>,
 
     /// Used to notify subscribers of new commits
-    commit_notify: Notify,
+    commits_tx: broadcast::Sender<VolumeId>,
 }
 
 impl Storage {
@@ -108,6 +113,7 @@ impl Storage {
             "commits",
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
+        let (commits_tx, _) = broadcast::channel(8);
         Ok(Storage {
             keyspace,
             volumes,
@@ -115,14 +121,18 @@ impl Storage {
             pages,
             commits,
             commit_lock: Default::default(),
-            commit_notify: Default::default(),
+            commits_tx,
         })
     }
 
-    pub fn listen_for_commit(&self) -> Notified<'_> {
-        self.commit_notify.notified()
+    /// Subscribe to new local commits to volumes. This is a best effort
+    /// channel, laggy consumers will receive RecvError::Lagged.
+    pub fn subscribe_to_local_commits(&self) -> broadcast::Receiver<VolumeId> {
+        self.commits_tx.subscribe()
     }
 
+    /// Add a new volume to the storage. This function will overwrite any
+    /// existing configuration for the volume.
     pub fn add_volume(&self, vid: &VolumeId, config: VolumeConfig) -> Result<(), StorageErr> {
         Ok(self.volumes.insert(vid, config)?)
     }
@@ -131,22 +141,66 @@ impl Storage {
         &self,
         sync: SyncDirection,
         kind_mask: SnapshotKindMask,
-    ) -> impl TryIterator<Ok = (VolumeId, SnapshotSet), Err = StorageErr> + '_ {
+        vids: Option<HashSet<VolumeId>>,
+    ) -> impl TryIterator<Ok = (VolumeId, VolumeConfig, SnapshotSet), Err = StorageErr> + '_ {
         let seqno = self.keyspace.instant();
         let volumes = self.volumes.snapshot_at(seqno).iter().err_into();
 
         volumes.try_filter_map(move |(vid, config)| {
+            let vid = VolumeId::try_read_from_bytes(&vid)
+                .map_err(|e| StorageErr::CorruptKey(e.into()))?;
             let config = VolumeConfig::try_read_from_bytes(&config)
                 .map_err(|e| StorageErr::CorruptVolumeConfig(e.into()))?;
-            if sync.matches(config.sync()) {
-                let vid = VolumeId::try_read_from_bytes(&vid)
-                    .map_err(|e| StorageErr::CorruptKey(e.into()))?;
+            let matches_vid = vids.as_ref().map_or(true, |set| set.contains(&vid));
+            if matches_vid && sync.matches(config.sync()) {
                 let set = self.snapshots_with_seqno(seqno, &vid, kind_mask)?;
-                Ok(Some((vid, set)))
+                Ok(Some((vid, config, set)))
             } else {
                 Ok(None)
             }
         })
+    }
+
+    pub fn query_commits(
+        &self,
+        vid: &VolumeId,
+        lsns: impl RangeBounds<LSN>,
+    ) -> impl TryIterator<Ok = (LSN, SplinterRef<Slice>), Err = StorageErr> + '_ {
+        let start = CommitKey::new(vid.clone(), lsns.try_start().unwrap_or_default());
+        let end = CommitKey::new(vid.clone(), lsns.try_end().unwrap_or_default());
+        self.commits
+            .snapshot()
+            .range(start..=end)
+            .err_into()
+            .map_ok(|(k, v)| {
+                let lsn = CommitKey::try_ref_from_bytes(&k)
+                    .map_err(|e| StorageErr::CorruptKey(e.into()))?
+                    .lsn();
+                let splinter = SplinterRef::from_bytes(v)?;
+                Ok((lsn, splinter))
+            })
+    }
+
+    pub fn query_pages<'a, T: AsRef<[u8]> + 'a>(
+        &'a self,
+        vid: &'a VolumeId,
+        lsn: LSN,
+        offsets: &'a SplinterRef<T>,
+    ) -> impl TryIterator<Ok = (PageOffset, Option<PageValue>), Err = StorageErr> + 'a {
+        offsets
+            .iter()
+            .map(move |offset| {
+                let offset: PageOffset = offset.into();
+                let key = PageKey::new(vid.clone(), offset, lsn);
+                Ok((offset, self.pages.get(key)?))
+            })
+            .map_ok(|(offset, page)| {
+                if let Some(page) = page {
+                    Ok((offset, Some(page.try_into()?)))
+                } else {
+                    Ok((offset, None))
+                }
+            })
     }
 
     pub fn snapshots(
@@ -274,11 +328,83 @@ impl Storage {
         // commit the changes
         batch.commit()?;
 
-        // notify listeners of the new commit
-        self.commit_notify.notify_waiters();
+        // notify listeners of the new local commit; ignore errors
+        let _ = self.commits_tx.send(vid.clone());
 
         // return the new snapshot
         Ok(snapshot)
+    }
+
+    /// Replicate a remote commit to local storage.
+    pub fn receive_remote_commit(
+        &self,
+        vid: &VolumeId,
+        is_checkpoint: bool,
+        snapshot: Snapshot,
+        changed: SplinterRef<Bytes>,
+    ) -> Result<(), StorageErr> {
+        let mut batch = self.keyspace.batch();
+
+        // update the remote snapshot for the volume
+        let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Remote);
+        batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
+
+        // update the checkpoint snapshot for the volume if needed
+        if is_checkpoint {
+            let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Checkpoint);
+            batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
+        }
+
+        // mark changed pages
+        let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, snapshot.lsn());
+        let pending = Bytes::from(PageValue::Pending);
+        for offset in changed.iter() {
+            key.set_offset(offset.into());
+            batch.insert(&self.pages, key.as_ref(), pending.as_ref());
+        }
+
+        Ok(batch.commit()?)
+    }
+
+    /// Complete a sync operation by updating the remote snapshot for the volume
+    /// and removing all synced commits.
+    pub fn complete_sync(
+        &self,
+        vid: &VolumeId,
+        is_checkpoint: bool,
+        snapshot: Snapshot,
+        synced_lsns: impl RangeBounds<LSN>,
+    ) -> Result<(), StorageErr> {
+        let mut batch = self.keyspace.batch();
+
+        // update the remote snapshot for the volume
+        let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Remote);
+        batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
+
+        // update the checkpoint snapshot for the volume if needed
+        if is_checkpoint {
+            let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Checkpoint);
+            batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
+        }
+
+        // remove all commits in the synced range
+        let mut key = CommitKey::new(vid.clone(), LSN::ZERO);
+        for lsn in synced_lsns.iter() {
+            key.set_lsn(lsn);
+            batch.remove(&self.commits, key.as_ref());
+        }
+
+        Ok(batch.commit()?)
+    }
+
+    pub fn set_snapshot(
+        &self,
+        vid: &VolumeId,
+        kind: SnapshotKind,
+        snapshot: Snapshot,
+    ) -> Result<(), StorageErr> {
+        let snapshot_key = SnapshotKey::new(vid.clone(), kind);
+        Ok(self.snapshots.insert(snapshot_key, snapshot)?)
     }
 }
 
@@ -324,36 +450,54 @@ mod tests {
         // ensure that we can query back out the snapshots
         let sync = SyncDirection::Both;
         let mask = SnapshotKindMask::default().with(SnapshotKind::Local);
-        let mut iter = storage.query_volumes(sync, mask);
+        let mut iter = storage.query_volumes(sync, mask, None);
 
         // check the first volume
-        let (vid, set) = iter.try_next().unwrap().unwrap();
+        let (vid, config, set) = iter.try_next().unwrap().unwrap();
         assert_eq!(vid, vids[0]);
-        let snapshot = set.get(SnapshotKind::Local).unwrap();
+        assert_eq!(config.sync(), SyncDirection::Pull);
+        let snapshot = set.local().unwrap();
         assert_eq!(snapshot.lsn(), LSN::new(1));
         assert_eq!(snapshot.page_count(), 1);
 
         // check the second volume
-        let (vid, set) = iter.try_next().unwrap().unwrap();
+        let (vid, config, set) = iter.try_next().unwrap().unwrap();
         assert_eq!(vid, vids[1]);
-        let snapshot = set.get(SnapshotKind::Local).unwrap();
+        assert_eq!(config.sync(), SyncDirection::Push);
+        let snapshot = set.local().unwrap();
         assert_eq!(snapshot.lsn(), LSN::new(0));
         assert_eq!(snapshot.page_count(), 1);
 
+        // iter is empty
         assert!(iter.next().is_none());
 
         // verify that the sync direction filter works
         let sync = SyncDirection::Push;
         let mask = SnapshotKindMask::default().with(SnapshotKind::Local);
-        let mut iter = storage.query_volumes(sync, mask);
+        let mut iter = storage.query_volumes(sync, mask, None);
 
         // should be the second volume
-        let (vid, set) = iter.try_next().unwrap().unwrap();
+        let (vid, config, set) = iter.try_next().unwrap().unwrap();
         assert_eq!(vid, vids[1]);
-        let snapshot = set.get(SnapshotKind::Local).unwrap();
+        assert_eq!(config.sync(), SyncDirection::Push);
+        let snapshot = set.local().unwrap();
         assert_eq!(snapshot.lsn(), LSN::new(0));
         assert_eq!(snapshot.page_count(), 1);
 
+        // iter is empty
+        assert!(iter.next().is_none());
+
+        // verify that the volume id filter works
+        let sync = SyncDirection::Both;
+        let mask = SnapshotKindMask::default().with(SnapshotKind::Local);
+        let vid_set = HashSet::from_iter([vids[0].clone()]);
+        let mut iter = storage.query_volumes(sync, mask, Some(vid_set));
+
+        // should be the first volume
+        let (vid, _, _) = iter.try_next().unwrap().unwrap();
+        assert_eq!(vid, vids[0]);
+
+        // iter is empty
         assert!(iter.next().is_none());
     }
 }

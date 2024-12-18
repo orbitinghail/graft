@@ -81,6 +81,15 @@ pub enum PageValue {
     Available(Page),
 }
 
+impl PageValue {
+    pub fn expect(self, msg: &str) -> Page {
+        match self {
+            PageValue::Pending => panic!("{}", msg),
+            PageValue::Available(page) => page,
+        }
+    }
+}
+
 impl TryFrom<Slice> for PageValue {
     type Error = PageSizeErr;
 

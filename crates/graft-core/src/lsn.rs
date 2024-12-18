@@ -145,6 +145,7 @@ pub trait LSNRangeExt {
     fn try_start_exclusive(&self) -> Option<LSN>;
     fn try_end(&self) -> Option<LSN>;
     fn try_end_exclusive(&self) -> Option<LSN>;
+    fn iter(&self) -> LSNRangeIter;
 }
 
 impl<T: RangeBounds<LSN>> LSNRangeExt for T {
@@ -184,6 +185,26 @@ impl<T: RangeBounds<LSN>> LSNRangeExt for T {
             Bound::Excluded(lsn) => Some(*lsn),
             Bound::Unbounded => None,
         }
+    }
+
+    fn iter(&self) -> LSNRangeIter {
+        let start = self.try_start().unwrap_or(LSN::ZERO).into();
+        let end = self.try_end().unwrap_or(LSN::MAX).into();
+        LSNRangeIter { range: start..=end }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+pub struct LSNRangeIter {
+    range: RangeInclusive<u64>,
+}
+
+impl Iterator for LSNRangeIter {
+    type Item = LSN;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.range.next().map(LSN)
     }
 }
 

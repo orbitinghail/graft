@@ -1,11 +1,23 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use tokio::select;
+use graft_core::VolumeId;
+use job::{Job, PullJob, PushJob};
+use tokio::{
+    select,
+    sync::broadcast::{
+        self,
+        error::{RecvError, TryRecvError},
+    },
+};
 use tokio_util::sync::CancellationToken;
+use tryiter::{TryIterator, TryIteratorExt};
 
-use crate::{ClientErr, ClientPair};
+use crate::{
+    runtime::storage::snapshot::{SnapshotKind, SnapshotKindMask},
+    ClientErr, ClientPair,
+};
 
-use super::storage::Storage;
+use super::storage::{volume::SyncDirection, Storage};
 
 mod job;
 
@@ -15,6 +27,7 @@ pub struct SyncTask {
     storage: Arc<Storage>,
     clients: ClientPair,
     ticker: tokio::time::Interval,
+    commits_rx: broadcast::Receiver<VolumeId>,
     token: CancellationToken,
 }
 
@@ -26,13 +39,23 @@ impl SyncTask {
     ) -> (CancellationToken, Self) {
         let ticker = tokio::time::interval(refresh_interval);
         let token = CancellationToken::new();
-        (token.clone(), Self { storage, clients, ticker, token })
+        let commits_rx = storage.subscribe_to_local_commits();
+        (
+            token.clone(),
+            Self {
+                storage,
+                clients,
+                ticker,
+                commits_rx,
+                token,
+            },
+        )
     }
 
     pub async fn run(mut self) {
         loop {
             match self.run_inner().await {
-                Ok(_) => {
+                Ok(()) => {
                     log::info!("sync task completed");
                     break;
                 }
@@ -47,12 +70,10 @@ impl SyncTask {
         loop {
             select! {
                 _ = self.ticker.tick() => {
-                    // Refresh sync jobs
-                    log::info!("refreshing sync jobs");
+                    self.handle_tick().await?;
                 }
-                _ = self.storage.listen_for_commit() => {
-                    // Push changed volumes
-                    log::info!("commit detected, pushing volumes");
+                vids = Self::changed_vids(&mut self.commits_rx) => {
+                    self.handle_commit(vids).await?;
 
                 }
                 _ = self.token.cancelled() => {
@@ -60,36 +81,95 @@ impl SyncTask {
                     break;
                 }
             }
-
-            /*
-            The sync task is responsible for syncing all volumes up and down from the server.
-
-            We can organize the code into jobs:
-            Pull{vid, snapshot}
-            Push{vid, sync_snapshot, snapshot, lsn_range}
-
-            To generate pull jobs:
-            - iterate through all volumes
-                - snapshot = storage.snapshot(vid, remote)
-                - Pull{vid, snapshot}
-
-            To generate push jobs:
-            - iterate through all volumes
-                - sync_snapshot = storage.snapshot(vid, sync)
-                - snapshot = storage.snapshot(vid, local)
-                - lsn_range = sync_snapshot.lsn()..snapshot.lsn()
-                - Push{vid, sync_snapshot, snapshot, lsn_range}
-
-            When the sync task runs it will generate Push jobs for each locally
-            changed volume, and pull jobs for any volume we haven't pulled
-            recently.
-
-            Rather than polling continuously, it would be nice to put the sync
-            task to sleep until either a local volume changes or the next pull
-            timeout occurs. For this we'd like a signal mechanism that can
-            select for a specific volume or all volumes.
-            */
         }
         Ok(())
+    }
+
+    /// Yields a set of recent vids that have been committed to, or None if
+    /// the receiver lags. Panics if the channel is closed.
+    async fn changed_vids(chan: &mut broadcast::Receiver<VolumeId>) -> Option<HashSet<VolumeId>> {
+        // wait for the first commit; returning early if the channel lags
+        let first_vid = match chan.recv().await {
+            Ok(vid) => vid,
+            Err(RecvError::Closed) => panic!("commits channel closed"),
+            Err(RecvError::Lagged(_)) => {
+                log::warn!("commits channel lagging");
+                chan.resubscribe();
+                return None;
+            }
+        };
+
+        // optimistically drain the rest of the channel into a set; returning early if the channel lags
+        let mut set = HashSet::new();
+        set.insert(first_vid);
+        loop {
+            match chan.try_recv() {
+                Ok(vid) => {
+                    set.insert(vid);
+                }
+                Err(TryRecvError::Empty) => {
+                    break;
+                }
+                Err(TryRecvError::Lagged(_)) => {
+                    log::warn!("commits channel lagging");
+                    chan.resubscribe();
+                    return None;
+                }
+                Err(TryRecvError::Closed) => panic!("commits channel closed"),
+            }
+        }
+
+        Some(set)
+    }
+
+    async fn handle_tick(&mut self) -> Result<(), ClientErr> {
+        log::debug!("handle_tick");
+        let mut jobs = self.jobs(SyncDirection::Both, None).await;
+        while let Some(job) = jobs.try_next()? {
+            job.run(&self.storage, &self.clients).await?;
+        }
+        Ok(())
+    }
+
+    async fn handle_commit(&mut self, vids: Option<HashSet<VolumeId>>) -> Result<(), ClientErr> {
+        log::debug!("handle_commit: {:?}", vids);
+        let mut jobs = self.jobs(SyncDirection::Push, vids).await;
+        while let Some(job) = jobs.try_next()? {
+            job.run(&self.storage, &self.clients).await?;
+        }
+        Ok(())
+    }
+
+    async fn jobs(
+        &self,
+        sync: SyncDirection,
+        vids: Option<HashSet<VolumeId>>,
+    ) -> impl TryIterator<Ok = Job, Err = ClientErr> + '_ {
+        let kind_mask = SnapshotKindMask::default()
+            .with(SnapshotKind::Local)
+            .with(SnapshotKind::Sync)
+            .with(SnapshotKind::Remote);
+        self.storage
+            .query_volumes(sync, kind_mask, vids)
+            .err_into()
+            .try_filter_map(|(vid, config, mut snapshots)| {
+                // generate a push job if the volume is configured for push and has changed
+                let can_push = config.sync().matches(SyncDirection::Push);
+                let can_pull = config.sync().matches(SyncDirection::Pull);
+                let has_changed = snapshots.sync() != snapshots.local();
+                if can_push && has_changed {
+                    Ok(Some(Job::push(
+                        vid,
+                        snapshots.take_sync(),
+                        snapshots.take_local().expect(
+                            "local snapshot should never be missing if sync snapshot is present",
+                        ),
+                    )))
+                } else if can_pull {
+                    Ok(Some(Job::pull(vid, snapshots.take_remote())))
+                } else {
+                    Ok(None)
+                }
+            })
     }
 }

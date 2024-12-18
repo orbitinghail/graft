@@ -93,14 +93,14 @@ impl MetastoreClient {
     pub async fn commit(
         &self,
         vid: &VolumeId,
-        snapshot: Option<LSN>,
+        snapshot_lsn: Option<LSN>,
         page_count: PageCount,
         segments: Vec<SegmentInfo>,
     ) -> Result<Snapshot, error::ClientErr> {
         let url = self.endpoint.join("commit").unwrap();
         let req = CommitRequest {
             vid: vid.copy_to_bytes(),
-            snapshot_lsn: snapshot.map(Into::into),
+            snapshot_lsn: snapshot_lsn.map(Into::into),
             page_count: page_count.into(),
             segments,
         };

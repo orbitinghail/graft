@@ -109,6 +109,12 @@ impl AsRef<[u8]> for Snapshot {
     }
 }
 
+impl From<graft_proto::Snapshot> for Snapshot {
+    fn from(proto: graft_proto::Snapshot) -> Self {
+        Self::new(proto.lsn(), proto.page_count())
+    }
+}
+
 #[derive(Default)]
 pub struct SnapshotSet {
     local: Option<Snapshot>,
@@ -127,12 +133,35 @@ impl SnapshotSet {
         }
     }
 
-    pub fn get(&self, kind: SnapshotKind) -> Option<&Snapshot> {
-        match kind {
-            SnapshotKind::Local => self.local.as_ref(),
-            SnapshotKind::Sync => self.sync.as_ref(),
-            SnapshotKind::Remote => self.remote.as_ref(),
-            SnapshotKind::Checkpoint => self.checkpoint.as_ref(),
-        }
+    pub fn take_local(&mut self) -> Option<Snapshot> {
+        self.local.take()
+    }
+
+    pub fn local(&self) -> Option<&Snapshot> {
+        self.local.as_ref()
+    }
+
+    pub fn take_sync(&mut self) -> Option<Snapshot> {
+        self.sync.take()
+    }
+
+    pub fn sync(&self) -> Option<&Snapshot> {
+        self.sync.as_ref()
+    }
+
+    pub fn take_remote(&mut self) -> Option<Snapshot> {
+        self.remote.take()
+    }
+
+    pub fn remote(&self) -> Option<&Snapshot> {
+        self.remote.as_ref()
+    }
+
+    pub fn take_checkpoint(&mut self) -> Option<Snapshot> {
+        self.checkpoint.take()
+    }
+
+    pub fn checkpoint(&self) -> Option<&Snapshot> {
+        self.checkpoint.as_ref()
     }
 }
