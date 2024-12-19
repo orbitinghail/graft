@@ -1,0 +1,14 @@
+[package]
+name = "graft-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+graft-client = { path = "../graft-client" }
+graft-server = { path = "../graft-server" }
+graft-core = { path = "../graft-core", features = ["testutil"] }
+
+url = { workspace = true }
+tokio = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }

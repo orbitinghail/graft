@@ -85,6 +85,7 @@ async fn main() {
 
     let mut supervisor = Supervisor::default();
     supervisor.spawn(ApiServerTask::new(
+        "metastore-api-server",
         TcpListener::bind(addr).await.unwrap(),
         router,
     ));

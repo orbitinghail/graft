@@ -1,13 +1,14 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use graft_core::VolumeId;
-use job::{Job, PullJob, PushJob};
+use job::Job;
 use tokio::{
     select,
     sync::broadcast::{
         self,
         error::{RecvError, TryRecvError},
     },
+    task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
 use tryiter::{TryIterator, TryIteratorExt};
@@ -21,6 +22,30 @@ use super::storage::{volume::SyncDirection, Storage};
 
 mod job;
 
+pub struct SyncTaskHandle {
+    token: CancellationToken,
+    task: JoinHandle<()>,
+}
+
+impl SyncTaskHandle {
+    pub async fn shutdown(self, timeout: Duration) {
+        self.token.cancel();
+
+        // wait for either the task to complete or the timeout to elapse
+        match tokio::time::timeout(timeout, self.task).await {
+            Ok(Ok(())) => {
+                log::debug!("sync task shutdown completed");
+            }
+            Ok(Err(err)) => {
+                log::error!("sync task shutdown error: {:?}", err);
+            }
+            Err(_) => {
+                log::warn!("timeout waiting for sync task to shutdown");
+            }
+        }
+    }
+}
+
 /// A SyncTask is a background task which continuously syncs volumes to and from
 /// a Graft service.
 pub struct SyncTask {
@@ -32,31 +57,29 @@ pub struct SyncTask {
 }
 
 impl SyncTask {
-    pub fn new(
+    pub fn spawn(
         storage: Arc<Storage>,
         clients: ClientPair,
         refresh_interval: Duration,
-    ) -> (CancellationToken, Self) {
+    ) -> SyncTaskHandle {
         let ticker = tokio::time::interval(refresh_interval);
         let token = CancellationToken::new();
         let commits_rx = storage.subscribe_to_local_commits();
-        (
-            token.clone(),
-            Self {
-                storage,
-                clients,
-                ticker,
-                commits_rx,
-                token,
-            },
-        )
+        let task = Self {
+            storage,
+            clients,
+            ticker,
+            commits_rx,
+            token: token.clone(),
+        };
+        SyncTaskHandle { token, task: tokio::spawn(task.run()) }
     }
 
     pub async fn run(mut self) {
         loop {
             match self.run_inner().await {
                 Ok(()) => {
-                    log::info!("sync task completed");
+                    log::trace!("sync task inner loop completed without error; shutting down");
                     break;
                 }
                 Err(err) => {
@@ -77,7 +100,7 @@ impl SyncTask {
 
                 }
                 _ = self.token.cancelled() => {
-                    log::info!("sync task shutting down");
+                    log::debug!("sync task received shutdown request");
                     break;
                 }
             }
@@ -124,8 +147,8 @@ impl SyncTask {
 
     async fn handle_tick(&mut self) -> Result<(), ClientErr> {
         log::debug!("handle_tick");
-        let mut jobs = self.jobs(SyncDirection::Both, None).await;
-        while let Some(job) = jobs.try_next()? {
+        let jobs = self.jobs(SyncDirection::Both, None).await;
+        for job in jobs.collect::<Result<Vec<Job>, _>>()? {
             job.run(&self.storage, &self.clients).await?;
         }
         Ok(())
@@ -133,8 +156,8 @@ impl SyncTask {
 
     async fn handle_commit(&mut self, vids: Option<HashSet<VolumeId>>) -> Result<(), ClientErr> {
         log::debug!("handle_commit: {:?}", vids);
-        let mut jobs = self.jobs(SyncDirection::Push, vids).await;
-        while let Some(job) = jobs.try_next()? {
+        let jobs = self.jobs(SyncDirection::Push, vids).await;
+        for job in jobs.collect::<Result<Vec<Job>, _>>()? {
             job.run(&self.storage, &self.clients).await?;
         }
         Ok(())

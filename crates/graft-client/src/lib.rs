@@ -5,7 +5,7 @@ mod pagestore;
 mod pair;
 mod request;
 
-mod runtime {
+pub mod runtime {
     pub mod handle;
     pub mod storage;
     pub mod sync;
@@ -17,4 +17,3 @@ pub use error::ClientErr;
 pub use metastore::MetastoreClient;
 pub use pagestore::PagestoreClient;
 pub use pair::ClientPair;
-pub use runtime::handle::RuntimeHandle;

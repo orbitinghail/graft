@@ -150,6 +150,7 @@ async fn main() {
     tracing::info!("listening on {}", addr);
 
     supervisor.spawn(ApiServerTask::new(
+        "pagestore-api-server",
         TcpListener::bind(addr).await.unwrap(),
         router,
     ));

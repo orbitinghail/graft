@@ -16,6 +16,7 @@ use crate::builder;
 use crate::error;
 use crate::request::prost_request;
 
+#[derive(Debug, Clone)]
 pub struct MetastoreClient {
     /// The metastore root URL (without any trailing path)
     pub(crate) endpoint: Url,

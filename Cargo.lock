@@ -1110,6 +1110,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "graft-test"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "graft-client",
+ "graft-core",
+ "graft-server",
+ "log",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "guardian"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

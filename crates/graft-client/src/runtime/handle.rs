@@ -1,14 +1,16 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use graft_core::VolumeId;
 
-use crate::ClientErr;
+use crate::{ClientErr, ClientPair};
 
 use super::{
     storage::{
         snapshot::{Snapshot, SnapshotKind},
+        volume::VolumeConfig,
         Storage,
     },
+    sync::{SyncTask, SyncTaskHandle},
     txn::{ReadTxn, WriteTxn},
 };
 
@@ -20,6 +22,18 @@ pub struct RuntimeHandle {
 impl RuntimeHandle {
     pub fn new(storage: Storage) -> Self {
         Self { storage: Arc::new(storage) }
+    }
+
+    pub fn spawn_sync_task(
+        &self,
+        clients: ClientPair,
+        refresh_interval: Duration,
+    ) -> SyncTaskHandle {
+        SyncTask::spawn(self.storage.clone(), clients, refresh_interval)
+    }
+
+    pub fn add_volume(&self, vid: &VolumeId, config: VolumeConfig) -> Result<(), ClientErr> {
+        Ok(self.storage.add_volume(vid, config)?)
     }
 
     /// Start a new read transaction at the latest snapshot

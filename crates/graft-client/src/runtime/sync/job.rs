@@ -118,19 +118,21 @@ impl PushJob {
         // load all of the pages into memory
         // TODO: stream pages directly to the pagestore
         let mut pages = Vec::new();
-        let mut commits = storage.query_commits(&self.vid, lsn_range.clone());
-        while let Some((lsn, offsets)) = commits.try_next()? {
-            let mut commit_pages = storage.query_pages(&self.vid, lsn, &offsets);
-            while let Some((offset, page)) = commit_pages.try_next()? {
-                // it's a fatal error if the page is None or Pending
-                let page = page
-                    .expect("page missing from storage")
-                    .expect("page missing from storage");
+        {
+            let mut commits = storage.query_commits(&self.vid, lsn_range.clone());
+            while let Some((lsn, offsets)) = commits.try_next()? {
+                let mut commit_pages = storage.query_pages(&self.vid, lsn, &offsets);
+                while let Some((offset, page)) = commit_pages.try_next()? {
+                    // it's a fatal error if the page is None or Pending
+                    let page = page
+                        .expect("page missing from storage")
+                        .expect("page missing from storage");
 
-                pages.push(PageAtOffset::new(offset, page));
+                    pages.push(PageAtOffset::new(offset, page));
 
-                // update the max offset
-                max_offset = max_offset.max(offset);
+                    // update the max offset
+                    max_offset = max_offset.max(offset);
+                }
             }
         }
 

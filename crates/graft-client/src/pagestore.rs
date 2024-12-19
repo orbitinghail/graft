@@ -15,6 +15,7 @@ use crate::builder::ClientBuilder;
 use crate::request::prost_request;
 use crate::ClientErr;
 
+#[derive(Debug, Clone)]
 pub struct PagestoreClient {
     pub(crate) endpoint: Url,
     pub(crate) http: reqwest::Client,
