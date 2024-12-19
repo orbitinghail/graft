@@ -159,7 +159,7 @@ async fn main() {
         result = supervisor.supervise().fuse() => result.unwrap(),
         _ = ctrl_c().fuse() => {
             tracing::info!("received SIGINT, shutting down");
-            supervisor.shutdown(Duration::from_secs(5)).await
+            supervisor.shutdown(Duration::from_secs(5)).await.unwrap()
         }
     };
 }

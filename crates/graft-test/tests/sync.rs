@@ -36,6 +36,6 @@ async fn test_client_sync_sanity() {
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // shutdown everything
-    sync.shutdown(Duration::from_secs(1)).await;
-    supervisor.shutdown(Duration::from_secs(1)).await;
+    sync.shutdown(Duration::from_secs(1)).await.unwrap();
+    supervisor.shutdown(Duration::from_secs(1)).await.unwrap();
 }

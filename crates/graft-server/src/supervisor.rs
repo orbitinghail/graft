@@ -1,7 +1,17 @@
 use std::{future::Future, marker::Send, panic, time::Duration};
 
+use thiserror::Error;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Error)]
+pub enum ShutdownErr {
+    #[error("error while shutting down Supervisor")]
+    Error(#[from] anyhow::Error),
+
+    #[error("timeout while waiting for Supervisor to cleanly shutdown")]
+    Timeout,
+}
 
 #[derive(Clone, Debug)]
 pub struct TaskCfg {
@@ -89,16 +99,17 @@ impl Supervisor {
         Ok(())
     }
 
-    pub async fn shutdown(&mut self, abort_timeout: Duration) {
+    pub async fn shutdown(&mut self, abort_timeout: Duration) -> Result<(), ShutdownErr> {
         self.shutdown.cancel();
 
         // wait for self.supervise up to the timeout
         tokio::select! {
-            _ = self.supervise() => {}
+            result = self.supervise() => Ok(result?),
             _ = tokio::time::sleep(abort_timeout) => {
                 tracing::error!("tasks did not complete within timeout; initiating hard shutdown");
                 self.tasks.abort_all();
-                self.supervise().await.unwrap()
+                self.supervise().await.unwrap();
+                Err(ShutdownErr::Timeout)
             }
         }
     }

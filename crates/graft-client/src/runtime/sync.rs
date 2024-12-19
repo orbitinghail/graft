@@ -2,13 +2,14 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use graft_core::VolumeId;
 use job::Job;
+use thiserror::Error;
 use tokio::{
     select,
     sync::broadcast::{
         self,
         error::{RecvError, TryRecvError},
     },
-    task::JoinHandle,
+    task::{JoinError, JoinHandle},
 };
 use tokio_util::sync::CancellationToken;
 use tryiter::{TryIterator, TryIteratorExt};
@@ -20,6 +21,15 @@ use crate::{
 
 use super::storage::{volume::SyncDirection, Storage};
 
+#[derive(Debug, Error)]
+pub enum ShutdownErr {
+    #[error("error while shutting down Sync task")]
+    Error(JoinError),
+
+    #[error("timeout while waiting for Sync task to cleanly shutdown")]
+    Timeout,
+}
+
 mod job;
 
 pub struct SyncTaskHandle {
@@ -28,19 +38,22 @@ pub struct SyncTaskHandle {
 }
 
 impl SyncTaskHandle {
-    pub async fn shutdown(self, timeout: Duration) {
+    pub async fn shutdown(self, timeout: Duration) -> Result<(), ShutdownErr> {
         self.token.cancel();
 
         // wait for either the task to complete or the timeout to elapse
         match tokio::time::timeout(timeout, self.task).await {
             Ok(Ok(())) => {
                 log::debug!("sync task shutdown completed");
+                Ok(())
             }
             Ok(Err(err)) => {
                 log::error!("sync task shutdown error: {:?}", err);
+                Err(ShutdownErr::Error(err))
             }
             Err(_) => {
                 log::warn!("timeout waiting for sync task to shutdown");
+                Err(ShutdownErr::Timeout)
             }
         }
     }

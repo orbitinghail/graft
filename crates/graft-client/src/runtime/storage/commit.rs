@@ -15,11 +15,6 @@ impl CommitKey {
     }
 
     #[inline]
-    pub fn volume_id(&self) -> &VolumeId {
-        &self.vid
-    }
-
-    #[inline]
     pub fn lsn(&self) -> LSN {
         self.lsn.into()
     }
