@@ -13,6 +13,7 @@ use graft_core::{gid::VolumeId, lsn::LSN, zerocopy_err::ZerocopyErr};
 use graft_proto::common::v1::SegmentInfo;
 use serde::{Deserialize, Serialize};
 use splinter::SplinterRef;
+use trackerr::{CallerLocation, LocationStack};
 use tryiter::TryIteratorExt;
 use zerocopy::{FromBytes, TryFromBytes};
 
@@ -23,31 +24,60 @@ use super::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum VolumeCatalogErr {
-    #[error(transparent)]
-    GidParseErr(#[from] graft_core::gid::GidParseErr),
+    #[error("failed to parse Gid")]
+    GidParseErr(
+        #[from] graft_core::gid::GidParseErr,
+        #[implicit] CallerLocation,
+    ),
 
-    #[error(transparent)]
-    FjallErr(#[from] fjall::Error),
+    #[error("fjall error")]
+    FjallErr(#[from] fjall::Error, #[implicit] CallerLocation),
 
-    #[error(transparent)]
-    IoErr(#[from] std::io::Error),
+    #[error("io error")]
+    IoErr(#[from] std::io::Error, #[implicit] CallerLocation),
 
     #[error("Failed to decode entry into type {target}")]
     DecodeErr {
         target: &'static str,
         source: ZerocopyErr,
+        loc: CallerLocation,
     },
 
-    #[error(transparent)]
-    SplinterErr(#[from] splinter::DecodeErr),
+    #[error("splinter error")]
+    SplinterErr(#[from] splinter::DecodeErr, #[implicit] CallerLocation),
 
-    #[error(transparent)]
-    OffsetsValidationErr(#[from] OffsetsValidationErr),
+    #[error("offsets validation error")]
+    OffsetsValidationErr(#[from] OffsetsValidationErr, #[implicit] CallerLocation),
 }
 
 impl From<lsm_tree::Error> for VolumeCatalogErr {
     fn from(err: lsm_tree::Error) -> Self {
-        VolumeCatalogErr::FjallErr(err.into())
+        VolumeCatalogErr::FjallErr(err.into(), Default::default())
+    }
+}
+
+impl LocationStack for VolumeCatalogErr {
+    fn location(&self) -> &CallerLocation {
+        use VolumeCatalogErr::*;
+        match self {
+            GidParseErr(_, loc)
+            | FjallErr(_, loc)
+            | IoErr(_, loc)
+            | DecodeErr { loc, .. }
+            | SplinterErr(_, loc)
+            | OffsetsValidationErr(_, loc) => loc,
+        }
+    }
+
+    fn next(&self) -> Option<&dyn LocationStack> {
+        use VolumeCatalogErr::*;
+        match self {
+            GidParseErr(err, _) => Some(err),
+            DecodeErr { source, .. } => Some(source),
+            SplinterErr(err, _) => Some(err),
+            OffsetsValidationErr(err, _) => Some(err),
+            _ => None,
+        }
     }
 }
 
@@ -130,9 +160,12 @@ impl VolumeCatalog {
 
         for kv in self.volumes.snapshot().range(range) {
             let (key, _) = kv?;
-            let key = CommitKey::try_ref_from_bytes(&key).map_err(|err| {
-                VolumeCatalogErr::DecodeErr { target: "CommitKey", source: err.into() }
-            })?;
+            let key =
+                CommitKey::try_ref_from_bytes(&key).map_err(|err| VolumeCatalogErr::DecodeErr {
+                    target: "CommitKey",
+                    source: err.into(),
+                    loc: Default::default(),
+                })?;
             if key.lsn() != cursor {
                 return Ok(false);
             }
@@ -155,6 +188,7 @@ impl VolumeCatalog {
                 CommitMeta::read_from_bytes(&bytes).map_err(|err| VolumeCatalogErr::DecodeErr {
                     target: "CommitMeta",
                     source: err.into(),
+                    loc: Default::default(),
                 })
             })
             .transpose()
@@ -172,6 +206,7 @@ impl VolumeCatalog {
                 CommitMeta::read_from_bytes(&bytes).map_err(|err| VolumeCatalogErr::DecodeErr {
                     target: "CommitMeta",
                     source: err.into(),
+                    loc: Default::default(),
                 })
             })
             .try_next()
@@ -212,10 +247,18 @@ impl VolumeCatalog {
             .err_into::<VolumeCatalogErr>()
             .map_ok(move |(key, meta)| {
                 let key = CommitKey::try_read_from_bytes(&key).map_err(|err| {
-                    VolumeCatalogErr::DecodeErr { target: "CommitKey", source: err.into() }
+                    VolumeCatalogErr::DecodeErr {
+                        target: "CommitKey",
+                        source: err.into(),
+                        loc: Default::default(),
+                    }
                 })?;
                 let meta = CommitMeta::read_from_bytes(&meta).map_err(|err| {
-                    VolumeCatalogErr::DecodeErr { target: "CommitMeta", source: err.into() }
+                    VolumeCatalogErr::DecodeErr {
+                        target: "CommitMeta",
+                        source: err.into(),
+                        loc: Default::default(),
+                    }
                 })?;
 
                 // scan segments for this commit
@@ -280,9 +323,12 @@ impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> SegmentsQueryI
         entry: Result<(Slice, Slice), lsm_tree::Error>,
     ) -> Result<(SegmentKey, SplinterRef<Bytes>), VolumeCatalogErr> {
         let (key, value) = entry?;
-        let key = SegmentKey::try_read_from_bytes(&key).map_err(|err| {
-            VolumeCatalogErr::DecodeErr { target: "SegmentKey", source: err.into() }
-        })?;
+        let key =
+            SegmentKey::try_read_from_bytes(&key).map_err(|err| VolumeCatalogErr::DecodeErr {
+                target: "SegmentKey",
+                source: err.into(),
+                loc: Default::default(),
+            })?;
         let val = SplinterRef::from_bytes(Bytes::from(value))?;
         Ok((key, val))
     }

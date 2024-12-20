@@ -147,7 +147,7 @@ mod tests {
         let txn2 = txn2.commit();
         assert!(matches!(
             txn2.expect_err("expected concurrent write error"),
-            ClientErr::StorageErr(StorageErr::ConcurrentWrite(_))
+            ClientErr::StorageErr(StorageErr::ConcurrentWrite(_, _), _)
         ));
 
         // ensure that txn2 did not commit by verifying the snapshot

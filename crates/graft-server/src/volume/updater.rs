@@ -3,6 +3,7 @@ use std::ops::RangeBounds;
 use futures::TryStreamExt;
 use graft_client::MetastoreClient;
 use graft_core::{lsn::LSN, VolumeId};
+use trackerr::CallerLocation;
 
 use crate::limiter::Limiter;
 
@@ -14,14 +15,14 @@ use super::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum UpdateErr {
-    #[error(transparent)]
-    CatalogErr(#[from] VolumeCatalogErr),
+    #[error("volume catalog error")]
+    CatalogErr(#[from] VolumeCatalogErr, #[implicit] CallerLocation),
 
-    #[error(transparent)]
-    StoreErr(#[from] VolumeStoreErr),
+    #[error("volume store error")]
+    StoreErr(#[from] VolumeStoreErr, #[implicit] CallerLocation),
 
-    #[error(transparent)]
-    ClientErr(#[from] graft_client::ClientErr),
+    #[error("client error")]
+    ClientErr(#[from] graft_client::ClientErr, #[implicit] CallerLocation),
 }
 
 pub struct VolumeCatalogUpdater {

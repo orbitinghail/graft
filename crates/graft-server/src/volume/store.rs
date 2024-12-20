@@ -6,6 +6,7 @@ use graft_core::{
     VolumeId,
 };
 use object_store::ObjectStore;
+use trackerr::{CallerLocation, LocationStack};
 
 use crate::volume::commit::{commit_key_prefix, CommitValidationErr};
 
@@ -15,14 +16,32 @@ const REPLAY_CONCURRENCY: usize = 5;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VolumeStoreErr {
-    #[error(transparent)]
-    ObjectStoreErr(#[from] object_store::Error),
+    #[error("object store error: {0}")]
+    ObjectStoreErr(#[from] object_store::Error, #[implicit] CallerLocation),
 
-    #[error(transparent)]
-    CommitValidationErr(#[from] CommitValidationErr),
+    #[error("commit validation error: {0}")]
+    CommitValidationErr(#[from] CommitValidationErr, #[implicit] CallerLocation),
 
     #[error("Failed to parse commit key: {0}")]
-    CommitKeyParseErr(#[from] CommitKeyParseErr),
+    CommitKeyParseErr(#[from] CommitKeyParseErr, #[implicit] CallerLocation),
+}
+
+impl LocationStack for VolumeStoreErr {
+    fn location(&self) -> &CallerLocation {
+        use VolumeStoreErr::*;
+        match self {
+            ObjectStoreErr(_, loc) | CommitValidationErr(_, loc) | CommitKeyParseErr(_, loc) => loc,
+        }
+    }
+
+    fn next(&self) -> Option<&dyn LocationStack> {
+        use VolumeStoreErr::*;
+        match self {
+            CommitValidationErr(err, _) => Some(err),
+            CommitKeyParseErr(err, _) => Some(err),
+            _ => None,
+        }
+    }
 }
 
 pub struct VolumeStore {

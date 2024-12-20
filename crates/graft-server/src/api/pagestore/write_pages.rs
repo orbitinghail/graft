@@ -39,7 +39,7 @@ pub async fn handler<C>(
         let page: Page = page.data.try_into()?;
 
         if seen.contains(&offset) {
-            return Err(ApiErr::DuplicatePageOffset(offset));
+            return Err(ApiErr::DuplicatePageOffset(offset, Default::default()));
         }
         seen.insert(offset);
 

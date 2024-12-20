@@ -34,7 +34,7 @@ pub async fn handler(
         .await?;
 
     let Some(snapshot) = snapshot else {
-        return Err(ApiErr::SnapshotMissing(vid, end_lsn));
+        return Err(ApiErr::SnapshotMissing(vid, end_lsn, Default::default()));
     };
 
     // resolve the start of the range; skipping up to the last checkpoint if needed

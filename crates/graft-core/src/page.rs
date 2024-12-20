@@ -2,6 +2,7 @@ use std::{fmt::Debug, ops::Deref};
 
 use bytes::Bytes;
 use thiserror::Error;
+use trackerr::{CallerLocation, LocationStack};
 
 use crate::byte_unit::ByteUnit;
 
@@ -31,6 +32,17 @@ impl AsRef<[u8]> for Page {
 #[error("invalid page size: {size}; expected: {PAGESIZE}")]
 pub struct PageSizeErr {
     size: ByteUnit,
+    location: CallerLocation,
+}
+
+impl LocationStack for PageSizeErr {
+    fn location(&self) -> &CallerLocation {
+        &self.location
+    }
+
+    fn next(&self) -> Option<&dyn LocationStack> {
+        None
+    }
 }
 
 impl From<&[u8; PAGESIZE.as_usize()]> for Page {
@@ -50,7 +62,10 @@ impl TryFrom<Bytes> for Page {
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if value.len() != PAGESIZE.as_usize() {
-            return Err(PageSizeErr { size: ByteUnit::new(value.len() as u64) });
+            return Err(PageSizeErr {
+                size: ByteUnit::new(value.len() as u64),
+                location: Default::default(),
+            });
         }
 
         Ok(Page(value))
@@ -62,7 +77,10 @@ impl TryFrom<&[u8]> for Page {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() != PAGESIZE.as_usize() {
-            return Err(PageSizeErr { size: ByteUnit::new(value.len() as u64) });
+            return Err(PageSizeErr {
+                size: ByteUnit::new(value.len() as u64),
+                location: Default::default(),
+            });
         }
 
         Ok(Page(Bytes::copy_from_slice(value)))

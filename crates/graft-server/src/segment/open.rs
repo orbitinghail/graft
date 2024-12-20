@@ -8,6 +8,7 @@ use graft_core::{
     VolumeId,
 };
 use thiserror::Error;
+use trackerr::{CallerLocation, LocationStack};
 use zerocopy::IntoBytes;
 
 use crate::bytes_vec::BytesVec;
@@ -20,7 +21,17 @@ use super::{
 
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("segment is full")]
-pub struct SegmentFullErr;
+pub struct SegmentFullErr(CallerLocation);
+
+impl LocationStack for SegmentFullErr {
+    fn location(&self) -> &CallerLocation {
+        &self.0
+    }
+
+    fn next(&self) -> Option<&dyn LocationStack> {
+        None
+    }
+}
 
 #[derive(Default)]
 pub struct OpenSegment {
@@ -53,7 +64,7 @@ impl OpenSegment {
         page: Page,
     ) -> Result<(), SegmentFullErr> {
         if !self.has_space_for(&vid) {
-            return Err(SegmentFullErr);
+            return Err(SegmentFullErr(Default::default()));
         }
         self.index.entry(vid).or_default().insert(offset, page);
         Ok(())
@@ -120,6 +131,7 @@ impl OpenSegment {
 mod tests {
     use super::*;
     use crate::segment::closed::{ClosedSegment, SEGMENT_MAX_PAGES};
+    use assert_matches::assert_matches;
 
     #[test]
     fn test_segment_sanity() {
@@ -269,6 +281,6 @@ mod tests {
         let err = open_segment
             .insert(vids[0].clone(), PageOffset::MAX, page.clone())
             .expect_err("expected segment to be full");
-        assert_eq!(err, SegmentFullErr);
+        assert_matches!(err, SegmentFullErr(_));
     }
 }

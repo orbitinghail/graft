@@ -26,6 +26,6 @@ pub async fn prost_request<Req: Message, Resp: Message + Default>(
         Ok(Resp::decode(body)?)
     } else {
         let err = GraftErr::decode(body)?;
-        Err(ClientErr::GraftErr(err))
+        Err(err.into())
     }
 }

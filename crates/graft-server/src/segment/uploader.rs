@@ -1,12 +1,13 @@
-use std::sync::Arc;
+use std::{io, sync::Arc};
 
-use anyhow::Context;
 use bytes::Buf;
-use futures::FutureExt;
+use futures::{FutureExt, TryFutureExt};
 use graft_core::SegmentId;
 use measured::{metric::histogram::Thresholds, CounterVec, Histogram, MetricGroup};
 use object_store::{path::Path, ObjectStore, PutPayload};
+use thiserror::Error;
 use tokio::sync::mpsc;
+use trackerr::{CallerLocation, LocationStack};
 
 use crate::{
     metrics::labels::ResultLabelSet,
@@ -17,6 +18,28 @@ use super::{
     bus::{Bus, CommitSegmentReq, StoreSegmentReq},
     cache::Cache,
 };
+
+#[derive(Debug, Error)]
+pub enum UploaderErr {
+    #[error("failed to cache segment: {0}")]
+    Cache(#[from] object_store::Error, #[implicit] CallerLocation),
+
+    #[error("failed to upload segment: {0}")]
+    Upload(#[from] io::Error, #[implicit] CallerLocation),
+}
+
+impl LocationStack for UploaderErr {
+    fn location(&self) -> &CallerLocation {
+        use UploaderErr::*;
+        match self {
+            Cache(_, loc) | Upload(_, loc) => loc,
+        }
+    }
+
+    fn next(&self) -> Option<&dyn LocationStack> {
+        None
+    }
+}
 
 #[derive(MetricGroup)]
 #[metric(new())]
@@ -49,7 +72,7 @@ impl<C: Cache> SupervisedTask for SegmentUploaderTask<C> {
         TaskCfg { name: "segment-uploader" }
     }
 
-    async fn run(mut self, ctx: TaskCtx) -> anyhow::Result<()> {
+    async fn run(mut self, ctx: TaskCtx) -> crate::supervisor::Result<()> {
         loop {
             tokio::select! {
                 Some(req) = self.input.recv() => {
@@ -77,7 +100,7 @@ impl<C: Cache> SegmentUploaderTask<C> {
         Self { metrics, input, output, store, cache }
     }
 
-    async fn handle_store_request(&mut self, req: StoreSegmentReq) -> anyhow::Result<()> {
+    async fn handle_store_request(&mut self, req: StoreSegmentReq) -> Result<(), UploaderErr> {
         tracing::debug!("handling request: {:?}", req);
 
         let segment = req.segment;
@@ -92,14 +115,11 @@ impl<C: Cache> SegmentUploaderTask<C> {
         let upload_task = self
             .store
             .put(&path, PutPayload::from_iter(segment.iter().cloned()))
-            .map(|inner| inner.context("failed to upload segment"))
+            .err_into::<UploaderErr>()
             .inspect(|result| {
                 self.metrics.uploaded_segments.inc(result.into());
             });
-        let cache_task = self
-            .cache
-            .put(&sid, segment)
-            .map(|inner| inner.context("failed to cache segment"));
+        let cache_task = self.cache.put(&sid, segment).err_into();
 
         tokio::try_join!(upload_task, cache_task)?;
 

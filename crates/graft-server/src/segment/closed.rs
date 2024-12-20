@@ -12,6 +12,7 @@ use graft_core::{
     SegmentId, VolumeId,
 };
 use thiserror::Error;
+use trackerr::{CallerLocation, LocationStack};
 use zerocopy::{
     little_endian::{U16, U32},
     Immutable, IntoBytes, KnownLayout, TryFromBytes,
@@ -88,20 +89,46 @@ pub fn closed_segment_size(volumes: usize, pages: PageCount) -> ByteUnit {
     (PAGESIZE * pages.as_usize()) + index_size + size_of::<SegmentFooter>()
 }
 
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error)]
 pub enum SegmentValidationErr {
     #[error("segment must be smaller than {} bytes", SEGMENT_MAX_SIZE)]
-    TooLarge,
+    TooLarge(CallerLocation),
     #[error("corrupt segment footer")]
-    CorruptFooter(ZerocopyErr),
+    CorruptFooter(ZerocopyErr, CallerLocation),
     #[error("invalid magic number")]
-    Magic,
+    Magic(CallerLocation),
     #[error("corrupt segment index")]
-    CorruptIndex(ZerocopyErr),
+    CorruptIndex(ZerocopyErr, CallerLocation),
     #[error("page storage length must be a multiple of {}", PAGESIZE)]
-    PageAlignmentErr,
+    PageAlignmentErr(CallerLocation),
     #[error("segment contains {actual} pages; expected {expected}")]
-    PageCountErr { actual: usize, expected: usize },
+    PageCountErr {
+        actual: usize,
+        expected: usize,
+        location: CallerLocation,
+    },
+}
+
+impl LocationStack for SegmentValidationErr {
+    fn location(&self) -> &CallerLocation {
+        use SegmentValidationErr::*;
+        match self {
+            TooLarge(loc)
+            | CorruptFooter(_, loc)
+            | Magic(loc)
+            | CorruptIndex(_, loc)
+            | PageAlignmentErr(loc)
+            | PageCountErr { location: loc, .. } => loc,
+        }
+    }
+
+    fn next(&self) -> Option<&dyn LocationStack> {
+        use SegmentValidationErr::*;
+        match self {
+            CorruptFooter(err, _) | CorruptIndex(err, _) => Some(err),
+            _ => None,
+        }
+    }
 }
 
 pub struct ClosedSegment<'a> {
@@ -113,30 +140,31 @@ pub struct ClosedSegment<'a> {
 impl<'a> ClosedSegment<'a> {
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, SegmentValidationErr> {
         if data.len() > SEGMENT_MAX_SIZE {
-            return Err(SegmentValidationErr::TooLarge);
+            return Err(SegmentValidationErr::TooLarge(Default::default()));
         }
 
         let (data, footer) = SegmentFooter::try_ref_from_suffix(data)
-            .map_err(|err| SegmentValidationErr::CorruptFooter(err.into()))?;
+            .map_err(|err| SegmentValidationErr::CorruptFooter(err.into(), Default::default()))?;
 
         if footer.magic != SEGMENT_MAGIC {
-            return Err(SegmentValidationErr::Magic);
+            return Err(SegmentValidationErr::Magic(Default::default()));
         }
 
         let (page_data, index_data) = data.split_at(data.len() - footer.index_size().as_usize());
 
         // load the index
         let index = SegmentIndex::from_bytes(index_data, footer.volumes())
-            .map_err(SegmentValidationErr::CorruptIndex)?;
+            .map_err(|err| SegmentValidationErr::CorruptIndex(err, Default::default()))?;
 
         // validate pages
         if page_data.len() % PAGESIZE != 0 {
-            return Err(SegmentValidationErr::PageAlignmentErr);
+            return Err(SegmentValidationErr::PageAlignmentErr(Default::default()));
         }
         if page_data.len() / PAGESIZE != index.pages().as_usize() {
             return Err(SegmentValidationErr::PageCountErr {
                 actual: (page_data.len() / PAGESIZE).as_usize(),
                 expected: index.pages().as_usize(),
+                location: Default::default(),
             });
         }
 
@@ -193,6 +221,7 @@ impl Debug for ClosedSegment<'_> {
 mod tests {
     use std::vec;
 
+    use assert_matches::assert_matches;
     use bytes::{Buf, BufMut, BytesMut};
     use zerocopy::U16;
 
@@ -202,23 +231,23 @@ mod tests {
     fn test_segment_validation() {
         // test a massive segment
         let buf = vec![0; SEGMENT_MAX_SIZE.as_usize() + 1];
-        assert_eq!(
+        assert_matches!(
             ClosedSegment::from_bytes(&buf).unwrap_err(),
-            SegmentValidationErr::TooLarge
+            SegmentValidationErr::TooLarge(_)
         );
 
         // test an empty segment
         let buf = vec![];
-        assert_eq!(
+        assert_matches!(
             ClosedSegment::from_bytes(&buf).unwrap_err(),
-            SegmentValidationErr::CorruptFooter(ZerocopyErr::InvalidSize)
+            SegmentValidationErr::CorruptFooter(ZerocopyErr::InvalidSize(_), _)
         );
 
         // test an all zero segment
         let buf = vec![0; size_of::<SegmentFooter>()];
-        assert_eq!(
+        assert_matches!(
             ClosedSegment::from_bytes(&buf).unwrap_err(),
-            SegmentValidationErr::CorruptFooter(ZerocopyErr::InvalidData)
+            SegmentValidationErr::CorruptFooter(ZerocopyErr::InvalidData(_), _)
         );
 
         // test a bad magic value
@@ -229,9 +258,9 @@ mod tests {
             _padding: Default::default(),
             magic: U32::from_bytes([0x00, 0x3B, 0x41, 0x00]),
         };
-        assert_eq!(
+        assert_matches!(
             ClosedSegment::from_bytes(footer.as_bytes()).unwrap_err(),
-            SegmentValidationErr::Magic,
+            SegmentValidationErr::Magic(_)
         );
 
         // test a bad segment id
@@ -244,9 +273,9 @@ mod tests {
         };
         let mut bytes: BytesMut = footer.as_bytes().into();
         bytes[0] = 0; // corrupt the segment id
-        assert_eq!(
+        assert_matches!(
             ClosedSegment::from_bytes(bytes.as_bytes()).unwrap_err(),
-            SegmentValidationErr::CorruptFooter(ZerocopyErr::InvalidData)
+            SegmentValidationErr::CorruptFooter(ZerocopyErr::InvalidData(_), _)
         );
 
         // test page alignment err
@@ -259,9 +288,9 @@ mod tests {
         };
         let mut bytes = BytesMut::zeroed((PAGESIZE / 2).as_usize());
         bytes.extend_from_slice(footer.as_bytes());
-        assert_eq!(
+        assert_matches!(
             ClosedSegment::from_bytes(&bytes).unwrap_err(),
-            SegmentValidationErr::PageAlignmentErr
+            SegmentValidationErr::PageAlignmentErr(_)
         );
 
         // test invalid page count err
@@ -284,9 +313,9 @@ mod tests {
             .as_bytes(),
         );
         let bytes = bytes.freeze();
-        assert_eq!(
+        assert_matches!(
             ClosedSegment::from_bytes(&bytes).unwrap_err(),
-            SegmentValidationErr::PageCountErr { actual: 1, expected: 2 }
+            SegmentValidationErr::PageCountErr { actual: 1, expected: 2, .. }
         );
     }
 

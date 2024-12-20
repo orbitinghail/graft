@@ -146,6 +146,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert_matches"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b34d609dfbaf33d6889b2b7106d3ca345eacad44200913df5ba02bfd31d2ba9"
+
+[[package]]
 name = "async-compression"
 version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -397,9 +403,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.4"
+version = "1.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9157bbaa6b165880c27a4293a474c91cdcf265cc68cc829bf10be0964a391caf"
+checksum = "c31a0499c1dc64f458ad13872de75c0eb7e3fdb0e67964610c914b034fc5956e"
 dependencies = [
  "jobserver",
  "libc",
@@ -818,9 +824,9 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "fjall"
-version = "2.4.2"
+version = "2.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38524453fe998f2a74c234214f0cc98e1673a55dc402980da85ade1736d9c5c2"
+checksum = "6f62d81adc64a2bfee1bd6599e54e0a854b1fd9f7e1a8081307d224b90b180fe"
 dependencies = [
  "byteorder",
  "dashmap",
@@ -1021,9 +1027,10 @@ dependencies = [
  "serde",
  "splinter",
  "tempfile",
- "thiserror 2.0.7",
+ "thiserror 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
  "tokio",
  "tokio-util",
+ "trackerr",
  "tryiter",
  "url",
  "zerocopy 0.8.13",
@@ -1033,6 +1040,7 @@ dependencies = [
 name = "graft-core"
 version = "0.1.0"
 dependencies = [
+ "assert_matches",
  "bs58",
  "bytes",
  "foldhash",
@@ -1040,7 +1048,8 @@ dependencies = [
  "rand",
  "serde",
  "static_assertions",
- "thiserror 2.0.7",
+ "thiserror 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
+ "trackerr",
  "zerocopy 0.8.13",
 ]
 
@@ -1060,7 +1069,7 @@ dependencies = [
 name = "graft-server"
 version = "0.1.0"
 dependencies = [
- "anyhow",
+ "assert_matches",
  "axum",
  "axum-test",
  "bytes",
@@ -1084,13 +1093,14 @@ dependencies = [
  "splinter",
  "static_assertions",
  "tempfile",
- "thiserror 2.0.7",
+ "thiserror 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
  "tokio",
  "tokio-util",
  "tower-http",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
+ "trackerr",
  "tryiter",
  "twelf",
  "url",
@@ -1291,9 +1301,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
-version = "0.27.3"
+version = "0.27.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08afdbb5c31130e3034af566421053ab03787c640246a446327f550d11bcb333"
+checksum = "f6884a48c6826ec44f524c7456b163cebe9e55a18d7b5e307cb4f100371cc767"
 dependencies = [
  "futures-util",
  "http 1.2.0",
@@ -1588,9 +1598,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.168"
+version = "0.2.169"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aaeb2981e0606ca11d79718f8bb01164f1d6ed75080182d3abf017e6d244b6d"
+checksum = "b5aba8db14291edd000dfcc4d620c7ebfb122c613afb886ca8803fa4e128a20a"
 
 [[package]]
 name = "libsqlite3-sys"
@@ -2133,7 +2143,7 @@ dependencies = [
  "rustc-hash 2.1.0",
  "rustls",
  "socket2",
- "thiserror 2.0.7",
+ "thiserror 2.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
  "tracing",
 ]
@@ -2152,7 +2162,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.7",
+ "thiserror 2.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "tinyvec",
  "tracing",
  "web-time",
@@ -2160,16 +2170,16 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
-version = "0.5.8"
+version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52cd4b1eff68bf27940dd39811292c49e007f4d0b4c357358dc9b0197be6b527"
+checksum = "1c40286217b4ba3a71d644d752e6a0b71f13f1b6a2c5311acfcbe0c2418ed904"
 dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2463,7 +2473,7 @@ dependencies = [
  "openssl-probe",
  "rustls-pki-types",
  "schannel",
- "security-framework 3.0.1",
+ "security-framework 3.1.0",
 ]
 
 [[package]]
@@ -2546,9 +2556,9 @@ dependencies = [
 
 [[package]]
 name = "security-framework"
-version = "3.0.1"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1415a607e92bec364ea2cf9264646dcce0f91e6d65281bd6f2819cca3bf39c8"
+checksum = "81d3f8c9bfcc3cbb6b0179eb57042d75b1582bdc65c3cb95f3fa999509c03cbc"
 dependencies = [
  "bitflags",
  "core-foundation 0.10.0",
@@ -2559,9 +2569,9 @@ dependencies = [
 
 [[package]]
 name = "security-framework-sys"
-version = "2.12.1"
+version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa39c7303dc58b5543c94d22c1766b0d31f2ee58306363ea622b10bbc075eaa2"
+checksum = "1863fd3768cd83c56a7f60faa4dc0d403f1b6df0a38c3c25f44b7894e45370d5"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -2712,7 +2722,8 @@ dependencies = [
  "either",
  "itertools 0.13.0",
  "roaring",
- "thiserror 2.0.7",
+ "thiserror 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
+ "trackerr",
  "zerocopy 0.8.13",
 ]
 
@@ -2842,11 +2853,19 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.7"
+version = "2.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93605438cbd668185516ab499d589afb7ee1859ea3d5fc8f6b0755e1c7443767"
+checksum = "08f5383f3e0071702bf93ab5ee99b52d26936be9dedd9413067cbdcddcb6141a"
 dependencies = [
- "thiserror-impl 2.0.7",
+ "thiserror-impl 2.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.8"
+source = "git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields#939593d39aed54d90672f06ecd0031d70f88e869"
+dependencies = [
+ "thiserror-impl 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
 ]
 
 [[package]]
@@ -2862,9 +2881,19 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.7"
+version = "2.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1d8749b4531af2117677a5fcd12b1348a3fe2b81e36e61ffeac5c4aa3273e36"
+checksum = "f2f357fcec90b3caef6623a099691be676d033b40a058ac95d2a6ade6fa0c943"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.90",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.8"
+source = "git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields#939593d39aed54d90672f06ecd0031d70f88e869"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3145,6 +3174,13 @@ checksum = "04659ddb06c87d233c566112c1c9c5b9e98256d9af50ec3bc9c8327f873a7568"
 dependencies = [
  "quote",
  "syn 2.0.90",
+]
+
+[[package]]
+name = "trackerr"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
 ]
 
 [[package]]

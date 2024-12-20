@@ -41,7 +41,12 @@ pub async fn handler(
         // in every other case, the commit is out of sync
         // TODO: implement page based MVCC
         (snapshot, latest) => {
-            return Err(ApiErr::CommitSnapshotOutOfDate { vid, snapshot, latest })
+            return Err(ApiErr::CommitSnapshotOutOfDate {
+                vid,
+                snapshot,
+                latest,
+                location: Default::default(),
+            })
         }
     };
 

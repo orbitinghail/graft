@@ -1,13 +1,45 @@
-use std::{future::Future, marker::Send, panic, time::Duration};
+use std::{
+    fmt::{Debug, Display, Formatter},
+    future::Future,
+    marker::Send,
+    panic,
+    time::Duration,
+};
 
-use thiserror::Error;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+use trackerr::{format_location_stack, LocationStack};
 
-#[derive(Debug, Error)]
+pub type Result<T> = std::result::Result<T, TaskErr>;
+
+pub struct TaskErr {
+    source: Box<dyn LocationStack + Send + Sync + 'static>,
+}
+
+impl std::error::Error for TaskErr {}
+
+impl Debug for TaskErr {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        format_location_stack(f, &self.source)
+    }
+}
+
+impl Display for TaskErr {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        format_location_stack(f, &self.source)
+    }
+}
+
+impl<T: LocationStack + Send + Sync + 'static> From<T> for TaskErr {
+    fn from(value: T) -> Self {
+        Self { source: Box::new(value) }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum ShutdownErr {
-    #[error("error while shutting down Supervisor")]
-    Error(#[from] anyhow::Error),
+    #[error("task failed while shutting down Supervisor")]
+    TaskFailed(#[from] TaskErr),
 
     #[error("timeout while waiting for Supervisor to cleanly shutdown")]
     Timeout,
@@ -37,7 +69,7 @@ impl TaskCtx {
 
 pub trait SupervisedTask {
     fn cfg(&self) -> TaskCfg;
-    fn run(self, ctx: TaskCtx) -> impl Future<Output = anyhow::Result<()>> + Send;
+    fn run(self, ctx: TaskCtx) -> impl Future<Output = Result<()>> + Send;
 
     #[cfg(test)]
     fn testonly_spawn(self)
@@ -54,7 +86,7 @@ pub trait SupervisedTask {
 #[derive(Default)]
 pub struct Supervisor {
     shutdown: CancellationToken,
-    tasks: JoinSet<(TaskCfg, anyhow::Result<()>)>,
+    tasks: JoinSet<(TaskCfg, Result<()>)>,
 }
 
 impl Supervisor {
@@ -67,14 +99,14 @@ impl Supervisor {
 
     /// Supervise the tasks until they all complete.
     /// CANCEL SAFETY: This task is cancel safe.
-    pub async fn supervise(&mut self) -> anyhow::Result<()> {
+    pub async fn supervise(&mut self) -> Result<()> {
         while let Some(res) = self.tasks.join_next().await {
             match res {
                 Ok((cfg, Ok(()))) => {
-                    tracing::info!("task {:?} completed successfully", cfg);
+                    tracing::info!("task {} completed successfully", cfg.name);
                 }
                 Ok((cfg, Err(e))) => {
-                    tracing::error!("task {:?} failed: {:?}", cfg, e);
+                    tracing::error!("task {} failed: {:?}", cfg.name, e);
                     // for now, all failures are fatal
                     // eventually we may want to restart certain tasks in
                     // certain error conditions
@@ -99,7 +131,10 @@ impl Supervisor {
         Ok(())
     }
 
-    pub async fn shutdown(&mut self, abort_timeout: Duration) -> Result<(), ShutdownErr> {
+    pub async fn shutdown(
+        &mut self,
+        abort_timeout: Duration,
+    ) -> std::result::Result<(), ShutdownErr> {
         self.shutdown.cancel();
 
         // wait for self.supervise up to the timeout

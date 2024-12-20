@@ -8,6 +8,7 @@ graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 graft-client = { path = "../graft-client" }
 splinter = { path = "../splinter" }
+trackerr = { path = "../trackerr" }
 
 tryiter = { workspace = true }
 tokio = { workspace = true, features = [
@@ -19,7 +20,6 @@ tokio = { workspace = true, features = [
 ] }
 static_assertions = { workspace = true }
 zerocopy = { workspace = true }
-anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
@@ -33,6 +33,7 @@ futures = { workspace = true }
 axum = { workspace = true, features = ["http2"] }
 tower-http = { workspace = true, features = ["compression-full"] }
 prost = { workspace = true }
+assert_matches = { workspace = true }
 itertools = { workspace = true }
 fjall = { workspace = true, features = ["bytes"] }
 lsm-tree = { workspace = true, features = ["bytes"] }

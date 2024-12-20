@@ -28,7 +28,7 @@ pub async fn handler(
             snapshot: Some(snapshot.into_snapshot(&vid)),
         }))
     } else {
-        Err(ApiErr::SnapshotMissing(vid, lsn))
+        Err(ApiErr::SnapshotMissing(vid, lsn, Default::default()))
     }
 }
 

@@ -20,7 +20,7 @@ pub enum ObjectStoreConfig {
 }
 
 impl ObjectStoreConfig {
-    pub fn build(self) -> anyhow::Result<Arc<dyn ObjectStore>> {
+    pub fn build(self) -> object_store::Result<Arc<dyn ObjectStore>> {
         match self {
             ObjectStoreConfig::Memory => Ok(Arc::new(InMemory::new())),
             ObjectStoreConfig::S3Compatable { bucket, prefix } => {

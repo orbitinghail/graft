@@ -23,6 +23,7 @@ use page::{PageKey, PageValue};
 use snapshot::{Snapshot, SnapshotKey, SnapshotKind, SnapshotKindMask, SnapshotSet};
 use splinter::{DecodeErr, Splinter, SplinterRef};
 use tokio::sync::broadcast;
+use trackerr::{CallerLocation, LocationStack};
 use tryiter::{TryIterator, TryIteratorExt};
 use volume::{SyncDirection, VolumeConfig};
 use zerocopy::{IntoBytes, TryFromBytes};
@@ -35,34 +36,62 @@ pub mod volume;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageErr {
-    #[error(transparent)]
-    FjallErr(#[from] fjall::Error),
+    #[error("fjall error: {0}")]
+    FjallErr(#[from] fjall::Error, #[implicit] CallerLocation),
 
-    #[error(transparent)]
-    IoErr(#[from] io::Error),
+    #[error("io error: {0}")]
+    IoErr(#[from] io::Error, #[implicit] CallerLocation),
 
     #[error("Corrupt key: {0}")]
-    CorruptKey(ZerocopyErr),
+    CorruptKey(ZerocopyErr, CallerLocation),
 
     #[error("Corrupt snapshot: {0}")]
-    CorruptSnapshot(ZerocopyErr),
+    CorruptSnapshot(ZerocopyErr, CallerLocation),
 
     #[error("Corrupt volume config: {0}")]
-    CorruptVolumeConfig(ZerocopyErr),
+    CorruptVolumeConfig(ZerocopyErr, CallerLocation),
 
     #[error("Corrupt page: {0}")]
-    CorruptPage(#[from] PageSizeErr),
+    CorruptPage(#[from] PageSizeErr, #[implicit] CallerLocation),
 
     #[error("Corrupt commit: {0}")]
-    CorruptCommit(#[from] DecodeErr),
+    CorruptCommit(#[from] DecodeErr, #[implicit] CallerLocation),
 
     #[error("Illegal concurrent write to volume {0}")]
-    ConcurrentWrite(VolumeId),
+    ConcurrentWrite(VolumeId, CallerLocation),
 }
 
 impl From<lsm_tree::Error> for StorageErr {
     fn from(err: lsm_tree::Error) -> Self {
-        StorageErr::FjallErr(err.into())
+        StorageErr::FjallErr(err.into(), Default::default())
+    }
+}
+
+impl LocationStack for StorageErr {
+    fn location(&self) -> &CallerLocation {
+        use StorageErr::*;
+        match self {
+            FjallErr(_, loc)
+            | IoErr(_, loc)
+            | CorruptKey(_, loc)
+            | CorruptSnapshot(_, loc)
+            | CorruptVolumeConfig(_, loc)
+            | CorruptPage(_, loc)
+            | CorruptCommit(_, loc)
+            | ConcurrentWrite(_, loc) => loc,
+        }
+    }
+
+    fn next(&self) -> Option<&dyn LocationStack> {
+        use StorageErr::*;
+        match self {
+            CorruptKey(err, _) => Some(err),
+            CorruptSnapshot(err, _) => Some(err),
+            CorruptVolumeConfig(err, _) => Some(err),
+            CorruptPage(err, _) => Some(err),
+            CorruptCommit(err, _) => Some(err),
+            _ => None,
+        }
     }
 }
 
@@ -148,9 +177,9 @@ impl Storage {
 
         volumes.try_filter_map(move |(vid, config)| {
             let vid = VolumeId::try_read_from_bytes(&vid)
-                .map_err(|e| StorageErr::CorruptKey(e.into()))?;
+                .map_err(|e| StorageErr::CorruptKey(e.into(), Default::default()))?;
             let config = VolumeConfig::try_read_from_bytes(&config)
-                .map_err(|e| StorageErr::CorruptVolumeConfig(e.into()))?;
+                .map_err(|e| StorageErr::CorruptVolumeConfig(e.into(), Default::default()))?;
             let matches_vid = vids.as_ref().map_or(true, |set| set.contains(&vid));
             if matches_vid && sync.matches(config.sync()) {
                 let set = self.snapshots_with_seqno(seqno, &vid, kind_mask)?;
@@ -174,7 +203,7 @@ impl Storage {
             .err_into()
             .map_ok(|(k, v)| {
                 let lsn = CommitKey::try_ref_from_bytes(&k)
-                    .map_err(|e| StorageErr::CorruptKey(e.into()))?
+                    .map_err(|e| StorageErr::CorruptKey(e.into(), Default::default()))?
                     .lsn();
                 let splinter = SplinterRef::from_bytes(v)?;
                 Ok((lsn, splinter))
@@ -225,10 +254,10 @@ impl Storage {
             .err_into::<StorageErr>()
             .try_filter_map(move |(k, v)| {
                 let key = SnapshotKey::try_read_from_bytes(&k)
-                    .map_err(|e| StorageErr::CorruptKey(e.into()))?;
+                    .map_err(|e| StorageErr::CorruptKey(e.into(), Default::default()))?;
                 if kind_mask.contains(key.kind()) {
                     let val = Snapshot::try_read_from_bytes(&v)
-                        .map_err(|e| StorageErr::CorruptSnapshot(e.into()))?;
+                        .map_err(|e| StorageErr::CorruptSnapshot(e.into(), Default::default()))?;
                     Ok(Some((key, val)))
                 } else {
                     Ok(None)
@@ -250,10 +279,9 @@ impl Storage {
     ) -> Result<Option<Snapshot>, StorageErr> {
         let key = snapshot::SnapshotKey::new(vid.clone(), kind);
         if let Some(snapshot) = self.snapshots.get(key)? {
-            Ok(Some(
-                Snapshot::try_read_from_bytes(&snapshot)
-                    .map_err(|e| StorageErr::CorruptSnapshot(e.into()))?,
-            ))
+            Ok(Some(Snapshot::try_read_from_bytes(&snapshot).map_err(
+                |e| StorageErr::CorruptSnapshot(e.into(), Default::default()),
+            )?))
         } else {
             Ok(None)
         }
@@ -322,7 +350,7 @@ impl Storage {
         // holding the commit lock
         let latest = self.snapshot(vid, SnapshotKind::Local)?;
         if latest.map(|l| l.lsn()) != read_lsn {
-            return Err(StorageErr::ConcurrentWrite(vid.clone()));
+            return Err(StorageErr::ConcurrentWrite(vid.clone(), Default::default()));
         }
 
         // commit the changes

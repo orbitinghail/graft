@@ -4,15 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+trackerr = { path = "../trackerr" }
+
 bs58 = { workspace = true }
 bytes = { workspace = true }
 foldhash = { workspace = true }
 hashbrown = { workspace = true }
 rand = { workspace = true }
-serde = { workspace = true}
+serde = { workspace = true }
 static_assertions = { workspace = true }
 thiserror = { workspace = true }
-zerocopy = { workspace = true}
+zerocopy = { workspace = true }
+assert_matches = { workspace = true }
 
 [features]
 default = []

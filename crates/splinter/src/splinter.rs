@@ -175,15 +175,23 @@ where
 
         let (header, _) = Ref::<_, Header>::from_prefix(data.as_ref()).map_err(|err| {
             debug_assert!(matches!(err, ConvertError::Size(_)));
-            InvalidLength { ty: "Header", size: size_of::<Header>() }
+            InvalidLength {
+                ty: "Header",
+                size: size_of::<Header>(),
+                loc: Default::default(),
+            }
         })?;
         if header.magic != SPLINTER_MAGIC {
-            return Err(InvalidMagic);
+            return Err(InvalidMagic(Default::default()));
         }
 
         let (_, footer) = Ref::<_, Footer>::from_suffix(data.as_ref()).map_err(|err| {
             debug_assert!(matches!(err, ConvertError::Size(_)));
-            InvalidLength { ty: "Footer", size: size_of::<Footer>() }
+            InvalidLength {
+                ty: "Footer",
+                size: size_of::<Footer>(),
+                loc: Default::default(),
+            }
         })?;
         let partitions = footer.partitions.get() as usize;
 

@@ -24,7 +24,7 @@ itertools = { version = "0.13" }
 reqwest = { version = "0.12" }
 tokio = "1"
 twelf = { version = "0.15", default-features = false }
-thiserror = { version = "2.0" }
+thiserror = { git = "https://github.com/carlsverre/thiserror", branch = "feat-implicit-fields" }
 futures = { version = "0.3" }
 url = { version = "2.5" }
 serde = { version = "1.0" }
@@ -50,6 +50,7 @@ foldhash = { version = "0.1" }
 hashbrown = { version = "0.15" }
 rand = { version = "0.8" }
 static_assertions = "1.1"
+assert_matches = "1.5"
 
 [workspace.cargo-features-manager.keep]
 fjall = ["bytes"]

@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+trackerr = { path = "../trackerr" }
+
 bytes = { workspace = true }
 either = { workspace = true }
 thiserror = { workspace = true }
@@ -11,7 +13,7 @@ zerocopy = { workspace = true, features = ["derive"] }
 itertools = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true}
+criterion = { workspace = true }
 roaring = { workspace = true }
 
 [[bench]]

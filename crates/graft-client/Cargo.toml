@@ -7,6 +7,7 @@ edition = "2021"
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 splinter = { path = "../splinter" }
+trackerr = { path = "../trackerr" }
 
 bytes = { workspace = true }
 prost = { workspace = true }

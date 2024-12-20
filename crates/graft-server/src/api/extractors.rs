@@ -27,18 +27,23 @@ where
         if !is_protobuf {
             return Err(ApiErr::InvalidRequestBody(
                 "invalid content type".to_string(),
+                Default::default(),
             ));
         }
 
         let body = Bytes::from_request(req, state)
             .await
-            .map_err(|err| ApiErr::InvalidRequestBody(err.to_string()))?;
+            .map_err(|err| ApiErr::InvalidRequestBody(err.to_string(), Default::default()))?;
 
         if body.is_empty() {
-            return Err(ApiErr::InvalidRequestBody("empty body".to_string()));
+            return Err(ApiErr::InvalidRequestBody(
+                "empty body".to_string(),
+                Default::default(),
+            ));
         }
 
-        let value = T::decode(body).map_err(|err| ApiErr::InvalidRequestBody(err.to_string()))?;
+        let value = T::decode(body)
+            .map_err(|err| ApiErr::InvalidRequestBody(err.to_string(), Default::default()))?;
         Ok(Protobuf(value))
     }
 }
