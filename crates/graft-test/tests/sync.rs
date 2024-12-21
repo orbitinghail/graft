@@ -9,6 +9,7 @@ use graft_client::runtime::{
 };
 use graft_core::{page::Page, VolumeId};
 use graft_test::{run_graft_services, setup_logger};
+use tokio::time::timeout;
 
 #[tokio::test(start_paused = true)]
 async fn test_client_sync_sanity() {
@@ -18,24 +19,36 @@ async fn test_client_sync_sanity() {
 
     let storage = Storage::open_temporary().unwrap();
     let runtime = RuntimeHandle::new(storage);
-    let sync = runtime.spawn_sync_task(clients, Duration::from_secs(1));
+    let sync = runtime.spawn_sync_task(clients.clone(), Duration::from_secs(1));
 
-    // create a local volume
+    // create a second client to sync to
+    let storage2 = Storage::open_temporary().unwrap();
+    let mut commits_rx = storage2.subscribe_to_remote_commits();
+    let runtime2 = RuntimeHandle::new(storage2);
+    let sync2 = runtime2.spawn_sync_task(clients, Duration::from_secs(1));
+
+    // register the volume with both clients, pushing from client 1 to client 2
     let vid = VolumeId::random();
     runtime
-        .add_volume(&vid, VolumeConfig::new(SyncDirection::Both))
+        .add_volume(&vid, VolumeConfig::new(SyncDirection::Push))
+        .unwrap();
+    runtime2
+        .add_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
         .unwrap();
 
-    // write a page to the volume
+    // write a page to the volume in client 1
     let mut txn = runtime.write_txn(&vid).unwrap();
     txn.write(0.into(), Page::test_filled(0x42));
     txn.commit().unwrap();
 
-    // this sleep will ensure that the sync task has a chance to run.
-    // tokio time makes this deterministic.
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // wait for client 2 to receive the write
+    timeout(Duration::from_secs(5), commits_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
 
     // shutdown everything
     sync.shutdown(Duration::from_secs(1)).await.unwrap();
+    sync2.shutdown(Duration::from_secs(1)).await.unwrap();
     supervisor.shutdown(Duration::from_secs(1)).await.unwrap();
 }

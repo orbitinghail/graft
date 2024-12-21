@@ -117,8 +117,11 @@ pub struct Storage {
     /// Used to serialize the Volume commit process
     commit_lock: Arc<Mutex<()>>,
 
-    /// Used to notify subscribers of new commits
-    commits_tx: broadcast::Sender<VolumeId>,
+    /// Used to notify subscribers of new local commits
+    local_commits_tx: broadcast::Sender<VolumeId>,
+
+    /// Used to notify subscribers of new remote commits
+    remote_commits_tx: broadcast::Sender<VolumeId>,
 }
 
 impl Storage {
@@ -142,7 +145,8 @@ impl Storage {
             "commits",
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
-        let (commits_tx, _) = broadcast::channel(8);
+        let (local_commits_tx, _) = broadcast::channel(8);
+        let (remote_commits_tx, _) = broadcast::channel(8);
         Ok(Storage {
             keyspace,
             volumes,
@@ -150,14 +154,21 @@ impl Storage {
             pages,
             commits,
             commit_lock: Default::default(),
-            commits_tx,
+            local_commits_tx,
+            remote_commits_tx,
         })
     }
 
     /// Subscribe to new local commits to volumes. This is a best effort
     /// channel, laggy consumers will receive RecvError::Lagged.
     pub fn subscribe_to_local_commits(&self) -> broadcast::Receiver<VolumeId> {
-        self.commits_tx.subscribe()
+        self.local_commits_tx.subscribe()
+    }
+
+    /// Subscribe to new remote commits to volumes. This is a best effort
+    /// channel, laggy consumers will receive RecvError::Lagged.
+    pub fn subscribe_to_remote_commits(&self) -> broadcast::Receiver<VolumeId> {
+        self.remote_commits_tx.subscribe()
     }
 
     /// Add a new volume to the storage. This function will overwrite any
@@ -357,7 +368,7 @@ impl Storage {
         batch.commit()?;
 
         // notify listeners of the new local commit; ignore errors
-        let _ = self.commits_tx.send(vid.clone());
+        let _ = self.local_commits_tx.send(vid.clone());
 
         // return the new snapshot
         Ok(snapshot)
@@ -391,7 +402,12 @@ impl Storage {
             batch.insert(&self.pages, key.as_ref(), pending.as_ref());
         }
 
-        Ok(batch.commit()?)
+        batch.commit()?;
+
+        // notify listeners of the new remote commit; ignore errors
+        let _ = self.remote_commits_tx.send(vid.clone());
+
+        Ok(())
     }
 
     /// Complete a sync operation by updating the remote snapshot for the volume

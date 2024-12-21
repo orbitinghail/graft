@@ -115,7 +115,7 @@ impl From<graft_proto::Snapshot> for Snapshot {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct SnapshotSet {
     local: Option<Snapshot>,
     sync: Option<Snapshot>,

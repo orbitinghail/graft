@@ -20,7 +20,7 @@ impl SyncDirection {
     }
 }
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq, Debug)]
 #[repr(C)]
 pub struct VolumeConfig {
     sync: SyncDirection,
