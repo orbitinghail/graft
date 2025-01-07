@@ -1,3 +1,4 @@
+use culprit::Culprit;
 use reqwest::Url;
 
 use serde::{Deserialize, Serialize};
@@ -6,11 +7,23 @@ use url::ParseError;
 
 #[derive(Debug, Error)]
 pub enum ClientBuildErr {
-    #[error("failed to build reqwest client: {0}")]
-    ReqwestErr(#[from] reqwest::Error),
+    #[error("failed to build reqwest client")]
+    ReqwestErr,
 
-    #[error("failed to parse URL: {0}")]
-    UrlParseErr(#[from] ParseError),
+    #[error("failed to parse URL")]
+    UrlParseErr,
+}
+
+impl From<ParseError> for ClientBuildErr {
+    fn from(_: ParseError) -> Self {
+        Self::UrlParseErr
+    }
+}
+
+impl From<reqwest::Error> for ClientBuildErr {
+    fn from(_: reqwest::Error) -> Self {
+        Self::ReqwestErr
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,9 +41,9 @@ impl ClientBuilder {
         reqwest::Client::builder().brotli(true).build()
     }
 
-    pub fn build<T: TryFrom<ClientBuilder, Error = ClientBuildErr>>(
+    pub fn build<T: TryFrom<ClientBuilder, Error = Culprit<ClientBuildErr>>>(
         self,
-    ) -> Result<T, ClientBuildErr> {
+    ) -> Result<T, Culprit<ClientBuildErr>> {
         self.try_into()
     }
 }

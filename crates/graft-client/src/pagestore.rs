@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use culprit::Culprit;
 use futures::TryFutureExt;
 use graft_core::lsn::LSN;
 use graft_core::VolumeId;
@@ -22,7 +23,7 @@ pub struct PagestoreClient {
 }
 
 impl TryFrom<ClientBuilder> for PagestoreClient {
-    type Error = ClientBuildErr;
+    type Error = Culprit<ClientBuildErr>;
 
     fn try_from(builder: ClientBuilder) -> Result<Self, Self::Error> {
         let endpoint = builder.endpoint.join("pagestore/v1/")?;
@@ -37,7 +38,7 @@ impl PagestoreClient {
         vid: &VolumeId,
         lsn: LSN,
         offsets: Bytes,
-    ) -> Result<Vec<PageAtOffset>, ClientErr> {
+    ) -> Result<Vec<PageAtOffset>, Culprit<ClientErr>> {
         let url = self.endpoint.join("read_pages").unwrap();
         let req = ReadPagesRequest {
             vid: vid.copy_to_bytes(),
@@ -53,7 +54,7 @@ impl PagestoreClient {
         &self,
         vid: &VolumeId,
         pages: Vec<PageAtOffset>,
-    ) -> Result<Vec<SegmentInfo>, ClientErr> {
+    ) -> Result<Vec<SegmentInfo>, Culprit<ClientErr>> {
         let url = self.endpoint.join("write_pages").unwrap();
         let req = WritePagesRequest { vid: vid.copy_to_bytes(), pages };
         prost_request::<_, WritePagesResponse>(&self.http, url, req)

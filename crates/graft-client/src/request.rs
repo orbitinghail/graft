@@ -1,3 +1,4 @@
+use culprit::Culprit;
 use graft_proto::common::v1::GraftErr;
 
 use reqwest::header::CONTENT_TYPE;
@@ -12,7 +13,7 @@ pub async fn prost_request<Req: Message, Resp: Message + Default>(
     http: &reqwest::Client,
     url: Url,
     req: Req,
-) -> Result<Resp, ClientErr> {
+) -> Result<Resp, Culprit<ClientErr>> {
     let req = http
         .post(url)
         .body(req.encode_to_vec())

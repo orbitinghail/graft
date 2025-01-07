@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::State;
+use culprit::{Culprit, ResultExt};
 use graft_core::VolumeId;
 use graft_proto::{
     common::v1::LsnRange,
@@ -9,7 +10,11 @@ use graft_proto::{
 use splinter::{ops::Merge, Splinter};
 use tryiter::TryIteratorExt;
 
-use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
+use crate::api::{
+    error::{ApiErr, ApiErrCtx},
+    extractors::Protobuf,
+    response::ProtoResponse,
+};
 
 use super::MetastoreApiState;
 
@@ -28,10 +33,15 @@ pub async fn handler(
     let snapshot = state
         .updater
         .snapshot(&state.store, &state.catalog, &vid, end_lsn)
-        .await?;
+        .await
+        .or_into_ctx()?;
 
     let Some(snapshot) = snapshot else {
-        return Err(ApiErr::SnapshotMissing(vid, end_lsn, Default::default()));
+        return Err(Culprit::new_with_note(
+            ApiErrCtx::SnapshotMissing,
+            format!("volume {vid} is missing snapshot at {end_lsn:?}"),
+        )
+        .into());
     };
 
     // resolve the start of the range; skipping up to the last checkpoint if needed
@@ -48,12 +58,13 @@ pub async fn handler(
     state
         .updater
         .update_catalog_from_store_in_range(&state.store, &state.catalog, &vid, &lsns)
-        .await?;
+        .await
+        .or_into_ctx()?;
 
     // read the segments, and merge into a single splinter
     let mut iter = state.catalog.scan_segments(&vid, &lsns);
     let mut splinter = Splinter::default();
-    while let Some((_, offsets)) = iter.try_next()? {
+    while let Some((_, offsets)) = iter.try_next().or_into_ctx()? {
         splinter.merge(&offsets);
     }
 

@@ -7,8 +7,8 @@ edition = "2021"
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 splinter = { path = "../splinter" }
-trackerr = { path = "../trackerr" }
 
+culprit = { workspace = true }
 bytes = { workspace = true }
 prost = { workspace = true }
 reqwest = { workspace = true, features = ["brotli"] }
@@ -29,5 +29,4 @@ lsm-tree = { workspace = true, features = ["bytes"] }
 graft-core = { path = "../graft-core", features = ["testutil"] }
 env_logger = { workspace = true }
 tokio = { workspace = true }
-anyhow = { workspace = true }
 clap = { workspace = true }

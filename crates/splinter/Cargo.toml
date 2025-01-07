@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-trackerr = { path = "../trackerr" }
-
+culprit = { workspace = true }
 bytes = { workspace = true }
 either = { workspace = true }
 thiserror = { workspace = true }

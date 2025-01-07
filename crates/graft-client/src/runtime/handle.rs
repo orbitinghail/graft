@@ -1,3 +1,4 @@
+use culprit::{Result, ResultExt};
 use std::{sync::Arc, time::Duration};
 
 use graft_core::VolumeId;
@@ -33,12 +34,15 @@ impl RuntimeHandle {
     }
 
     pub fn add_volume(&self, vid: &VolumeId, config: VolumeConfig) -> Result<(), ClientErr> {
-        Ok(self.storage.add_volume(vid, config)?)
+        Ok(self.storage.add_volume(vid, config).or_into_ctx()?)
     }
 
     /// Start a new read transaction at the latest snapshot
     pub fn read_txn(&self, vid: &VolumeId) -> Result<ReadTxn, ClientErr> {
-        let snapshot = self.storage.snapshot(vid, SnapshotKind::Local)?;
+        let snapshot = self
+            .storage
+            .snapshot(vid, SnapshotKind::Local)
+            .or_into_ctx()?;
         Ok(ReadTxn::new(vid.clone(), snapshot, self.storage.clone()))
     }
 
@@ -49,7 +53,10 @@ impl RuntimeHandle {
     }
 
     pub fn snapshot(&self, vid: &VolumeId) -> Result<Option<Snapshot>, ClientErr> {
-        Ok(self.storage.snapshot(vid, SnapshotKind::Local)?)
+        Ok(self
+            .storage
+            .snapshot(vid, SnapshotKind::Local)
+            .or_into_ctx()?)
     }
 }
 
@@ -146,8 +153,8 @@ mod tests {
 
         let txn2 = txn2.commit();
         assert!(matches!(
-            txn2.expect_err("expected concurrent write error"),
-            ClientErr::StorageErr(StorageErr::ConcurrentWrite(_, _), _)
+            txn2.expect_err("expected concurrent write error").ctx(),
+            ClientErr::StorageErr(StorageErr::ConcurrentWrite)
         ));
 
         // ensure that txn2 did not commit by verifying the snapshot

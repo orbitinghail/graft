@@ -1,8 +1,8 @@
 use std::{fmt::Debug, ops::Deref};
 
 use bytes::Bytes;
+use culprit::Culprit;
 use thiserror::Error;
-use trackerr::{CallerLocation, LocationStack};
 
 use crate::byte_unit::ByteUnit;
 
@@ -29,21 +29,8 @@ impl AsRef<[u8]> for Page {
 }
 
 #[derive(Debug, Error)]
-#[error("invalid page size: {size}; expected: {PAGESIZE}")]
-pub struct PageSizeErr {
-    size: ByteUnit,
-    location: CallerLocation,
-}
-
-impl LocationStack for PageSizeErr {
-    fn location(&self) -> &CallerLocation {
-        &self.location
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        None
-    }
-}
+#[error("Pages must have size {PAGESIZE}")]
+pub struct PageSizeErr;
 
 impl From<&[u8; PAGESIZE.as_usize()]> for Page {
     fn from(value: &[u8; PAGESIZE.as_usize()]) -> Self {
@@ -58,14 +45,15 @@ impl From<Page> for Bytes {
 }
 
 impl TryFrom<Bytes> for Page {
-    type Error = PageSizeErr;
+    type Error = Culprit<PageSizeErr>;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if value.len() != PAGESIZE.as_usize() {
-            return Err(PageSizeErr {
-                size: ByteUnit::new(value.len() as u64),
-                location: Default::default(),
-            });
+            let size = ByteUnit::new(value.len() as u64);
+            return Err(Culprit::new_with_note(
+                PageSizeErr,
+                format!("invalid page size {size}"),
+            ));
         }
 
         Ok(Page(value))
@@ -73,14 +61,15 @@ impl TryFrom<Bytes> for Page {
 }
 
 impl TryFrom<&[u8]> for Page {
-    type Error = PageSizeErr;
+    type Error = Culprit<PageSizeErr>;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() != PAGESIZE.as_usize() {
-            return Err(PageSizeErr {
-                size: ByteUnit::new(value.len() as u64),
-                location: Default::default(),
-            });
+            let size = ByteUnit::new(value.len() as u64);
+            return Err(Culprit::new_with_note(
+                PageSizeErr,
+                format!("invalid page size {size}"),
+            ));
         }
 
         Ok(Page(Bytes::copy_from_slice(value)))

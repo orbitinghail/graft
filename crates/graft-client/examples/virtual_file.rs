@@ -1,12 +1,13 @@
-use std::io::Read;
+use std::io::{self, Read};
 use std::ops::RangeBounds;
 
 use bytes::{BufMut, Bytes, BytesMut};
 use clap::{Parser, Subcommand};
+use culprit::{Culprit, ResultExt};
 use fjall::Config;
-use graft_client::{ClientBuilder, MetastoreClient, PagestoreClient};
+use graft_client::{ClientBuildErr, ClientBuilder, MetastoreClient, PagestoreClient};
 use graft_core::{
-    page::{Page, EMPTY_PAGE, PAGESIZE},
+    page::{Page, PageSizeErr, EMPTY_PAGE, PAGESIZE},
     page_offset::PageOffset,
     VolumeId,
 };
@@ -14,7 +15,58 @@ use graft_proto::{common::v1::Snapshot, pagestore::v1::PageAtOffset};
 use prost::Message;
 use reqwest::Url;
 use splinter::Splinter;
+use thiserror::Error;
 use tryiter::TryIteratorExt;
+
+type Result<T> = std::result::Result<T, Culprit<CliErr>>;
+
+#[derive(Error, Debug)]
+enum CliErr {
+    #[error("client error: {0}")]
+    Client(#[from] graft_client::ClientErr),
+
+    #[error("fjall error")]
+    Fjall,
+
+    #[error("prost decode error")]
+    Prost,
+
+    #[error("invalid page size")]
+    PageSize(#[from] PageSizeErr),
+
+    #[error("failed to build graft client")]
+    ClientBuild(#[from] ClientBuildErr),
+
+    #[error("url parse error")]
+    UrlParse,
+
+    #[error("io error")]
+    Io(io::ErrorKind),
+}
+
+impl From<fjall::Error> for CliErr {
+    fn from(_: fjall::Error) -> Self {
+        Self::Fjall
+    }
+}
+
+impl From<prost::DecodeError> for CliErr {
+    fn from(_: prost::DecodeError) -> Self {
+        Self::Prost
+    }
+}
+
+impl From<url::ParseError> for CliErr {
+    fn from(_: url::ParseError) -> Self {
+        Self::UrlParse
+    }
+}
+
+impl From<io::Error> for CliErr {
+    fn from(err: io::Error) -> Self {
+        Self::Io(err.kind())
+    }
+}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -80,14 +132,14 @@ struct Context {
     pagestore: PagestoreClient,
 }
 
-async fn get_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<Snapshot>> {
+async fn get_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>> {
     if let Some(snapshot) = get_cached_snapshot(ctx, vid)? {
         return Ok(Some(snapshot));
     }
     pull_snapshot(ctx, vid).await
 }
 
-fn get_cached_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<Snapshot>> {
+fn get_cached_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>> {
     if let Some(snapshot) = ctx.volumes.get(vid)? {
         let snapshot = Snapshot::decode(snapshot.as_ref())?;
         return Ok(Some(snapshot));
@@ -95,13 +147,18 @@ fn get_cached_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<S
     Ok(None)
 }
 
-async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<Snapshot>> {
+async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>> {
     // pull starting at the next LSN after the last cached snapshot
     let start_lsn = get_cached_snapshot(ctx, vid)?
         .and_then(|s| s.lsn().next())
         .unwrap_or_default();
 
-    match ctx.metastore.pull_offsets(vid, start_lsn..).await? {
+    match ctx
+        .metastore
+        .pull_offsets(vid, start_lsn..)
+        .await
+        .or_into_ctx()?
+    {
         Some((snapshot, _, offsets)) => {
             // clear any changed offsets from the cache
             for offset in offsets.iter() {
@@ -118,7 +175,7 @@ async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> anyhow::Result<Option<S
     }
 }
 
-fn remove(ctx: &Context, vid: &VolumeId) -> anyhow::Result<()> {
+fn remove(ctx: &Context, vid: &VolumeId) -> Result<()> {
     ctx.volumes.remove(vid)?;
     // remove all pages for the volume
     let prefix = format!("{}/", vid.pretty());
@@ -129,14 +186,14 @@ fn remove(ctx: &Context, vid: &VolumeId) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> anyhow::Result<Page> {
+async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> Result<Page> {
     // Check if we have the page in the cache
     if let Some(page) = ctx
         .pages
         .get(page_key(vid, offset))?
         .map(|p| Page::try_from(p.as_ref()))
     {
-        return Ok(page?);
+        return Ok(page.or_into_ctx()?);
     }
 
     // Otherwise read the page from Graft
@@ -153,11 +210,12 @@ async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> anyhow:
                 snapshot.lsn(),
                 Splinter::from_iter([offset]).serialize_to_bytes(),
             )
-            .await?;
+            .await
+            .or_into_ctx()?;
 
         if let Some(p) = pages.into_iter().next() {
             assert_eq!(offset, p.offset(), "unexpected page: {:?}", p);
-            let page = p.page()?;
+            let page = p.page().or_into_ctx()?;
             ctx.pages.insert(page_key(vid, p.offset()), &page)?;
             return Ok(page);
         }
@@ -166,12 +224,7 @@ async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> anyhow:
     Ok(EMPTY_PAGE)
 }
 
-async fn write_page(
-    ctx: &Context,
-    vid: &VolumeId,
-    offset: PageOffset,
-    data: Bytes,
-) -> anyhow::Result<()> {
+async fn write_page(ctx: &Context, vid: &VolumeId, offset: PageOffset, data: Bytes) -> Result<()> {
     // remove the page from the cache in case the write fails
     ctx.pages.remove(page_key(vid, offset))?;
 
@@ -188,7 +241,8 @@ async fn write_page(
                 data: data.clone(),
             }],
         )
-        .await?;
+        .await
+        .or_into_ctx()?;
 
     // then we commit the new segments to the metastore
     let snapshot = ctx
@@ -201,7 +255,8 @@ async fn write_page(
                 .unwrap_or(offset.pages()),
             segments,
         )
-        .await?;
+        .await
+        .or_into_ctx()?;
 
     // Update the cache with the new page and snapshot
     ctx.volumes.insert(vid, snapshot.encode_to_vec())?;
@@ -247,7 +302,7 @@ fn print_snapshot(snapshot: Option<Snapshot>) {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     env_logger::init();
 
     let mut args = Cli::parse();
@@ -264,8 +319,8 @@ async fn main() -> anyhow::Result<()> {
     let ctx = Context {
         volumes: keyspace.open_partition("volumes", Default::default())?,
         pages: keyspace.open_partition("pages", Default::default())?,
-        metastore: ClientBuilder::new(args.metastore).build()?,
-        pagestore: ClientBuilder::new(args.pagestore).build()?,
+        metastore: ClientBuilder::new(args.metastore).build().or_into_ctx()?,
+        pagestore: ClientBuilder::new(args.pagestore).build().or_into_ctx()?,
     };
 
     let Some(vid) = args.vid else {

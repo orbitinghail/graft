@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::{extract::State, response::IntoResponse};
+use culprit::ResultExt;
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
 use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesResponse};
@@ -20,12 +21,12 @@ pub async fn handler<C: Cache>(
 ) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsn: LSN = req.lsn.into();
-    let mut offsets = Splinter::from_bytes(req.offsets)?;
+    let mut offsets = Splinter::from_bytes(req.offsets).or_into_ctx()?;
     let num_offsets = offsets.cardinality();
 
     tracing::info!(?vid, ?lsn, num_offsets);
 
-    let (checkpoint, needs_update) = match state.catalog().latest_snapshot(&vid)? {
+    let (checkpoint, needs_update) = match state.catalog().latest_snapshot(&vid).or_into_ctx()? {
         Some(s) => (s.checkpoint(), s.lsn() < lsn),
         None => (LSN::ZERO, true),
     };
@@ -35,7 +36,8 @@ pub async fn handler<C: Cache>(
         state
             .updater()
             .update_catalog_from_client(state.metastore_client(), state.catalog(), &vid, Some(lsn))
-            .await?;
+            .await
+            .or_into_ctx()?;
     }
 
     let mut loading = FuturesUnordered::new();
@@ -45,7 +47,7 @@ pub async fn handler<C: Cache>(
 
     let segments = state.catalog().scan_segments(&vid, &(checkpoint..=lsn));
     for result in segments {
-        let (key, splinter) = result?;
+        let (key, splinter) = result.or_into_ctx()?;
 
         let cut = offsets.cut(&splinter);
         if !cut.is_empty() {
@@ -67,7 +69,7 @@ pub async fn handler<C: Cache>(
 
     let mut result = ReadPagesResponse { pages: Vec::with_capacity(num_offsets) };
     while let Some((segment, cut)) = loading.try_next().await? {
-        let segment = ClosedSegment::from_bytes(&segment)?;
+        let segment = ClosedSegment::from_bytes(&segment).or_into_ctx()?;
 
         for offset in cut.iter() {
             let page = segment

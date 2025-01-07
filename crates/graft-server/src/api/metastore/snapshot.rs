@@ -1,10 +1,15 @@
 use std::sync::Arc;
 
 use axum::extract::State;
+use culprit::{Culprit, ResultExt};
 use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::metastore::v1::{SnapshotRequest, SnapshotResponse};
 
-use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
+use crate::api::{
+    error::{ApiErr, ApiErrCtx},
+    extractors::Protobuf,
+    response::ProtoResponse,
+};
 
 use super::MetastoreApiState;
 
@@ -21,14 +26,19 @@ pub async fn handler(
     let snapshot = state
         .updater
         .snapshot(&state.store, &state.catalog, &vid, lsn)
-        .await?;
+        .await
+        .or_into_ctx()?;
 
     if let Some(snapshot) = snapshot {
         Ok(ProtoResponse::new(SnapshotResponse {
             snapshot: Some(snapshot.into_snapshot(&vid)),
         }))
     } else {
-        Err(ApiErr::SnapshotMissing(vid, lsn, Default::default()))
+        return Err(Culprit::new_with_note(
+            ApiErrCtx::SnapshotMissing,
+            format!("volume {vid} is missing snapshot at {lsn:?}"),
+        )
+        .into());
     }
 }
 

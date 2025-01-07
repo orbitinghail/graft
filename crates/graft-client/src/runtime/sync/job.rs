@@ -1,3 +1,4 @@
+use culprit::{Result, ResultExt};
 use graft_core::{page_offset::PageOffset, VolumeId};
 use graft_proto::pagestore::v1::PageAtOffset;
 use tryiter::TryIteratorExt;
@@ -62,12 +63,14 @@ impl PullJob {
             .pull_offsets(&self.vid, start_lsn..)
             .await?
         {
-            storage.receive_remote_commit(
-                &self.vid,
-                snapshot.is_checkpoint(),
-                snapshot.into(),
-                changed,
-            )?;
+            storage
+                .receive_remote_commit(
+                    &self.vid,
+                    snapshot.is_checkpoint(),
+                    snapshot.into(),
+                    changed,
+                )
+                .or_into_ctx()?;
         }
 
         Ok(())
@@ -106,7 +109,9 @@ impl PushJob {
         // update the sync snapshot to the current snapshot
         // we do this OUTSIDE of the batch to ensure that the snapshot is updated even if the push fails
         // this allows us to detect a failed push during recovery
-        storage.set_snapshot(&self.vid, SnapshotKind::Sync, self.snapshot)?;
+        storage
+            .set_snapshot(&self.vid, SnapshotKind::Sync, self.snapshot)
+            .or_into_ctx()?;
 
         // keep track of the max offset
         let mut max_offset = self
@@ -120,9 +125,9 @@ impl PushJob {
         let mut pages = Vec::new();
         {
             let mut commits = storage.query_commits(&self.vid, lsn_range.clone());
-            while let Some((lsn, offsets)) = commits.try_next()? {
+            while let Some((lsn, offsets)) = commits.try_next().or_into_ctx()? {
                 let mut commit_pages = storage.query_pages(&self.vid, lsn, &offsets);
-                while let Some((offset, page)) = commit_pages.try_next()? {
+                while let Some((offset, page)) = commit_pages.try_next().or_into_ctx()? {
                     // it's a fatal error if the page is None or Pending
                     let page = page
                         .expect("page missing from storage")
@@ -146,12 +151,14 @@ impl PushJob {
             .commit(&self.vid, snapshot_lsn, max_offset.pages(), segments)
             .await?;
 
-        storage.complete_sync(
-            &self.vid,
-            remote_snapshot.is_checkpoint(),
-            remote_snapshot.into(),
-            lsn_range,
-        )?;
+        storage
+            .complete_sync(
+                &self.vid,
+                remote_snapshot.is_checkpoint(),
+                remote_snapshot.into(),
+                lsn_range,
+            )
+            .or_into_ctx()?;
 
         Ok(())
     }

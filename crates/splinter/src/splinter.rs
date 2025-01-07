@@ -1,4 +1,5 @@
 use bytes::{Bytes, BytesMut};
+use culprit::Culprit;
 use std::fmt::Debug;
 use zerocopy::{
     little_endian::{U16, U32},
@@ -65,7 +66,7 @@ pub struct Splinter {
 }
 
 impl Splinter {
-    pub fn from_bytes<T: AsRef<[u8]>>(data: T) -> Result<Self, DecodeErr> {
+    pub fn from_bytes<T: AsRef<[u8]>>(data: T) -> Result<Self, Culprit<DecodeErr>> {
         SplinterRef::from_bytes(data).map(Into::into)
     }
 
@@ -170,28 +171,20 @@ impl<T> SplinterRef<T>
 where
     T: AsRef<[u8]>,
 {
-    pub fn from_bytes(data: T) -> Result<Self, DecodeErr> {
+    pub fn from_bytes(data: T) -> Result<Self, Culprit<DecodeErr>> {
         use DecodeErr::*;
 
         let (header, _) = Ref::<_, Header>::from_prefix(data.as_ref()).map_err(|err| {
             debug_assert!(matches!(err, ConvertError::Size(_)));
-            InvalidLength {
-                ty: "Header",
-                size: size_of::<Header>(),
-                loc: Default::default(),
-            }
+            InvalidHeader
         })?;
         if header.magic != SPLINTER_MAGIC {
-            return Err(InvalidMagic(Default::default()));
+            return Err(InvalidMagic.into());
         }
 
         let (_, footer) = Ref::<_, Footer>::from_suffix(data.as_ref()).map_err(|err| {
             debug_assert!(matches!(err, ConvertError::Size(_)));
-            InvalidLength {
-                ty: "Footer",
-                size: size_of::<Footer>(),
-                loc: Default::default(),
-            }
+            InvalidFooter
         })?;
         let partitions = footer.partitions.get() as usize;
 

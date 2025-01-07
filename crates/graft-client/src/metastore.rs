@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use culprit::{Culprit, ResultExt};
 use futures::TryFutureExt;
 use graft_core::{lsn::LSN, page_count::PageCount, VolumeId};
 use graft_proto::{
@@ -24,7 +25,7 @@ pub struct MetastoreClient {
 }
 
 impl TryFrom<builder::ClientBuilder> for MetastoreClient {
-    type Error = builder::ClientBuildErr;
+    type Error = Culprit<builder::ClientBuildErr>;
 
     fn try_from(builder: builder::ClientBuilder) -> Result<Self, Self::Error> {
         let endpoint = builder.endpoint.join("metastore/v1/")?;
@@ -38,7 +39,7 @@ impl MetastoreClient {
         &self,
         vid: &VolumeId,
         lsn: Option<LSN>,
-    ) -> Result<Option<Snapshot>, error::ClientErr> {
+    ) -> Result<Option<Snapshot>, Culprit<error::ClientErr>> {
         let url = self.endpoint.join("snapshot").unwrap();
         let req = SnapshotRequest {
             vid: vid.copy_to_bytes(),
@@ -46,7 +47,7 @@ impl MetastoreClient {
         };
         match prost_request::<_, SnapshotResponse>(&self.http, url, req).await {
             Ok(resp) => Ok(resp.snapshot),
-            Err(err) if err.is_snapshot_missing() => Ok(None),
+            Err(err) if err.ctx().is_snapshot_missing() => Ok(None),
             Err(err) => Err(err),
         }
     }
@@ -55,7 +56,7 @@ impl MetastoreClient {
         &self,
         vid: &VolumeId,
         range: R,
-    ) -> Result<Option<(Snapshot, LsnRange, SplinterRef<Bytes>)>, error::ClientErr> {
+    ) -> Result<Option<(Snapshot, LsnRange, SplinterRef<Bytes>)>, Culprit<error::ClientErr>> {
         let url = self.endpoint.join("pull_offsets").unwrap();
         let req = PullOffsetsRequest {
             vid: vid.copy_to_bytes(),
@@ -65,10 +66,10 @@ impl MetastoreClient {
             Ok(resp) => {
                 let snapshot = resp.snapshot.expect("snapshot is missing");
                 let range = resp.range.expect("range is missing");
-                let offsets = SplinterRef::from_bytes(resp.offsets)?;
+                let offsets = SplinterRef::from_bytes(resp.offsets).or_into_ctx()?;
                 Ok(Some((snapshot, range, offsets)))
             }
-            Err(err) if err.is_snapshot_missing() => Ok(None),
+            Err(err) if err.ctx().is_snapshot_missing() => Ok(None),
             Err(err) => Err(err),
         }
     }
@@ -77,7 +78,7 @@ impl MetastoreClient {
         &self,
         vid: &VolumeId,
         range: R,
-    ) -> Result<Vec<Commit>, error::ClientErr>
+    ) -> Result<Vec<Commit>, Culprit<error::ClientErr>>
     where
         R: RangeBounds<LSN>,
     {
@@ -97,7 +98,7 @@ impl MetastoreClient {
         snapshot_lsn: Option<LSN>,
         page_count: PageCount,
         segments: Vec<SegmentInfo>,
-    ) -> Result<Snapshot, error::ClientErr> {
+    ) -> Result<Snapshot, Culprit<error::ClientErr>> {
         let url = self.endpoint.join("commit").unwrap();
         let req = CommitRequest {
             vid: vid.copy_to_bytes(),

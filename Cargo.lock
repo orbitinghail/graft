@@ -674,6 +674,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "culprit"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97a8cfe6442569585dc3f3b4e5ebc2fa07f1850a25420dd79560305d401e4e86"
+dependencies = [
+ "smallvec",
+]
+
+[[package]]
 name = "dashmap"
 version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1012,9 +1021,9 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 name = "graft-client"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "bytes",
  "clap",
+ "culprit",
  "env_logger",
  "fjall",
  "futures",
@@ -1030,7 +1039,6 @@ dependencies = [
  "thiserror 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
  "tokio",
  "tokio-util",
- "trackerr",
  "tryiter",
  "url",
  "zerocopy 0.8.13",
@@ -1043,13 +1051,13 @@ dependencies = [
  "assert_matches",
  "bs58",
  "bytes",
+ "culprit",
  "foldhash",
  "hashbrown 0.15.2",
  "rand",
  "serde",
  "static_assertions",
  "thiserror 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
- "trackerr",
  "zerocopy 0.8.13",
 ]
 
@@ -1058,6 +1066,7 @@ name = "graft-proto"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "culprit",
  "graft-core",
  "prost",
  "prost-types",
@@ -1074,6 +1083,7 @@ dependencies = [
  "axum-test",
  "bytes",
  "clap",
+ "culprit",
  "fjall",
  "foldhash",
  "futures",
@@ -1100,7 +1110,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
- "trackerr",
  "tryiter",
  "twelf",
  "url",
@@ -2719,11 +2728,11 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "criterion",
+ "culprit",
  "either",
  "itertools 0.13.0",
  "roaring",
  "thiserror 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
- "trackerr",
  "zerocopy 0.8.13",
 ]
 
@@ -3174,13 +3183,6 @@ checksum = "04659ddb06c87d233c566112c1c9c5b9e98256d9af50ec3bc9c8327f873a7568"
 dependencies = [
  "quote",
  "syn 2.0.90",
-]
-
-[[package]]
-name = "trackerr"
-version = "0.1.0"
-dependencies = [
- "thiserror 2.0.8 (git+https://github.com/carlsverre/thiserror?branch=feat-implicit-fields)",
 ]
 
 [[package]]

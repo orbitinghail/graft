@@ -1,13 +1,13 @@
 use std::{io, sync::Arc};
 
 use bytes::Buf;
+use culprit::Culprit;
 use futures::{FutureExt, TryFutureExt};
 use graft_core::SegmentId;
 use measured::{metric::histogram::Thresholds, CounterVec, Histogram, MetricGroup};
 use object_store::{path::Path, ObjectStore, PutPayload};
 use thiserror::Error;
 use tokio::sync::mpsc;
-use trackerr::{CallerLocation, LocationStack};
 
 use crate::{
     metrics::labels::ResultLabelSet,
@@ -21,23 +21,22 @@ use super::{
 
 #[derive(Debug, Error)]
 pub enum UploaderErr {
-    #[error("failed to cache segment: {0}")]
-    Cache(#[from] object_store::Error, #[implicit] CallerLocation),
+    #[error("failed to cache segment")]
+    Cache,
 
-    #[error("failed to upload segment: {0}")]
-    Upload(#[from] io::Error, #[implicit] CallerLocation),
+    #[error("failed to upload segment")]
+    Upload(io::ErrorKind),
 }
 
-impl LocationStack for UploaderErr {
-    fn location(&self) -> &CallerLocation {
-        use UploaderErr::*;
-        match self {
-            Cache(_, loc) | Upload(_, loc) => loc,
-        }
+impl From<object_store::Error> for UploaderErr {
+    fn from(_: object_store::Error) -> Self {
+        UploaderErr::Cache
     }
+}
 
-    fn next(&self) -> Option<&dyn LocationStack> {
-        None
+impl From<io::Error> for UploaderErr {
+    fn from(err: io::Error) -> Self {
+        UploaderErr::Upload(err.kind())
     }
 }
 
@@ -68,11 +67,13 @@ pub struct SegmentUploaderTask<C> {
 }
 
 impl<C: Cache> SupervisedTask for SegmentUploaderTask<C> {
+    type Err = UploaderErr;
+
     fn cfg(&self) -> TaskCfg {
         TaskCfg { name: "segment-uploader" }
     }
 
-    async fn run(mut self, ctx: TaskCtx) -> crate::supervisor::Result<()> {
+    async fn run(mut self, ctx: TaskCtx) -> Result<(), Culprit<UploaderErr>> {
         loop {
             tokio::select! {
                 Some(req) = self.input.recv() => {
@@ -100,7 +101,10 @@ impl<C: Cache> SegmentUploaderTask<C> {
         Self { metrics, input, output, store, cache }
     }
 
-    async fn handle_store_request(&mut self, req: StoreSegmentReq) -> Result<(), UploaderErr> {
+    async fn handle_store_request(
+        &mut self,
+        req: StoreSegmentReq,
+    ) -> Result<(), Culprit<UploaderErr>> {
         tracing::debug!("handling request: {:?}", req);
 
         let segment = req.segment;

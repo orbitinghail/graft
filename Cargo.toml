@@ -8,6 +8,7 @@ lto = true
 codegen-units = 1
 
 [workspace.dependencies]
+culprit = { version = "0.3" }
 bytes = { version = "1.8" }
 prost = { version = "0.13" }
 anyhow = { version = "1.0" }

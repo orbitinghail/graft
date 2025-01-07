@@ -1,12 +1,12 @@
 use std::{future::ready, ops::RangeBounds, sync::Arc};
 
+use culprit::{Culprit, ResultExt};
 use futures::{stream::FuturesUnordered, Stream, TryStreamExt};
 use graft_core::{
     lsn::{LSNRangeExt, LSN},
     VolumeId,
 };
 use object_store::ObjectStore;
-use trackerr::{CallerLocation, LocationStack};
 
 use crate::volume::commit::{commit_key_prefix, CommitValidationErr};
 
@@ -16,31 +16,19 @@ const REPLAY_CONCURRENCY: usize = 5;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VolumeStoreErr {
-    #[error("object store error: {0}")]
-    ObjectStoreErr(#[from] object_store::Error, #[implicit] CallerLocation),
+    #[error("object store error")]
+    ObjectStoreErr,
 
     #[error("commit validation error: {0}")]
-    CommitValidationErr(#[from] CommitValidationErr, #[implicit] CallerLocation),
+    CommitValidationErr(#[from] CommitValidationErr),
 
     #[error("Failed to parse commit key: {0}")]
-    CommitKeyParseErr(#[from] CommitKeyParseErr, #[implicit] CallerLocation),
+    CommitKeyParseErr(#[from] CommitKeyParseErr),
 }
 
-impl LocationStack for VolumeStoreErr {
-    fn location(&self) -> &CallerLocation {
-        use VolumeStoreErr::*;
-        match self {
-            ObjectStoreErr(_, loc) | CommitValidationErr(_, loc) | CommitKeyParseErr(_, loc) => loc,
-        }
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        use VolumeStoreErr::*;
-        match self {
-            CommitValidationErr(err, _) => Some(err),
-            CommitKeyParseErr(err, _) => Some(err),
-            _ => None,
-        }
+impl From<object_store::Error> for VolumeStoreErr {
+    fn from(_: object_store::Error) -> Self {
+        VolumeStoreErr::ObjectStoreErr
     }
 }
 
@@ -53,7 +41,7 @@ impl VolumeStore {
         Self { store }
     }
 
-    pub async fn commit(&self, commit: Commit) -> Result<(), VolumeStoreErr> {
+    pub async fn commit(&self, commit: Commit) -> Result<(), Culprit<VolumeStoreErr>> {
         let key = commit_key(commit.vid(), commit.meta().lsn());
         self.store.put(&key, commit.into_payload()).await?;
         Ok(())
@@ -64,7 +52,7 @@ impl VolumeStore {
         &'a self,
         vid: VolumeId,
         range: &'a R,
-    ) -> impl Stream<Item = Result<Commit, VolumeStoreErr>> + 'a {
+    ) -> impl Stream<Item = Result<Commit, Culprit<VolumeStoreErr>>> + 'a {
         let stream = if let Some(from_lsn) = range.try_start_exclusive() {
             self.store
                 .list_with_offset(Some(&commit_key_prefix(&vid)), &commit_key(&vid, from_lsn))
@@ -73,13 +61,13 @@ impl VolumeStore {
         };
 
         stream
-            .err_into::<VolumeStoreErr>()
+            .err_into()
             // We can't use try_take_while because we can't depend on the object
             // store implementation to return keys sorted alphanumerically.
             .try_filter_map(move |meta| {
-                let (key_vid, lsn) = match parse_commit_key(&meta.location) {
+                let (key_vid, lsn) = match parse_commit_key(&meta.location).or_into_ctx() {
                     Ok((vid, lsn)) => (vid, lsn),
-                    Err(err) => return ready(Err(err.into())),
+                    Err(err) => return ready(Err(err)),
                 };
                 assert!(vid == key_vid, "Unexpected volume ID in commit key");
                 ready(Ok(range.contains(&lsn).then_some((key_vid, lsn))))
@@ -95,10 +83,14 @@ impl VolumeStore {
             .try_flatten()
     }
 
-    pub async fn get_commit(&self, vid: VolumeId, lsn: LSN) -> Result<Commit, VolumeStoreErr> {
+    pub async fn get_commit(
+        &self,
+        vid: VolumeId,
+        lsn: LSN,
+    ) -> Result<Commit, Culprit<VolumeStoreErr>> {
         let path = commit_key(&vid, lsn);
         let commit = self.store.get(&path).await?;
         let data = commit.bytes().await?;
-        Ok(Commit::from_bytes(data)?)
+        Ok(Commit::from_bytes(data).or_into_ctx()?)
     }
 }

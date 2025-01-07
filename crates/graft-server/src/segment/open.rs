@@ -3,12 +3,12 @@
 use std::{collections::BTreeMap, fmt::Debug};
 
 use bytes::Buf;
+use culprit::Culprit;
 use graft_core::{
     byte_unit::ByteUnit, page::Page, page_count::PageCount, page_offset::PageOffset, SegmentId,
     VolumeId,
 };
 use thiserror::Error;
-use trackerr::{CallerLocation, LocationStack};
 use zerocopy::IntoBytes;
 
 use crate::bytes_vec::BytesVec;
@@ -21,17 +21,7 @@ use super::{
 
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("segment is full")]
-pub struct SegmentFullErr(CallerLocation);
-
-impl LocationStack for SegmentFullErr {
-    fn location(&self) -> &CallerLocation {
-        &self.0
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        None
-    }
-}
+pub struct SegmentFullErr;
 
 #[derive(Default)]
 pub struct OpenSegment {
@@ -62,9 +52,9 @@ impl OpenSegment {
         vid: VolumeId,
         offset: PageOffset,
         page: Page,
-    ) -> Result<(), SegmentFullErr> {
+    ) -> Result<(), Culprit<SegmentFullErr>> {
         if !self.has_space_for(&vid) {
-            return Err(SegmentFullErr(Default::default()));
+            return Err(Culprit::new(SegmentFullErr));
         }
         self.index.entry(vid).or_default().insert(offset, page);
         Ok(())
@@ -281,6 +271,6 @@ mod tests {
         let err = open_segment
             .insert(vids[0].clone(), PageOffset::MAX, page.clone())
             .expect_err("expected segment to be full");
-        assert_matches!(err, SegmentFullErr(_));
+        assert_matches!(err.ctx(), SegmentFullErr);
     }
 }

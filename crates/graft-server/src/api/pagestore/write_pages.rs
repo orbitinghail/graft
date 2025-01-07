@@ -2,6 +2,7 @@ use std::{sync::Arc, vec};
 
 use axum::{extract::State, response::IntoResponse};
 use bytes::BytesMut;
+use culprit::{Culprit, ResultExt};
 use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 use graft_proto::{
     common::v1::SegmentInfo,
@@ -11,7 +12,7 @@ use hashbrown::HashSet;
 use prost::Message;
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::segment::bus::WritePageReq;
+use crate::{api::error::ApiErrCtx, segment::bus::WritePageReq};
 
 use crate::api::{error::ApiErr, extractors::Protobuf};
 
@@ -36,10 +37,14 @@ pub async fn handler<C>(
     let mut seen = HashSet::with_capacity(req.pages.len());
     for page in req.pages {
         let offset: PageOffset = page.offset.into();
-        let page: Page = page.data.try_into()?;
+        let page: Page = Page::try_from(page.data).or_into_ctx()?;
 
         if seen.contains(&offset) {
-            return Err(ApiErr::DuplicatePageOffset(offset, Default::default()));
+            return Err(Culprit::new_with_note(
+                ApiErrCtx::DuplicatePageOffset,
+                format!("duplicate page offset: {offset}"),
+            )
+            .into());
         }
         seen.insert(offset);
 

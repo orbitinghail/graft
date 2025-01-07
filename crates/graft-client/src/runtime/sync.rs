@@ -1,5 +1,6 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
+use culprit::{Culprit, Result};
 use graft_core::VolumeId;
 use job::Job;
 use thiserror::Error;
@@ -9,7 +10,7 @@ use tokio::{
         self,
         error::{RecvError, TryRecvError},
     },
-    task::{JoinError, JoinHandle},
+    task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
 use tryiter::{TryIterator, TryIteratorExt};
@@ -24,7 +25,7 @@ use super::storage::{volume::SyncDirection, Storage};
 #[derive(Debug, Error)]
 pub enum ShutdownErr {
     #[error("error while shutting down Sync task")]
-    Error(JoinError),
+    JoinError,
 
     #[error("timeout while waiting for Sync task to cleanly shutdown")]
     Timeout,
@@ -49,11 +50,14 @@ impl SyncTaskHandle {
             }
             Ok(Err(err)) => {
                 log::error!("sync task shutdown error: {:?}", err);
-                Err(ShutdownErr::Error(err))
+                Err(Culprit::new_with_note(
+                    ShutdownErr::JoinError,
+                    format!("join error: {err}"),
+                ))
             }
             Err(_) => {
                 log::warn!("timeout waiting for sync task to shutdown");
-                Err(ShutdownErr::Timeout)
+                Err(Culprit::new(ShutdownErr::Timeout))
             }
         }
     }
@@ -180,14 +184,14 @@ impl SyncTask {
         &self,
         sync: SyncDirection,
         vids: Option<HashSet<VolumeId>>,
-    ) -> impl TryIterator<Ok = Job, Err = ClientErr> + '_ {
+    ) -> impl TryIterator<Ok = Job, Err = Culprit<ClientErr>> + '_ {
         let kind_mask = SnapshotKindMask::default()
             .with(SnapshotKind::Local)
             .with(SnapshotKind::Sync)
             .with(SnapshotKind::Remote);
         self.storage
             .query_volumes(sync, kind_mask, vids)
-            .err_into()
+            .map_err(|err| err.map_ctx(ClientErr::from))
             .try_filter_map(|(vid, config, mut snapshots)| {
                 // generate a push job if the volume is configured for push and has changed
                 let can_push = config.sync().matches(SyncDirection::Push);

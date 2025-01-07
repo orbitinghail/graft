@@ -8,8 +8,8 @@ graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 graft-client = { path = "../graft-client" }
 splinter = { path = "../splinter" }
-trackerr = { path = "../trackerr" }
 
+culprit = { workspace = true }
 tryiter = { workspace = true }
 tokio = { workspace = true, features = [
     "bytes",

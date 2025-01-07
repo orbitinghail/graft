@@ -4,8 +4,9 @@ use axum::{
     http::{header, HeaderValue},
 };
 use bytes::Bytes;
+use culprit::Culprit;
 
-use super::error::ApiErr;
+use super::error::{ApiErr, ApiErrCtx};
 
 pub const CONTENT_TYPE_PROTOBUF: HeaderValue = HeaderValue::from_static("application/x-protobuf");
 
@@ -25,25 +26,24 @@ where
             .get(header::CONTENT_TYPE)
             .is_some_and(|v| v == CONTENT_TYPE_PROTOBUF);
         if !is_protobuf {
-            return Err(ApiErr::InvalidRequestBody(
-                "invalid content type".to_string(),
-                Default::default(),
-            ));
+            return Err(Culprit::new_with_note(
+                ApiErrCtx::InvalidRequestBody,
+                "invalid content type",
+            )
+            .into());
         }
 
-        let body = Bytes::from_request(req, state)
-            .await
-            .map_err(|err| ApiErr::InvalidRequestBody(err.to_string(), Default::default()))?;
+        let body = Bytes::from_request(req, state).await.map_err(|err| {
+            Culprit::new_with_note(ApiErrCtx::InvalidRequestBody, err.to_string())
+        })?;
 
         if body.is_empty() {
-            return Err(ApiErr::InvalidRequestBody(
-                "empty body".to_string(),
-                Default::default(),
-            ));
+            return Err(Culprit::new_with_note(ApiErrCtx::InvalidRequestBody, "empty body").into());
         }
 
-        let value = T::decode(body)
-            .map_err(|err| ApiErr::InvalidRequestBody(err.to_string(), Default::default()))?;
+        let value = T::decode(body).map_err(|err| {
+            Culprit::new_with_note(ApiErrCtx::InvalidRequestBody, err.to_string())
+        })?;
         Ok(Protobuf(value))
     }
 }

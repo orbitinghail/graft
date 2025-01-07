@@ -1,6 +1,10 @@
-use std::time::{Duration, SystemTime};
+use std::{
+    num::ParseIntError,
+    time::{Duration, SystemTime},
+};
 
 use bytes::{BufMut, Bytes, BytesMut};
+use culprit::{Culprit, ResultExt};
 use graft_core::{
     gid::GidParseErr, lsn::LSN, page_count::PageCount, page_range::PageRange,
     zerocopy_err::ZerocopyErr, SegmentId, VolumeId,
@@ -9,7 +13,6 @@ use graft_proto::common::v1::Snapshot;
 use object_store::{path::Path, PutPayload};
 use splinter::SplinterRef;
 use thiserror::Error;
-use trackerr::{CallerLocation, LocationStack};
 use zerocopy::{
     ConvertError, FromBytes, Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32,
     U64,
@@ -37,56 +40,43 @@ fn millis_to_time(millis: u64) -> SystemTime {
 
 #[derive(Debug, Error)]
 pub enum CommitKeyParseErr {
-    #[error("invalid commit key structure: {0}")]
-    Structure(Path, CallerLocation),
+    #[error("invalid commit key structure")]
+    InvalidStructure,
     #[error("invalid volume id: {0}")]
-    VolumeId(#[from] GidParseErr, #[implicit] CallerLocation),
-    #[error("invalid lsn: {0}")]
-    Lsn(#[from] std::num::ParseIntError, #[implicit] CallerLocation),
+    InvalidVolumeId(#[from] GidParseErr),
+    #[error("invalid lsn")]
+    InvalidLsn,
 }
 
-impl LocationStack for CommitKeyParseErr {
-    fn location(&self) -> &CallerLocation {
-        use CommitKeyParseErr::*;
-        match self {
-            Structure(_, loc) | VolumeId(_, loc) | Lsn(_, loc) => loc,
-        }
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        use CommitKeyParseErr::*;
-        match self {
-            VolumeId(err, _) => Some(err),
-            _ => None,
-        }
+impl From<ParseIntError> for CommitKeyParseErr {
+    fn from(_: ParseIntError) -> Self {
+        Self::InvalidLsn
     }
 }
 
-pub fn parse_commit_key(key: &Path) -> Result<(VolumeId, LSN), CommitKeyParseErr> {
+pub fn parse_commit_key(key: &Path) -> Result<(VolumeId, LSN), Culprit<CommitKeyParseErr>> {
+    macro_rules! invalid_key {
+        () => {
+            Culprit::new_with_note(
+                CommitKeyParseErr::InvalidStructure,
+                format!("invalid key: {key}"),
+            )
+        };
+    }
+
     let mut parts = key.parts();
     if parts.next().as_ref().map(|p| p.as_ref()) != Some("volumes") {
-        return Err(CommitKeyParseErr::Structure(
-            key.clone(),
-            Default::default(),
-        ));
+        return Err(invalid_key!());
     }
     let vid: VolumeId = parts
         .next()
-        .ok_or_else(|| CommitKeyParseErr::Structure(key.clone(), Default::default()))?
+        .ok_or_else(|| invalid_key!())?
         .as_ref()
         .parse()?;
-    let lsn: LSN = LSN::from_hex(
-        parts
-            .next()
-            .ok_or_else(|| CommitKeyParseErr::Structure(key.clone(), Default::default()))?
-            .as_ref(),
-    )?;
+    let lsn: LSN = LSN::from_hex(parts.next().ok_or_else(|| invalid_key!())?.as_ref())?;
     // ensure there are no trailing parts
     if parts.next().is_some() {
-        return Err(CommitKeyParseErr::Structure(
-            key.clone(),
-            Default::default(),
-        ));
+        return Err(invalid_key!());
     }
     Ok((vid, lsn))
 }
@@ -215,33 +205,17 @@ impl CommitBuilder {
 #[derive(Debug, Error)]
 pub enum CommitValidationErr {
     #[error("corrupt commit header: {0}")]
-    Corrupt(#[from] ZerocopyErr, #[implicit] CallerLocation),
+    Corrupt(#[from] ZerocopyErr),
 
     #[error("invalid magic number")]
-    Magic(CallerLocation),
+    Magic,
 }
 
 impl<A, S, V> From<ConvertError<A, S, V>> for CommitValidationErr {
     #[inline]
     #[track_caller]
     fn from(value: ConvertError<A, S, V>) -> Self {
-        Self::Corrupt(value.into(), Default::default())
-    }
-}
-
-impl LocationStack for CommitValidationErr {
-    fn location(&self) -> &CallerLocation {
-        match self {
-            CommitValidationErr::Corrupt(_, loc) => loc,
-            CommitValidationErr::Magic(loc) => loc,
-        }
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        match self {
-            CommitValidationErr::Corrupt(err, _) => Some(err),
-            CommitValidationErr::Magic(_) => None,
-        }
+        Self::Corrupt(value.into())
     }
 }
 
@@ -252,12 +226,12 @@ pub struct Commit {
 }
 
 impl Commit {
-    pub fn from_bytes(mut data: Bytes) -> Result<Self, CommitValidationErr> {
+    pub fn from_bytes(mut data: Bytes) -> Result<Self, Culprit<CommitValidationErr>> {
         let header = data.split_to(size_of::<CommitHeader>());
         let header = CommitHeader::try_read_from_bytes(&header)?;
 
         if header.magic != COMMIT_MAGIC {
-            return Err(CommitValidationErr::Magic(Default::default()));
+            return Err(Culprit::new(CommitValidationErr::Magic));
         }
 
         Ok(Self { header, offsets: data })
@@ -286,33 +260,17 @@ impl Commit {
 #[derive(Debug, Error)]
 pub enum OffsetsValidationErr {
     #[error("corrupt offsets header: {0}")]
-    Corrupt(#[from] ZerocopyErr, #[implicit] CallerLocation),
+    Corrupt(#[from] ZerocopyErr),
 
     #[error("invalid splinter: {0}")]
-    SplinterDecodeErr(#[from] splinter::DecodeErr, #[implicit] CallerLocation),
+    SplinterDecodeErr(#[from] splinter::DecodeErr),
 }
 
 impl<A, S, V> From<ConvertError<A, S, V>> for OffsetsValidationErr {
     #[inline]
     #[track_caller]
     fn from(value: ConvertError<A, S, V>) -> Self {
-        Self::Corrupt(value.into(), Default::default())
-    }
-}
-
-impl LocationStack for OffsetsValidationErr {
-    fn location(&self) -> &CallerLocation {
-        match self {
-            OffsetsValidationErr::Corrupt(_, loc) => loc,
-            OffsetsValidationErr::SplinterDecodeErr(_, loc) => loc,
-        }
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        match self {
-            OffsetsValidationErr::Corrupt(err, _) => Some(err),
-            OffsetsValidationErr::SplinterDecodeErr(err, _) => Some(err),
-        }
+        Self::Corrupt(value.into())
     }
 }
 
@@ -324,7 +282,7 @@ impl<'a> OffsetsIter<'a> {
     #[allow(clippy::type_complexity)]
     fn next_inner(
         &mut self,
-    ) -> Result<Option<(&'a SegmentId, SplinterRef<&'a [u8]>)>, OffsetsValidationErr> {
+    ) -> Result<Option<(&'a SegmentId, SplinterRef<&'a [u8]>)>, Culprit<OffsetsValidationErr>> {
         if self.offsets.is_empty() {
             return Ok(None);
         }
@@ -334,7 +292,7 @@ impl<'a> OffsetsIter<'a> {
 
         // read the splinter
         let (splinter, rest) = rest.split_at(header.size.get() as usize);
-        let splinter = SplinterRef::from_bytes(splinter)?;
+        let splinter = SplinterRef::from_bytes(splinter).or_into_ctx()?;
 
         // advance the offsets
         self.offsets = rest;
@@ -344,7 +302,7 @@ impl<'a> OffsetsIter<'a> {
 }
 
 impl<'a> Iterator for OffsetsIter<'a> {
-    type Item = Result<(&'a SegmentId, SplinterRef<&'a [u8]>), OffsetsValidationErr>;
+    type Item = Result<(&'a SegmentId, SplinterRef<&'a [u8]>), Culprit<OffsetsValidationErr>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_inner().transpose()

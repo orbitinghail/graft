@@ -10,6 +10,7 @@ use std::{
 
 use bytes::Bytes;
 use common::v1::{Commit, GraftErr, LsnRange, SegmentInfo};
+use culprit::Culprit;
 use graft_core::{
     gid::GidParseErr,
     lsn::{LSNRangeExt, LSN},
@@ -44,11 +45,11 @@ impl SegmentInfo {
         Self { sid: sid.copy_to_bytes(), offsets }
     }
 
-    pub fn sid(&self) -> Result<&SegmentId, GidParseErr> {
-        self.sid.as_ref().try_into()
+    pub fn sid(&self) -> Result<&SegmentId, Culprit<GidParseErr>> {
+        Ok(self.sid.as_ref().try_into()?)
     }
 
-    pub fn offsets(&self) -> Result<SplinterRef<Bytes>, DecodeErr> {
+    pub fn offsets(&self) -> Result<SplinterRef<Bytes>, Culprit<DecodeErr>> {
         SplinterRef::from_bytes(self.offsets.clone())
     }
 }
@@ -70,8 +71,8 @@ impl Snapshot {
         }
     }
 
-    pub fn vid(&self) -> Result<&VolumeId, GidParseErr> {
-        self.vid.as_ref().try_into()
+    pub fn vid(&self) -> Result<&VolumeId, Culprit<GidParseErr>> {
+        Ok(self.vid.as_ref().try_into()?)
     }
 
     pub fn lsn(&self) -> LSN {
@@ -140,7 +141,7 @@ impl PageAtOffset {
     }
 
     #[inline]
-    pub fn page(&self) -> Result<Page, PageSizeErr> {
+    pub fn page(&self) -> Result<Page, Culprit<PageSizeErr>> {
         self.data.clone().try_into()
     }
 }

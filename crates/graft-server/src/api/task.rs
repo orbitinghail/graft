@@ -1,27 +1,18 @@
 use std::io;
 
 use axum::Router;
+use culprit::Culprit;
 use tokio::net::TcpListener;
-use trackerr::{CallerLocation, LocationStack};
 
-use crate::supervisor::{self, SupervisedTask, TaskCfg, TaskCtx};
+use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 
 #[derive(Debug, thiserror::Error)]
-#[error("API server error: {source}")]
-pub struct ApiServerErr {
-    #[from]
-    source: io::Error,
-    #[implicit]
-    location: CallerLocation,
-}
+#[error("API server error: {0}")]
+pub struct ApiServerErr(io::ErrorKind);
 
-impl LocationStack for ApiServerErr {
-    fn location(&self) -> &CallerLocation {
-        &self.location
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        None
+impl From<io::Error> for ApiServerErr {
+    fn from(err: io::Error) -> Self {
+        Self(err.kind())
     }
 }
 
@@ -38,17 +29,18 @@ impl ApiServerTask {
 }
 
 impl SupervisedTask for ApiServerTask {
+    type Err = ApiServerErr;
+
     fn cfg(&self) -> TaskCfg {
         TaskCfg { name: self.name }
     }
 
-    async fn run(self, ctx: TaskCtx) -> supervisor::Result<()> {
+    async fn run(self, ctx: TaskCtx) -> Result<(), Culprit<ApiServerErr>> {
         axum::serve(self.listener, self.router)
             .with_graceful_shutdown(async move {
                 ctx.wait_shutdown().await;
             })
-            .await
-            .map_err(ApiServerErr::from)?;
+            .await?;
         Ok(())
     }
 }

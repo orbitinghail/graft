@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::fmt::Display;
 
 use bytes::Bytes;
+use culprit::Culprit;
 use fjall::Slice;
 use graft_core::lsn::LSN;
 
@@ -91,7 +92,7 @@ impl PageValue {
 }
 
 impl TryFrom<Slice> for PageValue {
-    type Error = PageSizeErr;
+    type Error = Culprit<PageSizeErr>;
 
     fn try_from(value: Slice) -> Result<Self, Self::Error> {
         let bytes: Bytes = value.into();
@@ -100,7 +101,7 @@ impl TryFrom<Slice> for PageValue {
 }
 
 impl TryFrom<Bytes> for PageValue {
-    type Error = PageSizeErr;
+    type Error = Culprit<PageSizeErr>;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if value.is_empty() {

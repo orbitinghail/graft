@@ -1,12 +1,17 @@
 use std::{sync::Arc, time::SystemTime};
 
 use axum::extract::State;
+use culprit::{Culprit, ResultExt};
 use graft_core::{lsn::LSN, page_count::PageCount, page_offset::PageOffset, SegmentId, VolumeId};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
 use splinter::{ops::Merge, Splinter, SplinterRef};
 
 use crate::{
-    api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse},
+    api::{
+        error::{ApiErr, ApiErrCtx},
+        extractors::Protobuf,
+        response::ProtoResponse,
+    },
     volume::commit::{CommitBuilder, CommitMeta},
 };
 
@@ -32,7 +37,8 @@ pub async fn handler(
     let snapshot = state
         .updater
         .snapshot(&state.store, &state.catalog, &vid, None)
-        .await?;
+        .await
+        .or_into_ctx()?;
 
     let commit_lsn = match (snapshot_lsn, snapshot.as_ref().map(|s| s.lsn())) {
         (None, None) => LSN::ZERO,
@@ -41,12 +47,7 @@ pub async fn handler(
         // in every other case, the commit is out of sync
         // TODO: implement page based MVCC
         (snapshot, latest) => {
-            return Err(ApiErr::CommitSnapshotOutOfDate {
-                vid,
-                snapshot,
-                latest,
-                location: Default::default(),
-            })
+            return Err(Culprit::new_with_note(ApiErrCtx::RejectedCommit, format!("commit rejected for volume {vid}: snapshot lsn {snapshot:?} is out of sync with latest lsn {latest:?}")).into());
         }
     };
 
@@ -54,7 +55,7 @@ pub async fn handler(
     let mut all_offsets = Splinter::default();
     for segment in req.segments {
         let sid: SegmentId = segment.sid.try_into()?;
-        let offsets = SplinterRef::from_bytes(segment.offsets)?;
+        let offsets = SplinterRef::from_bytes(segment.offsets).or_into_ctx()?;
         all_offsets.merge(&offsets);
         commit.write_offsets(sid, offsets.inner());
     }
@@ -74,12 +75,12 @@ pub async fn handler(
     let commit = commit.build(vid.clone(), meta.clone());
 
     // commit the new snapshot to the store
-    state.store.commit(commit.clone()).await?;
+    state.store.commit(commit.clone()).await.or_into_ctx()?;
 
     // update the catalog
     let mut batch = state.catalog.batch_insert();
-    batch.insert_commit(commit)?;
-    batch.commit()?;
+    batch.insert_commit(commit).or_into_ctx()?;
+    batch.commit().or_into_ctx()?;
 
     // the commit was successful, return the new snapshot
     Ok(ProtoResponse::new(CommitResponse {

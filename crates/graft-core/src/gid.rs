@@ -9,7 +9,6 @@ use bytes::Bytes;
 use prefix::Prefix;
 use thiserror::Error;
 use time::GidTimestamp;
-use trackerr::{CallerLocation, LocationStack};
 use zerocopy::{ConvertError, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::{byte_unit::ByteUnit, zerocopy_err::ZerocopyErr};
@@ -95,37 +94,19 @@ impl<P: Prefix> AsRef<[u8]> for Gid<P> {
 #[derive(Debug, Error, PartialEq)]
 pub enum GidParseErr {
     #[error("invalid base58 encoding")]
-    DecodeErr(#[from] bs58::decode::Error, #[implicit] CallerLocation),
+    DecodeErr(#[from] bs58::decode::Error),
 
     #[error("invalid length")]
-    InvalidLength(CallerLocation),
+    InvalidLength,
 
     #[error("invalid binary layout for gid")]
-    Corrupt(#[from] ZerocopyErr, #[implicit] CallerLocation),
+    Corrupt(#[from] ZerocopyErr),
 }
 
 impl<A, S, V> From<ConvertError<A, S, V>> for GidParseErr {
     #[inline]
-    #[track_caller]
     fn from(value: ConvertError<A, S, V>) -> Self {
-        Self::Corrupt(value.into(), Default::default())
-    }
-}
-
-impl LocationStack for GidParseErr {
-    fn location(&self) -> &CallerLocation {
-        match self {
-            GidParseErr::DecodeErr(_, loc)
-            | GidParseErr::InvalidLength(loc)
-            | GidParseErr::Corrupt(_, loc) => loc,
-        }
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        match self {
-            Self::Corrupt(err, _) => Some(err),
-            _ => None,
-        }
+        Self::Corrupt(value.into())
     }
 }
 
@@ -142,7 +123,7 @@ impl<P: Prefix> FromStr for Gid<P> {
 
         // verify the length
         if value.len() != MAX_ENCODED_LEN {
-            return Err(GidParseErr::InvalidLength(Default::default()));
+            return Err(GidParseErr::InvalidLength);
         }
 
         // parse from base58
@@ -154,9 +135,10 @@ impl<P: Prefix> FromStr for Gid<P> {
 impl<P: Prefix> TryFrom<Bytes> for Gid<P> {
     type Error = GidParseErr;
 
+    #[inline]
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if value.len() != GID_SIZE.as_usize() {
-            return Err(GidParseErr::InvalidLength(Default::default()));
+            return Err(GidParseErr::InvalidLength);
         }
 
         Ok(Gid::<P>::try_read_from_bytes(&value)?)
@@ -166,9 +148,10 @@ impl<P: Prefix> TryFrom<Bytes> for Gid<P> {
 impl<'a, P: Prefix> TryFrom<&'a [u8]> for &'a Gid<P> {
     type Error = GidParseErr;
 
+    #[inline]
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
         if value.len() != GID_SIZE.as_usize() {
-            return Err(GidParseErr::InvalidLength(Default::default()));
+            return Err(GidParseErr::InvalidLength);
         }
 
         Ok(Gid::<P>::try_ref_from_bytes(value)?)
@@ -178,6 +161,7 @@ impl<'a, P: Prefix> TryFrom<&'a [u8]> for &'a Gid<P> {
 impl<P: Prefix> TryFrom<[u8; GID_SIZE.as_usize()]> for Gid<P> {
     type Error = GidParseErr;
 
+    #[inline]
     fn try_from(value: [u8; GID_SIZE.as_usize()]) -> Result<Self, Self::Error> {
         Ok(Gid::<P>::try_read_from_bytes(&value)?)
     }
@@ -246,14 +230,14 @@ mod tests {
 
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.parse();
-            assert_matches!(result, Err(GidParseErr::InvalidLength(_)));
+            assert_matches!(result.unwrap_err(), GidParseErr::InvalidLength);
         }
 
         // bad encoding
         let cases = ["GontbnaXtUE3!BbafyDiJt", "zzzzzzzzzzzzzzzzzzzzzz"];
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.parse();
-            assert_matches!(result, Err(GidParseErr::DecodeErr(_, _)));
+            assert_matches!(result.unwrap_err(), GidParseErr::DecodeErr(_));
         }
 
         // bad layout
@@ -261,8 +245,8 @@ mod tests {
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.parse();
             assert_matches!(
-                result,
-                Err(GidParseErr::Corrupt(ZerocopyErr::InvalidData(_), _))
+                result.unwrap_err(),
+                GidParseErr::Corrupt(ZerocopyErr::InvalidData)
             );
         }
 
@@ -274,16 +258,16 @@ mod tests {
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.try_into();
             assert_matches!(
-                result,
-                Err(GidParseErr::Corrupt(ZerocopyErr::InvalidData(_), _))
+                result.unwrap_err(),
+                GidParseErr::Corrupt(ZerocopyErr::InvalidData)
             );
         }
 
         // wrong prefix
         let raw = mkgid(prefix::Segment::Value as u8, SystemTime::now(), random());
         assert_matches!(
-            VolumeId::try_from(raw),
-            Err(GidParseErr::Corrupt(ZerocopyErr::InvalidData(_), _))
+            VolumeId::try_from(raw).unwrap_err(),
+            GidParseErr::Corrupt(ZerocopyErr::InvalidData)
         );
     }
 }

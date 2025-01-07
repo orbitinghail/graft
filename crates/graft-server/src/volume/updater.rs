@@ -1,9 +1,9 @@
 use std::ops::RangeBounds;
 
+use culprit::{Culprit, ResultExt};
 use futures::TryStreamExt;
 use graft_client::MetastoreClient;
 use graft_core::{lsn::LSN, VolumeId};
-use trackerr::CallerLocation;
 
 use crate::limiter::Limiter;
 
@@ -16,13 +16,13 @@ use super::{
 #[derive(Debug, thiserror::Error)]
 pub enum UpdateErr {
     #[error("volume catalog error")]
-    CatalogErr(#[from] VolumeCatalogErr, #[implicit] CallerLocation),
+    CatalogErr(#[from] VolumeCatalogErr),
 
     #[error("volume store error")]
-    StoreErr(#[from] VolumeStoreErr, #[implicit] CallerLocation),
+    StoreErr(#[from] VolumeStoreErr),
 
     #[error("client error")]
-    ClientErr(#[from] graft_client::ClientErr, #[implicit] CallerLocation),
+    ClientErr(#[from] graft_client::ClientErr),
 }
 
 pub struct VolumeCatalogUpdater {
@@ -41,10 +41,10 @@ impl VolumeCatalogUpdater {
         catalog: &VolumeCatalog,
         vid: &VolumeId,
         lsn: Option<LSN>,
-    ) -> Result<Option<CommitMeta>, UpdateErr> {
+    ) -> Result<Option<CommitMeta>, Culprit<UpdateErr>> {
         // if a specific lsn is requested and we have a snapshot for it, return it
         if let Some(lsn) = lsn {
-            if let Some(snapshot) = catalog.snapshot(vid.clone(), lsn)? {
+            if let Some(snapshot) = catalog.snapshot(vid.clone(), lsn).or_into_ctx()? {
                 return Ok(Some(snapshot));
             }
         }
@@ -55,9 +55,9 @@ impl VolumeCatalogUpdater {
 
         // return the requested snapshot or latest
         if let Some(lsn) = lsn {
-            Ok(catalog.snapshot(vid.clone(), lsn)?)
+            Ok(catalog.snapshot(vid.clone(), lsn).or_into_ctx()?)
         } else {
-            Ok(catalog.latest_snapshot(vid)?)
+            Ok(catalog.latest_snapshot(vid).or_into_ctx()?)
         }
     }
 
@@ -67,11 +67,11 @@ impl VolumeCatalogUpdater {
         catalog: &VolumeCatalog,
         vid: &VolumeId,
         min_lsn: Option<LSN>,
-    ) -> Result<(), UpdateErr> {
+    ) -> Result<(), Culprit<UpdateErr>> {
         tracing::debug!(?min_lsn, "updating catalog for volume {vid:?}");
 
         // read the latest lsn for the volume in the catalog
-        let initial_lsn = catalog.latest_snapshot(vid)?.map(|s| s.lsn());
+        let initial_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
 
         // if catalog lsn >= lsn_at_least, then no update is needed
         if initial_lsn.is_some_and(|l1| min_lsn.is_some_and(|l2| l1 >= l2)) {
@@ -83,7 +83,7 @@ impl VolumeCatalogUpdater {
         let _permit = self.limiter.acquire(vid).await;
 
         // check the catalog again in case another task has updated the volume
-        let catalog_lsn = catalog.latest_snapshot(vid)?.map(|s| s.lsn());
+        let catalog_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
 
         // check to see if we can exit early
         if match (catalog_lsn, min_lsn) {
@@ -114,13 +114,13 @@ impl VolumeCatalogUpdater {
         let mut commits = store.replay_unordered(vid.clone(), &lsns);
 
         // only create a transaction if we have commits to replay
-        if let Some(commit) = commits.try_next().await? {
+        if let Some(commit) = commits.try_next().await.or_into_ctx()? {
             let mut batch = catalog.batch_insert();
-            batch.insert_commit(commit)?;
-            while let Some(commit) = commits.try_next().await? {
-                batch.insert_commit(commit)?;
+            batch.insert_commit(commit).or_into_ctx()?;
+            while let Some(commit) = commits.try_next().await.or_into_ctx()? {
+                batch.insert_commit(commit).or_into_ctx()?;
             }
-            batch.commit()?;
+            batch.commit().or_into_ctx()?;
         }
 
         // return; dropping the permit and allowing other updates to proceed
@@ -133,9 +133,9 @@ impl VolumeCatalogUpdater {
         catalog: &VolumeCatalog,
         vid: &VolumeId,
         lsns: &R,
-    ) -> Result<(), UpdateErr> {
+    ) -> Result<(), Culprit<UpdateErr>> {
         // we can return early if the catalog already contains the requested LSNs
-        if catalog.contains_range(vid, lsns)? {
+        if catalog.contains_range(vid, lsns).or_into_ctx()? {
             return Ok(());
         }
 
@@ -143,17 +143,17 @@ impl VolumeCatalogUpdater {
         let _permit = self.limiter.acquire(vid).await;
 
         // check the catalog again in case another task has updated the volume
-        if catalog.contains_range(vid, lsns)? {
+        if catalog.contains_range(vid, lsns).or_into_ctx()? {
             return Ok(());
         }
 
         // update the catalog
         let mut batch = catalog.batch_insert();
         let mut commits = store.replay_unordered(vid.clone(), lsns);
-        while let Some(commit) = commits.try_next().await? {
-            batch.insert_commit(commit)?;
+        while let Some(commit) = commits.try_next().await.or_into_ctx()? {
+            batch.insert_commit(commit).or_into_ctx()?;
         }
-        batch.commit()?;
+        batch.commit().or_into_ctx()?;
 
         // return; dropping the permit and allowing other updates to proceed
         Ok(())
@@ -165,9 +165,9 @@ impl VolumeCatalogUpdater {
         catalog: &VolumeCatalog,
         vid: &VolumeId,
         min_lsn: Option<LSN>,
-    ) -> Result<(), UpdateErr> {
+    ) -> Result<(), Culprit<UpdateErr>> {
         // read the latest lsn for the volume in the catalog
-        let initial_lsn = catalog.latest_snapshot(vid)?.map(|s| s.lsn());
+        let initial_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
 
         // if catalog lsn >= min_lsn, then no update is needed
         if initial_lsn.is_some_and(|l1| min_lsn.is_some_and(|l2| l1 >= l2)) {
@@ -178,7 +178,7 @@ impl VolumeCatalogUpdater {
         let _permit = self.limiter.acquire(vid).await;
 
         // check the catalog again in case another task has updated the volume
-        let catalog_lsn = catalog.latest_snapshot(vid)?.map(|s| s.lsn());
+        let catalog_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
 
         // check to see if we can exit early
         if match (catalog_lsn, min_lsn) {
@@ -200,17 +200,19 @@ impl VolumeCatalogUpdater {
         let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or_default();
 
         // update the catalog from the client
-        let commits = client.pull_commits(vid, start_lsn..).await?;
+        let commits = client.pull_commits(vid, start_lsn..).await.or_into_ctx()?;
 
         let mut batch = catalog.batch_insert();
         for commit in commits {
             let snapshot = commit.snapshot.expect("missing snapshot");
             let meta: CommitMeta = snapshot.into();
 
-            batch.insert_snapshot(vid.clone(), meta, commit.segments)?;
+            batch
+                .insert_snapshot(vid.clone(), meta, commit.segments)
+                .or_into_ctx()?;
         }
 
-        batch.commit()?;
+        batch.commit().or_into_ctx()?;
 
         // return; dropping the permit and allowing other updates to proceed
         Ok(())

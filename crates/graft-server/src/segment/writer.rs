@@ -2,36 +2,29 @@
 
 use std::sync::Arc;
 
-use futures::TryFutureExt;
+use culprit::{Culprit, ResultExt};
 use measured::{Counter, MetricGroup};
 use thiserror::Error;
 use tokio::{
-    sync::mpsc,
+    sync::mpsc::{self, error::SendError},
     time::{sleep_until, Duration, Instant},
 };
-use trackerr::{CallerLocation, LocationStack};
 
 use super::{
     bus::{StoreSegmentReq, WritePageReq},
     open::OpenSegment,
 };
-use crate::supervisor::{self, SupervisedTask, TaskCfg, TaskCtx};
+use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 
 #[derive(Debug, Error)]
 pub enum WriterErr {
     #[error("output channel is closed")]
-    OutputChannelClosed(CallerLocation),
+    OutputChannelClosed,
 }
 
-impl LocationStack for WriterErr {
-    fn location(&self) -> &CallerLocation {
-        match self {
-            WriterErr::OutputChannelClosed(loc) => loc,
-        }
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        None
+impl<T> From<SendError<T>> for WriterErr {
+    fn from(_: SendError<T>) -> Self {
+        Self::OutputChannelClosed
     }
 }
 
@@ -55,11 +48,13 @@ pub struct SegmentWriterTask {
 }
 
 impl SupervisedTask for SegmentWriterTask {
+    type Err = WriterErr;
+
     fn cfg(&self) -> TaskCfg {
         TaskCfg { name: "segment-writer" }
     }
 
-    async fn run(mut self, ctx: TaskCtx) -> supervisor::Result<()> {
+    async fn run(mut self, ctx: TaskCtx) -> Result<(), Culprit<WriterErr>> {
         loop {
             tokio::select! {
                 Some(req) = self.input.recv() => {
@@ -97,7 +92,7 @@ impl SegmentWriterTask {
         }
     }
 
-    async fn handle_page_request(&mut self, req: WritePageReq) -> Result<(), WriterErr> {
+    async fn handle_page_request(&mut self, req: WritePageReq) -> Result<(), Culprit<WriterErr>> {
         tracing::debug!("handling request: {:?}", req);
         self.metrics.page_writes.inc();
 
@@ -114,7 +109,7 @@ impl SegmentWriterTask {
     }
 
     /// Flush the current segment and start a new one
-    async fn handle_flush(&mut self) -> Result<(), WriterErr> {
+    async fn handle_flush(&mut self) -> Result<(), Culprit<WriterErr>> {
         // only flush non-empty segments
         if !self.segment.is_empty() {
             tracing::debug!("flushing segment with {} pages", self.segment.pages());
@@ -123,8 +118,8 @@ impl SegmentWriterTask {
                 .send(StoreSegmentReq {
                     segment: std::mem::take(&mut self.segment),
                 })
-                .map_err(|_| WriterErr::OutputChannelClosed(Default::default()))
-                .await?;
+                .await
+                .or_into_ctx()?;
 
             self.metrics.flushed_segments.inc();
         }

@@ -6,6 +6,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use culprit::{Culprit, ResultExt};
 use fjall::{
     Batch, Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice,
 };
@@ -13,9 +14,8 @@ use graft_core::{gid::VolumeId, lsn::LSN, zerocopy_err::ZerocopyErr};
 use graft_proto::common::v1::SegmentInfo;
 use serde::{Deserialize, Serialize};
 use splinter::SplinterRef;
-use trackerr::{CallerLocation, LocationStack};
 use tryiter::TryIteratorExt;
-use zerocopy::{FromBytes, TryFromBytes};
+use zerocopy::{ConvertError, FromBytes, SizeError, TryFromBytes};
 
 use super::{
     commit::{Commit, CommitMeta, OffsetsValidationErr},
@@ -25,59 +25,51 @@ use super::{
 #[derive(Debug, thiserror::Error)]
 pub enum VolumeCatalogErr {
     #[error("failed to parse Gid")]
-    GidParseErr(
-        #[from] graft_core::gid::GidParseErr,
-        #[implicit] CallerLocation,
-    ),
+    GidParseErr(#[from] graft_core::gid::GidParseErr),
 
     #[error("fjall error")]
-    FjallErr(#[from] fjall::Error, #[implicit] CallerLocation),
+    FjallErr,
 
     #[error("io error")]
-    IoErr(#[from] std::io::Error, #[implicit] CallerLocation),
+    IoErr(std::io::ErrorKind),
 
-    #[error("Failed to decode entry into type {target}")]
-    DecodeErr {
-        target: &'static str,
-        source: ZerocopyErr,
-        loc: CallerLocation,
-    },
+    #[error("Failed to decode entry")]
+    DecodeErr(#[from] ZerocopyErr),
 
     #[error("splinter error")]
-    SplinterErr(#[from] splinter::DecodeErr, #[implicit] CallerLocation),
+    SplinterErr(#[from] splinter::DecodeErr),
 
     #[error("offsets validation error")]
-    OffsetsValidationErr(#[from] OffsetsValidationErr, #[implicit] CallerLocation),
+    OffsetsValidationErr(#[from] OffsetsValidationErr),
+}
+
+impl<A, S, V> From<ConvertError<A, S, V>> for VolumeCatalogErr {
+    fn from(err: ConvertError<A, S, V>) -> Self {
+        VolumeCatalogErr::DecodeErr(err.into())
+    }
+}
+
+impl<A, B> From<SizeError<A, B>> for VolumeCatalogErr {
+    fn from(err: SizeError<A, B>) -> Self {
+        VolumeCatalogErr::DecodeErr(err.into())
+    }
+}
+
+impl From<fjall::Error> for VolumeCatalogErr {
+    fn from(_: fjall::Error) -> Self {
+        VolumeCatalogErr::FjallErr
+    }
 }
 
 impl From<lsm_tree::Error> for VolumeCatalogErr {
-    fn from(err: lsm_tree::Error) -> Self {
-        VolumeCatalogErr::FjallErr(err.into(), Default::default())
+    fn from(_: lsm_tree::Error) -> Self {
+        VolumeCatalogErr::FjallErr
     }
 }
 
-impl LocationStack for VolumeCatalogErr {
-    fn location(&self) -> &CallerLocation {
-        use VolumeCatalogErr::*;
-        match self {
-            GidParseErr(_, loc)
-            | FjallErr(_, loc)
-            | IoErr(_, loc)
-            | DecodeErr { loc, .. }
-            | SplinterErr(_, loc)
-            | OffsetsValidationErr(_, loc) => loc,
-        }
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        use VolumeCatalogErr::*;
-        match self {
-            GidParseErr(err, _) => Some(err),
-            DecodeErr { source, .. } => Some(source),
-            SplinterErr(err, _) => Some(err),
-            OffsetsValidationErr(err, _) => Some(err),
-            _ => None,
-        }
+impl From<io::Error> for VolumeCatalogErr {
+    fn from(err: io::Error) -> Self {
+        VolumeCatalogErr::IoErr(err.kind())
     }
 }
 
@@ -89,7 +81,7 @@ pub struct VolumeCatalogConfig {
 }
 
 impl TryFrom<VolumeCatalogConfig> for Config {
-    type Error = io::Error;
+    type Error = Culprit<VolumeCatalogErr>;
 
     fn try_from(value: VolumeCatalogConfig) -> std::result::Result<Self, Self::Error> {
         let (path, temporary) = if let Some(path) = value.path {
@@ -113,15 +105,15 @@ pub struct VolumeCatalog {
 }
 
 impl VolumeCatalog {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, VolumeCatalogErr> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Culprit<VolumeCatalogErr>> {
         Self::open_config(VolumeCatalogConfig { path: Some(path.as_ref().to_path_buf()) })
     }
 
-    pub fn open_temporary() -> Result<Self, VolumeCatalogErr> {
+    pub fn open_temporary() -> Result<Self, Culprit<VolumeCatalogErr>> {
         Self::open_config(VolumeCatalogConfig { path: None })
     }
 
-    pub fn open_config(config: VolumeCatalogConfig) -> Result<Self, VolumeCatalogErr> {
+    pub fn open_config(config: VolumeCatalogConfig) -> Result<Self, Culprit<VolumeCatalogErr>> {
         let config: Config = config.try_into()?;
         let keyspace = config.open()?;
 
@@ -143,7 +135,11 @@ impl VolumeCatalog {
         }
     }
 
-    pub fn contains_snapshot(&self, vid: VolumeId, lsn: LSN) -> Result<bool, VolumeCatalogErr> {
+    pub fn contains_snapshot(
+        &self,
+        vid: VolumeId,
+        lsn: LSN,
+    ) -> Result<bool, Culprit<VolumeCatalogErr>> {
         Ok(self.volumes.contains_key(CommitKey::new(vid, lsn))?)
     }
 
@@ -151,7 +147,7 @@ impl VolumeCatalog {
         &self,
         vid: &VolumeId,
         lsns: &R,
-    ) -> Result<bool, VolumeCatalogErr> {
+    ) -> Result<bool, Culprit<VolumeCatalogErr>> {
         let range = CommitKey::range(vid, lsns);
 
         // verify that lsns in the range are contiguous
@@ -160,12 +156,8 @@ impl VolumeCatalog {
 
         for kv in self.volumes.snapshot().range(range) {
             let (key, _) = kv?;
-            let key =
-                CommitKey::try_ref_from_bytes(&key).map_err(|err| VolumeCatalogErr::DecodeErr {
-                    target: "CommitKey",
-                    source: err.into(),
-                    loc: Default::default(),
-                })?;
+            let key = CommitKey::try_ref_from_bytes(&key)
+                .or_into_culprit("failed to decode CommitKey")?;
             if key.lsn() != cursor {
                 return Ok(false);
             }
@@ -181,33 +173,28 @@ impl VolumeCatalog {
         &self,
         vid: VolumeId,
         lsn: LSN,
-    ) -> Result<Option<CommitMeta>, VolumeCatalogErr> {
+    ) -> Result<Option<CommitMeta>, Culprit<VolumeCatalogErr>> {
         self.volumes
             .get(CommitKey::new(vid, lsn))?
             .map(|bytes| {
-                CommitMeta::read_from_bytes(&bytes).map_err(|err| VolumeCatalogErr::DecodeErr {
-                    target: "CommitMeta",
-                    source: err.into(),
-                    loc: Default::default(),
-                })
+                CommitMeta::read_from_bytes(&bytes).or_into_culprit("failed to decode CommitMeta")
             })
             .transpose()
     }
 
     /// Return the latest snapshot for the specified Volume.
     /// Returns None if no snapshot is found, or the snapshot is corrupt.
-    pub fn latest_snapshot(&self, vid: &VolumeId) -> Result<Option<CommitMeta>, VolumeCatalogErr> {
+    pub fn latest_snapshot(
+        &self,
+        vid: &VolumeId,
+    ) -> Result<Option<CommitMeta>, Culprit<VolumeCatalogErr>> {
         self.volumes
             .snapshot()
             .prefix(vid)
             .rev()
             .err_into()
             .map_ok(|(_, bytes)| {
-                CommitMeta::read_from_bytes(&bytes).map_err(|err| VolumeCatalogErr::DecodeErr {
-                    target: "CommitMeta",
-                    source: err.into(),
-                    loc: Default::default(),
-                })
+                CommitMeta::read_from_bytes(&bytes).or_into_culprit("failed to decode CommitMeta")
             })
             .try_next()
     }
@@ -218,7 +205,8 @@ impl VolumeCatalog {
         &self,
         vid: &VolumeId,
         lsns: &R,
-    ) -> impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>), VolumeCatalogErr>> {
+    ) -> impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>), Culprit<VolumeCatalogErr>>>
+    {
         let range = CommitKey::range(vid, lsns);
         let scan = self.segments.snapshot().range(range).rev();
         SegmentsQueryIter { scan }
@@ -234,9 +222,11 @@ impl VolumeCatalog {
         Item = Result<
             (
                 CommitMeta,
-                impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>), VolumeCatalogErr>>,
+                impl Iterator<
+                    Item = Result<(SegmentKey, SplinterRef<Bytes>), Culprit<VolumeCatalogErr>>,
+                >,
             ),
-            VolumeCatalogErr,
+            Culprit<VolumeCatalogErr>,
         >,
     > + '_ {
         let seqno = self.keyspace.instant();
@@ -244,22 +234,12 @@ impl VolumeCatalog {
         self.volumes
             .snapshot_at(seqno)
             .range(range)
-            .err_into::<VolumeCatalogErr>()
+            .err_into()
             .map_ok(move |(key, meta)| {
-                let key = CommitKey::try_read_from_bytes(&key).map_err(|err| {
-                    VolumeCatalogErr::DecodeErr {
-                        target: "CommitKey",
-                        source: err.into(),
-                        loc: Default::default(),
-                    }
-                })?;
-                let meta = CommitMeta::read_from_bytes(&meta).map_err(|err| {
-                    VolumeCatalogErr::DecodeErr {
-                        target: "CommitMeta",
-                        source: err.into(),
-                        loc: Default::default(),
-                    }
-                })?;
+                let key = CommitKey::try_read_from_bytes(&key)
+                    .or_into_culprit("failed to decode CommitKey")?;
+                let meta = CommitMeta::read_from_bytes(&meta)
+                    .or_into_culprit("failed to decode CommitMeta")?;
 
                 // scan segments for this commit
                 let segments = self.segments.snapshot_at(seqno).prefix(key);
@@ -277,13 +257,13 @@ pub struct VolumeCatalogBatch {
 }
 
 impl VolumeCatalogBatch {
-    pub fn insert_commit(&mut self, commit: Commit) -> Result<(), VolumeCatalogErr> {
+    pub fn insert_commit(&mut self, commit: Commit) -> Result<(), Culprit<VolumeCatalogErr>> {
         let commit_key = CommitKey::new(commit.vid().clone(), commit.meta().lsn());
 
         self.batch.insert(&self.volumes, &commit_key, commit.meta());
 
         let mut iter = commit.iter_offsets();
-        while let Some((sid, offsets)) = iter.next().transpose()? {
+        while let Some((sid, offsets)) = iter.try_next().or_into_ctx()? {
             let key = SegmentKey::new(commit_key.clone(), sid.clone());
             self.batch.insert(&self.segments, key, offsets.inner());
         }
@@ -296,7 +276,7 @@ impl VolumeCatalogBatch {
         vid: VolumeId,
         snapshot: CommitMeta,
         segments: Vec<SegmentInfo>,
-    ) -> Result<(), VolumeCatalogErr> {
+    ) -> Result<(), Culprit<VolumeCatalogErr>> {
         let commit_key = CommitKey::new(vid, snapshot.lsn());
 
         self.batch.insert(&self.volumes, &commit_key, &snapshot);
@@ -307,7 +287,7 @@ impl VolumeCatalogBatch {
         Ok(())
     }
 
-    pub fn commit(self) -> Result<(), VolumeCatalogErr> {
+    pub fn commit(self) -> Result<(), Culprit<VolumeCatalogErr>> {
         self.batch.commit()?;
         Ok(())
     }
@@ -321,15 +301,11 @@ impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> SegmentsQueryI
     fn next_inner(
         &mut self,
         entry: Result<(Slice, Slice), lsm_tree::Error>,
-    ) -> Result<(SegmentKey, SplinterRef<Bytes>), VolumeCatalogErr> {
+    ) -> Result<(SegmentKey, SplinterRef<Bytes>), Culprit<VolumeCatalogErr>> {
         let (key, value) = entry?;
         let key =
-            SegmentKey::try_read_from_bytes(&key).map_err(|err| VolumeCatalogErr::DecodeErr {
-                target: "SegmentKey",
-                source: err.into(),
-                loc: Default::default(),
-            })?;
-        let val = SplinterRef::from_bytes(Bytes::from(value))?;
+            SegmentKey::try_read_from_bytes(&key).or_into_culprit("failed to decode SegmentKey")?;
+        let val = SplinterRef::from_bytes(Bytes::from(value)).or_into_ctx()?;
         Ok((key, val))
     }
 }
@@ -337,7 +313,7 @@ impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> SegmentsQueryI
 impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> Iterator
     for SegmentsQueryIter<I>
 {
-    type Item = Result<(SegmentKey, SplinterRef<Bytes>), VolumeCatalogErr>;
+    type Item = Result<(SegmentKey, SplinterRef<Bytes>), Culprit<VolumeCatalogErr>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.scan.next().map(|entry| self.next_inner(entry))

@@ -1,19 +1,14 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, io};
 
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use graft_core::{
-    gid::{GidParseErr, VolumeId},
-    lsn::LSN,
-    page::PageSizeErr,
-    page_offset::PageOffset,
-};
+use culprit::Culprit;
+use graft_core::{gid::GidParseErr, page::PageSizeErr};
 use graft_proto::common::v1::{GraftErr, GraftErrCode};
 use splinter::DecodeErr;
 use thiserror::Error;
-use trackerr::{format_location_stack, summarize_location_stack, CallerLocation, LocationStack};
 
 use crate::{
     api::response::ProtoResponse,
@@ -21,121 +16,93 @@ use crate::{
     volume::{catalog::VolumeCatalogErr, store::VolumeStoreErr, updater::UpdateErr},
 };
 
-#[derive(Error)]
-pub enum ApiErr {
-    #[error("invalid request body: {0}")]
-    InvalidRequestBody(String, CallerLocation),
+pub struct ApiErr(Culprit<ApiErrCtx>);
+
+impl From<Culprit<ApiErrCtx>> for ApiErr {
+    #[inline]
+    fn from(value: Culprit<ApiErrCtx>) -> Self {
+        Self(value)
+    }
+}
+
+impl<T: Into<ApiErrCtx>> From<T> for ApiErr {
+    #[inline]
+    #[track_caller]
+    fn from(value: T) -> Self {
+        Self(Culprit::new(value.into()))
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ApiErrCtx {
+    #[error("invalid request body")]
+    InvalidRequestBody,
 
     #[error("failed to parse id")]
-    GidParseErr(#[from] GidParseErr, #[implicit] CallerLocation),
+    GidParseErr(#[from] GidParseErr),
 
     #[error("invalid page")]
-    PageSizeErr(#[from] PageSizeErr, #[implicit] CallerLocation),
+    PageSizeErr(#[from] PageSizeErr),
 
-    #[error("duplicate page offset detected: {0}")]
-    DuplicatePageOffset(PageOffset, CallerLocation),
+    #[error("duplicate page offset")]
+    DuplicatePageOffset,
 
     #[error("failed to parse offsets")]
-    OffsetsDecodeErr(#[from] DecodeErr, #[implicit] CallerLocation),
+    OffsetsDecodeErr(#[from] DecodeErr),
 
     #[error("catalog error")]
-    CatalogErr(#[from] VolumeCatalogErr, #[implicit] CallerLocation),
+    CatalogErr(#[from] VolumeCatalogErr),
 
     #[error("volume store error")]
-    VolumeStoreErr(#[from] VolumeStoreErr, #[implicit] CallerLocation),
+    VolumeStoreErr(#[from] VolumeStoreErr),
 
-    #[error("failed to load snapshot for volume {0} at lsn {1:?}")]
-    SnapshotMissing(VolumeId, Option<LSN>, CallerLocation),
+    #[error("failed to load snapshot for volume")]
+    SnapshotMissing,
 
     #[error("io error")]
-    IoErr(#[from] std::io::Error, #[implicit] CallerLocation),
+    IoErr(io::ErrorKind),
 
     #[error("failed to load segment")]
-    SegmentValidationErr(#[from] SegmentValidationErr, #[implicit] CallerLocation),
+    SegmentValidationErr(#[from] SegmentValidationErr),
 
-    #[error(
-        "commit rejected for volume {vid}: snapshot lsn {snapshot:?} is out of sync with latest lsn {latest:?}"
-    )]
-    CommitSnapshotOutOfDate {
-        vid: VolumeId,
-        snapshot: Option<LSN>,
-        latest: Option<LSN>,
-        location: CallerLocation,
-    },
+    #[error("volume commit rejected")]
+    RejectedCommit,
 
     #[error("graft client request failed")]
-    ClientErr(#[from] graft_client::ClientErr, #[implicit] CallerLocation),
+    ClientErr(#[from] graft_client::ClientErr),
 }
 
-impl From<UpdateErr> for ApiErr {
+impl From<io::Error> for ApiErrCtx {
+    fn from(error: io::Error) -> Self {
+        Self::IoErr(error.kind())
+    }
+}
+
+impl From<UpdateErr> for ApiErrCtx {
     fn from(value: UpdateErr) -> Self {
         match value {
-            UpdateErr::CatalogErr(err, loc) => ApiErr::CatalogErr(err, loc),
-            UpdateErr::StoreErr(err, loc) => ApiErr::VolumeStoreErr(err, loc),
-            UpdateErr::ClientErr(err, loc) => ApiErr::ClientErr(err, loc),
-        }
-    }
-}
-
-impl LocationStack for ApiErr {
-    fn location(&self) -> &CallerLocation {
-        use ApiErr::*;
-        match self {
-            InvalidRequestBody(_, loc)
-            | GidParseErr(_, loc)
-            | PageSizeErr(_, loc)
-            | DuplicatePageOffset(_, loc)
-            | OffsetsDecodeErr(_, loc)
-            | CatalogErr(_, loc)
-            | VolumeStoreErr(_, loc)
-            | SnapshotMissing(_, _, loc)
-            | IoErr(_, loc)
-            | SegmentValidationErr(_, loc)
-            | CommitSnapshotOutOfDate { location: loc, .. }
-            | ClientErr(_, loc) => loc,
-        }
-    }
-
-    fn next(&self) -> Option<&dyn LocationStack> {
-        use ApiErr::*;
-        match self {
-            GidParseErr(err, _) => Some(err),
-            PageSizeErr(err, _) => Some(err),
-            OffsetsDecodeErr(err, _) => Some(err),
-            CatalogErr(err, _) => Some(err),
-            VolumeStoreErr(err, _) => Some(err),
-            SegmentValidationErr(err, _) => Some(err),
-            ClientErr(err, _) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl Debug for ApiErr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if f.alternate() {
-            summarize_location_stack(f, self)
-        } else {
-            format_location_stack(f, self)
+            UpdateErr::CatalogErr(err) => Self::CatalogErr(err),
+            UpdateErr::StoreErr(err) => Self::VolumeStoreErr(err),
+            UpdateErr::ClientErr(err) => Self::ClientErr(err),
         }
     }
 }
 
 impl IntoResponse for ApiErr {
     fn into_response(self) -> Response {
-        use ApiErr::*;
+        use ApiErrCtx::*;
 
-        tracing::error!(error = ?self, "api error");
+        tracing::error!(culprit = ?self.0, "api error");
 
-        let (status, code) = match self {
-            InvalidRequestBody(_, _) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            GidParseErr(_, _) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
-            DuplicatePageOffset(_, _) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
-            OffsetsDecodeErr(_, _) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
-            SnapshotMissing(_, _, _) => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
+        let (status, code) = match self.0.ctx() {
+            InvalidRequestBody => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            GidParseErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
+            DuplicatePageOffset => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
+            OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
+            SnapshotMissing => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, GraftErrCode::Client),
         };
-        let message = self.to_string();
+        let message = self.0.ctx().to_string();
 
         (
             status,

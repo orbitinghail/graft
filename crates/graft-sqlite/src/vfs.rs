@@ -1,3 +1,6 @@
+// TODO: remove this once the vfs is implemented
+#![allow(unused)]
+
 use sqlite_plugin::{
     flags::{AccessFlags, OpenOpts},
     vfs::{Vfs, VfsHandle, VfsResult},

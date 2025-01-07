@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-trackerr = { path = "../trackerr" }
-
+culprit = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
 foldhash = { workspace = true }

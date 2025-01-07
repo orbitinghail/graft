@@ -1,3 +1,4 @@
+use culprit::{Result, ResultExt};
 use std::sync::Arc;
 
 use graft_core::{
@@ -35,7 +36,11 @@ impl ReadTxn {
     /// Read a page from the snapshot
     pub fn read(&self, offset: PageOffset) -> Result<Page, ClientErr> {
         if let Some(snapshot) = &self.snapshot {
-            match self.storage.read(&self.vid, offset, snapshot.lsn())? {
+            match self
+                .storage
+                .read(&self.vid, offset, snapshot.lsn())
+                .or_into_ctx()?
+            {
                 PageValue::Available(page) => Ok(page),
                 PageValue::Pending => todo!("download page from remote"),
             }
@@ -88,7 +93,7 @@ impl WriteTxn {
     pub fn commit(self) -> Result<ReadTxn, ClientErr> {
         let Self { read_txn, memtable } = self;
         let ReadTxn { vid, snapshot, storage } = read_txn;
-        let snapshot = storage.commit(&vid, snapshot, memtable)?;
+        let snapshot = storage.commit(&vid, snapshot, memtable).or_into_ctx()?;
         Ok(ReadTxn::new(vid, Some(snapshot), storage))
     }
 }
