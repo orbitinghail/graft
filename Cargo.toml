@@ -52,14 +52,3 @@ hashbrown = { version = "0.15" }
 rand = { version = "0.8" }
 static_assertions = "1.1"
 assert_matches = "1.5"
-
-[workspace.cargo-features-manager.keep]
-fjall = ["bytes"]
-lsm-tree = ["bytes"]
-graft-core = ["testutil"]
-tracing-subscriber = ["fmt", "env-filter"]
-object_store = ["aws"]
-axum = ["http2"]
-tower-http = ["compression-full"]
-reqwest = ["brotli"]
-graft-sqlite = ["dynamic", "static"]
