@@ -8,6 +8,7 @@ lto = true
 codegen-units = 1
 
 [workspace.dependencies]
+antithesis_sdk = "0.2"
 culprit = { version = "0.3" }
 bytes = { version = "1.8" }
 prost = { version = "0.13" }

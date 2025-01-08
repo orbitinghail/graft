@@ -1,5 +1,6 @@
 use std::{fs::exists, sync::Arc, time::Duration};
 
+use antithesis_sdk::antithesis_init;
 use futures::FutureExt;
 use graft_server::{
     api::{
@@ -43,6 +44,7 @@ impl Default for Config {
 
 #[tokio::main]
 async fn main() {
+    antithesis_init();
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .with_span_events(FmtSpan::CLOSE)

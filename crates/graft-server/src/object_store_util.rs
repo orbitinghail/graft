@@ -31,6 +31,7 @@ impl ObjectStoreConfig {
             ObjectStoreConfig::Fs { root } => Ok(Arc::new(LocalFileSystem::new_with_prefix(root)?)),
             ObjectStoreConfig::S3Compatable { bucket, prefix } => {
                 let store = object_store::aws::AmazonS3Builder::from_env()
+                    .with_allow_http(true)
                     .with_bucket_name(bucket)
                     .build()?;
                 if let Some(prefix) = prefix {
