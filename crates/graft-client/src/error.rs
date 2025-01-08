@@ -13,14 +13,20 @@ pub enum ClientErr {
     #[error("request failed: {0}")]
     RequestErr(#[from] reqwest::Error),
 
-    #[error("failed to parse response: {0}")]
-    ResponseParseErr(#[from] prost::DecodeError),
+    #[error("failed to decode protobuf message")]
+    ProtobufDecodeErr,
 
     #[error("failed to parse splinter: {0}")]
     SplinterParseErr(#[from] splinter::DecodeErr),
 
     #[error("local storage error: {0}")]
     StorageErr(#[from] storage::StorageErr),
+}
+
+impl From<prost::DecodeError> for ClientErr {
+    fn from(_: prost::DecodeError) -> Self {
+        ClientErr::ProtobufDecodeErr
+    }
 }
 
 impl ClientErr {

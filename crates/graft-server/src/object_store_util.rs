@@ -1,6 +1,8 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
-use object_store::{memory::InMemory, path::Path, prefix::PrefixStore, ObjectStore};
+use object_store::{
+    local::LocalFileSystem, memory::InMemory, path::Path, prefix::PrefixStore, ObjectStore,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -9,6 +11,9 @@ pub enum ObjectStoreConfig {
     /// In memory object store
     #[default]
     Memory,
+
+    /// On disk object store
+    Fs { root: PathBuf },
 
     /// S3 compatible object store
     /// Can load most config and secrets from environment variables
@@ -23,6 +28,7 @@ impl ObjectStoreConfig {
     pub fn build(self) -> object_store::Result<Arc<dyn ObjectStore>> {
         match self {
             ObjectStoreConfig::Memory => Ok(Arc::new(InMemory::new())),
+            ObjectStoreConfig::Fs { root } => Ok(Arc::new(LocalFileSystem::new_with_prefix(root)?)),
             ObjectStoreConfig::S3Compatable { bucket, prefix } => {
                 let store = object_store::aws::AmazonS3Builder::from_env()
                     .with_bucket_name(bucket)

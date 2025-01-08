@@ -93,6 +93,8 @@ pub fn closed_segment_size(volumes: usize, pages: PageCount) -> ByteUnit {
 pub enum SegmentValidationErr {
     #[error("segment must be smaller than {} bytes", SEGMENT_MAX_SIZE)]
     TooLarge,
+    #[error("segment is too small")]
+    TooSmall,
     #[error("corrupt segment footer")]
     CorruptFooter(ZerocopyErr),
     #[error("invalid magic number")]
@@ -125,7 +127,9 @@ impl<'a> ClosedSegment<'a> {
             return Err(Culprit::new(SegmentValidationErr::Magic));
         }
 
-        let (page_data, index_data) = data.split_at(data.len() - footer.index_size().as_usize());
+        let (page_data, index_data) = data
+            .split_at_checked(data.len() - footer.index_size().as_usize())
+            .ok_or_else(|| Culprit::new(SegmentValidationErr::TooSmall))?;
 
         // load the index
         let index = SegmentIndex::from_bytes(index_data, footer.volumes())

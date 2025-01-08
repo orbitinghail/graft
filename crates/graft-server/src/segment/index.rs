@@ -44,7 +44,10 @@ pub struct SegmentIndex<'a> {
 impl<'a> SegmentIndex<'a> {
     pub fn from_bytes(data: &'a [u8], volumes: usize) -> Result<Self, ZerocopyErr> {
         let volume_index_size = volumes * size_of::<VolumeMeta>();
-        assert!(data.len() >= volume_index_size);
+        assert!(
+            data.len() >= volume_index_size,
+            "segment must be at least as long as the volume index"
+        );
         let (volume_index, page_offsets) = data.split_at(volume_index_size);
         let volume_index = <[VolumeMeta]>::try_ref_from_bytes(volume_index)?;
         let page_offsets = <[PageOffset]>::try_ref_from_bytes(page_offsets)?;

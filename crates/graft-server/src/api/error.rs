@@ -96,11 +96,11 @@ impl IntoResponse for ApiErr {
 
         let (status, code) = match self.0.ctx() {
             InvalidRequestBody => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            GidParseErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
-            DuplicatePageOffset => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
-            OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Server),
+            GidParseErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            DuplicatePageOffset => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             SnapshotMissing => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
-            _ => (StatusCode::INTERNAL_SERVER_ERROR, GraftErrCode::Client),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, GraftErrCode::Server),
         };
         let message = self.0.ctx().to_string();
 

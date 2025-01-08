@@ -1,5 +1,9 @@
 [objectstore]
 type = "memory"
+
+# type = "fs"
+# root = "/tmp/graft"
+
 # type = "s3_compatable"
 # bucket = "graft-primary"
 # prefix = "metastore"

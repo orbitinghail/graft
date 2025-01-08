@@ -207,6 +207,9 @@ pub enum CommitValidationErr {
     #[error("corrupt commit header: {0}")]
     Corrupt(#[from] ZerocopyErr),
 
+    #[error("serialized commit is too short")]
+    InvalidLength,
+
     #[error("invalid magic number")]
     Magic,
 }
@@ -227,6 +230,9 @@ pub struct Commit {
 
 impl Commit {
     pub fn from_bytes(mut data: Bytes) -> Result<Self, Culprit<CommitValidationErr>> {
+        if data.len() < size_of::<CommitHeader>() {
+            return Err(Culprit::new(CommitValidationErr::InvalidLength));
+        }
         let header = data.split_to(size_of::<CommitHeader>());
         let header = CommitHeader::try_read_from_bytes(&header)?;
 
@@ -262,6 +268,9 @@ pub enum OffsetsValidationErr {
     #[error("corrupt offsets header: {0}")]
     Corrupt(#[from] ZerocopyErr),
 
+    #[error("invalid header size")]
+    InvalidHeaderSize,
+
     #[error("invalid splinter: {0}")]
     SplinterDecodeErr(#[from] splinter::DecodeErr),
 }
@@ -291,7 +300,9 @@ impl<'a> OffsetsIter<'a> {
         let (header, rest) = OffsetsHeader::try_ref_from_prefix(self.offsets)?;
 
         // read the splinter
-        let (splinter, rest) = rest.split_at(header.size.get() as usize);
+        let (splinter, rest) = rest
+            .split_at_checked(header.size.get() as usize)
+            .ok_or_else(|| Culprit::new(OffsetsValidationErr::InvalidHeaderSize))?;
         let splinter = SplinterRef::from_bytes(splinter).or_into_ctx()?;
 
         // advance the offsets
