@@ -10,7 +10,7 @@ codegen-units = 1
 [workspace.dependencies]
 antithesis_sdk = "0.2"
 culprit = { version = "0.3" }
-bytes = { version = "1.8" }
+bytes = { version = "1.9" }
 prost = { version = "0.13" }
 anyhow = { version = "1.0" }
 tracing = { version = "0.1" }
@@ -20,9 +20,9 @@ memmap2 = "0.9"
 rlimit = "0.10"
 nix = "0.29"
 prost-types = "0.13"
-axum = "0.7"
+axum = "0.8"
 tower-http = "0.6"
-itertools = { version = "0.13" }
+itertools = { version = "0.14" }
 reqwest = { version = "0.12" }
 tokio = "1"
 twelf = { version = "0.15", default-features = false }
@@ -31,17 +31,17 @@ futures = { version = "0.3" }
 url = { version = "2.5" }
 serde = { version = "1.0" }
 log = "0.4"
-tempfile = "3.12"
+tempfile = "3.15"
 zerocopy = "0.8"
 tokio-util = "0.7"
-tryiter = "0.3.0"
-fjall = "2.4"
-lsm-tree = "2.4"
+tryiter = "0.5"
+fjall = "2.5"
+lsm-tree = "2.5"
 env_logger = "0.11"
 clap = "4.5"
 bindgen = { version = "0.71", default-features = false }
 measured = "0.0.22"
-axum-test = "16.2"
+axum-test = "17.0"
 tracing-test = "0.2"
 rusqlite = "0.32"
 either = { version = "1.13" }

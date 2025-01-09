@@ -3,6 +3,7 @@ use std::{
     ops::{Range, RangeBounds},
 };
 
+use fjall::Slice;
 use graft_core::{
     lsn::{LSNRangeExt, LSN},
     {SegmentId, VolumeId},
@@ -90,6 +91,12 @@ impl SegmentKey {
 impl AsRef<[u8]> for SegmentKey {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+impl Into<Slice> for SegmentKey {
+    fn into(self) -> Slice {
+        self.as_bytes().into()
     }
 }
 

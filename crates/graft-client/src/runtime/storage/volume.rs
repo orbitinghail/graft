@@ -1,3 +1,4 @@
+use fjall::Slice;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 #[derive(
@@ -39,5 +40,11 @@ impl VolumeConfig {
 impl AsRef<[u8]> for VolumeConfig {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+impl Into<Slice> for VolumeConfig {
+    fn into(self) -> Slice {
+        self.as_bytes().into()
     }
 }

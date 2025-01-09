@@ -154,7 +154,7 @@ impl Storage {
     /// Add a new volume to the storage. This function will overwrite any
     /// existing configuration for the volume.
     pub fn add_volume(&self, vid: &VolumeId, config: VolumeConfig) -> Result<()> {
-        Ok(self.volumes.insert(vid, config)?)
+        Ok(self.volumes.insert(vid.as_bytes(), config)?)
     }
 
     pub fn query_volumes(
@@ -314,7 +314,7 @@ impl Storage {
             page_key.set_offset(offset);
             max_offset = max_offset.max(offset);
             offsets.insert(offset.into());
-            batch.insert(&self.pages, page_key.as_bytes(), page);
+            batch.insert(&self.pages, page_key.as_bytes(), Bytes::from(page));
         }
 
         // write out a new volume snapshot

@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     extract::{FromRequest, Request},
     http::{header, HeaderValue},
 };
@@ -12,7 +11,6 @@ pub const CONTENT_TYPE_PROTOBUF: HeaderValue = HeaderValue::from_static("applica
 
 pub struct Protobuf<T>(pub T);
 
-#[async_trait]
 impl<S, T> FromRequest<S> for Protobuf<T>
 where
     S: Send + Sync,

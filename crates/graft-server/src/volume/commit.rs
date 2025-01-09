@@ -5,6 +5,7 @@ use std::{
 
 use bytes::{BufMut, Bytes, BytesMut};
 use culprit::{Culprit, ResultExt};
+use fjall::Slice;
 use graft_core::{
     gid::GidParseErr, lsn::LSN, page_count::PageCount, page_range::PageRange,
     zerocopy_err::ZerocopyErr, SegmentId, VolumeId,
@@ -160,6 +161,12 @@ impl AsRef<[u8]> for CommitMeta {
     }
 }
 
+impl Into<Slice> for CommitMeta {
+    fn into(self) -> Slice {
+        self.as_bytes().into()
+    }
+}
+
 impl From<Snapshot> for CommitMeta {
     fn from(snapshot: Snapshot) -> Self {
         Self::new(
@@ -253,8 +260,8 @@ impl Commit {
         &self.header.meta
     }
 
-    pub fn iter_offsets(&self) -> OffsetsIter<'_> {
-        OffsetsIter { offsets: &self.offsets }
+    pub fn iter_offsets(&self) -> OffsetsIter {
+        OffsetsIter { offsets: self.offsets.clone() }
     }
 
     pub fn into_payload(self) -> PutPayload {
@@ -266,10 +273,10 @@ impl Commit {
 #[derive(Debug, Error)]
 pub enum OffsetsValidationErr {
     #[error("corrupt offsets header: {0}")]
-    Corrupt(#[from] ZerocopyErr),
+    CorruptHeader(#[from] ZerocopyErr),
 
-    #[error("invalid header size")]
-    InvalidHeaderSize,
+    #[error("invalid commit size")]
+    InvalidSize,
 
     #[error("invalid splinter: {0}")]
     SplinterDecodeErr(#[from] splinter::DecodeErr),
@@ -279,41 +286,50 @@ impl<A, S, V> From<ConvertError<A, S, V>> for OffsetsValidationErr {
     #[inline]
     #[track_caller]
     fn from(value: ConvertError<A, S, V>) -> Self {
-        Self::Corrupt(value.into())
+        Self::CorruptHeader(value.into())
     }
 }
 
-pub struct OffsetsIter<'a> {
-    offsets: &'a [u8],
+pub struct OffsetsIter {
+    offsets: Bytes,
 }
 
-impl<'a> OffsetsIter<'a> {
+impl OffsetsIter {
     #[allow(clippy::type_complexity)]
     fn next_inner(
         &mut self,
-    ) -> Result<Option<(&'a SegmentId, SplinterRef<&'a [u8]>)>, Culprit<OffsetsValidationErr>> {
+    ) -> Result<Option<(SegmentId, SplinterRef<Bytes>)>, Culprit<OffsetsValidationErr>> {
         if self.offsets.is_empty() {
             return Ok(None);
         }
 
         // read the next header
-        let (header, rest) = OffsetsHeader::try_ref_from_prefix(self.offsets)?;
+        if self.offsets.len() < std::mem::size_of::<OffsetsHeader>() {
+            return Err(Culprit::new_with_note(
+                OffsetsValidationErr::InvalidSize,
+                "header size is larger than remaining offsets data",
+            ));
+        }
+        let header = self.offsets.split_to(std::mem::size_of::<OffsetsHeader>());
+        let header = OffsetsHeader::try_read_from_bytes(&header)?;
 
         // read the splinter
-        let (splinter, rest) = rest
-            .split_at_checked(header.size.get() as usize)
-            .ok_or_else(|| Culprit::new(OffsetsValidationErr::InvalidHeaderSize))?;
+        let splinter_len = header.size.get() as usize;
+        if self.offsets.len() < splinter_len {
+            return Err(Culprit::new_with_note(
+                OffsetsValidationErr::InvalidSize,
+                "splinter size is larger than remaining offsets data",
+            ));
+        }
+        let splinter = self.offsets.split_to(splinter_len);
         let splinter = SplinterRef::from_bytes(splinter).or_into_ctx()?;
 
-        // advance the offsets
-        self.offsets = rest;
-
-        Ok(Some((&header.sid, splinter)))
+        Ok(Some((header.sid, splinter)))
     }
 }
 
-impl<'a> Iterator for OffsetsIter<'a> {
-    type Item = Result<(&'a SegmentId, SplinterRef<&'a [u8]>), Culprit<OffsetsValidationErr>>;
+impl Iterator for OffsetsIter {
+    type Item = Result<(SegmentId, SplinterRef<Bytes>), Culprit<OffsetsValidationErr>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_inner().transpose()

@@ -15,7 +15,7 @@ use graft_proto::common::v1::SegmentInfo;
 use serde::{Deserialize, Serialize};
 use splinter::SplinterRef;
 use tryiter::TryIteratorExt;
-use zerocopy::{ConvertError, FromBytes, SizeError, TryFromBytes};
+use zerocopy::{ConvertError, FromBytes, IntoBytes, SizeError, TryFromBytes};
 
 use super::{
     commit::{Commit, CommitMeta, OffsetsValidationErr},
@@ -260,12 +260,16 @@ impl VolumeCatalogBatch {
     pub fn insert_commit(&mut self, commit: Commit) -> Result<(), Culprit<VolumeCatalogErr>> {
         let commit_key = CommitKey::new(commit.vid().clone(), commit.meta().lsn());
 
-        self.batch.insert(&self.volumes, &commit_key, commit.meta());
+        self.batch.insert(
+            &self.volumes,
+            commit_key.as_bytes(),
+            commit.meta().as_bytes(),
+        );
 
         let mut iter = commit.iter_offsets();
         while let Some((sid, offsets)) = iter.try_next().or_into_ctx()? {
-            let key = SegmentKey::new(commit_key.clone(), sid.clone());
-            self.batch.insert(&self.segments, key, offsets.inner());
+            let key = SegmentKey::new(commit_key.clone(), sid);
+            self.batch.insert(&self.segments, key, offsets.into_inner());
         }
 
         Ok(())
@@ -279,7 +283,8 @@ impl VolumeCatalogBatch {
     ) -> Result<(), Culprit<VolumeCatalogErr>> {
         let commit_key = CommitKey::new(vid, snapshot.lsn());
 
-        self.batch.insert(&self.volumes, &commit_key, &snapshot);
+        self.batch
+            .insert(&self.volumes, commit_key.as_bytes(), snapshot);
         for segment in segments {
             let key = SegmentKey::new(commit_key.clone(), segment.sid.try_into()?);
             self.batch.insert(&self.segments, key, segment.offsets);

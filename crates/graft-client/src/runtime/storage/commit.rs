@@ -1,3 +1,4 @@
+use fjall::Slice;
 use graft_core::{lsn::LSN, VolumeId};
 use zerocopy::{big_endian::U64, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
@@ -28,5 +29,11 @@ impl CommitKey {
 impl AsRef<[u8]> for CommitKey {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+impl Into<Slice> for CommitKey {
+    fn into(self) -> Slice {
+        self.as_bytes().into()
     }
 }

@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use fjall::Slice;
 use graft_core::{lsn::LSN, page_count::PageCount, VolumeId};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
@@ -62,6 +63,12 @@ impl SnapshotKey {
     }
 }
 
+impl Into<Slice> for SnapshotKey {
+    fn into(self) -> Slice {
+        self.as_bytes().into()
+    }
+}
+
 impl AsRef<[u8]> for SnapshotKey {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
@@ -106,6 +113,12 @@ impl Debug for Snapshot {
 impl AsRef<[u8]> for Snapshot {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+impl Into<Slice> for Snapshot {
+    fn into(self) -> Slice {
+        self.as_bytes().into()
     }
 }
 

@@ -167,7 +167,7 @@ async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>
 
             // update the cache with the new snapshot
             let snapshot_bytes = snapshot.encode_to_vec();
-            ctx.volumes.insert(vid, &snapshot_bytes)?;
+            ctx.volumes.insert(vid.as_ref(), snapshot_bytes)?;
 
             Ok(Some(snapshot))
         }
@@ -176,12 +176,12 @@ async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>
 }
 
 fn remove(ctx: &Context, vid: &VolumeId) -> Result<()> {
-    ctx.volumes.remove(vid)?;
+    ctx.volumes.remove(vid.as_ref())?;
     // remove all pages for the volume
     let prefix = format!("{}/", vid.pretty());
     let mut scan = ctx.pages.prefix(&prefix);
     while let Some((key, _)) = scan.try_next()? {
-        ctx.pages.remove(&key)?;
+        ctx.pages.remove(key)?;
     }
     Ok(())
 }
@@ -216,7 +216,8 @@ async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> Result<
         if let Some(p) = pages.into_iter().next() {
             assert_eq!(offset, p.offset(), "unexpected page: {:?}", p);
             let page = p.page().or_into_ctx()?;
-            ctx.pages.insert(page_key(vid, p.offset()), &page)?;
+            ctx.pages
+                .insert(page_key(vid, p.offset()), Bytes::from(page.clone()))?;
             return Ok(page);
         }
     }
@@ -259,8 +260,8 @@ async fn write_page(ctx: &Context, vid: &VolumeId, offset: PageOffset, data: Byt
         .or_into_ctx()?;
 
     // Update the cache with the new page and snapshot
-    ctx.volumes.insert(vid, snapshot.encode_to_vec())?;
-    ctx.pages.insert(page_key(vid, offset), &data)?;
+    ctx.volumes.insert(vid.as_ref(), snapshot.encode_to_vec())?;
+    ctx.pages.insert(page_key(vid, offset), data)?;
 
     Ok(())
 }

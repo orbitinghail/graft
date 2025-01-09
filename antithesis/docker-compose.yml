@@ -39,7 +39,6 @@ services:
     post_start:
       - user: "root"
         command: "mkdir -p /data/graft-primary"
-
     ports:
       - "9000:9000"
       - "9001:9001"
