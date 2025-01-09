@@ -13,6 +13,8 @@ ENV RUSTFLAGS=${INSTRUMENTED:+"-Ccodegen-units=1 -Cpasses=sancov-module -Cllvm-a
 ENV RUSTFLAGS=${RUSTFLAGS:-"-Ctarget-cpu=native -Clink-arg=-fuse-ld=mold"}
 ENV PROFILE=${INSTRUMENTED:+"--profile dev"}
 ENV PROFILE=${PROFILE:-"--release"}
+ENV TARGET_DIR=${INSTRUMENTED:+"target/debug"}
+ENV TARGET_DIR=${TARGET_DIR:-"target/release"}
 
 FROM base AS planner
 WORKDIR /app
@@ -31,7 +33,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     cargo build --bins ${PROFILE}
-RUN [ -n "${INSTRUMENTED}" ] && mv target/release /artifacts || mv target/debug /artifacts
+RUN mv ${TARGET_DIR} /artifacts
 
 FROM gcr.io/distroless/cc:debug AS runtime
 ARG INSTRUMENTED
