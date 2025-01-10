@@ -25,11 +25,12 @@ tower-http = "0.6"
 itertools = { version = "0.14" }
 reqwest = { version = "0.12" }
 tokio = "1"
-twelf = { version = "0.15", default-features = false }
-thiserror = { git = "https://github.com/carlsverre/thiserror", branch = "feat-implicit-fields" }
+config = { version = "0.15", features = ["toml"]}
+thiserror = { version = "2.0" }
 futures = { version = "0.3" }
 url = { version = "2.5" }
 serde = { version = "1.0" }
+serde_json = { version = "1.0" }
 log = "0.4"
 tempfile = "3.15"
 zerocopy = "0.8"

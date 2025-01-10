@@ -1,6 +1,7 @@
-use std::{fs::exists, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use antithesis_sdk::antithesis_init;
+use config::Config;
 use futures::{select, FutureExt};
 use graft_client::ClientBuilder;
 use graft_core::byte_unit::ByteUnit;
@@ -26,14 +27,15 @@ use graft_server::{
     },
 };
 use rlimit::Resource;
+use serde::Deserialize;
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter};
-use twelf::{config, Layer};
 
-#[config]
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Config {
+#[serde(default)]
+struct PagestoreConfig {
     catalog: VolumeCatalogConfig,
     cache: DiskCacheConfig,
     objectstore: ObjectStoreConfig,
@@ -45,7 +47,7 @@ struct Config {
     write_concurrency: usize,
 }
 
-impl Default for Config {
+impl Default for PagestoreConfig {
     fn default() -> Self {
         Self {
             catalog: Default::default(),
@@ -73,7 +75,12 @@ impl Default for Config {
 async fn main() {
     antithesis_init();
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env()
+                .expect("failed to initialize env filter"),
+        )
         .with_span_events(FmtSpan::CLOSE)
         .finish()
         .try_init()
@@ -84,18 +91,14 @@ async fn main() {
 
     let mut registry = Registry::default();
 
-    let mut layers = vec![
-        Layer::DefaultTrait,
-        Layer::Env(Some("PAGESTORE_".to_string())),
-    ];
-
-    if exists("pagestore.toml").is_ok_and(|p| p) {
-        // insert the toml layer at the second position, after the default trait
-        // and before loading env vars
-        layers.insert(1, Layer::Toml("pagestore.toml".into()));
-    }
-
-    let config = Config::with_layers(&layers).expect("failed to load configuration");
+    let config = Config::builder()
+        .add_source(config::File::with_name("pagestore").required(false))
+        .add_source(config::Environment::with_prefix("PAGESTORE").separator("_"))
+        .build()
+        .expect("failed to load config");
+    let config: PagestoreConfig = config
+        .try_deserialize()
+        .expect("failed to deserialize config");
 
     tracing::info!(?config, "loaded configuration");
 
@@ -109,7 +112,8 @@ async fn main() {
     let mut supervisor = Supervisor::default();
 
     let cache = Arc::new(DiskCache::new(config.cache).expect("failed to create disk cache"));
-    let catalog = VolumeCatalog::open_temporary().unwrap();
+    let catalog =
+        VolumeCatalog::open_config(config.catalog).expect("failed to open volume catalog");
     let loader = SegmentLoader::new(store.clone(), cache.clone(), config.download_concurrency);
     let updater = VolumeCatalogUpdater::new(config.catalog_update_concurrency);
 

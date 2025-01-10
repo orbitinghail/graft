@@ -42,7 +42,7 @@ tempfile = { workspace = true }
 foldhash = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-twelf = { workspace = true, features = ["default_trait", "env", "toml"] }
+config = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }
 measured = { workspace = true }

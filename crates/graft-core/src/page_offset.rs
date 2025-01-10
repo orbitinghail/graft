@@ -5,6 +5,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use splinter::SPLINTER_MAX_VALUE;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::page_count::PageCount;
@@ -34,7 +35,7 @@ pub struct PageOffset(u32);
 
 impl PageOffset {
     pub const ZERO: Self = Self(0);
-    pub const MAX: Self = Self(u32::MAX - 1);
+    pub const MAX: Self = Self(SPLINTER_MAX_VALUE);
 
     #[inline]
     pub fn new(offset: u32) -> Self {

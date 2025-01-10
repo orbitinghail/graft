@@ -1,7 +1,16 @@
 services:
+  test_workload:
+    container_name: test_workload
+    hostname: test_workload
+    image: test_workload:latest
+    stop_signal: SIGKILL
+    networks:
+      basic-net:
+        ipv4_address: 10.20.20.20
+
   metastore:
     container_name: metastore
-    hostname: graft-metastore.fly.dev
+    hostname: metastore
     image: metastore:latest
     stop_signal: SIGINT
     ports:
@@ -17,7 +26,7 @@ services:
 
   pagestore:
     container_name: pagestore
-    hostname: graft-pagestore.fly.dev
+    hostname: pagestore
     image: pagestore:latest
     stop_signal: SIGINT
     ports:
@@ -30,6 +39,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=minio-secret
       - AWS_REGION=us-east-1
       - AWS_ENDPOINT=http://minio:9000
+      - PAGESTORE_METASTORE_ENDPOINT=http://metastore:3001
 
   minio:
     container_name: minio

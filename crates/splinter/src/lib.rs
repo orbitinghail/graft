@@ -12,7 +12,7 @@ mod util;
 #[cfg(test)]
 mod testutil;
 
-pub use splinter::{Splinter, SplinterRef};
+pub use splinter::{Splinter, SplinterRef, SPLINTER_MAX_VALUE};
 
 type Segment = u8;
 

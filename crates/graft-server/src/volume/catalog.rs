@@ -73,7 +73,7 @@ impl From<io::Error> for VolumeCatalogErr {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct VolumeCatalogConfig {
     /// path to the directory where the catalog will be stored
     /// if not provided, a temporary directory will be created

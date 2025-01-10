@@ -23,6 +23,8 @@ mod union;
 
 pub const SPLINTER_MAGIC: [u8; 2] = [0x57, 0x16];
 
+pub const SPLINTER_MAX_VALUE: u32 = (1 << 24) - 1;
+
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
 struct Header {

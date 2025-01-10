@@ -51,3 +51,10 @@ COPY --from=builder /artifacts/pagestore /pagestore
 COPY ./deploy/pagestore/pagestore.toml /pagestore.toml
 RUN ["sh", "-c", "mkdir /symbols && ln -s /pagestore /symbols/pagestore"]
 ENTRYPOINT ["/pagestore"]
+
+FROM runtime AS test_workload
+COPY --from=builder /artifacts/test_workload /test_workload
+COPY ./crates/graft-test/workloads /workloads
+COPY ./antithesis/workloads /opt/antithesis/test
+RUN ["sh", "-c", "mkdir /symbols && ln -s /test_workload /symbols/test_workload"]
+ENTRYPOINT ["sleep", "infinity"]

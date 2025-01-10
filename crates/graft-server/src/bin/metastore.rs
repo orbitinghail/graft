@@ -1,6 +1,7 @@
-use std::{fs::exists, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use antithesis_sdk::antithesis_init;
+use config::Config;
 use futures::FutureExt;
 use graft_server::{
     api::{
@@ -17,21 +18,22 @@ use graft_server::{
         updater::VolumeCatalogUpdater,
     },
 };
+use serde::Deserialize;
 use tokio::{net::TcpListener, select, signal::ctrl_c};
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter};
-use twelf::{config, Layer};
 
-#[config]
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Config {
+#[serde(default)]
+struct MetastoreConfig {
     catalog: VolumeCatalogConfig,
     objectstore: ObjectStoreConfig,
     port: u16,
     catalog_update_concurrency: usize,
 }
 
-impl Default for Config {
+impl Default for MetastoreConfig {
     fn default() -> Self {
         Self {
             catalog: Default::default(),
@@ -46,7 +48,12 @@ impl Default for Config {
 async fn main() {
     antithesis_init();
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env()
+                .expect("failed to initialize env filter"),
+        )
         .with_span_events(FmtSpan::CLOSE)
         .finish()
         .try_init()
@@ -55,18 +62,14 @@ async fn main() {
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
-    let mut layers = vec![
-        Layer::DefaultTrait,
-        Layer::Env(Some("METASTORE_".to_string())),
-    ];
-
-    if exists("metastore.toml").is_ok_and(|p| p) {
-        // insert the toml layer at the second position, after the default trait
-        // and before loading env vars
-        layers.insert(1, Layer::Toml("metastore.toml".into()));
-    }
-
-    let config = Config::with_layers(&layers).expect("failed to load configuration");
+    let config = Config::builder()
+        .add_source(config::File::with_name("metastore").required(false))
+        .add_source(config::Environment::with_prefix("METASTORE").separator("_"))
+        .build()
+        .expect("failed to load config");
+    let config: MetastoreConfig = config
+        .try_deserialize()
+        .expect("failed to deserialize config");
 
     tracing::info!(?config, "loaded configuration");
 

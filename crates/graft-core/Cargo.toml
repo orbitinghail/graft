@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+splinter = { path = "../splinter" }
+
 culprit = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
