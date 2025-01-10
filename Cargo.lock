@@ -1096,6 +1096,7 @@ checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 name = "graft-client"
 version = "0.1.0"
 dependencies = [
+ "antithesis_sdk",
  "bytes",
  "clap",
  "culprit",
@@ -1178,6 +1179,7 @@ dependencies = [
  "prost",
  "rlimit",
  "serde",
+ "serde_json",
  "splinter",
  "static_assertions",
  "tempfile",

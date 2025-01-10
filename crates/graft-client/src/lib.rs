@@ -1,9 +1,9 @@
 mod builder;
 mod error;
 mod metastore;
+mod net;
 mod pagestore;
 mod pair;
-mod request;
 
 pub mod runtime {
     pub mod handle;

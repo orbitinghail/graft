@@ -31,6 +31,7 @@ use serde::Deserialize;
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter};
+use url::Url;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -40,7 +41,7 @@ struct PagestoreConfig {
     cache: DiskCacheConfig,
     objectstore: ObjectStoreConfig,
     port: u16,
-    metastore: ClientBuilder,
+    metastore: Url,
 
     catalog_update_concurrency: usize,
     download_concurrency: usize,
@@ -61,9 +62,7 @@ impl Default for PagestoreConfig {
             },
             objectstore: Default::default(),
             port: 3000,
-            metastore: ClientBuilder {
-                endpoint: "http://localhost:3001".parse().unwrap(),
-            },
+            metastore: "http://localhost:3001".parse().unwrap(),
             catalog_update_concurrency: 16,
             download_concurrency: 16,
             write_concurrency: 16,
@@ -74,6 +73,8 @@ impl Default for PagestoreConfig {
 #[tokio::main]
 async fn main() {
     antithesis_init();
+    let running_in_antithesis = std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
@@ -82,6 +83,7 @@ async fn main() {
                 .expect("failed to initialize env filter"),
         )
         .with_span_events(FmtSpan::CLOSE)
+        .with_ansi(!running_in_antithesis)
         .finish()
         .try_init()
         .expect("failed to initialize tracing subscriber");
@@ -121,8 +123,7 @@ async fn main() {
     let (store_tx, store_rx) = mpsc::channel(8);
     let commit_bus = Bus::new(128);
 
-    let metastore = config
-        .metastore
+    let metastore = ClientBuilder::new(config.metastore)
         .build()
         .expect("failed to build metastore client");
 

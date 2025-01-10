@@ -21,6 +21,10 @@ pub async fn prost_request<Req: Message, Resp: Message + Default>(
     log::trace!("sending request: {:?}", req);
     let resp = req.send().await?;
     log::trace!("received response: {:?}", resp);
+    antithesis_sdk::assert_always_or_unreachable!(
+        !resp.status().is_server_error(),
+        "client requests should not return 5xx errors"
+    );
     let success = resp.status().is_success();
     let body = resp.bytes().await?;
     if success {

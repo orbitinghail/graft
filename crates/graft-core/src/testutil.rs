@@ -21,10 +21,12 @@ impl Distribution<Page> for Standard {
     }
 }
 
-impl Distribution<PageOffset> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PageOffset {
-        Uniform::new(0, u32::from(PageOffset::MAX))
-            .sample(rng)
-            .into()
+impl PageOffset {
+    pub fn test_random<R: Rng + ?Sized>(rng: &mut R, max: u32) -> Self {
+        assert!(
+            max <= u32::from(PageOffset::MAX),
+            "page offset out of bounds"
+        );
+        Self::new(Uniform::new(0, max).sample(rng))
     }
 }

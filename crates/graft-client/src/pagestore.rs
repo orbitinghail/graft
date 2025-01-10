@@ -13,20 +13,20 @@ use reqwest::Url;
 
 use crate::builder::ClientBuildErr;
 use crate::builder::ClientBuilder;
-use crate::request::prost_request;
+use crate::net::prost_request;
 use crate::ClientErr;
 
 #[derive(Debug, Clone)]
 pub struct PagestoreClient {
-    pub(crate) endpoint: Url,
-    pub(crate) http: reqwest::Client,
+    endpoint: Url,
+    http: reqwest::Client,
 }
 
 impl TryFrom<ClientBuilder> for PagestoreClient {
     type Error = Culprit<ClientBuildErr>;
 
     fn try_from(builder: ClientBuilder) -> Result<Self, Self::Error> {
-        let endpoint = builder.endpoint.join("pagestore/v1/")?;
+        let endpoint = builder.endpoint().join("pagestore/v1/")?;
         let http = builder.http()?;
         Ok(Self { endpoint, http })
     }

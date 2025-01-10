@@ -1,7 +1,6 @@
 use culprit::Culprit;
 use reqwest::Url;
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::ParseError;
 
@@ -26,19 +25,32 @@ impl From<reqwest::Error> for ClientBuildErr {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ClientBuilder {
     /// The root URL (without any trailing path)
-    pub endpoint: Url,
+    endpoint: Url,
+    reqwest: reqwest::ClientBuilder,
 }
 
 impl ClientBuilder {
     pub fn new(endpoint: Url) -> Self {
-        Self { endpoint }
+        Self {
+            endpoint,
+            reqwest: reqwest::Client::builder().brotli(true),
+        }
     }
 
-    pub(crate) fn http(&self) -> reqwest::Result<reqwest::Client> {
-        reqwest::Client::builder().brotli(true).build()
+    pub fn with_compression(mut self, enable: bool) -> Self {
+        self.reqwest = self.reqwest.brotli(enable);
+        self
+    }
+
+    pub(crate) fn http(self) -> reqwest::Result<reqwest::Client> {
+        self.reqwest.build()
+    }
+
+    pub(crate) fn endpoint(&self) -> &Url {
+        &self.endpoint
     }
 
     pub fn build<T: TryFrom<ClientBuilder, Error = Culprit<ClientBuildErr>>>(

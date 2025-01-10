@@ -42,6 +42,7 @@ tempfile = { workspace = true }
 foldhash = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 config = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }

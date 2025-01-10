@@ -8,6 +8,7 @@ graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 splinter = { path = "../splinter" }
 
+antithesis_sdk = { workspace = true }
 culprit = { workspace = true }
 bytes = { workspace = true }
 prost = { workspace = true }

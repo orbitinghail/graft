@@ -11,6 +11,7 @@ METASTORE_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "metastore:latest"
 PAGESTORE_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "pagestore:latest"
 CONFIG_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "config:latest"
 TEST_WORKLOAD_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "test_workload:latest"
+MINIO_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "minio:latest"
 
 metastore-image:
     docker build \
@@ -42,7 +43,15 @@ test-workload-image:
         -t {{TEST_WORKLOAD_ANTITHESIS_TAG}} \
         {{BUILD_ARGS}} .
 
-build-images: metastore-image pagestore-image test-workload-image
+minio-image:
+    docker build \
+        --platform {{DOCKER_PLATFORM}} \
+        --target minio \
+        -t minio \
+        -t {{MINIO_ANTITHESIS_TAG}} \
+        {{BUILD_ARGS}} .
+
+build-images: metastore-image pagestore-image test-workload-image minio-image
 
 antithesis-prep: antithesis-config-image
     just instrumented=1 build-images
@@ -50,6 +59,7 @@ antithesis-prep: antithesis-config-image
     docker push {{PAGESTORE_ANTITHESIS_TAG}}
     docker push {{CONFIG_ANTITHESIS_TAG}}
     docker push {{TEST_WORKLOAD_ANTITHESIS_TAG}}
+    docker push {{MINIO_ANTITHESIS_TAG}}
 
 antithesis-run: antithesis-prep
     antithesis-cli run \
@@ -62,5 +72,6 @@ antithesis-run: antithesis-prep
         --image='{{METASTORE_ANTITHESIS_TAG}}' \
         --image='{{PAGESTORE_ANTITHESIS_TAG}}' \
         --image='{{TEST_WORKLOAD_ANTITHESIS_TAG}}' \
+        --image='{{MINIO_ANTITHESIS_TAG}}' \
         --duration=15 \
         --email='carl@f0a.org'

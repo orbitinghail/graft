@@ -1,3 +1,5 @@
+metastore = "http://localhost:3001"
+
 [objectstore]
 type = "memory"
 
@@ -7,6 +9,3 @@ type = "memory"
 
 # type = "fs"
 # root = "/tmp/graft"
-
-[metastore]
-endpoint = "http://localhost:3001"

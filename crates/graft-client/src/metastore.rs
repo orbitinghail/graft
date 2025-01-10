@@ -15,20 +15,20 @@ use std::ops::RangeBounds;
 
 use crate::builder;
 use crate::error;
-use crate::request::prost_request;
+use crate::net::prost_request;
 
 #[derive(Debug, Clone)]
 pub struct MetastoreClient {
     /// The metastore root URL (without any trailing path)
-    pub(crate) endpoint: Url,
-    pub(crate) http: reqwest::Client,
+    endpoint: Url,
+    http: reqwest::Client,
 }
 
 impl TryFrom<builder::ClientBuilder> for MetastoreClient {
     type Error = Culprit<builder::ClientBuildErr>;
 
     fn try_from(builder: builder::ClientBuilder) -> Result<Self, Self::Error> {
-        let endpoint = builder.endpoint.join("metastore/v1/")?;
+        let endpoint = builder.endpoint().join("metastore/v1/")?;
         let http = builder.http()?;
         Ok(Self { endpoint, http })
     }

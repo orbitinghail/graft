@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use antithesis_sdk::{antithesis_init, assert_always};
+use antithesis_sdk::{antithesis_init, assert_always_or_unreachable};
 use clap::Parser;
 use config::{Config, ConfigError};
 use culprit::{Culprit, ResultExt};
@@ -102,7 +102,7 @@ async fn workload_sanity(
 
     loop {
         // randomly pick a page offset and a page value
-        let offset: PageOffset = rng.gen();
+        let offset = PageOffset::test_random(&mut rng, 16);
         let new_page: Page = rng.gen();
         let existing_page = pageset.insert(offset, new_page.clone());
 
@@ -113,14 +113,14 @@ async fn workload_sanity(
         let value = txn.read(offset).or_into_ctx()?;
         if let Some(existing) = existing_page {
             let details = json!({ "offset": offset, "fill": existing[0], "fill_got": value[0] });
-            assert_always!(
+            assert_always_or_unreachable!(
                 value == existing,
                 "offset has unexpected contents",
                 &details
             );
         } else {
             let details = json!({ "offset": offset });
-            assert_always!(value == EMPTY_PAGE, "offset should be empty", &details);
+            assert_always_or_unreachable!(value == EMPTY_PAGE, "offset should be empty", &details);
         }
 
         // write the page to the volume
@@ -135,6 +135,8 @@ async fn workload_sanity(
 #[tokio::main]
 async fn main() -> Result<(), Culprit<WorkloadErr>> {
     antithesis_init();
+    let running_in_antithesis = std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
@@ -142,6 +144,7 @@ async fn main() -> Result<(), Culprit<WorkloadErr>> {
                 .from_env()?,
         )
         .with_span_events(FmtSpan::CLOSE)
+        .with_ansi(!running_in_antithesis)
         .finish()
         .try_init()?;
     tracing::info!("starting test workload runner");

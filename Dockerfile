@@ -58,3 +58,8 @@ COPY ./crates/graft-test/workloads /workloads
 COPY ./antithesis/workloads /opt/antithesis/test
 RUN ["sh", "-c", "mkdir /symbols && ln -s /test_workload /symbols/test_workload"]
 ENTRYPOINT ["sleep", "infinity"]
+
+FROM quay.io/minio/minio AS minio
+RUN mkdir -p /data/graft-primary
+ENTRYPOINT [ ]
+CMD ["minio", "server", "/data", "--console-address", ":9001"]

@@ -39,16 +39,12 @@ services:
       - AWS_SECRET_ACCESS_KEY=minio-secret
       - AWS_REGION=us-east-1
       - AWS_ENDPOINT=http://minio:9000
-      - PAGESTORE_METASTORE_ENDPOINT=http://metastore:3001
+      - PAGESTORE_METASTORE=http://metastore:3001
 
   minio:
     container_name: minio
     hostname: minio
-    image: quay.io/minio/minio
-    command: server /data --console-address ":9001"
-    post_start:
-      - user: "root"
-        command: "mkdir -p /data/graft-primary"
+    image: minio
     ports:
       - "9000:9000"
       - "9001:9001"
