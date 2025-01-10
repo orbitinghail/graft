@@ -44,9 +44,23 @@ test-workload-image:
 
 build-images: metastore-image pagestore-image test-workload-image
 
-antithesis: antithesis-config-image
+antithesis-prep: antithesis-config-image
     just instrumented=1 build-images
     docker push {{METASTORE_ANTITHESIS_TAG}}
     docker push {{PAGESTORE_ANTITHESIS_TAG}}
     docker push {{CONFIG_ANTITHESIS_TAG}}
     docker push {{TEST_WORKLOAD_ANTITHESIS_TAG}}
+
+antithesis-run: antithesis-prep
+    antithesis-cli run \
+        --name='graft' \
+        --description='my first antithesis test' \
+        --tenant="${ANTITHESIS_TENANT}" \
+        --username="${ANTITHESIS_USERNAME}" \
+        --password="${ANTITHESIS_PASSWORD}" \
+        --config='{{CONFIG_ANTITHESIS_TAG}}' \
+        --image='{{METASTORE_ANTITHESIS_TAG}}' \
+        --image='{{PAGESTORE_ANTITHESIS_TAG}}' \
+        --image='{{TEST_WORKLOAD_ANTITHESIS_TAG}}' \
+        --duration=15 \
+        --email='carl@f0a.org'
