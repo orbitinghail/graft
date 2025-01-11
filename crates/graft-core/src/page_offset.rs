@@ -50,6 +50,10 @@ impl PageOffset {
     pub fn pages(&self) -> PageCount {
         PageCount::new(self.0.checked_add(1).expect("page count overflow"))
     }
+
+    pub fn as_u32(&self) -> u32 {
+        self.0
+    }
 }
 
 impl FromStr for PageOffset {

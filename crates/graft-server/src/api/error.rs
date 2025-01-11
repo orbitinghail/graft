@@ -92,17 +92,24 @@ impl IntoResponse for ApiErr {
     fn into_response(self) -> Response {
         use ApiErrCtx::*;
 
-        tracing::error!(culprit = ?self.0, "api error");
-
         let (status, code) = match self.0.ctx() {
             InvalidRequestBody => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             GidParseErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            PageSizeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             DuplicatePageOffset => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             SnapshotMissing => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
+            RejectedCommit => (StatusCode::CONFLICT, GraftErrCode::Client),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, GraftErrCode::Server),
         };
         let message = self.0.ctx().to_string();
+
+        match code {
+            GraftErrCode::Client | GraftErrCode::SnapshotMissing => {
+                tracing::info!(culprit = ?self.0, "client error")
+            }
+            _ => tracing::error!(culprit = ?self.0, "api error"),
+        }
 
         (
             status,

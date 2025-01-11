@@ -42,7 +42,11 @@ impl ReadTxn {
                 .or_into_ctx()?
             {
                 PageValue::Available(page) => Ok(page),
-                PageValue::Pending => todo!("download page from remote"),
+                PageValue::Pending => {
+                    // When this is fixed, update the test:
+                    // graft-test/tests/sync.rs
+                    todo!("download page from remote")
+                }
             }
         } else {
             Ok(EMPTY_PAGE)

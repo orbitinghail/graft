@@ -1,5 +1,5 @@
 use culprit::{Result, ResultExt};
-use graft_core::{page_offset::PageOffset, VolumeId};
+use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 use graft_proto::pagestore::v1::PageAtOffset;
 use tryiter::TryIteratorExt;
 
@@ -105,6 +105,7 @@ impl PushJob {
             .map(|s| s.lsn())
             .unwrap_or_default();
         let lsn_range = start_lsn..=self.snapshot.lsn();
+        let page_count = self.snapshot.page_count();
 
         // update the sync snapshot to the current snapshot
         // we do this OUTSIDE of the batch to ensure that the snapshot is updated even if the push fails
@@ -113,16 +114,23 @@ impl PushJob {
             .set_snapshot(&self.vid, SnapshotKind::Sync, self.snapshot)
             .or_into_ctx()?;
 
-        // keep track of the max offset
-        let mut max_offset = self
-            .sync_snapshot
-            .as_ref()
-            .and_then(|s| s.page_count().last_offset())
-            .unwrap_or(PageOffset::ZERO);
-
         // load all of the pages into memory
         // TODO: stream pages directly to the pagestore
         let mut pages = Vec::new();
+        let mut upsert_page = |offset: PageOffset, page: Page| {
+            // binary search upsert the page into pages
+            match pages.binary_search_by_key(&offset, |p: &PageAtOffset| p.offset()) {
+                Ok(i) => {
+                    // replace the page in the list with this page
+                    pages[i].data = page.into();
+                }
+                Err(i) => {
+                    // insert the page into the list
+                    pages.insert(i, PageAtOffset::new(offset, page));
+                }
+            }
+        };
+
         {
             let mut commits = storage.query_commits(&self.vid, lsn_range.clone());
             while let Some((lsn, offsets)) = commits.try_next().or_into_ctx()? {
@@ -133,10 +141,10 @@ impl PushJob {
                         .expect("page missing from storage")
                         .expect("page missing from storage");
 
-                    pages.push(PageAtOffset::new(offset, page));
-
-                    // update the max offset
-                    max_offset = max_offset.max(offset);
+                    // if the page is still contained within the page_count, include it
+                    if page_count.contains(offset) {
+                        upsert_page(offset, page);
+                    }
                 }
             }
         }
@@ -148,7 +156,7 @@ impl PushJob {
         let snapshot_lsn = self.sync_snapshot.as_ref().map(|s| s.lsn());
         let remote_snapshot = clients
             .metastore()
-            .commit(&self.vid, snapshot_lsn, max_offset.pages(), segments)
+            .commit(&self.vid, snapshot_lsn, page_count, segments)
             .await?;
 
         storage

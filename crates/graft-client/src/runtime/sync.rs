@@ -192,12 +192,13 @@ impl SyncTask {
         self.storage
             .query_volumes(sync, kind_mask, vids)
             .map_err(|err| err.map_ctx(ClientErr::from))
-            .try_filter_map(|(vid, config, mut snapshots)| {
-                // generate a push job if the volume is configured for push and has changed
+            .try_filter_map(move |(vid, config, mut snapshots)| {
                 let can_push = config.sync().matches(SyncDirection::Push);
                 let can_pull = config.sync().matches(SyncDirection::Pull);
                 let has_changed = snapshots.sync() != snapshots.local();
-                if can_push && has_changed {
+                if can_push && has_changed && sync.matches(SyncDirection::Push) {
+                    // generate a push job if the volume is configured for push
+                    // and has changed and we want to push
                     Ok(Some(Job::push(
                         vid,
                         snapshots.take_sync(),
@@ -205,7 +206,9 @@ impl SyncTask {
                             "local snapshot should never be missing if sync snapshot is present",
                         ),
                     )))
-                } else if can_pull {
+                } else if can_pull && sync.matches(SyncDirection::Pull) {
+                    // generate a pull job if the volume is configured for pull
+                    // and we want to pull
                     Ok(Some(Job::pull(vid, snapshots.take_remote())))
                 } else {
                     Ok(None)

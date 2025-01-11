@@ -39,14 +39,13 @@ pub async fn handler<C>(
         let offset: PageOffset = page.offset.into();
         let page: Page = Page::try_from(page.data).or_into_ctx()?;
 
-        if seen.contains(&offset) {
+        if !seen.insert(offset) {
             return Err(Culprit::new_with_note(
                 ApiErrCtx::DuplicatePageOffset,
                 format!("duplicate page offset: {offset}"),
             )
             .into());
         }
-        seen.insert(offset);
 
         state
             .write_page(WritePageReq::new(vid.clone(), offset, page))
@@ -133,7 +132,7 @@ mod tests {
             Default::default(),
             page_rx,
             store_tx,
-            Duration::from_secs(1),
+            Duration::from_secs(10),
         )
         .testonly_spawn();
 
@@ -171,7 +170,6 @@ mod tests {
             vid: VolumeId::random().copy_to_bytes(),
             pages: vec![PageAtOffset { offset: 0, data: page.clone() }],
         };
-        let req1 = server.post("/").bytes(req1.encode_to_vec().into());
 
         let req2 = WritePagesRequest {
             vid: VolumeId::random().copy_to_bytes(),
@@ -180,6 +178,8 @@ mod tests {
                 PageAtOffset { offset: 1, data: page.clone() },
             ],
         };
+
+        let req1 = server.post("/").bytes(req1.encode_to_vec().into());
         let req2 = server.post("/").bytes(req2.encode_to_vec().into());
 
         // wait for both requests to complete

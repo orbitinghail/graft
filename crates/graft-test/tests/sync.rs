@@ -36,9 +36,15 @@ async fn test_client_sync_sanity() {
         .add_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
         .unwrap();
 
-    // write a page to the volume in client 1
+    let page = Page::test_filled(0x42);
+
+    // write multiple times to the volume
     let mut txn = runtime.write_txn(&vid).unwrap();
-    txn.write(0.into(), Page::test_filled(0x42));
+    txn.write(0.into(), page.clone());
+    txn.commit().unwrap();
+
+    let mut txn = runtime.write_txn(&vid).unwrap();
+    txn.write(0.into(), page.clone());
     txn.commit().unwrap();
 
     // wait for client 2 to receive the write
@@ -46,6 +52,19 @@ async fn test_client_sync_sanity() {
         .await
         .unwrap()
         .unwrap();
+
+    let snapshot = runtime2
+        .snapshot(&vid)
+        .unwrap()
+        .expect("expected remote snapshot to be present");
+    log::info!("received remote snapshot: {snapshot:?}");
+    assert_eq!(snapshot.lsn(), 0);
+    assert_eq!(snapshot.page_count(), 1);
+
+    // TODO: implement downloading pages from the remote to make this assertion pass
+    // let txn = runtime2.read_txn(&vid).unwrap();
+    // let page2 = txn.read(0.into()).unwrap();
+    // assert_eq!(page, page2, "page read from client 2 does not match");
 
     // shutdown everything
     sync.shutdown(Duration::from_secs(1)).await.unwrap();

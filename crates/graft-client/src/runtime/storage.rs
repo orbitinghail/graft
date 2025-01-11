@@ -369,8 +369,21 @@ impl Storage {
             batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
         }
 
+        // compute the next local LSN
+        let local_lsn = self
+            .snapshot(&vid, SnapshotKind::Local)?
+            .map_or(LSN::ZERO, |s| s.lsn().next().expect("lsn overflow"));
+
+        // write out a local snapshot for the volume
+        let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Local);
+        batch.insert(
+            &self.snapshots,
+            snapshot_key,
+            Snapshot::new(local_lsn, snapshot.page_count()),
+        );
+
         // mark changed pages
-        let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, snapshot.lsn());
+        let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, local_lsn);
         let pending = Bytes::from(PageValue::Pending);
         for offset in changed.iter() {
             key.set_offset(offset.into());

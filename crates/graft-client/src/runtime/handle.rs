@@ -39,10 +39,7 @@ impl RuntimeHandle {
 
     /// Start a new read transaction at the latest snapshot
     pub fn read_txn(&self, vid: &VolumeId) -> Result<ReadTxn, ClientErr> {
-        let snapshot = self
-            .storage
-            .snapshot(vid, SnapshotKind::Local)
-            .or_into_ctx()?;
+        let snapshot = self.snapshot(vid)?;
         Ok(ReadTxn::new(vid.clone(), snapshot, self.storage.clone()))
     }
 
