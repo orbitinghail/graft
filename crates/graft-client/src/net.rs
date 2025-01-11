@@ -2,6 +2,7 @@ use culprit::Culprit;
 use graft_proto::common::v1::GraftErr;
 
 use reqwest::header::CONTENT_TYPE;
+use serde_json::json;
 
 use crate::error::ClientErr;
 
@@ -21,16 +22,18 @@ pub async fn prost_request<Req: Message, Resp: Message + Default>(
     log::trace!("sending request: {:?}", req);
     let resp = req.send().await?;
     log::trace!("received response: {:?}", resp);
-    antithesis_sdk::assert_always_or_unreachable!(
-        !resp.status().is_server_error(),
-        "client requests should not return 5xx errors"
-    );
     let success = resp.status().is_success();
+    let server_error = resp.status().is_server_error();
     let body = resp.bytes().await?;
     if success {
         Ok(Resp::decode(body)?)
     } else {
         let err = GraftErr::decode(body)?;
+        antithesis_sdk::assert_always_or_unreachable!(
+            !server_error,
+            "client requests should not return 5xx errors",
+            &json!({ "code": format!("{:?}", err.code()), "message": err.message })
+        );
         Err(err.into())
     }
 }

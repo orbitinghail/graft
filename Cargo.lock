@@ -1110,6 +1110,7 @@ dependencies = [
  "prost",
  "reqwest",
  "serde",
+ "serde_json",
  "splinter",
  "tempfile",
  "thiserror 2.0.9",
