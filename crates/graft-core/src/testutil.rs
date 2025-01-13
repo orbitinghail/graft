@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use rand::{
     distributions::{Standard, Uniform},
     prelude::Distribution,
@@ -17,7 +18,9 @@ impl Page {
 
 impl Distribution<Page> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Page {
-        Page::test_filled(rng.gen())
+        let mut data = BytesMut::zeroed(PAGESIZE.as_usize());
+        rng.fill(data.as_mut());
+        data.freeze().try_into().unwrap()
     }
 }
 

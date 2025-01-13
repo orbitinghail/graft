@@ -39,7 +39,22 @@ pub struct SyncTaskHandle {
 }
 
 impl SyncTaskHandle {
-    pub async fn shutdown(self, timeout: Duration) -> Result<(), ShutdownErr> {
+    pub async fn shutdown(self) -> Result<(), ShutdownErr> {
+        self.token.cancel();
+
+        match self.task.await {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                log::error!("sync task shutdown error: {:?}", err);
+                Err(Culprit::new_with_note(
+                    ShutdownErr::JoinError,
+                    format!("join error: {err}"),
+                ))
+            }
+        }
+    }
+
+    pub async fn shutdown_with_timeout(self, timeout: Duration) -> Result<(), ShutdownErr> {
         self.token.cancel();
 
         // wait for either the task to complete or the timeout to elapse

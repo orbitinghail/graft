@@ -40,16 +40,6 @@ struct Args {
     workload: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Workload {}
-
-impl Default for Workload {
-    fn default() -> Self {
-        Self {}
-    }
-}
-
 #[derive(Debug, Error)]
 enum WorkloadErr {
     #[error("failed to initialize tracing subscriber")]
@@ -86,14 +76,35 @@ impl From<tracing_subscriber::util::TryInitError> for WorkloadErr {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+#[serde(tag = "type")]
+enum Workload {
+    Sanity { vid: VolumeId, interval: u64 },
+}
+
+impl Workload {
+    async fn start(
+        self,
+        handle: &RuntimeHandle,
+        rng: impl Rng,
+    ) -> Result<(), Culprit<WorkloadErr>> {
+        match self {
+            Workload::Sanity { vid, interval } => {
+                workload_sanity(handle, rng, vid, Duration::from_secs(interval)).await
+            }
+        }
+    }
+}
+
 /// This workload continuously writes and reads pages to a volume, verifying the
 /// contents of pages are always correct
 async fn workload_sanity(
     handle: &RuntimeHandle,
     mut rng: impl Rng,
+    vid: VolumeId,
     interval: Duration,
 ) -> Result<(), Culprit<WorkloadErr>> {
-    let vid = VolumeId::random();
     let mut pageset = HashMap::new();
 
     handle
@@ -111,16 +122,19 @@ async fn workload_sanity(
         // verify the offset is missing or present as expected
         let txn = handle.read_txn(&vid).or_into_ctx()?;
         let value = txn.read(offset).or_into_ctx()?;
+        let details = json!({ "offset": offset });
         if let Some(existing) = existing_page {
-            let details = json!({ "offset": offset, "fill": existing[0], "fill_got": value[0] });
             assert_always_or_unreachable!(
                 value == existing,
-                "offset has unexpected contents",
+                "page should have expected contents",
                 &details
             );
         } else {
-            let details = json!({ "offset": offset });
-            assert_always_or_unreachable!(value == EMPTY_PAGE, "offset should be empty", &details);
+            assert_always_or_unreachable!(
+                value == EMPTY_PAGE,
+                "page should be empty as it has never been written to",
+                &details
+            );
         }
 
         // write the page to the volume
@@ -184,9 +198,8 @@ async fn main() -> Result<(), Culprit<WorkloadErr>> {
     let test_timeout = Duration::from_secs(rng.gen_range(0..300));
     tracing::info!(?test_timeout, "starting test workload");
 
-    let workload_fut = workload_sanity(&handle, rng, Duration::from_secs(1));
     select! {
-        _ = workload_fut.fuse() => {
+        _ = workload.start(&handle, rng).fuse() => {
             tracing::info!("workload finished");
         }
         _ = ctrl_c().fuse() => {
@@ -197,11 +210,10 @@ async fn main() -> Result<(), Culprit<WorkloadErr>> {
         }
     }
 
-    tracing::info!("shutting down sync task");
-    sync_task
-        .shutdown(Duration::from_secs(60))
-        .await
-        .or_into_ctx()?;
+    tracing::info!("waiting for sync task to shutdown");
+    sync_task.shutdown().await.or_into_ctx()?;
+
+    antithesis_sdk::assert_reachable!("test workload finishes");
 
     tracing::info!("shutdown complete");
 

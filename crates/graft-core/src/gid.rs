@@ -7,6 +7,7 @@ use std::{
 
 use bytes::Bytes;
 use prefix::Prefix;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::GidTimestamp;
 use zerocopy::{ConvertError, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
@@ -164,6 +165,34 @@ impl<P: Prefix> TryFrom<[u8; GID_SIZE.as_usize()]> for Gid<P> {
     #[inline]
     fn try_from(value: [u8; GID_SIZE.as_usize()]) -> Result<Self, Self::Error> {
         Ok(Gid::<P>::try_read_from_bytes(&value)?)
+    }
+}
+
+impl<P: Prefix> Serialize for Gid<P> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.pretty())
+        } else {
+            serializer.serialize_bytes(self.as_bytes())
+        }
+    }
+}
+
+impl<'de, P: Prefix> Deserialize<'de> for Gid<P> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let s = String::deserialize(deserializer)?;
+            s.parse().map_err(serde::de::Error::custom)
+        } else {
+            let bytes = <[u8; GID_SIZE.as_usize()]>::deserialize(deserializer)?;
+            bytes.try_into().map_err(serde::de::Error::custom)
+        }
     }
 }
 

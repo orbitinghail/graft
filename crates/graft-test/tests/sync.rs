@@ -70,7 +70,12 @@ async fn test_client_sync_sanity() {
     }
 
     // shutdown everything
-    sync.shutdown(Duration::from_secs(5)).await.unwrap();
-    sync2.shutdown(Duration::from_secs(5)).await.unwrap();
+    sync.shutdown_with_timeout(Duration::from_secs(5))
+        .await
+        .unwrap();
+    sync2
+        .shutdown_with_timeout(Duration::from_secs(5))
+        .await
+        .unwrap();
     supervisor.shutdown(Duration::from_secs(5)).await.unwrap();
 }
