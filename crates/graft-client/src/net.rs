@@ -15,16 +15,20 @@ pub async fn prost_request<Req: Message, Resp: Message + Default>(
     url: Url,
     req: Req,
 ) -> Result<Resp, Culprit<ClientErr>> {
+    log::trace!("sending request to {}", url);
+
     let req = http
         .post(url)
         .body(req.encode_to_vec())
         .header(CONTENT_TYPE, "application/x-protobuf");
-    log::trace!("sending request: {:?}", req);
     let resp = req.send().await?;
-    log::trace!("received response: {:?}", resp);
+
+    log::trace!("received response with status {}", resp.status());
+
     let success = resp.status().is_success();
     let server_error = resp.status().is_server_error();
     let body = resp.bytes().await?;
+
     if success {
         Ok(Resp::decode(body)?)
     } else {

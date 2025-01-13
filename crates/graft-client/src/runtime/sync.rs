@@ -109,20 +109,27 @@ impl SyncTask {
     async fn run_inner(&mut self) -> Result<(), ClientErr> {
         loop {
             select! {
-                _ = self.ticker.tick() => {
-                    self.handle_tick().await?;
-                }
-                vids = Self::changed_vids(&mut self.commits_rx) => {
-                    self.handle_commit(vids).await?;
+                biased;
 
-                }
                 _ = self.token.cancelled() => {
                     log::debug!("sync task received shutdown request");
                     break;
                 }
+
+                _ = self.ticker.tick() => {
+                    self.handle_tick().await?;
+                }
+
+                vids = Self::changed_vids(&mut self.commits_rx) => {
+                    self.handle_commit(vids).await?;
+                }
             }
         }
         Ok(())
+    }
+
+    fn is_shutdown(&self) -> bool {
+        self.token.is_cancelled()
     }
 
     /// Yields a set of recent vids that have been committed to, or None if
@@ -167,6 +174,11 @@ impl SyncTask {
         let jobs = self.jobs(SyncDirection::Both, None).await;
         for job in jobs.collect::<Result<Vec<Job>, _>>()? {
             job.run(&self.storage, &self.clients).await?;
+
+            if self.is_shutdown() {
+                log::debug!("shutdown detected during handle_tick");
+                break;
+            }
         }
         Ok(())
     }
@@ -176,6 +188,11 @@ impl SyncTask {
         let jobs = self.jobs(SyncDirection::Push, vids).await;
         for job in jobs.collect::<Result<Vec<Job>, _>>()? {
             job.run(&self.storage, &self.clients).await?;
+
+            if self.is_shutdown() {
+                log::debug!("shutdown detected during handle_commit");
+                break;
+            }
         }
         Ok(())
     }
@@ -201,6 +218,7 @@ impl SyncTask {
                     // and has changed and we want to push
                     Ok(Some(Job::push(
                         vid,
+                        snapshots.take_remote(),
                         snapshots.take_sync(),
                         snapshots.take_local().expect(
                             "local snapshot should never be missing if sync snapshot is present",

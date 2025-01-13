@@ -92,7 +92,7 @@ pub struct CommitHeader {
 
 static_assertions::const_assert_eq!(size_of::<CommitHeader>(), 48);
 
-#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout, Debug)]
 #[repr(C)]
 pub struct CommitMeta {
     lsn: U64<LittleEndian>,

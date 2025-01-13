@@ -22,8 +22,18 @@ impl Job {
         Job::Pull(PullJob { vid, snapshot })
     }
 
-    pub fn push(vid: VolumeId, sync_snapshot: Option<Snapshot>, snapshot: Snapshot) -> Self {
-        Job::Push(PushJob { vid, sync_snapshot, snapshot })
+    pub fn push(
+        vid: VolumeId,
+        remote_snapshot: Option<Snapshot>,
+        sync_snapshot: Option<Snapshot>,
+        snapshot: Snapshot,
+    ) -> Self {
+        Job::Push(PushJob {
+            vid,
+            remote_snapshot,
+            sync_snapshot,
+            snapshot,
+        })
     }
 
     pub async fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
@@ -63,6 +73,15 @@ impl PullJob {
             .pull_offsets(&self.vid, start_lsn..)
             .await?
         {
+            assert!(
+                snapshot.lsn() >= start_lsn,
+                "invalid snapshot LSN; expected >= {}; got {}; last snapshot {:?}",
+                start_lsn,
+                snapshot.lsn(),
+                self.snapshot
+            );
+            log::debug!("received remote snapshot at LSN {}", snapshot.lsn(),);
+
             storage
                 .receive_remote_commit(
                     &self.vid,
@@ -82,7 +101,10 @@ pub struct PushJob {
     /// The volume to push to the remote.
     vid: VolumeId,
 
-    /// The last snapshot of the volume that was pushed to the remote.
+    /// The last remote snapshot.
+    remote_snapshot: Option<Snapshot>,
+
+    /// The last local snapshot of the volume that was pushed to the remote.
     sync_snapshot: Option<Snapshot>,
 
     /// The current local snapshot of the volume.
@@ -92,10 +114,11 @@ pub struct PushJob {
 impl PushJob {
     async fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         log::debug!(
-            "pushing volume {:?}; last sync {:?}; current snapshot {:?}",
+            "pushing volume {:?}; last sync {:?}; current snapshot {:?}; remote snapshot {:?}",
             self.vid,
             self.sync_snapshot,
-            self.snapshot
+            self.snapshot,
+            self.remote_snapshot
         );
 
         // the range of local LSNs to push to the remote
@@ -153,10 +176,10 @@ impl PushJob {
         let segments = clients.pagestore().write_pages(&self.vid, pages).await?;
 
         // commit the segments to the metastore
-        let snapshot_lsn = self.sync_snapshot.as_ref().map(|s| s.lsn());
+        let last_remote_lsn = self.remote_snapshot.as_ref().map(|s| s.lsn());
         let remote_snapshot = clients
             .metastore()
-            .commit(&self.vid, snapshot_lsn, page_count, segments)
+            .commit(&self.vid, last_remote_lsn, page_count, segments)
             .await?;
 
         storage

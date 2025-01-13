@@ -51,6 +51,18 @@ pub async fn handler(
         .unwrap_or(checkpoint)
         .max(checkpoint);
 
+    // if the snapshot happens before the start_lsn, return a missing snapshot error
+    if snapshot.lsn() < start_lsn {
+        return Err(Culprit::new_with_note(
+            ApiErrCtx::SnapshotMissing,
+            format!(
+                "volume {vid} snapshot {:?} happens before {start_lsn:?}",
+                snapshot.lsn()
+            ),
+        )
+        .into());
+    }
+
     // calculate the resolved lsn range
     let lsns = start_lsn..=snapshot.lsn();
 

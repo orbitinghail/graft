@@ -103,9 +103,9 @@ impl Snapshot {
 
 impl Debug for Snapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Snapshot")
-            .field("lsn", &self.lsn())
-            .field("page_count", &self.page_count())
+        f.debug_tuple("Snapshot")
+            .field(&self.lsn())
+            .field(&self.page_count())
             .finish()
     }
 }

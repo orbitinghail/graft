@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use culprit::Culprit;
 use reqwest::Url;
 
@@ -36,7 +38,9 @@ impl ClientBuilder {
     pub fn new(endpoint: Url) -> Self {
         Self {
             endpoint,
-            reqwest: reqwest::Client::builder().brotli(true),
+            reqwest: reqwest::Client::builder()
+                .brotli(true)
+                .connect_timeout(Duration::from_secs(15)),
         }
     }
 

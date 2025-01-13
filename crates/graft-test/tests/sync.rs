@@ -38,36 +38,39 @@ async fn test_client_sync_sanity() {
 
     let page = Page::test_filled(0x42);
 
-    // write multiple times to the volume
-    let mut txn = runtime.write_txn(&vid).unwrap();
-    txn.write(0.into(), page.clone());
-    txn.commit().unwrap();
+    // write and wait for replication multiple times
+    for i in 0..5 {
+        // write multiple times to the volume
+        let mut txn = runtime.write_txn(&vid).unwrap();
+        txn.write(0.into(), page.clone());
+        txn.commit().unwrap();
 
-    let mut txn = runtime.write_txn(&vid).unwrap();
-    txn.write(0.into(), page.clone());
-    txn.commit().unwrap();
+        let mut txn = runtime.write_txn(&vid).unwrap();
+        txn.write(0.into(), page.clone());
+        txn.commit().unwrap();
 
-    // wait for client 2 to receive the write
-    timeout(Duration::from_secs(5), commits_rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
+        // wait for client 2 to receive the write
+        timeout(Duration::from_secs(5), commits_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
 
-    let snapshot = runtime2
-        .snapshot(&vid)
-        .unwrap()
-        .expect("expected remote snapshot to be present");
-    log::info!("received remote snapshot: {snapshot:?}");
-    assert_eq!(snapshot.lsn(), 0);
-    assert_eq!(snapshot.page_count(), 1);
+        let snapshot = runtime2
+            .snapshot(&vid)
+            .unwrap()
+            .expect("expected remote snapshot to be present");
+        log::info!("received remote snapshot: {snapshot:?}");
+        assert_eq!(snapshot.lsn(), i);
+        assert_eq!(snapshot.page_count(), 1);
 
-    // TODO: implement downloading pages from the remote to make this assertion pass
-    // let txn = runtime2.read_txn(&vid).unwrap();
-    // let page2 = txn.read(0.into()).unwrap();
-    // assert_eq!(page, page2, "page read from client 2 does not match");
+        // TODO: implement downloading pages from the remote to make this assertion pass
+        // let txn = runtime2.read_txn(&vid).unwrap();
+        // let page2 = txn.read(0.into()).unwrap();
+        // assert_eq!(page, page2, "page read from client 2 does not match");
+    }
 
     // shutdown everything
-    sync.shutdown(Duration::from_secs(1)).await.unwrap();
-    sync2.shutdown(Duration::from_secs(1)).await.unwrap();
-    supervisor.shutdown(Duration::from_secs(1)).await.unwrap();
+    sync.shutdown(Duration::from_secs(5)).await.unwrap();
+    sync2.shutdown(Duration::from_secs(5)).await.unwrap();
+    supervisor.shutdown(Duration::from_secs(5)).await.unwrap();
 }

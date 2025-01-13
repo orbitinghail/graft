@@ -404,19 +404,19 @@ impl Storage {
         &self,
         vid: &VolumeId,
         is_checkpoint: bool,
-        snapshot: Snapshot,
+        remote_snapshot: Snapshot,
         synced_lsns: impl RangeBounds<LSN>,
     ) -> Result<()> {
         let mut batch = self.keyspace.batch();
 
         // update the remote snapshot for the volume
         let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Remote);
-        batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
+        batch.insert(&self.snapshots, snapshot_key, remote_snapshot.as_ref());
 
         // update the checkpoint snapshot for the volume if needed
         if is_checkpoint {
             let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Checkpoint);
-            batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
+            batch.insert(&self.snapshots, snapshot_key, remote_snapshot.as_ref());
         }
 
         // remove all commits in the synced range
