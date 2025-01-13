@@ -1,9 +1,16 @@
 use std::{
+    collections::HashMap,
     sync::{Arc, Once},
     time::Duration,
 };
 
+use bytes::{Buf, BufMut, BytesMut};
+use culprit::{Culprit, ResultExt};
 use graft_client::{ClientBuilder, ClientPair, MetastoreClient, PagestoreClient};
+use graft_core::{
+    page::{Page, PAGESIZE},
+    page_offset::PageOffset,
+};
 use graft_server::{
     api::{
         metastore::{metastore_routes, MetastoreApiState},
@@ -20,6 +27,7 @@ use graft_server::{
     supervisor::Supervisor,
     volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
+use thiserror::Error;
 use tokio::{net::TcpListener, sync::mpsc};
 use url::Url;
 
@@ -107,4 +115,70 @@ pub async fn run_pagestore(
     supervisor.spawn(ApiServerTask::new("pagestore-api", listener, router));
 
     ClientBuilder::new(endpoint).build().unwrap()
+}
+
+#[derive(Debug, Error)]
+pub enum PageTrackerErr {
+    #[error("failed to serialize page tracker")]
+    Serialize,
+
+    #[error("failed to deserialize page tracker")]
+    Deserialize,
+}
+
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct PageTracker {
+    pages: HashMap<PageOffset, PageHash>,
+}
+
+impl PageTracker {
+    pub fn upsert(&mut self, offset: PageOffset, page: &Page) -> Option<PageHash> {
+        self.pages.insert(offset, PageHash::new(page))
+    }
+
+    pub fn get_hash(&self, offset: PageOffset) -> Option<&PageHash> {
+        self.pages.get(&offset)
+    }
+
+    pub fn serialize_into_page(&self) -> Result<Page, Culprit<PageTrackerErr>> {
+        let mut bytes = BytesMut::zeroed(PAGESIZE.as_usize());
+        let json = serde_json::to_vec(self).unwrap();
+        if json.len() > (PAGESIZE.as_usize() - 8) {
+            return Err(Culprit::new_with_note(
+                PageTrackerErr::Serialize,
+                "page size exceeded",
+            ));
+        }
+        bytes.put_u64_le(json.len() as u64);
+        bytes.put_slice(&json);
+        Ok(Page::try_from(bytes.freeze()).or_ctx(|_| PageTrackerErr::Serialize)?)
+    }
+
+    pub fn deserialize_from_page(page: &Page) -> Result<Self, Culprit<PageTrackerErr>> {
+        let mut bytes = page.as_ref();
+        let len = bytes.get_u64_le() as usize;
+        let (json, _) = bytes.split_at(len);
+        serde_json::from_slice(&json).or_ctx(|_| PageTrackerErr::Deserialize)
+    }
+}
+
+#[derive(Debug, Default, serde::Deserialize, serde:: Serialize, PartialEq, Eq)]
+pub struct PageHash([u8; 32]);
+
+impl PageHash {
+    pub fn new(page: &Page) -> Self {
+        Self(blake3::hash(page.as_ref()).into())
+    }
+}
+
+impl PartialEq<Page> for PageHash {
+    fn eq(&self, other: &Page) -> bool {
+        self.0 == <[u8; 32]>::from(blake3::hash(other.as_ref()))
+    }
+}
+
+impl PartialEq<Page> for &PageHash {
+    fn eq(&self, other: &Page) -> bool {
+        self.0 == <[u8; 32]>::from(blake3::hash(other.as_ref()))
+    }
 }

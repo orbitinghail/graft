@@ -14,6 +14,13 @@ pub const EMPTY_PAGE: Page = Page(Bytes::from_static(&[0; PAGESIZE.as_usize()]))
 #[derive(Clone, PartialEq, Eq)]
 pub struct Page(Bytes);
 
+impl Page {
+    /// Returns true if all of the page's bytes are 0.
+    pub fn is_empty(&self) -> bool {
+        self == &EMPTY_PAGE
+    }
+}
+
 impl Deref for Page {
     type Target = [u8];
 

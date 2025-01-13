@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use fjall::Slice;
 use graft_core::{lsn::LSN, page_count::PageCount, VolumeId};
+use serde::{Deserialize, Serialize};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 #[derive(
@@ -75,12 +76,16 @@ impl AsRef<[u8]> for SnapshotKey {
     }
 }
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq)]
+#[derive(
+    KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq, Serialize, Deserialize,
+)]
 #[repr(C)]
 pub struct Snapshot {
     lsn: LSN,
     page_count: PageCount,
+
     // Padding to align to 8 bytes
+    #[serde(skip)]
     _padding: [u8; 4],
 }
 

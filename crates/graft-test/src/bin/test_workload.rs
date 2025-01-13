@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use antithesis_sdk::{antithesis_init, assert_always_or_unreachable};
 use clap::Parser;
@@ -16,16 +16,13 @@ use graft_client::{
     },
     ClientBuildErr, ClientBuilder, ClientErr, ClientPair, MetastoreClient, PagestoreClient,
 };
-use graft_core::{
-    page::{Page, EMPTY_PAGE},
-    page_offset::PageOffset,
-    VolumeId,
-};
+use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
+use graft_test::{PageTracker, PageTrackerErr};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
-use tokio::{select, signal::ctrl_c, time::sleep};
+use tokio::{select, signal::ctrl_c, sync::broadcast, time::sleep};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
     filter::FromEnvError, fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter,
@@ -48,6 +45,9 @@ enum WorkloadErr {
     #[error("invalid workload configuration")]
     InvalidConfig,
 
+    #[error("failed to receive broadcast message")]
+    BroadcastRecvErr,
+
     #[error("client error: {0}")]
     ClientErr(#[from] ClientErr),
 
@@ -56,6 +56,15 @@ enum WorkloadErr {
 
     #[error("sync task shutdown error: {0}")]
     SyncTaskShutdownErr(#[from] ShutdownErr),
+
+    #[error("page tracker error: {0}")]
+    PageTrackerErr(#[from] PageTrackerErr),
+}
+
+impl From<broadcast::error::RecvError> for WorkloadErr {
+    fn from(_: broadcast::error::RecvError) -> Self {
+        WorkloadErr::BroadcastRecvErr
+    }
 }
 
 impl From<ConfigError> for WorkloadErr {
@@ -80,7 +89,8 @@ impl From<tracing_subscriber::util::TryInitError> for WorkloadErr {
 #[serde(deny_unknown_fields)]
 #[serde(tag = "type")]
 enum Workload {
-    Sanity { vid: VolumeId, interval: u64 },
+    Writer { vid: VolumeId, interval_ms: u64 },
+    Reader { vid: VolumeId },
 }
 
 impl Workload {
@@ -90,59 +100,122 @@ impl Workload {
         rng: impl Rng,
     ) -> Result<(), Culprit<WorkloadErr>> {
         match self {
-            Workload::Sanity { vid, interval } => {
-                workload_sanity(handle, rng, vid, Duration::from_secs(interval)).await
+            Workload::Writer { vid, interval_ms: interval } => {
+                workload_writer(handle, rng, vid, Duration::from_millis(interval)).await
             }
+            Workload::Reader { vid } => workload_reader(handle, rng, vid).await,
         }
     }
 }
 
 /// This workload continuously writes and reads pages to a volume, verifying the
 /// contents of pages are always correct
-async fn workload_sanity(
+async fn workload_writer(
     handle: &RuntimeHandle,
     mut rng: impl Rng,
     vid: VolumeId,
     interval: Duration,
 ) -> Result<(), Culprit<WorkloadErr>> {
-    let mut pageset = HashMap::new();
+    let mut page_tracker = PageTracker::default();
 
     handle
         .add_volume(&vid, VolumeConfig::new(SyncDirection::Both))
         .or_into_ctx()?;
 
     loop {
-        // randomly pick a page offset and a page value
-        let offset = PageOffset::test_random(&mut rng, 16);
+        // randomly pick a page offset and a page value.
+        // select the next offset to ensure we don't pick the 0th page
+        let offset = PageOffset::test_random(&mut rng, 16).next();
         let new_page: Page = rng.gen();
-        let existing_page = pageset.insert(offset, new_page.clone());
+        let existing_hash = page_tracker.upsert(offset, &new_page);
 
         tracing::info!(?offset, "writing page");
 
         // verify the offset is missing or present as expected
         let txn = handle.read_txn(&vid).or_into_ctx()?;
-        let value = txn.read(offset).or_into_ctx()?;
+        let page = txn.read(offset).or_into_ctx()?;
         let details = json!({ "offset": offset });
-        if let Some(existing) = existing_page {
+        if let Some(existing) = existing_hash {
             assert_always_or_unreachable!(
-                value == existing,
+                existing == page,
                 "page should have expected contents",
                 &details
             );
         } else {
             assert_always_or_unreachable!(
-                value == EMPTY_PAGE,
+                page.is_empty(),
                 "page should be empty as it has never been written to",
                 &details
             );
         }
 
-        // write the page to the volume
         let mut txn = handle.write_txn(&vid).or_into_ctx()?;
+
+        // write the page to the volume and update the page index
         txn.write(offset, new_page);
+        txn.write(0.into(), page_tracker.serialize_into_page().or_into_ctx()?);
+
         txn.commit().or_into_ctx()?;
 
         sleep(interval).await;
+    }
+}
+
+async fn workload_reader(
+    handle: &RuntimeHandle,
+    _rng: impl Rng,
+    vid: VolumeId,
+) -> Result<(), Culprit<WorkloadErr>> {
+    handle
+        .add_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
+        .or_into_ctx()?;
+
+    let mut commits_rx = handle.subscribe_to_remote_commits();
+
+    loop {
+        let commit_vid = commits_rx.recv().await.or_into_ctx()?;
+        if commit_vid != vid {
+            antithesis_sdk::assert_unreachable!("received commit for unexpected volume");
+        }
+
+        let Some(snapshot) = handle.snapshot(&vid).or_into_ctx()? else {
+            antithesis_sdk::assert_unreachable!("volume has no snapshot");
+            continue;
+        };
+
+        tracing::info!(?snapshot, "received commit for volume {:?}", vid);
+
+        let txn = handle.read_txn(&vid).or_into_ctx()?;
+
+        antithesis_sdk::assert_always_or_unreachable!(
+            txn.snapshot() == Some(&snapshot),
+            "read transaction should be using the expected snapshot",
+            &json!({ "actual": txn.snapshot(), "expected": snapshot })
+        );
+
+        // load the page index
+        let first_page = txn.read(0.into()).or_into_ctx()?;
+        let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
+
+        // ensure all pages are either empty or have the expected hash
+        for offset in snapshot.page_count().offsets() {
+            tracing::info!("reading page at offset {offset}");
+            let page = txn.read(offset).or_into_ctx()?;
+
+            if let Some(expected_hash) = page_tracker.get_hash(offset) {
+                assert_always_or_unreachable!(
+                    expected_hash == page,
+                    "page should have expected contents",
+                    &json!({ "offset": offset })
+                );
+            } else {
+                assert_always_or_unreachable!(
+                    page.is_empty(),
+                    "page should be empty as it has never been written to",
+                    &json!({ "offset": offset })
+                );
+            }
+        }
     }
 }
 

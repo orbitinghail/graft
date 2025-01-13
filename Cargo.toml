@@ -25,7 +25,7 @@ tower-http = "0.6"
 itertools = { version = "0.14" }
 reqwest = { version = "0.12" }
 tokio = "1"
-config = { version = "0.15", features = ["toml"]}
+config = { version = "0.15", features = ["toml"] }
 thiserror = { version = "2.0" }
 futures = { version = "0.3" }
 url = { version = "2.5" }
@@ -54,3 +54,4 @@ hashbrown = { version = "0.15" }
 rand = { version = "0.8" }
 static_assertions = "1.1"
 assert_matches = "1.5"
+blake3 = "1.5"

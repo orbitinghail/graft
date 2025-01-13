@@ -24,3 +24,5 @@ thiserror = { workspace = true }
 rand = { workspace = true }
 futures = { workspace = true }
 config = { workspace = true }
+blake3 = { workspace = true }
+bytes = { workspace = true }

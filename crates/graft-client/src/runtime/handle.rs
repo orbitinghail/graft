@@ -1,5 +1,6 @@
 use culprit::{Result, ResultExt};
 use std::{sync::Arc, time::Duration};
+use tokio::sync::broadcast;
 
 use graft_core::VolumeId;
 
@@ -54,6 +55,18 @@ impl RuntimeHandle {
             .storage
             .snapshot(vid, SnapshotKind::Local)
             .or_into_ctx()?)
+    }
+
+    /// Subscribe to new local commits to volumes. This is a best effort
+    /// channel, laggy consumers will receive RecvError::Lagged.
+    pub fn subscribe_to_local_commits(&self) -> broadcast::Receiver<VolumeId> {
+        self.storage.subscribe_to_local_commits()
+    }
+
+    /// Subscribe to new remote commits to volumes. This is a best effort
+    /// channel, laggy consumers will receive RecvError::Lagged.
+    pub fn subscribe_to_remote_commits(&self) -> broadcast::Receiver<VolumeId> {
+        self.storage.subscribe_to_remote_commits()
     }
 }
 
