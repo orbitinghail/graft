@@ -38,7 +38,7 @@ impl ReadTxn {
         if let Some(snapshot) = &self.snapshot {
             match self
                 .storage
-                .read(&self.vid, offset, snapshot.lsn())
+                .read(&self.vid, snapshot.lsn(), offset)
                 .or_into_ctx()?
             {
                 PageValue::Available(page) => Ok(page),

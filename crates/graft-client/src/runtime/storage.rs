@@ -275,7 +275,7 @@ impl Storage {
         }
     }
 
-    pub fn read(&self, vid: &VolumeId, offset: PageOffset, lsn: LSN) -> Result<PageValue> {
+    pub fn read(&self, vid: &VolumeId, lsn: LSN, offset: PageOffset) -> Result<PageValue> {
         let zero = PageKey::new(vid.clone(), offset, LSN::ZERO);
         let key = PageKey::new(vid.clone(), offset, lsn);
         let range = zero..=key;

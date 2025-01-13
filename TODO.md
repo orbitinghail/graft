@@ -12,6 +12,34 @@ Later:
 - garbage collection
 - authentication (api keys)
 
+# Client fetching
+
+We want the client to support pre-fetching whenever it fetches pages from the server. We also want to avoid fetching pages we already have as well as overfetching the same page from multiple concurrent tasks.
+
+For now, we can solve refetching via checking storage for every page we decide to prefetch.
+
+fetch logic:
+```
+let req = fetcher.new_request(vid, lsn, offset)
+  -> fetcher expands the offset into a offset range using the prefetcher
+  -> then inspects concurrently active tokens for overlap
+  -> creates new tokens for non-overlapping ranges
+  -> constructs a request that will resolve once all relevant tokens resolve
+
+if let Some(page) = storage.read(vid, lsn, offset) {
+  return page
+    -> drops req without submitting any new tokens
+}
+
+// page not found, submit the request
+fetcher.submit(req).await?
+
+// the page should now be available
+storage.read(vid, lsn, offset)
+```
+
+Detecing overlap between tokens is not trivial to do perfectly. The issue stems from two concurrent requests for the same offsets in different LSNs. In this case, if the offsets didn't change between the two LSNs, we will fetch the same page multiple times. Need to think about how likely this will be in my primary use cases.
+
 # client id
 A basic form of idempotency should be provided via the commit process taking a client id. This can be used to reject duplicate commits.
 
