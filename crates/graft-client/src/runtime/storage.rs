@@ -322,7 +322,7 @@ impl Storage {
             page_key.set_offset(offset);
             max_offset = max_offset.max(offset);
             offsets.insert(offset.into());
-            batch.insert(&self.pages, page_key.as_bytes(), Bytes::from(page));
+            batch.insert(&self.pages, page_key.as_bytes(), PageValue::from(page));
         }
 
         // write out a new volume snapshot

@@ -161,3 +161,13 @@ impl From<PageValue> for Slice {
         Bytes::from(value).into()
     }
 }
+
+impl From<Page> for PageValue {
+    fn from(page: Page) -> Self {
+        if page.is_empty() {
+            PageValue::Empty
+        } else {
+            PageValue::Available(page)
+        }
+    }
+}
