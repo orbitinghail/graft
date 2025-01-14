@@ -14,13 +14,12 @@ use fjall::{KvSeparationOptions, PartitionCreateOptions, Slice};
 use graft_core::{
     byte_unit::ByteUnit,
     lsn::{LSNRangeExt, LSN},
-    page::{PageSizeErr, EMPTY_PAGE},
     page_offset::PageOffset,
     zerocopy_err::ZerocopyErr,
     VolumeId,
 };
 use memtable::Memtable;
-use page::{PageKey, PageValue};
+use page::{PageKey, PageValue, PageValueConversionErr};
 use snapshot::{Snapshot, SnapshotKey, SnapshotKind, SnapshotKindMask, SnapshotSet};
 use splinter::{DecodeErr, Splinter, SplinterRef};
 use tokio::sync::broadcast;
@@ -54,7 +53,7 @@ pub enum StorageErr {
     CorruptVolumeConfig(ZerocopyErr),
 
     #[error("Corrupt page: {0}")]
-    CorruptPage(#[from] PageSizeErr),
+    CorruptPage(#[from] PageValueConversionErr),
 
     #[error("Corrupt commit: {0}")]
     CorruptCommit(#[from] DecodeErr),
@@ -202,6 +201,9 @@ impl Storage {
             })
     }
 
+    /// Returns an iterator of PageValue's at an exact LSN for a volume.
+    /// Notably, this function will not return a page at an earlier LSN that is
+    /// shadowed by this LSN.
     pub fn query_pages<'a, T>(
         &'a self,
         vid: &'a VolumeId,
@@ -275,18 +277,24 @@ impl Storage {
         }
     }
 
-    pub fn read(&self, vid: &VolumeId, lsn: LSN, offset: PageOffset) -> Result<PageValue> {
+    /// Returns the most recent visible page in a volume by LSN at a particular
+    /// offset. Notably, this will return a page from an earlier LSN if the page
+    /// hasn't changed since then.
+    pub fn read(&self, vid: &VolumeId, lsn: LSN, offset: PageOffset) -> Result<(LSN, PageValue)> {
         let zero = PageKey::new(vid.clone(), offset, LSN::ZERO);
         let key = PageKey::new(vid.clone(), offset, lsn);
         let range = zero..=key;
 
         // Search for the latest page between LSN(0) and the requested LSN,
-        // returning None if no page is found.
-        if let Some((_, page)) = self.pages.snapshot().range(range).next_back().transpose()? {
+        // returning PageValue::Pending if none found.
+        if let Some((key, page)) = self.pages.snapshot().range(range).next_back().transpose()? {
+            let lsn = PageKey::try_ref_from_bytes(&key)
+                .or_ctx(|e| StorageErr::CorruptKey(e.into()))?
+                .lsn();
             let bytes: Bytes = page.into();
-            Ok(PageValue::try_from(bytes).or_into_ctx()?)
+            Ok((lsn, PageValue::try_from(bytes).or_into_ctx()?))
         } else {
-            Ok(PageValue::Available(EMPTY_PAGE))
+            Ok((lsn, PageValue::Pending))
         }
     }
 

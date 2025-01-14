@@ -178,17 +178,13 @@ async fn workload_reader(
             antithesis_sdk::assert_unreachable!("received commit for unexpected volume");
         }
 
-        let Some(snapshot) = handle.snapshot(&vid).or_into_ctx()? else {
-            antithesis_sdk::assert_unreachable!("volume has no snapshot");
-            continue;
-        };
-
+        let snapshot = handle.snapshot(&vid).or_into_ctx()?;
         tracing::info!(?snapshot, "received commit for volume {:?}", vid);
 
         let txn = handle.read_txn(&vid).or_into_ctx()?;
 
         antithesis_sdk::assert_always_or_unreachable!(
-            txn.snapshot() == Some(&snapshot),
+            txn.snapshot() == &snapshot,
             "read transaction should be using the expected snapshot",
             &json!({ "actual": txn.snapshot(), "expected": snapshot })
         );

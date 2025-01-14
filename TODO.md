@@ -20,8 +20,12 @@ For now, we can solve refetching via checking storage for every page we decide t
 
 fetch logic:
 ```
-let req = fetcher.new_request(vid, lsn, offset)
+fetcher.fetch(vid, lsn, offset).await
   -> fetcher expands the offset into a offset range using the prefetcher
+  -> checks storage to resolve each offset into a specific LSN + state
+    -> if an offset is already available, return
+    -> otherwise resolve to it's pending LSN
+    -> if an offset is completely missing then resolve the offset to the request LSN and potentially add a pending token to storage
   -> then inspects concurrently active tokens for overlap
   -> creates new tokens for non-overlapping ranges
   -> constructs a request that will resolve once all relevant tokens resolve

@@ -38,23 +38,30 @@ impl RuntimeHandle {
         Ok(self.storage.add_volume(vid, config).or_into_ctx()?)
     }
 
-    /// Start a new read transaction at the latest snapshot
+    /// Start a new read transaction at the latest local snapshot
     pub fn read_txn(&self, vid: &VolumeId) -> Result<ReadTxn, ClientErr> {
         let snapshot = self.snapshot(vid)?;
         Ok(ReadTxn::new(vid.clone(), snapshot, self.storage.clone()))
     }
 
-    /// Start a new write transaction at the latest snapshot
+    /// Start a new write transaction at the latest local snapshot
     pub fn write_txn(&self, vid: &VolumeId) -> Result<WriteTxn, ClientErr> {
-        let read_tx = self.read_txn(vid)?;
-        Ok(WriteTxn::new(read_tx))
-    }
-
-    pub fn snapshot(&self, vid: &VolumeId) -> Result<Option<Snapshot>, ClientErr> {
-        Ok(self
+        let snapshot = self
             .storage
             .snapshot(vid, SnapshotKind::Local)
-            .or_into_ctx()?)
+            .or_into_ctx()?;
+        Ok(WriteTxn::new(vid.clone(), snapshot, self.storage.clone()))
+    }
+
+    pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, ClientErr> {
+        let snapshot = self
+            .storage
+            .snapshot(vid, SnapshotKind::Local)
+            .or_into_ctx()?;
+        match snapshot {
+            Some(snapshot) => Ok(snapshot),
+            None => todo!("fetch latest snapshot"),
+        }
     }
 
     /// Subscribe to new local commits to volumes. This is a best effort
@@ -104,7 +111,7 @@ mod tests {
         assert_eq!(txn.read(0.into()).unwrap(), page);
 
         // verify the snapshot
-        let snapshot = txn.snapshot().unwrap();
+        let snapshot = txn.snapshot();
         assert_eq!(snapshot.lsn(), LSN::ZERO);
         assert_eq!(snapshot.page_count(), 1);
 
@@ -120,12 +127,12 @@ mod tests {
         assert_eq!(txn.read(1.into()).unwrap(), page2);
 
         // verify the snapshot
-        let snapshot = txn.snapshot().unwrap();
+        let snapshot = txn.snapshot();
         assert_eq!(snapshot.lsn(), LSN::new(1));
         assert_eq!(snapshot.page_count(), 2);
 
         // upgrade to a write txn and overwrite the first page
-        let mut txn = txn.upgrade().unwrap();
+        let mut txn = txn.upgrade();
         txn.write(0.into(), page2.clone());
         assert_eq!(txn.read(0.into()).unwrap(), page2);
         let txn = txn.commit().unwrap();
@@ -134,7 +141,7 @@ mod tests {
         assert_eq!(txn.read(0.into()).unwrap(), page2);
 
         // verify the snapshot
-        let snapshot = txn.snapshot().unwrap();
+        let snapshot = txn.snapshot();
         assert_eq!(snapshot.lsn(), LSN::new(2));
         assert_eq!(snapshot.page_count(), 2);
     }
@@ -159,7 +166,7 @@ mod tests {
         assert_eq!(txn1.read(0.into()).unwrap(), page);
 
         // take a snapshot of the volume before committing txn2
-        let pre_commit = handle.snapshot(&vid).unwrap().unwrap();
+        let pre_commit = handle.snapshot(&vid).unwrap();
 
         let txn2 = txn2.commit();
         assert!(matches!(
@@ -168,7 +175,7 @@ mod tests {
         ));
 
         // ensure that txn2 did not commit by verifying the snapshot
-        let snapshot = handle.snapshot(&vid).unwrap().unwrap();
+        let snapshot = handle.snapshot(&vid).unwrap();
         assert_eq!(pre_commit, snapshot);
     }
 }

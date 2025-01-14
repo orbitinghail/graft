@@ -55,10 +55,7 @@ async fn test_client_sync_sanity() {
             .unwrap()
             .unwrap();
 
-        let snapshot = runtime2
-            .snapshot(&vid)
-            .unwrap()
-            .expect("expected remote snapshot to be present");
+        let snapshot = runtime2.snapshot(&vid).unwrap();
         log::info!("received remote snapshot: {snapshot:?}");
         assert_eq!(snapshot.lsn(), i);
         assert_eq!(snapshot.page_count(), 1);

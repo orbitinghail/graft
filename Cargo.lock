@@ -1143,6 +1143,7 @@ dependencies = [
  "serde",
  "serde_json",
  "splinter",
+ "static_assertions",
  "tempfile",
  "thiserror 2.0.9",
  "tokio",

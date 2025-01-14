@@ -6,6 +6,7 @@ mod pagestore;
 mod pair;
 
 pub mod runtime {
+    pub mod fetcher;
     pub mod handle;
     pub mod storage;
     pub mod sync;

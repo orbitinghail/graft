@@ -26,6 +26,7 @@ tokio-util = { workspace = true }
 tryiter = { workspace = true }
 fjall = { workspace = true, features = ["bytes"] }
 lsm-tree = { workspace = true, features = ["bytes"] }
+static_assertions = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }

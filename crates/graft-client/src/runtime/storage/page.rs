@@ -4,14 +4,17 @@ use std::fmt::Display;
 
 use bytes::Bytes;
 use culprit::Culprit;
+use culprit::ResultExt;
 use fjall::Slice;
 use graft_core::lsn::LSN;
 
 use graft_core::page::Page;
 use graft_core::page::PageSizeErr;
+use graft_core::page::EMPTY_PAGE;
 use graft_core::page_offset::PageOffset;
 
 use graft_core::VolumeId;
+use thiserror::Error;
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
@@ -45,6 +48,10 @@ impl PageKey {
     pub fn set_offset(&mut self, offset: PageOffset) {
         self.offset = offset.into();
     }
+
+    pub fn lsn(&self) -> LSN {
+        self.lsn.into()
+    }
 }
 
 impl AsRef<[u8]> for PageKey {
@@ -75,46 +82,75 @@ impl Clone for PageKey {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum PageValueConversionErr {
+    #[error("invalid page size")]
+    PageSize(#[from] PageSizeErr),
+
+    #[error("invalid page value mark")]
+    InvalidMark,
+}
+
+const PAGE_VALUE_PENDING: &'static [u8] = b"PENDING_";
+const PAGE_VALUE_EMPTY: &'static [u8] = b"EMPTY___";
+const PAGE_VALUE_MARK_LEN: usize = 8;
+
+static_assertions::const_assert_eq!(PAGE_VALUE_PENDING.len(), PAGE_VALUE_MARK_LEN);
+static_assertions::const_assert_eq!(PAGE_VALUE_EMPTY.len(), PAGE_VALUE_MARK_LEN);
+
 /// PageValue is used to read and write pages to storage.
-/// It uses the length of the page to determine if the page is available or pending.
+/// It uses the length of the page to determine if the page is available or
+/// pending.
 pub enum PageValue {
     Pending,
+    Empty,
     Available(Page),
 }
 
 impl PageValue {
+    /// resolves the PageValue to a Page, panicing if the page is Pending
     pub fn expect(self, msg: &str) -> Page {
         match self {
             PageValue::Pending => panic!("{}", msg),
+            PageValue::Empty => EMPTY_PAGE,
             PageValue::Available(page) => page,
         }
     }
 }
 
 impl TryFrom<Slice> for PageValue {
-    type Error = Culprit<PageSizeErr>;
+    type Error = Culprit<PageValueConversionErr>;
 
+    #[inline]
     fn try_from(value: Slice) -> Result<Self, Self::Error> {
-        let bytes: Bytes = value.into();
-        bytes.try_into()
+        Bytes::from(value).try_into()
     }
 }
 
 impl TryFrom<Bytes> for PageValue {
-    type Error = Culprit<PageSizeErr>;
+    type Error = Culprit<PageValueConversionErr>;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
-        if value.is_empty() {
-            return Ok(PageValue::Pending);
+        if value.len() == PAGE_VALUE_MARK_LEN {
+            match value.as_ref() {
+                PAGE_VALUE_PENDING => Ok(PageValue::Pending),
+                PAGE_VALUE_EMPTY => Ok(PageValue::Empty),
+                _ => Err(Culprit::new_with_note(
+                    PageValueConversionErr::InvalidMark,
+                    format!("invalid page value mark: {:?}", value),
+                )),
+            }
+        } else {
+            Ok(PageValue::Available(Page::try_from(value).or_into_ctx()?))
         }
-        Ok(PageValue::Available(value.try_into()?))
     }
 }
 
 impl From<PageValue> for Bytes {
     fn from(val: PageValue) -> Self {
         match val {
-            PageValue::Pending => Bytes::new(),
+            PageValue::Pending => Bytes::from_static(PAGE_VALUE_PENDING),
+            PageValue::Empty => Bytes::from_static(PAGE_VALUE_EMPTY),
             PageValue::Available(page) => page.into(),
         }
     }
@@ -122,7 +158,6 @@ impl From<PageValue> for Bytes {
 
 impl From<PageValue> for Slice {
     fn from(value: PageValue) -> Self {
-        let bytes: Bytes = value.into();
-        bytes.into()
+        Bytes::from(value).into()
     }
 }
