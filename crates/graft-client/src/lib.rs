@@ -7,10 +7,11 @@ mod pair;
 
 pub mod runtime {
     pub mod fetcher;
-    pub mod handle;
+    pub mod runtime;
     pub mod storage;
     pub mod sync;
     pub mod txn;
+    pub mod volume;
 }
 
 pub use builder::{ClientBuildErr, ClientBuilder};

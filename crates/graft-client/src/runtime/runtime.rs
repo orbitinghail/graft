@@ -1,29 +1,29 @@
 use culprit::{Result, ResultExt};
 use std::{sync::Arc, time::Duration};
-use tokio::sync::broadcast;
 
 use graft_core::VolumeId;
 
-use crate::{ClientErr, ClientPair};
+use crate::{runtime::storage::volume_config::SyncDirection, ClientErr, ClientPair};
 
 use super::{
-    storage::{
-        snapshot::{Snapshot, SnapshotKind},
-        volume::VolumeConfig,
-        Storage,
-    },
+    fetcher::Fetcher,
+    storage::{snapshot::SnapshotKind, volume_config::VolumeConfig, Storage},
     sync::{SyncTask, SyncTaskHandle},
-    txn::{ReadTxn, WriteTxn},
+    volume::VolumeHandle,
 };
 
 #[derive(Clone)]
-pub struct RuntimeHandle {
+pub struct Runtime<F> {
+    fetcher: Arc<F>,
     storage: Arc<Storage>,
 }
 
-impl RuntimeHandle {
-    pub fn new(storage: Storage) -> Self {
-        Self { storage: Arc::new(storage) }
+impl<F: Fetcher> Runtime<F> {
+    pub fn new(fetcher: F, storage: Storage) -> Self {
+        Self {
+            fetcher: Arc::new(fetcher),
+            storage: Arc::new(storage),
+        }
     }
 
     pub fn spawn_sync_task(
@@ -34,46 +34,35 @@ impl RuntimeHandle {
         SyncTask::spawn(self.storage.clone(), clients, refresh_interval)
     }
 
-    pub fn add_volume(&self, vid: &VolumeId, config: VolumeConfig) -> Result<(), ClientErr> {
-        Ok(self.storage.add_volume(vid, config).or_into_ctx()?)
-    }
-
-    /// Start a new read transaction at the latest local snapshot
-    pub fn read_txn(&self, vid: &VolumeId) -> Result<ReadTxn, ClientErr> {
-        let snapshot = self.snapshot(vid)?;
-        Ok(ReadTxn::new(vid.clone(), snapshot, self.storage.clone()))
-    }
-
-    /// Start a new write transaction at the latest local snapshot
-    pub fn write_txn(&self, vid: &VolumeId) -> Result<WriteTxn, ClientErr> {
-        let snapshot = self
-            .storage
-            .snapshot(vid, SnapshotKind::Local)
-            .or_into_ctx()?;
-        Ok(WriteTxn::new(vid.clone(), snapshot, self.storage.clone()))
-    }
-
-    pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, ClientErr> {
-        let snapshot = self
-            .storage
-            .snapshot(vid, SnapshotKind::Local)
-            .or_into_ctx()?;
-        match snapshot {
-            Some(snapshot) => Ok(snapshot),
-            None => todo!("fetch latest snapshot"),
+    pub async fn open_volume(
+        &self,
+        vid: &VolumeId,
+        config: VolumeConfig,
+    ) -> Result<VolumeHandle, ClientErr> {
+        if config.sync().matches(SyncDirection::Pull) {
+            self.fetcher
+                .pull_snapshot(&self.storage, vid)
+                .await
+                .or_into_ctx()?;
         }
-    }
 
-    /// Subscribe to new local commits to volumes. This is a best effort
-    /// channel, laggy consumers will receive RecvError::Lagged.
-    pub fn subscribe_to_local_commits(&self) -> broadcast::Receiver<VolumeId> {
-        self.storage.subscribe_to_local_commits()
-    }
+        if config.sync().matches(SyncDirection::Push) {
+            // if no local snapshot exists, create one
+            if self
+                .storage
+                .snapshot(&vid, SnapshotKind::Local)
+                .or_into_ctx()?
+                .is_none()
+            {
+                self.storage
+                    .commit(&vid, None, Default::default())
+                    .or_into_ctx()?;
+            }
+        }
 
-    /// Subscribe to new remote commits to volumes. This is a best effort
-    /// channel, laggy consumers will receive RecvError::Lagged.
-    pub fn subscribe_to_remote_commits(&self) -> broadcast::Receiver<VolumeId> {
-        self.storage.subscribe_to_remote_commits()
+        self.storage.set_volume_config(&vid, config).or_into_ctx()?;
+
+        Ok(VolumeHandle::new(vid.clone(), self.storage.clone()))
     }
 }
 
@@ -84,25 +73,30 @@ mod tests {
         page::{Page, EMPTY_PAGE},
     };
 
-    use crate::runtime::storage::StorageErr;
+    use crate::runtime::{fetcher::MockFetcher, storage::StorageErr};
 
     use super::*;
 
-    #[test]
-    fn test_read_write_sanity() {
+    #[tokio::test(start_paused = true)]
+    async fn test_read_write_sanity() {
         let storage = Storage::open_temporary().unwrap();
-        let handle = RuntimeHandle::new(storage);
+        let runtime = Runtime::new(MockFetcher, storage);
 
         let vid = VolumeId::random();
         let page = Page::test_filled(0x42);
         let page2 = Page::test_filled(0x99);
 
+        let handle = runtime
+            .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
+            .await
+            .unwrap();
+
         // open a read txn and verify that no pages are returned
-        let txn = handle.read_txn(&vid).unwrap();
+        let txn = handle.read_txn().unwrap();
         assert_eq!(txn.read(0.into()).unwrap(), EMPTY_PAGE);
 
         // open a write txn and write a page, verify RYOW, then commit
-        let mut txn = handle.write_txn(&vid).unwrap();
+        let mut txn = handle.write_txn().unwrap();
         txn.write(0.into(), page.clone());
         assert_eq!(txn.read(0.into()).unwrap(), page);
         let txn = txn.commit().unwrap();
@@ -116,7 +110,7 @@ mod tests {
         assert_eq!(snapshot.page_count(), 1);
 
         // open a new write txn, verify it can read the page; write another page
-        let mut txn = handle.write_txn(&vid).unwrap();
+        let mut txn = handle.write_txn().unwrap();
         assert_eq!(txn.read(0.into()).unwrap(), page);
         txn.write(1.into(), page2.clone());
         assert_eq!(txn.read(1.into()).unwrap(), page2);
@@ -146,27 +140,32 @@ mod tests {
         assert_eq!(snapshot.page_count(), 2);
     }
 
-    #[test]
-    fn test_concurrent_commit_err() {
+    #[tokio::test(start_paused = true)]
+    async fn test_concurrent_commit_err() {
         // open two write txns, commit the first, then commit the second
 
         let storage = Storage::open_temporary().unwrap();
-        let handle = RuntimeHandle::new(storage);
+        let runtime = Runtime::new(MockFetcher, storage);
 
         let vid = VolumeId::random();
         let page = Page::test_filled(0x42);
 
-        let mut txn1 = handle.write_txn(&vid).unwrap();
+        let handle = runtime
+            .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
+            .await
+            .unwrap();
+
+        let mut txn1 = handle.write_txn().unwrap();
         txn1.write(0.into(), page.clone());
 
-        let mut txn2 = handle.write_txn(&vid).unwrap();
+        let mut txn2 = handle.write_txn().unwrap();
         txn2.write(0.into(), page.clone());
 
         let txn1 = txn1.commit().unwrap();
         assert_eq!(txn1.read(0.into()).unwrap(), page);
 
         // take a snapshot of the volume before committing txn2
-        let pre_commit = handle.snapshot(&vid).unwrap();
+        let pre_commit = handle.snapshot().unwrap();
 
         let txn2 = txn2.commit();
         assert!(matches!(
@@ -175,7 +174,7 @@ mod tests {
         ));
 
         // ensure that txn2 did not commit by verifying the snapshot
-        let snapshot = handle.snapshot(&vid).unwrap();
+        let snapshot = handle.snapshot().unwrap();
         assert_eq!(pre_commit, snapshot);
     }
 }

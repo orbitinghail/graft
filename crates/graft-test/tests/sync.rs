@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use graft_client::runtime::{
-    handle::RuntimeHandle,
+    fetcher::NetFetcher,
+    runtime::Runtime,
     storage::{
-        volume::{SyncDirection, VolumeConfig},
+        volume_config::{SyncDirection, VolumeConfig},
         Storage,
     },
 };
@@ -18,44 +19,46 @@ async fn test_client_sync_sanity() {
     let (mut supervisor, clients) = run_graft_services().await;
 
     let storage = Storage::open_temporary().unwrap();
-    let runtime = RuntimeHandle::new(storage);
+    let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
     let sync = runtime.spawn_sync_task(clients.clone(), Duration::from_secs(1));
 
     // create a second client to sync to
     let storage2 = Storage::open_temporary().unwrap();
-    let mut commits_rx = storage2.subscribe_to_remote_commits();
-    let runtime2 = RuntimeHandle::new(storage2);
+    let runtime2 = Runtime::new(NetFetcher::new(clients.clone()), storage2);
     let sync2 = runtime2.spawn_sync_task(clients, Duration::from_secs(1));
 
     // register the volume with both clients, pushing from client 1 to client 2
     let vid = VolumeId::random();
-    runtime
-        .add_volume(&vid, VolumeConfig::new(SyncDirection::Push))
+    let handle = runtime
+        .open_volume(&vid, VolumeConfig::new(SyncDirection::Push))
+        .await
         .unwrap();
-    runtime2
-        .add_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
+    let handle2 = runtime2
+        .open_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
+        .await
         .unwrap();
+
+    let mut subscription = handle2.subscribe_to_remote_changes();
 
     let page = Page::test_filled(0x42);
 
     // write and wait for replication multiple times
     for i in 0..5 {
         // write multiple times to the volume
-        let mut txn = runtime.write_txn(&vid).unwrap();
+        let mut txn = handle.write_txn().unwrap();
         txn.write(0.into(), page.clone());
         txn.commit().unwrap();
 
-        let mut txn = runtime.write_txn(&vid).unwrap();
+        let mut txn = handle.write_txn().unwrap();
         txn.write(0.into(), page.clone());
         txn.commit().unwrap();
 
         // wait for client 2 to receive the write
-        timeout(Duration::from_secs(5), commits_rx.recv())
+        timeout(Duration::from_secs(5), subscription.changed())
             .await
-            .unwrap()
             .unwrap();
 
-        let snapshot = runtime2.snapshot(&vid).unwrap();
+        let snapshot = handle2.snapshot().unwrap();
         log::info!("received remote snapshot: {snapshot:?}");
         assert_eq!(snapshot.lsn(), i);
         assert_eq!(snapshot.page_count(), 1);

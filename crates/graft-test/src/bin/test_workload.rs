@@ -7,9 +7,10 @@ use culprit::{Culprit, ResultExt};
 use futures::FutureExt;
 use graft_client::{
     runtime::{
-        handle::RuntimeHandle,
+        fetcher::NetFetcher,
+        runtime::Runtime,
         storage::{
-            volume::{SyncDirection, VolumeConfig},
+            volume_config::{SyncDirection, VolumeConfig},
             Storage,
         },
         sync::ShutdownErr,
@@ -96,7 +97,7 @@ enum Workload {
 impl Workload {
     async fn start(
         self,
-        handle: &RuntimeHandle,
+        handle: &Runtime<NetFetcher>,
         rng: impl Rng,
     ) -> Result<(), Culprit<WorkloadErr>> {
         match self {
@@ -111,15 +112,16 @@ impl Workload {
 /// This workload continuously writes and reads pages to a volume, verifying the
 /// contents of pages are always correct
 async fn workload_writer(
-    handle: &RuntimeHandle,
+    runtime: &Runtime<NetFetcher>,
     mut rng: impl Rng,
     vid: VolumeId,
     interval: Duration,
 ) -> Result<(), Culprit<WorkloadErr>> {
     let mut page_tracker = PageTracker::default();
 
-    handle
-        .add_volume(&vid, VolumeConfig::new(SyncDirection::Both))
+    let handle = runtime
+        .open_volume(&vid, VolumeConfig::new(SyncDirection::Push))
+        .await
         .or_into_ctx()?;
 
     loop {
@@ -132,7 +134,7 @@ async fn workload_writer(
         tracing::info!(?offset, "writing page");
 
         // verify the offset is missing or present as expected
-        let txn = handle.read_txn(&vid).or_into_ctx()?;
+        let txn = handle.read_txn().or_into_ctx()?;
         let page = txn.read(offset).or_into_ctx()?;
         let details = json!({ "offset": offset });
         if let Some(existing) = existing_hash {
@@ -149,7 +151,7 @@ async fn workload_writer(
             );
         }
 
-        let mut txn = handle.write_txn(&vid).or_into_ctx()?;
+        let mut txn = handle.write_txn().or_into_ctx()?;
 
         // write the page to the volume and update the page index
         txn.write(offset, new_page);
@@ -162,26 +164,25 @@ async fn workload_writer(
 }
 
 async fn workload_reader(
-    handle: &RuntimeHandle,
+    runtime: &Runtime<NetFetcher>,
     _rng: impl Rng,
     vid: VolumeId,
 ) -> Result<(), Culprit<WorkloadErr>> {
-    handle
-        .add_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
+    let handle = runtime
+        .open_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
+        .await
         .or_into_ctx()?;
 
-    let mut commits_rx = handle.subscribe_to_remote_commits();
+    let mut subscription = handle.subscribe_to_remote_changes();
 
     loop {
-        let commit_vid = commits_rx.recv().await.or_into_ctx()?;
-        if commit_vid != vid {
-            antithesis_sdk::assert_unreachable!("received commit for unexpected volume");
-        }
+        // wait for the next commit
+        subscription.changed().await;
 
-        let snapshot = handle.snapshot(&vid).or_into_ctx()?;
+        let snapshot = handle.snapshot().or_into_ctx()?;
         tracing::info!(?snapshot, "received commit for volume {:?}", vid);
 
-        let txn = handle.read_txn(&vid).or_into_ctx()?;
+        let txn = handle.read_txn().or_into_ctx()?;
 
         antithesis_sdk::assert_always_or_unreachable!(
             txn.snapshot() == &snapshot,
@@ -246,9 +247,6 @@ async fn main() -> Result<(), Culprit<WorkloadErr>> {
 
     tracing::info!(?workload, "loaded workload");
 
-    let storage = Storage::open_temporary().unwrap();
-    let handle = RuntimeHandle::new(storage);
-
     let metastore_client: MetastoreClient =
         ClientBuilder::new(Url::parse("http://metastore:3001").unwrap())
             .build()
@@ -259,7 +257,9 @@ async fn main() -> Result<(), Culprit<WorkloadErr>> {
             .or_into_ctx()?;
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
-    let sync_task = handle.spawn_sync_task(clients, Duration::from_secs(1));
+    let storage = Storage::open_temporary().unwrap();
+    let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
+    let sync_task = runtime.spawn_sync_task(clients, Duration::from_secs(1));
 
     antithesis_sdk::lifecycle::setup_complete(&json!({ "workload": workload }));
 
@@ -268,7 +268,7 @@ async fn main() -> Result<(), Culprit<WorkloadErr>> {
     tracing::info!(?test_timeout, "starting test workload");
 
     select! {
-        _ = workload.start(&handle, rng).fuse() => {
+        _ = workload.start(&runtime, rng).fuse() => {
             tracing::info!("workload finished");
         }
         _ = ctrl_c().fuse() => {

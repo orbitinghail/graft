@@ -9,24 +9,24 @@ graft-proto = { path = "../graft-proto" }
 splinter = { path = "../splinter" }
 
 antithesis_sdk = { workspace = true }
-culprit = { workspace = true }
 bytes = { workspace = true }
+culprit = { workspace = true }
+fjall = { workspace = true, features = ["bytes"] }
+futures = { workspace = true }
+log = { workspace = true }
+lsm-tree = { workspace = true, features = ["bytes"] }
 prost = { workspace = true }
 reqwest = { workspace = true, features = ["brotli"] }
-tokio = { workspace = true }
-thiserror = { workspace = true }
-futures = { workspace = true }
-url = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-log = { workspace = true }
+static_assertions = { workspace = true }
 tempfile = { workspace = true }
-zerocopy = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
 tokio-util = { workspace = true }
 tryiter = { workspace = true }
-fjall = { workspace = true, features = ["bytes"] }
-lsm-tree = { workspace = true, features = ["bytes"] }
-static_assertions = { workspace = true }
+url = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }

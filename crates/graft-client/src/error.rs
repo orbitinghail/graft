@@ -32,7 +32,7 @@ impl From<prost::DecodeError> for ClientErr {
 impl ClientErr {
     pub(crate) fn is_snapshot_missing(&self) -> bool {
         match self {
-            ClientErr::GraftErr(err) => err.code() == GraftErrCode::SnapshotMissing,
+            Self::GraftErr(err) => err.code() == GraftErrCode::SnapshotMissing,
             _ => false,
         }
     }

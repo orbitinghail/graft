@@ -35,6 +35,9 @@ impl ReadTxn {
 
     /// Read a page from the snapshot
     pub fn read(&self, offset: PageOffset) -> Result<Page, ClientErr> {
+        // TODO:
+        // return None if offset is out of range OR we don't have a snapshot
+
         match self
             .storage
             .read(&self.vid, self.snapshot.lsn(), offset)
@@ -58,41 +61,28 @@ impl ReadTxn {
 
 #[derive(Debug)]
 pub struct WriteTxn {
-    vid: VolumeId,
-    snapshot: Option<Snapshot>,
-    storage: Arc<Storage>,
+    read_txn: ReadTxn,
     memtable: Memtable,
 }
 
 impl From<ReadTxn> for WriteTxn {
-    fn from(value: ReadTxn) -> Self {
-        WriteTxn {
-            vid: value.vid,
-            snapshot: Some(value.snapshot),
-            storage: value.storage,
-            memtable: Default::default(),
-        }
+    #[inline]
+    fn from(read_txn: ReadTxn) -> Self {
+        WriteTxn { read_txn, memtable: Default::default() }
     }
 }
 
 impl WriteTxn {
-    pub(crate) fn new(vid: VolumeId, snapshot: Option<Snapshot>, storage: Arc<Storage>) -> Self {
-        Self {
-            vid,
-            snapshot,
-            storage,
-            memtable: Default::default(),
-        }
-    }
-
     /// Returns the volume ID for this transaction
+    #[inline]
     pub fn vid(&self) -> &VolumeId {
-        &self.vid
+        self.read_txn.vid()
     }
 
     /// Returns the snapshot backing this transaction
-    pub fn snapshot(&self) -> Option<&Snapshot> {
-        self.snapshot.as_ref()
+    #[inline]
+    pub fn snapshot(&self) -> &Snapshot {
+        self.read_txn.snapshot()
     }
 
     /// Read a page; supports read your own writes (RYOW)
@@ -100,25 +90,7 @@ impl WriteTxn {
         if let Some(page) = self.memtable.get(offset) {
             return Ok(page.clone());
         }
-        if let Some(snapshot) = &self.snapshot {
-            match self
-                .storage
-                .read(&self.vid, snapshot.lsn(), offset)
-                .or_into_ctx()?
-            {
-                (_, PageValue::Available(page)) => Ok(page),
-                (_, PageValue::Empty) => Ok(EMPTY_PAGE),
-                (_, PageValue::Pending) => {
-                    // When this is fixed, update the test:
-                    // graft-test/tests/sync.rs
-                    todo!("download page from remote")
-                }
-            }
-        } else {
-            // we assume a write txn without a snapshot is the first commit to a
-            // volume. if this assumption is wrong, the remote commit will fail
-            Ok(EMPTY_PAGE)
-        }
+        self.read_txn.read(offset)
     }
 
     /// Write a page
@@ -128,8 +100,13 @@ impl WriteTxn {
 
     /// Commit the transaction
     pub fn commit(self) -> Result<ReadTxn, ClientErr> {
-        let Self { vid, snapshot, storage, memtable } = self;
-        let snapshot = storage.commit(&vid, snapshot, memtable).or_into_ctx()?;
+        let Self {
+            read_txn: ReadTxn { vid, snapshot, storage },
+            memtable,
+        } = self;
+        let snapshot = storage
+            .commit(&vid, Some(snapshot), memtable)
+            .or_into_ctx()?;
         Ok(ReadTxn::new(vid, snapshot, storage))
     }
 }

@@ -4,14 +4,7 @@ use culprit::{Culprit, Result};
 use graft_core::VolumeId;
 use job::Job;
 use thiserror::Error;
-use tokio::{
-    select,
-    sync::broadcast::{
-        self,
-        error::{RecvError, TryRecvError},
-    },
-    task::JoinHandle,
-};
+use tokio::{select, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tryiter::{TryIterator, TryIteratorExt};
 
@@ -20,7 +13,7 @@ use crate::{
     ClientErr, ClientPair,
 };
 
-use super::storage::{volume::SyncDirection, Storage};
+use super::storage::{changeset::SetSubscriber, volume_config::SyncDirection, Storage};
 
 #[derive(Debug, Error)]
 pub enum ShutdownErr {
@@ -84,7 +77,7 @@ pub struct SyncTask {
     storage: Arc<Storage>,
     clients: ClientPair,
     ticker: tokio::time::Interval,
-    commits_rx: broadcast::Receiver<VolumeId>,
+    commits: SetSubscriber<VolumeId>,
     token: CancellationToken,
 }
 
@@ -96,12 +89,12 @@ impl SyncTask {
     ) -> SyncTaskHandle {
         let ticker = tokio::time::interval(refresh_interval);
         let token = CancellationToken::new();
-        let commits_rx = storage.subscribe_to_local_commits();
+        let commits = storage.local_changeset().subscribe_all();
         let task = Self {
             storage,
             clients,
             ticker,
-            commits_rx,
+            commits,
             token: token.clone(),
         };
         SyncTaskHandle { token, task: tokio::spawn(task.run()) }
@@ -135,7 +128,7 @@ impl SyncTask {
                     self.handle_tick().await?;
                 }
 
-                vids = Self::changed_vids(&mut self.commits_rx) => {
+                vids = self.commits.changed() => {
                     self.handle_commit(vids).await?;
                 }
             }
@@ -145,43 +138,6 @@ impl SyncTask {
 
     fn is_shutdown(&self) -> bool {
         self.token.is_cancelled()
-    }
-
-    /// Yields a set of recent vids that have been committed to, or None if
-    /// the receiver lags. Panics if the channel is closed.
-    async fn changed_vids(chan: &mut broadcast::Receiver<VolumeId>) -> Option<HashSet<VolumeId>> {
-        // wait for the first commit; returning early if the channel lags
-        let first_vid = match chan.recv().await {
-            Ok(vid) => vid,
-            Err(RecvError::Closed) => panic!("commits channel closed"),
-            Err(RecvError::Lagged(_)) => {
-                log::warn!("commits channel lagging");
-                chan.resubscribe();
-                return None;
-            }
-        };
-
-        // optimistically drain the rest of the channel into a set; returning early if the channel lags
-        let mut set = HashSet::new();
-        set.insert(first_vid);
-        loop {
-            match chan.try_recv() {
-                Ok(vid) => {
-                    set.insert(vid);
-                }
-                Err(TryRecvError::Empty) => {
-                    break;
-                }
-                Err(TryRecvError::Lagged(_)) => {
-                    log::warn!("commits channel lagging");
-                    chan.resubscribe();
-                    return None;
-                }
-                Err(TryRecvError::Closed) => panic!("commits channel closed"),
-            }
-        }
-
-        Some(set)
     }
 
     async fn handle_tick(&mut self) -> Result<(), ClientErr> {
@@ -198,9 +154,9 @@ impl SyncTask {
         Ok(())
     }
 
-    async fn handle_commit(&mut self, vids: Option<HashSet<VolumeId>>) -> Result<(), ClientErr> {
+    async fn handle_commit(&mut self, vids: HashSet<VolumeId>) -> Result<(), ClientErr> {
         log::debug!("handle_commit: {:?}", vids);
-        let jobs = self.jobs(SyncDirection::Push, vids).await;
+        let jobs = self.jobs(SyncDirection::Push, Some(vids)).await;
         for job in jobs.collect::<Result<Vec<Job>, _>>()? {
             job.run(&self.storage, &self.clients).await?;
 

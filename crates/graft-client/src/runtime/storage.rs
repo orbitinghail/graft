@@ -8,6 +8,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use changeset::ChangeSet;
 use commit::CommitKey;
 use culprit::{Culprit, ResultExt};
 use fjall::{KvSeparationOptions, PartitionCreateOptions, Slice};
@@ -18,20 +19,21 @@ use graft_core::{
     zerocopy_err::ZerocopyErr,
     VolumeId,
 };
+use graft_proto::pagestore::v1::PageAtOffset;
 use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
 use snapshot::{Snapshot, SnapshotKey, SnapshotKind, SnapshotKindMask, SnapshotSet};
 use splinter::{DecodeErr, Splinter, SplinterRef};
-use tokio::sync::broadcast;
 use tryiter::{TryIterator, TryIteratorExt};
-use volume::{SyncDirection, VolumeConfig};
+use volume_config::{SyncDirection, VolumeConfig};
 use zerocopy::{IntoBytes, TryFromBytes};
 
+pub mod changeset;
 pub(crate) mod commit;
 pub(crate) mod memtable;
 pub(crate) mod page;
 pub mod snapshot;
-pub mod volume;
+pub mod volume_config;
 
 type Result<T> = std::result::Result<T, Culprit<StorageErr>>;
 
@@ -97,10 +99,10 @@ pub struct Storage {
     commit_lock: Arc<Mutex<()>>,
 
     /// Used to notify subscribers of new local commits
-    local_commits_tx: broadcast::Sender<VolumeId>,
+    local_changeset: ChangeSet<VolumeId>,
 
     /// Used to notify subscribers of new remote commits
-    remote_commits_tx: broadcast::Sender<VolumeId>,
+    remote_changeset: ChangeSet<VolumeId>,
 }
 
 impl Storage {
@@ -124,8 +126,6 @@ impl Storage {
             "commits",
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
-        let (local_commits_tx, _) = broadcast::channel(8);
-        let (remote_commits_tx, _) = broadcast::channel(8);
         Ok(Storage {
             keyspace,
             volumes,
@@ -133,26 +133,26 @@ impl Storage {
             pages,
             commits,
             commit_lock: Default::default(),
-            local_commits_tx,
-            remote_commits_tx,
+            local_changeset: Default::default(),
+            remote_changeset: Default::default(),
         })
     }
 
-    /// Subscribe to new local commits to volumes. This is a best effort
-    /// channel, laggy consumers will receive RecvError::Lagged.
-    pub fn subscribe_to_local_commits(&self) -> broadcast::Receiver<VolumeId> {
-        self.local_commits_tx.subscribe()
+    /// Access the local commit changeset. This ChangeSet is updated whenever a
+    /// Volume receives a local commit.
+    pub fn local_changeset(&self) -> &ChangeSet<VolumeId> {
+        &self.local_changeset
     }
 
-    /// Subscribe to new remote commits to volumes. This is a best effort
-    /// channel, laggy consumers will receive RecvError::Lagged.
-    pub fn subscribe_to_remote_commits(&self) -> broadcast::Receiver<VolumeId> {
-        self.remote_commits_tx.subscribe()
+    /// Access the remote commit changeset. This ChangeSet is updated whenever a
+    /// Volume receives a remote commit.
+    pub fn remote_changeset(&self) -> &ChangeSet<VolumeId> {
+        &self.remote_changeset
     }
 
     /// Add a new volume to the storage. This function will overwrite any
     /// existing configuration for the volume.
-    pub fn add_volume(&self, vid: &VolumeId, config: VolumeConfig) -> Result<()> {
+    pub fn set_volume_config(&self, vid: &VolumeId, config: VolumeConfig) -> Result<()> {
         Ok(self.volumes.insert(vid.as_bytes(), config)?)
     }
 
@@ -350,8 +350,8 @@ impl Storage {
         // commit the changes
         batch.commit()?;
 
-        // notify listeners of the new local commit; ignore errors
-        let _ = self.local_commits_tx.send(vid.clone());
+        // notify listeners of the new local commit
+        self.local_changeset.mark_changed(&vid);
 
         // return the new snapshot
         Ok(snapshot)
@@ -400,10 +400,25 @@ impl Storage {
 
         batch.commit()?;
 
-        // notify listeners of the new remote commit; ignore errors
-        let _ = self.remote_commits_tx.send(vid.clone());
+        // notify listeners of the new remote commit
+        self.remote_changeset.mark_changed(&vid);
 
         Ok(())
+    }
+
+    /// Write a set of pages to storage at a particular vid/lsn
+    pub fn receive_pages(&self, vid: &VolumeId, lsn: LSN, pages: Vec<PageAtOffset>) -> Result<()> {
+        let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, lsn);
+        let mut batch = self.keyspace.batch();
+        for page in pages {
+            key.set_offset(page.offset());
+            batch.insert(
+                &self.pages,
+                key.as_ref(),
+                PageValue::try_from(page.data).or_into_ctx()?,
+            );
+        }
+        Ok(batch.commit()?)
     }
 
     /// Complete a sync operation by updating the remote snapshot for the volume
@@ -474,7 +489,7 @@ mod tests {
 
         // first volume has two commits, and is configured to pull
         storage
-            .add_volume(&vids[0], VolumeConfig::new(SyncDirection::Pull))
+            .set_volume_config(&vids[0], VolumeConfig::new(SyncDirection::Pull))
             .unwrap();
         let snapshot = storage.commit(&vids[0], None, memtable.clone()).unwrap();
         storage
@@ -483,7 +498,7 @@ mod tests {
 
         // second volume has one commit, and is configured to push
         storage
-            .add_volume(&vids[1], VolumeConfig::new(SyncDirection::Push))
+            .set_volume_config(&vids[1], VolumeConfig::new(SyncDirection::Push))
             .unwrap();
         storage.commit(&vids[1], None, memtable.clone()).unwrap();
 

@@ -3506,9 +3506,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tryiter"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78ebd7c941bad2a384d12ffb3370fd5cc8a4e5d0e9c9667dadb8a4e0fa39c413"
+checksum = "013cd4defd97c9cca0891b0e3360a304ed6e3bec4b48c00382d552958601edb7"
 
 [[package]]
 name = "typenum"
