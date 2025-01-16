@@ -8,9 +8,20 @@ Next: SQLite extension
 
 Later:
 - consider switching pagestore to websockets or http streaming bodies
-- end to end testing framework (started)
 - garbage collection
 - authentication (api keys)
+
+# Storage is not safe to use from async context
+
+Currently I'm using Storage from within an async context, and that's not safe (since Storage takes non-async friendly locks).
+
+I need to solve this without hurting performance too much.
+
+I'm tempted to make the runtime layer entirely sync, and move all the async stuff into a separate thread using Tokio. The only downside of this approach is when I need to bridge back from async to sync. In that case, I'll have to carefully wrap sync logic (like Storage) with spawn_blocking.
+
+The main issue locations is in the fetcher and the sync task.
+The sync task can pretty easily just wrap all calls to storage in spawn blocking.
+And the fetcher could expose a sync rather than async api to the runtime to ensure the runtime isn't infected. Internally to the fetcher it will have to use block on to call into tokio which seems ok since net latency is already high so the cost of block_on should amortize out reasonably well.
 
 # Client fetching
 
