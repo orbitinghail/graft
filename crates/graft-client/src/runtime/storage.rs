@@ -1,11 +1,4 @@
-use std::{
-    collections::HashSet,
-    fmt::Debug,
-    io,
-    ops::RangeBounds,
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashSet, fmt::Debug, io, ops::RangeBounds, path::Path, sync::Arc};
 
 use bytes::Bytes;
 use changeset::ChangeSet;
@@ -22,6 +15,7 @@ use graft_core::{
 use graft_proto::pagestore::v1::PageAtOffset;
 use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
+use parking_lot::Mutex;
 use snapshot::{Snapshot, SnapshotKey, SnapshotKind, SnapshotKindMask, SnapshotSet};
 use splinter::{DecodeErr, Splinter, SplinterRef};
 use tryiter::{TryIterator, TryIteratorExt};
@@ -335,7 +329,7 @@ impl Storage {
         batch.insert(&self.commits, commit_key, offsets.serialize_to_bytes());
 
         // acquire the commit lock
-        let _permit = self.commit_lock.lock().expect("commit lock poisoned");
+        let _permit = self.commit_lock.lock();
 
         // check to see if the read snapshot is the latest local snapshot while
         // holding the commit lock

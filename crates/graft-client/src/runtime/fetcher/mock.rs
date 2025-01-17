@@ -15,11 +15,11 @@ use super::Fetcher;
 pub struct MockFetcher;
 
 impl Fetcher for MockFetcher {
-    async fn pull_snapshot(&self, _storage: &Storage, _vid: &VolumeId) -> Result<(), ClientErr> {
+    fn pull_snapshot(&self, _storage: &Storage, _vid: &VolumeId) -> Result<(), ClientErr> {
         Ok(())
     }
 
-    async fn fetch_page(
+    fn fetch_page(
         &self,
         _storage: &Storage,
         _vid: &VolumeId,

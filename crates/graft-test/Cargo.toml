@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-graft-client = { path = "../graft-client" }
+graft-client = { path = "../graft-client", features = ["antithesis"]}
 graft-server = { path = "../graft-server" }
 graft-core = { path = "../graft-core", features = ["testutil"] }
 splinter = { path = "../splinter" }

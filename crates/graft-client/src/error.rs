@@ -10,8 +10,8 @@ pub enum ClientErr {
     #[error("graft error: {0}")]
     GraftErr(#[from] GraftErr),
 
-    #[error("request failed: {0}")]
-    RequestErr(#[from] reqwest::Error),
+    #[error("http request failed: {0}")]
+    HttpErr(ureq::ErrorKind),
 
     #[error("failed to decode protobuf message")]
     ProtobufDecodeErr,
@@ -21,6 +21,27 @@ pub enum ClientErr {
 
     #[error("local storage error: {0}")]
     StorageErr(#[from] storage::StorageErr),
+
+    #[error("io error: {0}")]
+    IoErr(std::io::ErrorKind),
+}
+
+impl From<std::io::Error> for ClientErr {
+    fn from(err: std::io::Error) -> Self {
+        Self::IoErr(err.kind())
+    }
+}
+
+impl From<ureq::Error> for ClientErr {
+    fn from(err: ureq::Error) -> Self {
+        Self::HttpErr(err.kind())
+    }
+}
+
+impl From<ureq::Transport> for ClientErr {
+    fn from(err: ureq::Transport) -> Self {
+        Self::HttpErr(err.kind())
+    }
 }
 
 impl From<prost::DecodeError> for ClientErr {

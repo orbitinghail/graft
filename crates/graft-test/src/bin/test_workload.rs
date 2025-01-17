@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{thread::sleep, time::Duration, u64};
 
 use antithesis_sdk::{antithesis_init, assert_always_or_unreachable};
 use clap::Parser;
@@ -23,7 +23,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
-use tokio::{select, signal::ctrl_c, sync::broadcast, time::sleep};
+use tokio::{select, signal::ctrl_c, sync::broadcast, task::spawn_blocking};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
     filter::FromEnvError, fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter,
@@ -95,24 +95,20 @@ enum Workload {
 }
 
 impl Workload {
-    async fn start(
-        self,
-        handle: &Runtime<NetFetcher>,
-        rng: impl Rng,
-    ) -> Result<(), Culprit<WorkloadErr>> {
+    fn start(self, handle: Runtime<NetFetcher>, rng: impl Rng) -> Result<(), Culprit<WorkloadErr>> {
         match self {
             Workload::Writer { vid, interval_ms: interval } => {
-                workload_writer(handle, rng, vid, Duration::from_millis(interval)).await
+                workload_writer(handle, rng, vid, Duration::from_millis(interval))
             }
-            Workload::Reader { vid } => workload_reader(handle, rng, vid).await,
+            Workload::Reader { vid } => workload_reader(handle, rng, vid),
         }
     }
 }
 
 /// This workload continuously writes and reads pages to a volume, verifying the
 /// contents of pages are always correct
-async fn workload_writer(
-    runtime: &Runtime<NetFetcher>,
+fn workload_writer(
+    runtime: Runtime<NetFetcher>,
     mut rng: impl Rng,
     vid: VolumeId,
     interval: Duration,
@@ -121,7 +117,6 @@ async fn workload_writer(
 
     let handle = runtime
         .open_volume(&vid, VolumeConfig::new(SyncDirection::Push))
-        .await
         .or_into_ctx()?;
 
     loop {
@@ -159,25 +154,24 @@ async fn workload_writer(
 
         txn.commit().or_into_ctx()?;
 
-        sleep(interval).await;
+        sleep(interval);
     }
 }
 
-async fn workload_reader(
-    runtime: &Runtime<NetFetcher>,
+fn workload_reader(
+    runtime: Runtime<NetFetcher>,
     _rng: impl Rng,
     vid: VolumeId,
 ) -> Result<(), Culprit<WorkloadErr>> {
     let handle = runtime
         .open_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
-        .await
         .or_into_ctx()?;
 
-    let mut subscription = handle.subscribe_to_remote_changes();
+    let subscription = handle.subscribe_to_remote_changes();
 
     loop {
         // wait for the next commit
-        subscription.changed().await;
+        subscription.recv().expect("change subscription closed");
 
         let snapshot = handle.snapshot().or_into_ctx()?;
         tracing::info!(?snapshot, "received commit for volume {:?}", vid);
@@ -259,7 +253,7 @@ async fn main() -> Result<(), Culprit<WorkloadErr>> {
 
     let storage = Storage::open_temporary().unwrap();
     let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
-    let sync_task = runtime.spawn_sync_task(clients, Duration::from_secs(1));
+    let sync_task = runtime.start_sync_task(clients, Duration::from_secs(1));
 
     antithesis_sdk::lifecycle::setup_complete(&json!({ "workload": workload }));
 
@@ -267,20 +261,25 @@ async fn main() -> Result<(), Culprit<WorkloadErr>> {
     let test_timeout = Duration::from_secs(rng.gen_range(0..300));
     tracing::info!(?test_timeout, "starting test workload");
 
+    let workload_fut = spawn_blocking(move || workload.start(runtime.clone(), rng));
+
     select! {
-        _ = workload.start(&runtime, rng).fuse() => {
+        result = workload_fut => {
+            result.expect("workload task panic")?;
             tracing::info!("workload finished");
         }
         _ = ctrl_c().fuse() => {
             tracing::info!("received SIGINT, shutting down");
         }
-        _ = sleep(test_timeout).fuse() => {
+        _ = tokio::time::sleep(test_timeout).fuse() => {
             tracing::info!("test timeout reached");
         }
     }
 
     tracing::info!("waiting for sync task to shutdown");
-    sync_task.shutdown().await.or_into_ctx()?;
+    sync_task
+        .shutdown_timeout(Duration::from_secs(u64::MAX))
+        .or_into_ctx()?;
 
     antithesis_sdk::assert_reachable!("test workload finishes");
 

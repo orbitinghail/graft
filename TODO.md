@@ -11,18 +11,6 @@ Later:
 - garbage collection
 - authentication (api keys)
 
-# Storage is not safe to use from async context
-
-Currently I'm using Storage from within an async context, and that's not safe (since Storage takes non-async friendly locks).
-
-I need to solve this without hurting performance too much.
-
-I'm tempted to make the runtime layer entirely sync, and move all the async stuff into a separate thread using Tokio. The only downside of this approach is when I need to bridge back from async to sync. In that case, I'll have to carefully wrap sync logic (like Storage) with spawn_blocking.
-
-The main issue locations is in the fetcher and the sync task.
-The sync task can pretty easily just wrap all calls to storage in spawn blocking.
-And the fetcher could expose a sync rather than async api to the runtime to ensure the runtime isn't infected. Internally to the fetcher it will have to use block on to call into tokio which seems ok since net latency is already high so the cost of block_on should amortize out reasonably well.
-
 # Client fetching
 
 Next: when creating a read txn we will need to grab both the local and remote snapshots.
@@ -62,6 +50,7 @@ Graft clients can choose whether they want to sync or async commit to the remote
 
 For now we are using Fjall as our client storage layer. We allocate three Fjall partitions:
 
+```
 volumes:
   This maps each VolumeId to a set of snapshots used to track the volume's state:
     local: the latest local snapshot, updated by writes
@@ -131,9 +120,11 @@ sync from local to remote
       else if remote lsn matches local remote lsn:
         in this case, our last sync did not go through
         restart the sync process
+```
 
 # Volume Write/Replicate example
 
+```
 create volume
 write 10 times:
   offsets: 0, 1
@@ -166,3 +157,4 @@ read:
           write at local lsn 10
         page @ offset=2, lsn=3
           write at local lsn 20
+```

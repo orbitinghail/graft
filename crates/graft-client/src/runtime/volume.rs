@@ -7,7 +7,6 @@ use crate::ClientErr;
 
 use super::{
     storage::{
-        changeset::Subscriber,
         snapshot::{Snapshot, SnapshotKind},
         Storage,
     },
@@ -49,12 +48,12 @@ impl VolumeHandle {
     }
 
     /// Subscribe to remote commits to this Volume
-    pub fn subscribe_to_remote_changes(&self) -> Subscriber<VolumeId> {
+    pub fn subscribe_to_remote_changes(&self) -> crossbeam::channel::Receiver<()> {
         self.storage.remote_changeset().subscribe(self.vid.clone())
     }
 
     /// Subscribe to local commits to this Volume
-    pub fn subscribe_to_local_changes(&self) -> Subscriber<VolumeId> {
+    pub fn subscribe_to_local_changes(&self) -> crossbeam::channel::Receiver<()> {
         self.storage.local_changeset().subscribe(self.vid.clone())
     }
 }

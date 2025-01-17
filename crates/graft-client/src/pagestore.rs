@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use culprit::Culprit;
-use futures::TryFutureExt;
 use graft_core::lsn::LSN;
 use graft_core::VolumeId;
 use graft_proto::{
@@ -9,7 +8,8 @@ use graft_proto::{
         PageAtOffset, ReadPagesRequest, ReadPagesResponse, WritePagesRequest, WritePagesResponse,
     },
 };
-use reqwest::Url;
+use ureq::Agent;
+use url::Url;
 
 use crate::builder::ClientBuildErr;
 use crate::builder::ClientBuilder;
@@ -19,7 +19,7 @@ use crate::ClientErr;
 #[derive(Debug, Clone)]
 pub struct PagestoreClient {
     endpoint: Url,
-    http: reqwest::Client,
+    agent: Agent,
 }
 
 impl TryFrom<ClientBuilder> for PagestoreClient {
@@ -27,13 +27,13 @@ impl TryFrom<ClientBuilder> for PagestoreClient {
 
     fn try_from(builder: ClientBuilder) -> Result<Self, Self::Error> {
         let endpoint = builder.endpoint().join("pagestore/v1/")?;
-        let http = builder.http()?;
-        Ok(Self { endpoint, http })
+        let agent = builder.agent();
+        Ok(Self { endpoint, agent })
     }
 }
 
 impl PagestoreClient {
-    pub async fn read_pages(
+    pub fn read_pages(
         &self,
         vid: &VolumeId,
         lsn: LSN,
@@ -45,20 +45,16 @@ impl PagestoreClient {
             lsn: lsn.into(),
             offsets,
         };
-        prost_request::<_, ReadPagesResponse>(&self.http, url, req)
-            .map_ok(|r| r.pages)
-            .await
+        prost_request::<_, ReadPagesResponse>(&self.agent, url, req).map(|r| r.pages)
     }
 
-    pub async fn write_pages(
+    pub fn write_pages(
         &self,
         vid: &VolumeId,
         pages: Vec<PageAtOffset>,
     ) -> Result<Vec<SegmentInfo>, Culprit<ClientErr>> {
         let url = self.endpoint.join("write_pages").unwrap();
         let req = WritePagesRequest { vid: vid.copy_to_bytes(), pages };
-        prost_request::<_, WritePagesResponse>(&self.http, url, req)
-            .map_ok(|r| r.segments)
-            .await
+        prost_request::<_, WritePagesResponse>(&self.agent, url, req).map(|r| r.segments)
     }
 }

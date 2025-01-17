@@ -20,8 +20,8 @@ impl NetFetcher {
 }
 
 impl Fetcher for NetFetcher {
-    async fn pull_snapshot(&self, storage: &Storage, vid: &VolumeId) -> Result<(), ClientErr> {
-        if let Some(snapshot) = self.clients.metastore().snapshot(vid, None).await? {
+    fn pull_snapshot(&self, storage: &Storage, vid: &VolumeId) -> Result<(), ClientErr> {
+        if let Some(snapshot) = self.clients.metastore().snapshot(vid, None)? {
             let changed = Splinter::default().serialize_to_splinter_ref();
             storage
                 .receive_remote_commit(vid, snapshot.is_checkpoint(), snapshot.into(), changed)
@@ -30,7 +30,7 @@ impl Fetcher for NetFetcher {
         Ok(())
     }
 
-    async fn fetch_page(
+    fn fetch_page(
         &self,
         storage: &Storage,
         vid: &VolumeId,
@@ -42,8 +42,7 @@ impl Fetcher for NetFetcher {
         let pages = self
             .clients
             .pagestore()
-            .read_pages(vid, remote.lsn(), offsets)
-            .await?;
+            .read_pages(vid, remote.lsn(), offsets)?;
         assert!(!pages.is_empty(), "missing page");
         let page = pages[0].clone();
         assert!(page.offset() == offset, "received page at wrong offset");

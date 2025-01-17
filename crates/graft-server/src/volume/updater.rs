@@ -4,6 +4,7 @@ use culprit::{Culprit, ResultExt};
 use futures::TryStreamExt;
 use graft_client::MetastoreClient;
 use graft_core::{lsn::LSN, VolumeId};
+use tokio::task::spawn_blocking;
 
 use crate::limiter::Limiter;
 
@@ -200,7 +201,15 @@ impl VolumeCatalogUpdater {
         let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or_default();
 
         // update the catalog from the client
-        let commits = client.pull_commits(vid, start_lsn..).await.or_into_ctx()?;
+        // TODO: switch this to an async client once one exists
+        let commits = {
+            let client = client.clone();
+            let vid = vid.clone();
+            spawn_blocking(move || client.pull_commits(&vid, start_lsn..))
+                .await
+                .expect("spawn_blocking failed")
+                .or_into_ctx()?
+        };
 
         let mut batch = catalog.batch_insert();
         for commit in commits {

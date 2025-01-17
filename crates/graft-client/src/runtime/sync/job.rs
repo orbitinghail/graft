@@ -36,10 +36,10 @@ impl Job {
         })
     }
 
-    pub async fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
+    pub fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         match self {
-            Job::Pull(job) => job.run(storage, clients).await,
-            Job::Push(job) => job.run(storage, clients).await,
+            Job::Pull(job) => job.run(storage, clients),
+            Job::Push(job) => job.run(storage, clients),
         }
     }
 }
@@ -54,7 +54,7 @@ pub struct PullJob {
 }
 
 impl PullJob {
-    async fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
+    fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         log::debug!(
             "pulling volume {:?}; last snapshot {:?}",
             self.vid,
@@ -68,10 +68,8 @@ impl PullJob {
             .and_then(|s| s.lsn().next())
             .unwrap_or_default();
 
-        if let Some((snapshot, _, changed)) = clients
-            .metastore()
-            .pull_offsets(&self.vid, start_lsn..)
-            .await?
+        if let Some((snapshot, _, changed)) =
+            clients.metastore().pull_offsets(&self.vid, start_lsn..)?
         {
             assert!(
                 snapshot.lsn() >= start_lsn,
@@ -112,7 +110,7 @@ pub struct PushJob {
 }
 
 impl PushJob {
-    async fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
+    fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         log::debug!(
             "pushing volume {:?}; last sync {:?}; current snapshot {:?}; remote snapshot {:?}",
             self.vid,
@@ -173,14 +171,14 @@ impl PushJob {
         }
 
         // write the pages to the pagestore
-        let segments = clients.pagestore().write_pages(&self.vid, pages).await?;
+        let segments = clients.pagestore().write_pages(&self.vid, pages)?;
 
         // commit the segments to the metastore
         let last_remote_lsn = self.remote_snapshot.as_ref().map(|s| s.lsn());
-        let remote_snapshot = clients
-            .metastore()
-            .commit(&self.vid, last_remote_lsn, page_count, segments)
-            .await?;
+        let remote_snapshot =
+            clients
+                .metastore()
+                .commit(&self.vid, last_remote_lsn, page_count, segments)?;
 
         storage
             .complete_sync(

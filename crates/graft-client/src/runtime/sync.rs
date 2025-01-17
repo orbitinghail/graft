@@ -1,11 +1,15 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    sync::Arc,
+    thread::{self, sleep, JoinHandle},
+    time::{Duration, Instant},
+};
 
+use crossbeam::channel::{bounded, select_biased, Receiver, Sender};
 use culprit::{Culprit, Result};
 use graft_core::VolumeId;
 use job::Job;
 use thiserror::Error;
-use tokio::{select, task::JoinHandle};
-use tokio_util::sync::CancellationToken;
 use tryiter::{TryIterator, TryIteratorExt};
 
 use crate::{
@@ -27,40 +31,44 @@ pub enum ShutdownErr {
 mod job;
 
 pub struct SyncTaskHandle {
-    token: CancellationToken,
-    task: JoinHandle<()>,
+    handle: JoinHandle<()>,
+    shutdown_signal: Sender<()>,
 }
 
 impl SyncTaskHandle {
-    pub async fn shutdown(self) -> Result<(), ShutdownErr> {
-        self.token.cancel();
-
-        match self.task.await {
-            Ok(()) => Ok(()),
-            Err(err) => {
-                log::error!("sync task shutdown error: {:?}", err);
-                Err(Culprit::new_with_note(
-                    ShutdownErr::JoinError,
-                    format!("join error: {err}"),
-                ))
-            }
-        }
+    pub fn shutdown_timeout(self, timeout: Duration) -> Result<(), ShutdownErr> {
+        self.shutdown(Instant::now() + timeout)
     }
 
-    pub async fn shutdown_with_timeout(self, timeout: Duration) -> Result<(), ShutdownErr> {
-        self.token.cancel();
+    pub fn shutdown(self, deadline: Instant) -> Result<(), ShutdownErr> {
+        if let Err(_) = self.shutdown_signal.send_deadline((), deadline) {
+            log::warn!("timeout waiting for sync task to shutdown");
+            return Err(Culprit::new(ShutdownErr::Timeout));
+        }
 
-        // wait for either the task to complete or the timeout to elapse
-        match tokio::time::timeout(timeout, self.task).await {
+        let (tx, rx) = bounded(0);
+        std::thread::spawn(move || {
+            tx.send(self.handle.join()).unwrap();
+        });
+
+        // wait for the thread to complete or the timeout to elapse
+        match rx.recv_deadline(deadline) {
             Ok(Ok(())) => {
                 log::debug!("sync task shutdown completed");
                 Ok(())
             }
             Ok(Err(err)) => {
                 log::error!("sync task shutdown error: {:?}", err);
+                let msg = match err.downcast_ref::<&'static str>() {
+                    Some(s) => *s,
+                    None => match err.downcast_ref::<String>() {
+                        Some(s) => &s[..],
+                        None => "unknown panic",
+                    },
+                };
                 Err(Culprit::new_with_note(
                     ShutdownErr::JoinError,
-                    format!("join error: {err}"),
+                    format!("sync task panic: {msg}"),
                 ))
             }
             Err(_) => {
@@ -76,9 +84,9 @@ impl SyncTaskHandle {
 pub struct SyncTask {
     storage: Arc<Storage>,
     clients: ClientPair,
-    ticker: tokio::time::Interval,
+    refresh_interval: Duration,
     commits: SetSubscriber<VolumeId>,
-    token: CancellationToken,
+    shutdown_signal: Receiver<()>,
 }
 
 impl SyncTask {
@@ -87,88 +95,78 @@ impl SyncTask {
         clients: ClientPair,
         refresh_interval: Duration,
     ) -> SyncTaskHandle {
-        let ticker = tokio::time::interval(refresh_interval);
-        let token = CancellationToken::new();
         let commits = storage.local_changeset().subscribe_all();
+        let (shutdown_tx, shutdown_rx) = bounded(0);
         let task = Self {
             storage,
             clients,
-            ticker,
+            refresh_interval,
             commits,
-            token: token.clone(),
+            shutdown_signal: shutdown_rx,
         };
-        SyncTaskHandle { token, task: tokio::spawn(task.run()) }
+        SyncTaskHandle {
+            handle: thread::spawn(|| task.run()),
+            shutdown_signal: shutdown_tx,
+        }
     }
 
-    pub async fn run(mut self) {
+    fn run(mut self) {
         loop {
-            match self.run_inner().await {
+            match self.run_inner() {
                 Ok(()) => {
                     log::trace!("sync task inner loop completed without error; shutting down");
                     break;
                 }
                 Err(err) => {
                     log::error!("sync task error: {:?}", err);
+                    log::trace!("sleeping for 1 second before restarting");
+                    sleep(Duration::from_secs(1));
                 }
             }
         }
     }
 
-    async fn run_inner(&mut self) -> Result<(), ClientErr> {
+    fn run_inner(&mut self) -> Result<(), ClientErr> {
         loop {
-            select! {
-                biased;
-
-                _ = self.token.cancelled() => {
+            select_biased! {
+                recv(self.shutdown_signal) -> _ => {
                     log::debug!("sync task received shutdown request");
                     break;
                 }
 
-                _ = self.ticker.tick() => {
-                    self.handle_tick().await?;
+                recv(self.commits.ready()) -> result => {
+                    if let Err(err) = result {
+                        panic!("commit subscriber error: {:?}", err);
+                    }
+                    let vids = self.commits.changed();
+                    self.handle_commit(vids)?;
                 }
 
-                vids = self.commits.changed() => {
-                    self.handle_commit(vids).await?;
-                }
+                default(self.refresh_interval) => self.handle_tick()?,
             }
         }
         Ok(())
     }
 
-    fn is_shutdown(&self) -> bool {
-        self.token.is_cancelled()
-    }
-
-    async fn handle_tick(&mut self) -> Result<(), ClientErr> {
+    fn handle_tick(&mut self) -> Result<(), ClientErr> {
         log::debug!("handle_tick");
-        let jobs = self.jobs(SyncDirection::Both, None).await;
-        for job in jobs.collect::<Result<Vec<Job>, _>>()? {
-            job.run(&self.storage, &self.clients).await?;
-
-            if self.is_shutdown() {
-                log::debug!("shutdown detected during handle_tick");
-                break;
-            }
+        let mut jobs = self.jobs(SyncDirection::Both, None);
+        while let Some(job) = jobs.try_next()? {
+            job.run(&self.storage, &self.clients)?;
         }
         Ok(())
     }
 
-    async fn handle_commit(&mut self, vids: HashSet<VolumeId>) -> Result<(), ClientErr> {
+    fn handle_commit(&mut self, vids: HashSet<VolumeId>) -> Result<(), ClientErr> {
         log::debug!("handle_commit: {:?}", vids);
-        let jobs = self.jobs(SyncDirection::Push, Some(vids)).await;
-        for job in jobs.collect::<Result<Vec<Job>, _>>()? {
-            job.run(&self.storage, &self.clients).await?;
-
-            if self.is_shutdown() {
-                log::debug!("shutdown detected during handle_commit");
-                break;
-            }
+        let mut jobs = self.jobs(SyncDirection::Push, Some(vids));
+        while let Some(job) = jobs.try_next()? {
+            job.run(&self.storage, &self.clients)?;
         }
         Ok(())
     }
 
-    async fn jobs(
+    fn jobs(
         &self,
         sync: SyncDirection,
         vids: Option<HashSet<VolumeId>>,

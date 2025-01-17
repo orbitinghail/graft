@@ -12,10 +12,18 @@ use super::{
     volume::VolumeHandle,
 };
 
-#[derive(Clone)]
 pub struct Runtime<F> {
     fetcher: Arc<F>,
     storage: Arc<Storage>,
+}
+
+impl<F> Clone for Runtime<F> {
+    fn clone(&self) -> Self {
+        Self {
+            fetcher: self.fetcher.clone(),
+            storage: self.storage.clone(),
+        }
+    }
 }
 
 impl<F: Fetcher> Runtime<F> {
@@ -26,7 +34,7 @@ impl<F: Fetcher> Runtime<F> {
         }
     }
 
-    pub fn spawn_sync_task(
+    pub fn start_sync_task(
         &self,
         clients: ClientPair,
         refresh_interval: Duration,
@@ -34,7 +42,7 @@ impl<F: Fetcher> Runtime<F> {
         SyncTask::spawn(self.storage.clone(), clients, refresh_interval)
     }
 
-    pub async fn open_volume(
+    pub fn open_volume(
         &self,
         vid: &VolumeId,
         config: VolumeConfig,
@@ -42,7 +50,6 @@ impl<F: Fetcher> Runtime<F> {
         if config.sync().matches(SyncDirection::Pull) {
             self.fetcher
                 .pull_snapshot(&self.storage, vid)
-                .await
                 .or_into_ctx()?;
         }
 
@@ -77,8 +84,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(start_paused = true)]
-    async fn test_read_write_sanity() {
+    #[test]
+    fn test_read_write_sanity() {
         let storage = Storage::open_temporary().unwrap();
         let runtime = Runtime::new(MockFetcher, storage);
 
@@ -88,7 +95,6 @@ mod tests {
 
         let handle = runtime
             .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
-            .await
             .unwrap();
 
         // open a read txn and verify that no pages are returned
@@ -140,8 +146,8 @@ mod tests {
         assert_eq!(snapshot.page_count(), 2);
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn test_concurrent_commit_err() {
+    #[test]
+    fn test_concurrent_commit_err() {
         // open two write txns, commit the first, then commit the second
 
         let storage = Storage::open_temporary().unwrap();
@@ -152,7 +158,6 @@ mod tests {
 
         let handle = runtime
             .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
-            .await
             .unwrap();
 
         let mut txn1 = handle.write_txn().unwrap();

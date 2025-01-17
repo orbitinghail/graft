@@ -7,29 +7,25 @@ use std::{
     },
 };
 
-use tokio::sync::{Notify, RwLock};
+use crossbeam::channel::{bounded, Receiver, Sender, TrySendError};
+use parking_lot::{Mutex, RwLock};
+
+type InnerSet<K> = Arc<RwLock<HashMap<K, AtomicU64>>>;
 
 pub struct ChangeSet<K> {
     version: AtomicU64,
-    inner: Arc<Inner<K>>,
+    subscribers: Mutex<Vec<(Option<K>, Sender<()>)>>,
+    set: InnerSet<K>,
 }
 
 impl<K> Default for ChangeSet<K> {
     fn default() -> Self {
         Self {
             version: AtomicU64::new(0),
-            inner: Arc::new(Inner {
-                set: Default::default(),
-                notify: Notify::new(),
-            }),
+            subscribers: Default::default(),
+            set: Default::default(),
         }
     }
-}
-
-#[derive(Default)]
-struct Inner<K> {
-    set: RwLock<HashMap<K, AtomicU64>>,
-    notify: Notify,
 }
 
 impl<K: Eq + Hash + Clone> ChangeSet<K> {
@@ -41,32 +37,46 @@ impl<K: Eq + Hash + Clone> ChangeSet<K> {
         self.version.fetch_add(1, Ordering::SeqCst)
     }
 
+    fn notify(&self, key: &K) {
+        let mut subscribers = self.subscribers.lock();
+        subscribers.retain(|(k, s)| {
+            if k.as_ref().is_none_or(|k| k == key) {
+                match s.try_send(()) {
+                    Ok(()) => true,
+                    Err(TrySendError::Full(())) => true,
+                    Err(TrySendError::Disconnected(())) => false,
+                }
+            } else {
+                true
+            }
+        });
+    }
+
     /// Inserts a key into the set returning true if the set already contained the key
     pub fn insert(&self, key: K) -> bool {
         let version = self.next_version();
         let existed = self
-            .inner
             .set
-            .blocking_write()
-            .insert(key, AtomicU64::new(version))
+            .write()
+            .insert(key.clone(), AtomicU64::new(version))
             .is_some();
-        self.inner.notify.notify_waiters();
+        self.notify(&key);
         existed
     }
 
     /// Removes a key from the set
     pub fn remove(&self, key: &K) {
-        self.inner.set.blocking_write().remove(key);
-        self.inner.notify.notify_waiters();
+        self.set.write().remove(key);
+        self.notify(key);
     }
 
     /// Marks a key as changed
     pub fn mark_changed(&self, key: &K) {
         // optimistically assume the key exists
         let found = {
-            if let Some(val) = self.inner.set.blocking_read().get(&key) {
+            if let Some(val) = self.set.read().get(key) {
                 val.store(self.next_version(), Ordering::SeqCst);
-                self.inner.notify.notify_waiters();
+                self.notify(key);
                 true
             } else {
                 false
@@ -79,86 +89,39 @@ impl<K: Eq + Hash + Clone> ChangeSet<K> {
         }
     }
 
-    pub fn subscribe(&self, key: K) -> Subscriber<K> {
-        Subscriber {
-            key,
-            version: self.version(),
-            inner: self.inner.clone(),
-        }
+    pub fn subscribe(&self, key: K) -> Receiver<()> {
+        let (tx, rx) = bounded(1);
+        self.subscribers.lock().push((Some(key), tx));
+        rx
     }
 
     pub fn subscribe_all(&self) -> SetSubscriber<K> {
+        let (tx, rx) = bounded(1);
+        self.subscribers.lock().push((None, tx));
         SetSubscriber {
+            rx,
             version: self.version(),
-            inner: self.inner.clone(),
+            set: self.set.clone(),
         }
-    }
-}
-
-pub struct Subscriber<K> {
-    key: K,
-    version: u64,
-    inner: Arc<Inner<K>>,
-}
-
-impl<K: Eq + Hash> Subscriber<K> {
-    /// This future resolves when the subscriber's key has changed
-    pub async fn changed(&mut self) {
-        loop {
-            // allocate a notify future to ensure we don't miss a notification
-            let notify = self.inner.notify.notified();
-
-            // load the key's version
-            if let Some(version) = self.load_version().await {
-                // if the version has changed, advance and return
-                if version > self.version {
-                    self.version = version;
-                    break;
-                }
-            }
-
-            // wait for the next change notification
-            notify.await;
-        }
-    }
-
-    async fn load_version(&self) -> Option<u64> {
-        self.inner
-            .set
-            .read()
-            .await
-            .get(&self.key)
-            .map(|v| v.load(Ordering::SeqCst))
     }
 }
 
 pub struct SetSubscriber<K> {
     version: u64,
-    inner: Arc<Inner<K>>,
+    rx: Receiver<()>,
+    set: InnerSet<K>,
 }
 
 impl<K: Clone + Eq + Hash> SetSubscriber<K> {
-    /// This future resolves when any key has changed, and returns a set of all
-    /// changed keys. This future ignores deleted keys.
-    pub async fn changed(&mut self) -> HashSet<K> {
-        loop {
-            // allocate a notify future to ensure we don't miss a notification
-            let notify = self.inner.notify.notified();
-
-            // load changed keys
-            let (max_version, keys) = self.load_changed().await;
-            if !keys.is_empty() {
-                self.version = max_version;
-                return keys;
-            }
-
-            // wait for the next change notification
-            notify.await;
-        }
+    /// returns a receiver that will be notified when the set changes
+    pub fn ready(&self) -> &Receiver<()> {
+        &self.rx
     }
 
-    async fn load_changed(&self) -> (u64, HashSet<K>) {
-        let set = self.inner.set.read().await;
+    /// returns a set of changed keys since the last time this function returned
+    /// a non-empty set
+    pub fn changed(&mut self) -> HashSet<K> {
+        let set = self.set.read();
         let mut max_version = self.version;
         let set: HashSet<K> = set
             .iter()
@@ -168,6 +131,10 @@ impl<K: Clone + Eq + Hash> SetSubscriber<K> {
                 (version > self.version).then_some(k.clone())
             })
             .collect();
-        (max_version, set)
+
+        if !set.is_empty() {
+            self.version = max_version;
+        }
+        set
     }
 }

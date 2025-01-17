@@ -19,3 +19,6 @@ pub use error::ClientErr;
 pub use metastore::MetastoreClient;
 pub use pagestore::PagestoreClient;
 pub use pair::ClientPair;
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const USER_AGENT: &str = concat!("graft-client/", env!("CARGO_PKG_VERSION"));

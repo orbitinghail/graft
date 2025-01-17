@@ -70,6 +70,9 @@ pub enum ApiErrCtx {
 
     #[error("graft client request failed")]
     ClientErr(#[from] graft_client::ClientErr),
+
+    #[error("requested too many page offsets")]
+    TooManyOffsets,
 }
 
 impl From<io::Error> for ApiErrCtx {

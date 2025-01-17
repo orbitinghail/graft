@@ -13,10 +13,10 @@ use graft_core::{
 };
 use graft_proto::{common::v1::Snapshot, pagestore::v1::PageAtOffset};
 use prost::Message;
-use reqwest::Url;
 use splinter::Splinter;
 use thiserror::Error;
 use tryiter::TryIteratorExt;
+use url::Url;
 
 type Result<T> = std::result::Result<T, Culprit<CliErr>>;
 
@@ -132,11 +132,11 @@ struct Context {
     pagestore: PagestoreClient,
 }
 
-async fn get_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>> {
+fn get_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>> {
     if let Some(snapshot) = get_cached_snapshot(ctx, vid)? {
         return Ok(Some(snapshot));
     }
-    pull_snapshot(ctx, vid).await
+    pull_snapshot(ctx, vid)
 }
 
 fn get_cached_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>> {
@@ -147,18 +147,13 @@ fn get_cached_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>
     Ok(None)
 }
 
-async fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>> {
+fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>> {
     // pull starting at the next LSN after the last cached snapshot
     let start_lsn = get_cached_snapshot(ctx, vid)?
         .and_then(|s| s.lsn().next())
         .unwrap_or_default();
 
-    match ctx
-        .metastore
-        .pull_offsets(vid, start_lsn..)
-        .await
-        .or_into_ctx()?
-    {
+    match ctx.metastore.pull_offsets(vid, start_lsn..).or_into_ctx()? {
         Some((snapshot, _, offsets)) => {
             // clear any changed offsets from the cache
             for offset in offsets.iter() {
@@ -186,7 +181,7 @@ fn remove(ctx: &Context, vid: &VolumeId) -> Result<()> {
     Ok(())
 }
 
-async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> Result<Page> {
+fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> Result<Page> {
     // Check if we have the page in the cache
     if let Some(page) = ctx
         .pages
@@ -197,7 +192,7 @@ async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> Result<
     }
 
     // Otherwise read the page from Graft
-    if let Some(snapshot) = get_snapshot(ctx, vid).await? {
+    if let Some(snapshot) = get_snapshot(ctx, vid)? {
         // if the page is not contained by the snapshot, return an empty page
         if !snapshot.offsets().contains(&offset) {
             return Ok(EMPTY_PAGE);
@@ -210,7 +205,6 @@ async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> Result<
                 snapshot.lsn(),
                 Splinter::from_iter([offset]).serialize_to_bytes(),
             )
-            .await
             .or_into_ctx()?;
 
         if let Some(p) = pages.into_iter().next() {
@@ -225,12 +219,12 @@ async fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> Result<
     Ok(EMPTY_PAGE)
 }
 
-async fn write_page(ctx: &Context, vid: &VolumeId, offset: PageOffset, data: Bytes) -> Result<()> {
+fn write_page(ctx: &Context, vid: &VolumeId, offset: PageOffset, data: Bytes) -> Result<()> {
     // remove the page from the cache in case the write fails
     ctx.pages.remove(page_key(vid, offset))?;
 
     // read the current snapshot lsn
-    let snapshot = get_snapshot(ctx, vid).await?;
+    let snapshot = get_snapshot(ctx, vid)?;
 
     // first we upload the page to the page store
     let segments = ctx
@@ -242,7 +236,6 @@ async fn write_page(ctx: &Context, vid: &VolumeId, offset: PageOffset, data: Byt
                 data: data.clone(),
             }],
         )
-        .await
         .or_into_ctx()?;
 
     // then we commit the new segments to the metastore
@@ -256,7 +249,6 @@ async fn write_page(ctx: &Context, vid: &VolumeId, offset: PageOffset, data: Byt
                 .unwrap_or(offset.pages()),
             segments,
         )
-        .await
         .or_into_ctx()?;
 
     // Update the cache with the new page and snapshot
@@ -302,8 +294,7 @@ fn print_snapshot(snapshot: Option<Snapshot>) {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     env_logger::init();
 
     let mut args = Cli::parse();
@@ -336,8 +327,8 @@ async fn main() -> Result<()> {
 
     match args.command {
         Commands::New => unreachable!("handled above"),
-        Commands::Show => print_snapshot(get_snapshot(&ctx, &vid).await?),
-        Commands::Pull => print_snapshot(pull_snapshot(&ctx, &vid).await?),
+        Commands::Show => print_snapshot(get_snapshot(&ctx, &vid)?),
+        Commands::Pull => print_snapshot(pull_snapshot(&ctx, &vid)?),
         Commands::Remove => {
             remove(&ctx, &vid)?;
             println!("removed volume {}", vid);
@@ -365,13 +356,13 @@ async fn main() -> Result<()> {
             // fill the remainder of the page with zeros
             data.resize(PAGESIZE.as_usize(), 0);
 
-            write_page(&ctx, &vid, offset.unwrap_or_default(), data.freeze()).await?;
+            write_page(&ctx, &vid, offset.unwrap_or_default(), data.freeze())?;
         }
         Commands::Read { offset, latest } => {
             if latest {
-                pull_snapshot(&ctx, &vid).await?;
+                pull_snapshot(&ctx, &vid)?;
             }
-            print_page(read_page(&ctx, &vid, offset.unwrap_or_default()).await?)
+            print_page(read_page(&ctx, &vid, offset.unwrap_or_default())?)
         }
     }
 

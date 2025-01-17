@@ -12,7 +12,7 @@ bytes = { workspace = true }
 foldhash = { workspace = true }
 hashbrown = { workspace = true }
 rand = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 static_assertions = { workspace = true }
 thiserror = { workspace = true }
 zerocopy = { workspace = true }

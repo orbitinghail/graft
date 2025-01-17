@@ -7,12 +7,17 @@ use graft_core::{lsn::LSN, VolumeId};
 use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesResponse};
 use splinter::{ops::Cut, Splinter};
 
+use crate::api::error::ApiErrCtx;
 use crate::segment::cache::Cache;
 use crate::segment::closed::ClosedSegment;
 
 use crate::api::{error::ApiErr, extractors::Protobuf, response::ProtoResponse};
 
 use super::PagestoreApiState;
+
+/// The maximum amount of pages that can be returned in a single request.
+/// This results in the maximum response size being roughly 4MB
+pub const MAX_OFFSETS: usize = 1024;
 
 #[tracing::instrument(name = "pagestore/v1/read_pages", skip(state, req))]
 pub async fn handler<C: Cache>(
@@ -25,6 +30,10 @@ pub async fn handler<C: Cache>(
     let num_offsets = offsets.cardinality();
 
     tracing::info!(?vid, ?lsn, num_offsets);
+
+    if num_offsets > MAX_OFFSETS {
+        return Err(ApiErrCtx::TooManyOffsets.into());
+    }
 
     let (checkpoint, needs_update) = match state.catalog().latest_snapshot(&vid).or_into_ctx()? {
         Some(s) => (s.checkpoint(), s.lsn() < lsn),

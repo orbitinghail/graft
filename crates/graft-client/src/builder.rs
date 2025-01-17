@@ -1,16 +1,12 @@
-use std::time::Duration;
-
 use culprit::Culprit;
-use reqwest::Url;
 
 use thiserror::Error;
-use url::ParseError;
+use url::{ParseError, Url};
+
+use crate::USER_AGENT;
 
 #[derive(Debug, Error)]
 pub enum ClientBuildErr {
-    #[error("failed to build reqwest client")]
-    ReqwestErr,
-
     #[error("failed to parse URL")]
     UrlParseErr,
 }
@@ -21,36 +17,25 @@ impl From<ParseError> for ClientBuildErr {
     }
 }
 
-impl From<reqwest::Error> for ClientBuildErr {
-    fn from(_: reqwest::Error) -> Self {
-        Self::ReqwestErr
-    }
-}
-
 #[derive(Debug)]
 pub struct ClientBuilder {
     /// The root URL (without any trailing path)
     endpoint: Url,
-    reqwest: reqwest::ClientBuilder,
+    builder: ureq::AgentBuilder,
 }
 
 impl ClientBuilder {
     pub fn new(endpoint: Url) -> Self {
         Self {
             endpoint,
-            reqwest: reqwest::Client::builder()
-                .brotli(true)
-                .connect_timeout(Duration::from_secs(15)),
+            builder: ureq::AgentBuilder::new()
+                .max_idle_connections_per_host(5)
+                .user_agent(USER_AGENT),
         }
     }
 
-    pub fn with_compression(mut self, enable: bool) -> Self {
-        self.reqwest = self.reqwest.brotli(enable);
-        self
-    }
-
-    pub(crate) fn http(self) -> reqwest::Result<reqwest::Client> {
-        self.reqwest.build()
+    pub(crate) fn agent(self) -> ureq::Agent {
+        self.builder.build()
     }
 
     pub(crate) fn endpoint(&self) -> &Url {
