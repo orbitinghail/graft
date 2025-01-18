@@ -8,10 +8,12 @@ mod pair;
 pub mod runtime {
     pub mod fetcher;
     pub mod runtime;
+    pub mod snapshot;
     pub mod storage;
     pub mod sync;
-    pub mod txn;
     pub mod volume;
+    pub mod volume_reader;
+    pub mod volume_writer;
 }
 
 pub use builder::{ClientBuildErr, ClientBuilder};

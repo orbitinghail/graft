@@ -53,18 +53,16 @@ impl<F: Fetcher> Runtime<F> {
                 .or_into_ctx()?;
         }
 
-        if config.sync().matches(SyncDirection::Push) {
-            // if no local snapshot exists, create one
-            if self
-                .storage
-                .snapshot(&vid, SnapshotKind::Local)
-                .or_into_ctx()?
-                .is_none()
-            {
-                self.storage
-                    .commit(&vid, None, Default::default())
-                    .or_into_ctx()?;
-            }
+        // if no local snapshot exists, create an empty one
+        if self
+            .storage
+            .snapshot(&vid, SnapshotKind::Local)
+            .or_into_ctx()?
+            .is_none()
+        {
+            self.storage
+                .commit(&vid, None, Default::default())
+                .or_into_ctx()?;
         }
 
         self.storage.set_volume_config(&vid, config).or_into_ctx()?;
@@ -75,10 +73,7 @@ impl<F: Fetcher> Runtime<F> {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{
-        lsn::LSN,
-        page::{Page, EMPTY_PAGE},
-    };
+    use graft_core::page::{Page, EMPTY_PAGE};
 
     use crate::runtime::{fetcher::MockFetcher, storage::StorageErr};
 
@@ -97,58 +92,58 @@ mod tests {
             .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
             .unwrap();
 
-        // open a read txn and verify that no pages are returned
-        let txn = handle.read_txn().unwrap();
-        assert_eq!(txn.read(0.into()).unwrap(), EMPTY_PAGE);
+        // open a reader and verify that no pages are returned
+        let reader = handle.reader().unwrap();
+        assert_eq!(reader.read(0.into()).unwrap(), EMPTY_PAGE);
 
-        // open a write txn and write a page, verify RYOW, then commit
-        let mut txn = handle.write_txn().unwrap();
-        txn.write(0.into(), page.clone());
-        assert_eq!(txn.read(0.into()).unwrap(), page);
-        let txn = txn.commit().unwrap();
+        // open a writer and write a page, verify RYOW, then commit
+        let mut writer = handle.writer().unwrap();
+        writer.write(0.into(), page.clone());
+        assert_eq!(writer.read(0.into()).unwrap(), page);
+        let reader = writer.commit().unwrap();
 
-        // verify the new read txn can read the page
-        assert_eq!(txn.read(0.into()).unwrap(), page);
-
-        // verify the snapshot
-        let snapshot = txn.snapshot();
-        assert_eq!(snapshot.lsn(), LSN::ZERO);
-        assert_eq!(snapshot.page_count(), 1);
-
-        // open a new write txn, verify it can read the page; write another page
-        let mut txn = handle.write_txn().unwrap();
-        assert_eq!(txn.read(0.into()).unwrap(), page);
-        txn.write(1.into(), page2.clone());
-        assert_eq!(txn.read(1.into()).unwrap(), page2);
-        let txn = txn.commit().unwrap();
-
-        // verify the new read txn can read both pages
-        assert_eq!(txn.read(0.into()).unwrap(), page);
-        assert_eq!(txn.read(1.into()).unwrap(), page2);
+        // verify the new reader can read the page
+        assert_eq!(reader.read(0.into()).unwrap(), page);
 
         // verify the snapshot
-        let snapshot = txn.snapshot();
-        assert_eq!(snapshot.lsn(), LSN::new(1));
-        assert_eq!(snapshot.page_count(), 2);
+        let snapshot = reader.snapshot();
+        assert_eq!(snapshot.local().lsn(), 1);
+        assert_eq!(snapshot.local().page_count(), 1);
 
-        // upgrade to a write txn and overwrite the first page
-        let mut txn = txn.upgrade();
-        txn.write(0.into(), page2.clone());
-        assert_eq!(txn.read(0.into()).unwrap(), page2);
-        let txn = txn.commit().unwrap();
+        // open a new writer, verify it can read the page; write another page
+        let mut writer = handle.writer().unwrap();
+        assert_eq!(writer.read(0.into()).unwrap(), page);
+        writer.write(1.into(), page2.clone());
+        assert_eq!(writer.read(1.into()).unwrap(), page2);
+        let reader = writer.commit().unwrap();
 
-        // verify the new read txn can read the updated page
-        assert_eq!(txn.read(0.into()).unwrap(), page2);
+        // verify the new reader can read both pages
+        assert_eq!(reader.read(0.into()).unwrap(), page);
+        assert_eq!(reader.read(1.into()).unwrap(), page2);
 
         // verify the snapshot
-        let snapshot = txn.snapshot();
-        assert_eq!(snapshot.lsn(), LSN::new(2));
-        assert_eq!(snapshot.page_count(), 2);
+        let snapshot = reader.snapshot();
+        assert_eq!(snapshot.local().lsn(), 2);
+        assert_eq!(snapshot.local().page_count(), 2);
+
+        // upgrade to a writer and overwrite the first page
+        let mut writer = reader.upgrade();
+        writer.write(0.into(), page2.clone());
+        assert_eq!(writer.read(0.into()).unwrap(), page2);
+        let reader = writer.commit().unwrap();
+
+        // verify the new reader can read the updated page
+        assert_eq!(reader.read(0.into()).unwrap(), page2);
+
+        // verify the snapshot
+        let snapshot = reader.snapshot();
+        assert_eq!(snapshot.local().lsn(), 3);
+        assert_eq!(snapshot.local().page_count(), 2);
     }
 
     #[test]
     fn test_concurrent_commit_err() {
-        // open two write txns, commit the first, then commit the second
+        // open two writers, commit the first, then commit the second
 
         let storage = Storage::open_temporary().unwrap();
         let runtime = Runtime::new(MockFetcher, storage);
@@ -160,21 +155,21 @@ mod tests {
             .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
             .unwrap();
 
-        let mut txn1 = handle.write_txn().unwrap();
-        txn1.write(0.into(), page.clone());
+        let mut writer1 = handle.writer().unwrap();
+        writer1.write(0.into(), page.clone());
 
-        let mut txn2 = handle.write_txn().unwrap();
-        txn2.write(0.into(), page.clone());
+        let mut writer2 = handle.writer().unwrap();
+        writer2.write(0.into(), page.clone());
 
-        let txn1 = txn1.commit().unwrap();
-        assert_eq!(txn1.read(0.into()).unwrap(), page);
+        let reader1 = writer1.commit().unwrap();
+        assert_eq!(reader1.read(0.into()).unwrap(), page);
 
         // take a snapshot of the volume before committing txn2
         let pre_commit = handle.snapshot().unwrap();
 
-        let txn2 = txn2.commit();
+        let result = writer2.commit();
         assert!(matches!(
-            txn2.expect_err("expected concurrent write error").ctx(),
+            result.expect_err("expected concurrent write error").ctx(),
             ClientErr::StorageErr(StorageErr::ConcurrentWrite)
         ));
 

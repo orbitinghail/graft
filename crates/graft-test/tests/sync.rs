@@ -9,13 +9,13 @@ use graft_client::runtime::{
     },
 };
 use graft_core::{page::Page, VolumeId};
-use graft_test::{run_graft_services, setup_logger};
+use graft_test::{setup_logger, start_graft_backend};
 
-#[tokio::test(start_paused = true)]
-async fn test_client_sync_sanity() {
+#[test]
+fn test_client_sync_sanity() {
     setup_logger();
 
-    let (mut supervisor, clients) = run_graft_services().await;
+    let (backend, clients) = start_graft_backend();
 
     let storage = Storage::open_temporary().unwrap();
     let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
@@ -24,7 +24,7 @@ async fn test_client_sync_sanity() {
     // create a second client to sync to
     let storage2 = Storage::open_temporary().unwrap();
     let runtime2 = Runtime::new(NetFetcher::new(clients.clone()), storage2);
-    let sync2 = runtime2.start_sync_task(clients, Duration::from_secs(1));
+    let sync2 = runtime2.start_sync_task(clients, Duration::from_millis(10));
 
     // register the volume with both clients, pushing from client 1 to client 2
     let vid = VolumeId::random();
@@ -42,13 +42,13 @@ async fn test_client_sync_sanity() {
     // write and wait for replication multiple times
     for i in 0..5 {
         // write multiple times to the volume
-        let mut txn = handle.write_txn().unwrap();
-        txn.write(0.into(), page.clone());
-        txn.commit().unwrap();
+        let mut writer = handle.writer().unwrap();
+        writer.write(0.into(), page.clone());
+        writer.commit().unwrap();
 
-        let mut txn = handle.write_txn().unwrap();
-        txn.write(0.into(), page.clone());
-        txn.commit().unwrap();
+        let mut writer = handle.writer().unwrap();
+        writer.write(0.into(), page.clone());
+        writer.commit().unwrap();
 
         // wait for client 2 to receive the write
         subscription
@@ -57,8 +57,8 @@ async fn test_client_sync_sanity() {
 
         let snapshot = handle2.snapshot().unwrap();
         log::info!("received remote snapshot: {snapshot:?}");
-        assert_eq!(snapshot.lsn(), i);
-        assert_eq!(snapshot.page_count(), 1);
+        assert_eq!(snapshot.local().lsn(), i + 1);
+        assert_eq!(snapshot.local().page_count(), 1);
 
         // TODO: implement downloading pages from the remote to make this assertion pass
         // let txn = runtime2.read_txn(&vid).unwrap();
@@ -69,5 +69,5 @@ async fn test_client_sync_sanity() {
     // shutdown everything
     sync.shutdown_timeout(Duration::from_secs(5)).unwrap();
     sync2.shutdown_timeout(Duration::from_secs(5)).unwrap();
-    supervisor.shutdown(Duration::from_secs(5)).await.unwrap();
+    backend.shutdown(Duration::from_secs(5)).unwrap();
 }

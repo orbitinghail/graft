@@ -13,14 +13,6 @@ Later:
 
 # Client fetching
 
-Next: when creating a read txn we will need to grab both the local and remote snapshots.
-
-Need to consider how to return pages when each snapshot is missing
--> local=None, remote=None => return None
--> local=None, remote=Some => unreachable
--> local=Some, remote=None => load page from storage
--> local=Some, remote=Some => load page from fetcher
-
 We want the client to support pre-fetching whenever it fetches pages from the server. We also want to avoid fetching pages we already have as well as overfetching the same page from multiple concurrent tasks.
 
 For now, we can solve refetching via checking storage for every page we decide to prefetch.

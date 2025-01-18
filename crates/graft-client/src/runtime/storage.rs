@@ -299,10 +299,11 @@ impl Storage {
         memtable: Memtable,
     ) -> Result<Snapshot> {
         let mut batch = self.keyspace.batch();
-        let read_lsn = snapshot.as_ref().map(|s| s.lsn());
         let mut max_offset = snapshot
+            .as_ref()
             .and_then(|s| s.page_count().last_offset())
             .unwrap_or(PageOffset::ZERO);
+        let read_lsn = snapshot.map(|s| s.lsn());
         let commit_lsn = read_lsn
             .map(|lsn| lsn.next().expect("lsn overflow"))
             .unwrap_or_default();

@@ -129,8 +129,8 @@ fn workload_writer(
         tracing::info!(?offset, "writing page");
 
         // verify the offset is missing or present as expected
-        let txn = handle.read_txn().or_into_ctx()?;
-        let page = txn.read(offset).or_into_ctx()?;
+        let reader = handle.reader().or_into_ctx()?;
+        let page = reader.read(offset).or_into_ctx()?;
         let details = json!({ "offset": offset });
         if let Some(existing) = existing_hash {
             assert_always_or_unreachable!(
@@ -146,13 +146,13 @@ fn workload_writer(
             );
         }
 
-        let mut txn = handle.write_txn().or_into_ctx()?;
+        let mut writer = handle.writer().or_into_ctx()?;
 
         // write the page to the volume and update the page index
-        txn.write(offset, new_page);
-        txn.write(0.into(), page_tracker.serialize_into_page().or_into_ctx()?);
+        writer.write(offset, new_page);
+        writer.write(0.into(), page_tracker.serialize_into_page().or_into_ctx()?);
 
-        txn.commit().or_into_ctx()?;
+        writer.commit().or_into_ctx()?;
 
         sleep(interval);
     }
@@ -170,28 +170,28 @@ fn workload_reader(
     let subscription = handle.subscribe_to_remote_changes();
 
     loop {
+        let pre_change_snapshot = handle.snapshot().or_into_ctx()?;
+
         // wait for the next commit
         subscription.recv().expect("change subscription closed");
 
-        let snapshot = handle.snapshot().or_into_ctx()?;
-        tracing::info!(?snapshot, "received commit for volume {:?}", vid);
-
-        let txn = handle.read_txn().or_into_ctx()?;
+        let reader = handle.reader().or_into_ctx()?;
+        tracing::info!(snapshot=?reader.snapshot(), "received commit for volume {:?}", vid);
 
         antithesis_sdk::assert_always_or_unreachable!(
-            txn.snapshot() == &snapshot,
-            "read transaction should be using the expected snapshot",
-            &json!({ "actual": txn.snapshot(), "expected": snapshot })
+            reader.snapshot() != &pre_change_snapshot,
+            "the snapshot should be different after receiving a commit notification",
+            &json!({ "snapshot": reader.snapshot() })
         );
 
         // load the page index
-        let first_page = txn.read(0.into()).or_into_ctx()?;
+        let first_page = reader.read(0.into()).or_into_ctx()?;
         let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
         // ensure all pages are either empty or have the expected hash
-        for offset in snapshot.page_count().offsets() {
+        for offset in reader.snapshot().local().page_count().offsets() {
             tracing::info!("reading page at offset {offset}");
-            let page = txn.read(offset).or_into_ctx()?;
+            let page = reader.read(offset).or_into_ctx()?;
 
             if let Some(expected_hash) = page_tracker.get_hash(offset) {
                 assert_always_or_unreachable!(

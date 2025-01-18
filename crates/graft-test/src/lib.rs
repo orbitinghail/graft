@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Once},
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -24,11 +25,17 @@ use graft_server::{
         bus::Bus, cache::mem::MemCache, loader::SegmentLoader, uploader::SegmentUploaderTask,
         writer::SegmentWriterTask,
     },
-    supervisor::Supervisor,
+    supervisor::{ShutdownErr, Supervisor},
     volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
 use thiserror::Error;
-use tokio::{net::TcpListener, sync::mpsc};
+use tokio::{
+    net::TcpListener,
+    sync::{
+        mpsc,
+        oneshot::{self},
+    },
+};
 use url::Url;
 
 pub fn setup_logger() {
@@ -45,13 +52,52 @@ pub fn setup_logger() {
     });
 }
 
-pub async fn run_graft_services() -> (Supervisor, ClientPair) {
+pub struct GraftBackend {
+    shutdown_tx: oneshot::Sender<Duration>,
+    result_rx: oneshot::Receiver<Result<(), Culprit<ShutdownErr>>>,
+    handle: JoinHandle<()>,
+}
+
+pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let (result_tx, result_rx) = oneshot::channel();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .expect("failed to construct tokio runtime");
+
     let mut supervisor = Supervisor::default();
+    let metastore = runtime.block_on(run_metastore(&mut supervisor));
+    let pagestore = runtime.block_on(run_pagestore(metastore.clone(), &mut supervisor));
 
-    let metastore = run_metastore(&mut supervisor).await;
-    let pagestore = run_pagestore(metastore.clone(), &mut supervisor).await;
+    let handle = std::thread::spawn(move || {
+        runtime.block_on(async {
+            let timeout = shutdown_rx.await.expect("shutdown channel closed");
+            let result = supervisor.shutdown(timeout).await;
+            result_tx.send(result).expect("result channel closed");
+        })
+    });
 
-    (supervisor, ClientPair::new(metastore, pagestore))
+    (
+        GraftBackend { shutdown_tx, result_rx, handle },
+        ClientPair::new(metastore, pagestore),
+    )
+}
+
+impl GraftBackend {
+    pub fn shutdown(self, timeout: Duration) -> Result<(), Culprit<ShutdownErr>> {
+        self.shutdown_tx
+            .send(timeout)
+            .expect("shutdown channel closed");
+
+        self.handle.join().expect("backend thread panic");
+
+        self.result_rx
+            .blocking_recv()
+            .expect("result channel closed")
+    }
 }
 
 pub async fn run_metastore(supervisor: &mut Supervisor) -> MetastoreClient {
