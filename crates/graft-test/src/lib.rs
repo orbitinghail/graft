@@ -187,7 +187,7 @@ impl PageTracker {
     }
 
     pub fn serialize_into_page(&self) -> Result<Page, Culprit<PageTrackerErr>> {
-        let mut bytes = BytesMut::zeroed(PAGESIZE.as_usize());
+        let mut bytes = BytesMut::with_capacity(PAGESIZE.as_usize());
         let json = serde_json::to_vec(self).unwrap();
         if json.len() > (PAGESIZE.as_usize() - 8) {
             return Err(Culprit::new_with_note(
@@ -197,6 +197,7 @@ impl PageTracker {
         }
         bytes.put_u64_le(json.len() as u64);
         bytes.put_slice(&json);
+        bytes.resize(PAGESIZE.as_usize(), 0);
         Ok(Page::try_from(bytes.freeze()).or_ctx(|_| PageTrackerErr::Serialize)?)
     }
 

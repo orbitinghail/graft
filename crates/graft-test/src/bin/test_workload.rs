@@ -4,7 +4,6 @@ use antithesis_sdk::{antithesis_init, assert_always_or_unreachable};
 use clap::Parser;
 use config::{Config, ConfigError};
 use culprit::{Culprit, ResultExt};
-use futures::FutureExt;
 use graft_client::{
     runtime::{
         fetcher::NetFetcher,
@@ -23,7 +22,6 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
-use tokio::{select, signal::ctrl_c, sync::broadcast, task::spawn_blocking};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
     filter::FromEnvError, fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter,
@@ -46,9 +44,6 @@ enum WorkloadErr {
     #[error("invalid workload configuration")]
     InvalidConfig,
 
-    #[error("failed to receive broadcast message")]
-    BroadcastRecvErr,
-
     #[error("client error: {0}")]
     ClientErr(#[from] ClientErr),
 
@@ -60,12 +55,6 @@ enum WorkloadErr {
 
     #[error("page tracker error: {0}")]
     PageTrackerErr(#[from] PageTrackerErr),
-}
-
-impl From<broadcast::error::RecvError> for WorkloadErr {
-    fn from(_: broadcast::error::RecvError) -> Self {
-        WorkloadErr::BroadcastRecvErr
-    }
 }
 
 impl From<ConfigError> for WorkloadErr {
@@ -95,12 +84,17 @@ enum Workload {
 }
 
 impl Workload {
-    fn start(self, handle: Runtime<NetFetcher>, rng: impl Rng) -> Result<(), Culprit<WorkloadErr>> {
+    fn start(
+        self,
+        handle: Runtime<NetFetcher>,
+        rng: impl Rng,
+        ticks: usize,
+    ) -> Result<(), Culprit<WorkloadErr>> {
         match self {
             Workload::Writer { vid, interval_ms: interval } => {
-                workload_writer(handle, rng, vid, Duration::from_millis(interval))
+                workload_writer(handle, rng, vid, Duration::from_millis(interval), ticks)
             }
-            Workload::Reader { vid } => workload_reader(handle, rng, vid),
+            Workload::Reader { vid } => workload_reader(handle, rng, vid, ticks),
         }
     }
 }
@@ -112,14 +106,15 @@ fn workload_writer(
     mut rng: impl Rng,
     vid: VolumeId,
     interval: Duration,
+    ticks: usize,
 ) -> Result<(), Culprit<WorkloadErr>> {
     let mut page_tracker = PageTracker::default();
 
     let handle = runtime
-        .open_volume(&vid, VolumeConfig::new(SyncDirection::Push))
+        .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
         .or_into_ctx()?;
 
-    loop {
+    for _ in 0..ticks {
         // randomly pick a page offset and a page value.
         // select the next offset to ensure we don't pick the 0th page
         let offset = PageOffset::test_random(&mut rng, 16).next();
@@ -156,12 +151,14 @@ fn workload_writer(
 
         sleep(interval);
     }
+    Ok(())
 }
 
 fn workload_reader(
     runtime: Runtime<NetFetcher>,
     _rng: impl Rng,
     vid: VolumeId,
+    ticks: usize,
 ) -> Result<(), Culprit<WorkloadErr>> {
     let handle = runtime
         .open_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
@@ -169,7 +166,7 @@ fn workload_reader(
 
     let subscription = handle.subscribe_to_remote_changes();
 
-    loop {
+    for _ in 0..ticks {
         let pre_change_snapshot = handle.snapshot().or_into_ctx()?;
 
         // wait for the next commit
@@ -208,10 +205,10 @@ fn workload_reader(
             }
         }
     }
+    Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Culprit<WorkloadErr>> {
+fn main() -> Result<(), Culprit<WorkloadErr>> {
     antithesis_init();
     let running_in_antithesis = std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok();
 
@@ -257,29 +254,18 @@ async fn main() -> Result<(), Culprit<WorkloadErr>> {
 
     antithesis_sdk::lifecycle::setup_complete(&json!({ "workload": workload }));
 
-    // run the test for between 0 and 5 minutes
-    let test_timeout = Duration::from_secs(rng.gen_range(0..300));
-    tracing::info!(?test_timeout, "starting test workload");
+    let (ticks, shutdown_timeout) = if running_in_antithesis {
+        (rng.gen_range(100..5000), Duration::from_secs(3600))
+    } else {
+        (100, Duration::from_secs(60))
+    };
+    tracing::info!(?ticks, "starting test workload");
 
-    let workload_fut = spawn_blocking(move || workload.start(runtime.clone(), rng));
+    workload.start(runtime.clone(), rng, ticks).or_into_ctx()?;
 
-    select! {
-        result = workload_fut => {
-            result.expect("workload task panic")?;
-            tracing::info!("workload finished");
-        }
-        _ = ctrl_c().fuse() => {
-            tracing::info!("received SIGINT, shutting down");
-        }
-        _ = tokio::time::sleep(test_timeout).fuse() => {
-            tracing::info!("test timeout reached");
-        }
-    }
-
+    tracing::info!("workload finished");
     tracing::info!("waiting for sync task to shutdown");
-    sync_task
-        .shutdown_timeout(Duration::from_secs(u64::MAX))
-        .or_into_ctx()?;
+    sync_task.shutdown_timeout(shutdown_timeout).or_into_ctx()?;
 
     antithesis_sdk::assert_reachable!("test workload finishes");
 

@@ -41,8 +41,6 @@ impl<F: Fetcher> VolumeReader<F> {
             (_, PageValue::Empty) => Ok(EMPTY_PAGE),
             (_, PageValue::Pending) => {
                 if let Some(remote) = self.snapshot().remote() {
-                    // When this is fixed, update the test:
-                    // graft-test/tests/sync.rs
                     self.shared.fetcher().fetch_page(
                         self.shared.storage(),
                         self.snapshot.vid(),

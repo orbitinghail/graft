@@ -1,5 +1,9 @@
 use culprit::{Result, ResultExt};
-use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{
+    page::{Page, EMPTY_PAGE},
+    page_offset::PageOffset,
+    VolumeId,
+};
 use splinter::Splinter;
 
 use crate::{
@@ -44,7 +48,9 @@ impl Fetcher for NetFetcher {
             .clients
             .pagestore()
             .read_pages(vid, remote.lsn(), offsets)?;
-        assert!(!pages.is_empty(), "missing page");
+        if pages.is_empty() {
+            return Ok(EMPTY_PAGE);
+        }
         let page = pages[0].clone();
         assert!(page.offset() == offset, "received page at wrong offset");
         storage
