@@ -1,5 +1,5 @@
 use culprit::{Result, ResultExt};
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use graft_core::VolumeId;
 
@@ -7,31 +7,25 @@ use crate::{runtime::storage::volume_config::SyncDirection, ClientErr, ClientPai
 
 use super::{
     fetcher::Fetcher,
+    shared::Shared,
     storage::{snapshot::SnapshotKind, volume_config::VolumeConfig, Storage},
     sync::{SyncTask, SyncTaskHandle},
     volume::VolumeHandle,
 };
 
 pub struct Runtime<F> {
-    fetcher: Arc<F>,
-    storage: Arc<Storage>,
+    shared: Shared<F>,
 }
 
 impl<F> Clone for Runtime<F> {
     fn clone(&self) -> Self {
-        Self {
-            fetcher: self.fetcher.clone(),
-            storage: self.storage.clone(),
-        }
+        Self { shared: self.shared.clone() }
     }
 }
 
 impl<F: Fetcher> Runtime<F> {
     pub fn new(fetcher: F, storage: Storage) -> Self {
-        Self {
-            fetcher: Arc::new(fetcher),
-            storage: Arc::new(storage),
-        }
+        Self { shared: Shared::new(fetcher, storage) }
     }
 
     pub fn start_sync_task(
@@ -39,35 +33,36 @@ impl<F: Fetcher> Runtime<F> {
         clients: ClientPair,
         refresh_interval: Duration,
     ) -> SyncTaskHandle {
-        SyncTask::spawn(self.storage.clone(), clients, refresh_interval)
+        SyncTask::spawn(self.shared.clone(), clients, refresh_interval)
     }
 
     pub fn open_volume(
         &self,
         vid: &VolumeId,
         config: VolumeConfig,
-    ) -> Result<VolumeHandle, ClientErr> {
+    ) -> Result<VolumeHandle<F>, ClientErr> {
+        let storage = self.shared.storage();
         if config.sync().matches(SyncDirection::Pull) {
-            self.fetcher
-                .pull_snapshot(&self.storage, vid)
+            self.shared
+                .fetcher()
+                .pull_snapshot(storage, vid)
                 .or_into_ctx()?;
         }
 
         // if no local snapshot exists, create an empty one
-        if self
-            .storage
+        if storage
             .snapshot(&vid, SnapshotKind::Local)
             .or_into_ctx()?
             .is_none()
         {
-            self.storage
+            storage
                 .commit(&vid, None, Default::default())
                 .or_into_ctx()?;
         }
 
-        self.storage.set_volume_config(&vid, config).or_into_ctx()?;
+        storage.set_volume_config(&vid, config).or_into_ctx()?;
 
-        Ok(VolumeHandle::new(vid.clone(), self.storage.clone()))
+        Ok(VolumeHandle::new(vid.clone(), self.shared.clone()))
     }
 }
 

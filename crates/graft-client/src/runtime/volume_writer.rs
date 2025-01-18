@@ -6,18 +6,18 @@ use crate::ClientErr;
 use super::{snapshot::VolumeSnapshot, storage::memtable::Memtable, volume_reader::VolumeReader};
 
 #[derive(Debug)]
-pub struct VolumeWriter {
-    reader: VolumeReader,
+pub struct VolumeWriter<F> {
+    reader: VolumeReader<F>,
     memtable: Memtable,
 }
 
-impl From<VolumeReader> for VolumeWriter {
-    fn from(reader: VolumeReader) -> Self {
+impl<F> From<VolumeReader<F>> for VolumeWriter<F> {
+    fn from(reader: VolumeReader<F>) -> Self {
         Self { reader, memtable: Default::default() }
     }
 }
 
-impl VolumeWriter {
+impl<F> VolumeWriter<F> {
     /// Access this writer's snapshot
     #[inline]
     pub fn snapshot(&self) -> &VolumeSnapshot {
@@ -38,15 +38,16 @@ impl VolumeWriter {
     }
 
     /// Commit the transaction
-    pub fn commit(self) -> Result<VolumeReader, ClientErr> {
-        let (snapshot, storage) = self.reader.into_parts();
-        let local = storage
+    pub fn commit(self) -> Result<VolumeReader<F>, ClientErr> {
+        let (snapshot, shared) = self.reader.into_parts();
+        let local = shared
+            .storage()
             .commit(
                 snapshot.vid(),
                 Some(snapshot.local().clone()),
                 self.memtable,
             )
             .or_into_ctx()?;
-        Ok(VolumeReader::new(snapshot.with_local(local), storage))
+        Ok(VolumeReader::new(snapshot.with_local(local), shared))
     }
 }

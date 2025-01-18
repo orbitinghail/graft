@@ -1,5 +1,4 @@
 use culprit::{Result, ResultExt};
-use std::sync::Arc;
 
 use graft_core::{
     page::{Page, EMPTY_PAGE},
@@ -9,20 +8,18 @@ use graft_core::{
 use crate::ClientErr;
 
 use super::{
-    snapshot::VolumeSnapshot,
-    storage::{page::PageValue, Storage},
-    volume_writer::VolumeWriter,
+    shared::Shared, snapshot::VolumeSnapshot, storage::page::PageValue, volume_writer::VolumeWriter,
 };
 
 #[derive(Clone, Debug)]
-pub struct VolumeReader {
+pub struct VolumeReader<F> {
     snapshot: VolumeSnapshot,
-    storage: Arc<Storage>,
+    shared: Shared<F>,
 }
 
-impl VolumeReader {
-    pub(crate) fn new(snapshot: VolumeSnapshot, storage: Arc<Storage>) -> Self {
-        Self { snapshot, storage }
+impl<F> VolumeReader<F> {
+    pub(crate) fn new(snapshot: VolumeSnapshot, shared: Shared<F>) -> Self {
+        Self { snapshot, shared }
     }
 
     /// Access this reader's snapshot
@@ -37,7 +34,8 @@ impl VolumeReader {
         // return None if offset is out of range OR we don't have a snapshot
 
         match self
-            .storage
+            .shared
+            .storage()
             .read(&self.snapshot.vid(), self.snapshot.local().lsn(), offset)
             .or_into_ctx()?
         {
@@ -56,17 +54,17 @@ impl VolumeReader {
     }
 
     /// Upgrade this reader into a writer
-    pub fn upgrade(self) -> VolumeWriter {
+    pub fn upgrade(self) -> VolumeWriter<F> {
         self.into()
     }
 
     /// decompose this reader into snapshot and storage
-    pub(crate) fn into_parts(self) -> (VolumeSnapshot, Arc<Storage>) {
-        (self.snapshot, self.storage)
+    pub(crate) fn into_parts(self) -> (VolumeSnapshot, Shared<F>) {
+        (self.snapshot, self.shared)
     }
 }
 
-impl Into<VolumeSnapshot> for VolumeReader {
+impl<F> Into<VolumeSnapshot> for VolumeReader<F> {
     fn into(self) -> VolumeSnapshot {
         self.snapshot
     }

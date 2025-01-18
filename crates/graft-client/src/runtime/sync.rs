@@ -1,6 +1,5 @@
 use std::{
     collections::HashSet,
-    sync::Arc,
     thread::{self, sleep, JoinHandle},
     time::{Duration, Instant},
 };
@@ -17,7 +16,11 @@ use crate::{
     ClientErr, ClientPair,
 };
 
-use super::storage::{changeset::SetSubscriber, volume_config::SyncDirection, Storage};
+use super::{
+    fetcher::Fetcher,
+    shared::Shared,
+    storage::{changeset::SetSubscriber, volume_config::SyncDirection},
+};
 
 #[derive(Debug, Error)]
 pub enum ShutdownErr {
@@ -81,31 +84,31 @@ impl SyncTaskHandle {
 
 /// A SyncTask is a background task which continuously syncs volumes to and from
 /// a Graft service.
-pub struct SyncTask {
-    storage: Arc<Storage>,
+pub struct SyncTask<F> {
+    shared: Shared<F>,
     clients: ClientPair,
     refresh_interval: Duration,
     commits: SetSubscriber<VolumeId>,
     shutdown_signal: Receiver<()>,
 }
 
-impl SyncTask {
+impl<F: Fetcher> SyncTask<F> {
     pub fn spawn(
-        storage: Arc<Storage>,
+        shared: Shared<F>,
         clients: ClientPair,
         refresh_interval: Duration,
     ) -> SyncTaskHandle {
-        let commits = storage.local_changeset().subscribe_all();
+        let commits = shared.storage().local_changeset().subscribe_all();
         let (shutdown_tx, shutdown_rx) = bounded(0);
         let task = Self {
-            storage,
+            shared,
             clients,
             refresh_interval,
             commits,
             shutdown_signal: shutdown_rx,
         };
         SyncTaskHandle {
-            handle: thread::spawn(|| task.run()),
+            handle: thread::spawn(move || task.run()),
             shutdown_signal: shutdown_tx,
         }
     }
@@ -152,7 +155,7 @@ impl SyncTask {
         log::debug!("handle_tick");
         let mut jobs = self.jobs(SyncDirection::Both, None);
         while let Some(job) = jobs.try_next()? {
-            job.run(&self.storage, &self.clients)?;
+            job.run(self.shared.storage(), &self.clients)?;
         }
         Ok(())
     }
@@ -161,7 +164,7 @@ impl SyncTask {
         log::debug!("handle_commit: {:?}", vids);
         let mut jobs = self.jobs(SyncDirection::Push, Some(vids));
         while let Some(job) = jobs.try_next()? {
-            job.run(&self.storage, &self.clients)?;
+            job.run(self.shared.storage(), &self.clients)?;
         }
         Ok(())
     }
@@ -175,7 +178,8 @@ impl SyncTask {
             .with(SnapshotKind::Local)
             .with(SnapshotKind::Sync)
             .with(SnapshotKind::Remote);
-        self.storage
+        self.shared
+            .storage()
             .query_volumes(sync, kind_mask, vids)
             .map_err(|err| err.map_ctx(ClientErr::from))
             .try_filter_map(move |(vid, config, mut snapshots)| {

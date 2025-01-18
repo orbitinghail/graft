@@ -9,6 +9,7 @@ use crate::{
 
 use super::Fetcher;
 
+#[derive(Debug)]
 pub struct NetFetcher {
     clients: ClientPair,
 }

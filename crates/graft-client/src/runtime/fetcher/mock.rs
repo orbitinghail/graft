@@ -12,6 +12,7 @@ use crate::{
 
 use super::Fetcher;
 
+#[derive(Debug)]
 pub struct MockFetcher;
 
 impl Fetcher for MockFetcher {
