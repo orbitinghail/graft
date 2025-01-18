@@ -3,7 +3,10 @@ use graft_core::{page::Page, page_offset::PageOffset};
 
 use crate::ClientErr;
 
-use super::{snapshot::VolumeSnapshot, storage::memtable::Memtable, volume_reader::VolumeReader};
+use super::{
+    fetcher::Fetcher, snapshot::VolumeSnapshot, storage::memtable::Memtable,
+    volume_reader::VolumeReader,
+};
 
 #[derive(Debug)]
 pub struct VolumeWriter<F> {
@@ -17,7 +20,7 @@ impl<F> From<VolumeReader<F>> for VolumeWriter<F> {
     }
 }
 
-impl<F> VolumeWriter<F> {
+impl<F: Fetcher> VolumeWriter<F> {
     /// Access this writer's snapshot
     #[inline]
     pub fn snapshot(&self) -> &VolumeSnapshot {

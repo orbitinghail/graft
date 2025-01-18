@@ -4,7 +4,7 @@ use graft_core::VolumeId;
 use crate::{runtime::storage::snapshot::SnapshotKindMask, ClientErr};
 
 use super::{
-    shared::Shared, snapshot::VolumeSnapshot, storage::snapshot::SnapshotKind,
+    fetcher::Fetcher, shared::Shared, snapshot::VolumeSnapshot, storage::snapshot::SnapshotKind,
     volume_reader::VolumeReader, volume_writer::VolumeWriter,
 };
 
@@ -14,7 +14,7 @@ pub struct VolumeHandle<F> {
     shared: Shared<F>,
 }
 
-impl<F> VolumeHandle<F> {
+impl<F: Fetcher> VolumeHandle<F> {
     pub(crate) fn new(vid: VolumeId, shared: Shared<F>) -> Self {
         Self { vid, shared }
     }

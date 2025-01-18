@@ -8,7 +8,8 @@ use graft_core::{
 use crate::ClientErr;
 
 use super::{
-    shared::Shared, snapshot::VolumeSnapshot, storage::page::PageValue, volume_writer::VolumeWriter,
+    fetcher::Fetcher, shared::Shared, snapshot::VolumeSnapshot, storage::page::PageValue,
+    volume_writer::VolumeWriter,
 };
 
 #[derive(Clone, Debug)]
@@ -17,7 +18,7 @@ pub struct VolumeReader<F> {
     shared: Shared<F>,
 }
 
-impl<F> VolumeReader<F> {
+impl<F: Fetcher> VolumeReader<F> {
     pub(crate) fn new(snapshot: VolumeSnapshot, shared: Shared<F>) -> Self {
         Self { snapshot, shared }
     }
@@ -30,9 +31,6 @@ impl<F> VolumeReader<F> {
 
     /// Read a page from the snapshot
     pub fn read(&self, offset: PageOffset) -> Result<Page, ClientErr> {
-        // TODO:
-        // return None if offset is out of range OR we don't have a snapshot
-
         match self
             .shared
             .storage()
@@ -42,10 +40,16 @@ impl<F> VolumeReader<F> {
             (_, PageValue::Available(page)) => Ok(page),
             (_, PageValue::Empty) => Ok(EMPTY_PAGE),
             (_, PageValue::Pending) => {
-                if let Some(_remote) = self.snapshot().remote() {
+                if let Some(remote) = self.snapshot().remote() {
                     // When this is fixed, update the test:
                     // graft-test/tests/sync.rs
-                    todo!("download page from remote")
+                    self.shared.fetcher().fetch_page(
+                        self.shared.storage(),
+                        self.snapshot.vid(),
+                        self.snapshot.local(),
+                        remote,
+                        offset,
+                    )
                 } else {
                     Ok(EMPTY_PAGE)
                 }

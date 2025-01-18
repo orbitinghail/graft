@@ -8,7 +8,7 @@ use graft_client::runtime::{
         Storage,
     },
 };
-use graft_core::{page::Page, VolumeId};
+use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 use graft_test::{setup_logger, start_graft_backend};
 
 #[test]
@@ -38,16 +38,17 @@ fn test_client_sync_sanity() {
     let subscription = handle2.subscribe_to_remote_changes();
 
     let page = Page::test_filled(0x42);
+    let offset = PageOffset::new(0);
 
     // write and wait for replication multiple times
     for i in 0..5 {
         // write multiple times to the volume
         let mut writer = handle.writer().unwrap();
-        writer.write(0.into(), page.clone());
+        writer.write(offset, page.clone());
         writer.commit().unwrap();
 
         let mut writer = handle.writer().unwrap();
-        writer.write(0.into(), page.clone());
+        writer.write(offset, page.clone());
         writer.commit().unwrap();
 
         // wait for client 2 to receive the write
@@ -60,10 +61,9 @@ fn test_client_sync_sanity() {
         assert_eq!(snapshot.local().lsn(), i + 1);
         assert_eq!(snapshot.local().page_count(), 1);
 
-        // TODO: implement downloading pages from the remote to make this assertion pass
-        // let txn = runtime2.read_txn(&vid).unwrap();
-        // let page2 = txn.read(0.into()).unwrap();
-        // assert_eq!(page, page2, "page read from client 2 does not match");
+        let reader = handle2.reader_at(snapshot);
+        let received = reader.read(offset).unwrap();
+        assert_eq!(received, page, "received page does not match written page");
     }
 
     // shutdown everything
