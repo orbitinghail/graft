@@ -180,6 +180,11 @@ fn workload_reader(
             "the snapshot should be different after receiving a commit notification",
             &json!({ "snapshot": reader.snapshot() })
         );
+        antithesis_sdk::assert_always_or_unreachable!(
+            reader.snapshot().local().page_count() > 0,
+            "the snapshot should have at least one page",
+            &json!({ "snapshot": reader.snapshot() })
+        );
 
         // load the page index
         let first_page = reader.read(0.into()).or_into_ctx()?;
