@@ -4,8 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossbeam::channel::{bounded, select_biased, Receiver, Sender};
-use culprit::{Culprit, Result};
+use crossbeam::channel::{bounded, select_biased, Receiver, Sender, TrySendError};
+use culprit::{Culprit, Result, ResultExt};
 use graft_core::VolumeId;
 use job::Job;
 use thiserror::Error;
@@ -29,6 +29,23 @@ pub enum ShutdownErr {
 
     #[error("timeout while waiting for Sync task to cleanly shutdown")]
     Timeout,
+}
+
+#[derive(Debug)]
+pub struct SyncControl {
+    vid: VolumeId,
+    direction: SyncDirection,
+    complete: Sender<Result<(), ClientErr>>,
+}
+
+impl SyncControl {
+    pub fn new(
+        vid: VolumeId,
+        direction: SyncDirection,
+        complete: Sender<Result<(), ClientErr>>,
+    ) -> Self {
+        Self { vid, direction, complete }
+    }
 }
 
 mod job;
@@ -89,6 +106,7 @@ pub struct SyncTask<F> {
     clients: ClientPair,
     refresh_interval: Duration,
     commits: SetSubscriber<VolumeId>,
+    control: Receiver<SyncControl>,
     shutdown_signal: Receiver<()>,
 }
 
@@ -97,6 +115,7 @@ impl<F: Fetcher> SyncTask<F> {
         shared: Shared<F>,
         clients: ClientPair,
         refresh_interval: Duration,
+        control: Receiver<SyncControl>,
     ) -> SyncTaskHandle {
         let commits = shared.storage().local_changeset().subscribe_all();
         let (shutdown_tx, shutdown_rx) = bounded(0);
@@ -105,6 +124,7 @@ impl<F: Fetcher> SyncTask<F> {
             clients,
             refresh_interval,
             commits,
+            control,
             shutdown_signal: shutdown_rx,
         };
         SyncTaskHandle {
@@ -137,6 +157,11 @@ impl<F: Fetcher> SyncTask<F> {
                     break;
                 }
 
+                recv(self.control) -> control => {
+                    let control = control.expect("sync task control channel closed");
+                    self.handle_control(control)?;
+                }
+
                 recv(self.commits.ready()) -> result => {
                     if let Err(err) = result {
                         panic!("commit subscriber error: {:?}", err);
@@ -148,6 +173,55 @@ impl<F: Fetcher> SyncTask<F> {
                 default(self.refresh_interval) => self.handle_tick()?,
             }
         }
+        Ok(())
+    }
+
+    fn handle_control(&mut self, msg: SyncControl) -> Result<(), ClientErr> {
+        let result = self.sync(msg.vid, msg.direction);
+        // we try to send the error to the client first and then fallback to
+        // reporting the error in the sync thread if the channel is disconnected
+        if let Err(err) = msg.complete.try_send(result) {
+            match err {
+                TrySendError::Full(err) => {
+                    panic!("SyncControl completion channel should never be full! {err:?}",)
+                }
+                TrySendError::Disconnected(err) => return err,
+            }
+        }
+        Ok(())
+    }
+
+    /// Synchronously sync a volume with the remote
+    fn sync(&mut self, vid: VolumeId, dir: SyncDirection) -> Result<(), ClientErr> {
+        let kind_mask = SnapshotKindMask::default()
+            .with(SnapshotKind::Local)
+            .with(SnapshotKind::Sync)
+            .with(SnapshotKind::Remote);
+        let mut snapshots = self
+            .shared
+            .storage()
+            .snapshots(&vid, kind_mask)
+            .or_into_ctx()?;
+
+        if dir.matches(SyncDirection::Pull) {
+            Job::pull(vid.clone(), snapshots.remote().cloned())
+                .run(self.shared.storage(), &self.clients)
+                .or_into_culprit("error while pulling the volume")?;
+        }
+
+        if dir.matches(SyncDirection::Push) {
+            Job::push(
+                vid,
+                snapshots.take_remote(),
+                snapshots.take_sync(),
+                snapshots
+                    .take_local()
+                    .expect("local snapshot should not be missing"),
+            )
+            .run(self.shared.storage(), &self.clients)
+            .or_into_culprit("error while pushing the volume")?;
+        }
+
         Ok(())
     }
 
@@ -194,7 +268,7 @@ impl<F: Fetcher> SyncTask<F> {
                         snapshots.take_remote(),
                         snapshots.take_sync(),
                         snapshots.take_local().expect(
-                            "local snapshot should never be missing if sync snapshot is present",
+                            "local snapshot should not be missing when sync snapshot != local snapshot",
                         ),
                     )))
                 } else if can_pull && sync.matches(SyncDirection::Pull) {

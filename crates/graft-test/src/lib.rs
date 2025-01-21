@@ -186,6 +186,10 @@ impl PageTracker {
         self.pages.get(&offset)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.pages.is_empty()
+    }
+
     pub fn serialize_into_page(&self) -> Result<Page, Culprit<PageTrackerErr>> {
         let mut bytes = BytesMut::with_capacity(PAGESIZE.as_usize());
         let json = serde_json::to_vec(self).unwrap();
@@ -202,6 +206,11 @@ impl PageTracker {
     }
 
     pub fn deserialize_from_page(page: &Page) -> Result<Self, Culprit<PageTrackerErr>> {
+        if page.is_empty() {
+            log::warn!("empty page, initializing new page tracker");
+            return Ok(Self::default());
+        }
+
         let mut bytes = page.as_ref();
         let len = bytes.get_u64_le() as usize;
         let (json, _) = bytes.split_at(len);

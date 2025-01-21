@@ -1,3 +1,4 @@
+use crossbeam::channel::{bounded, Sender};
 use culprit::{Result, ResultExt};
 use std::time::Duration;
 
@@ -9,31 +10,41 @@ use super::{
     fetcher::Fetcher,
     shared::Shared,
     storage::{snapshot::SnapshotKind, volume_config::VolumeConfig, Storage},
-    sync::{SyncTask, SyncTaskHandle},
+    sync::{SyncControl, SyncTask, SyncTaskHandle},
     volume::VolumeHandle,
 };
 
 pub struct Runtime<F> {
     shared: Shared<F>,
+    sync_control: Option<Sender<SyncControl>>,
 }
 
 impl<F> Clone for Runtime<F> {
     fn clone(&self) -> Self {
-        Self { shared: self.shared.clone() }
+        Self {
+            shared: self.shared.clone(),
+            sync_control: self.sync_control.clone(),
+        }
     }
 }
 
 impl<F: Fetcher> Runtime<F> {
     pub fn new(fetcher: F, storage: Storage) -> Self {
-        Self { shared: Shared::new(fetcher, storage) }
+        Self {
+            shared: Shared::new(fetcher, storage),
+            sync_control: None,
+        }
     }
 
     pub fn start_sync_task(
-        &self,
+        &mut self,
         clients: ClientPair,
         refresh_interval: Duration,
+        control_channel_size: usize,
     ) -> SyncTaskHandle {
-        SyncTask::spawn(self.shared.clone(), clients, refresh_interval)
+        let (tx, rx) = bounded(control_channel_size);
+        self.sync_control = Some(tx);
+        SyncTask::spawn(self.shared.clone(), clients, refresh_interval, rx)
     }
 
     pub fn open_volume(
@@ -62,7 +73,11 @@ impl<F: Fetcher> Runtime<F> {
 
         storage.set_volume_config(&vid, config).or_into_ctx()?;
 
-        Ok(VolumeHandle::new(vid.clone(), self.shared.clone()))
+        Ok(VolumeHandle::new(
+            vid.clone(),
+            self.shared.clone(),
+            self.sync_control.clone(),
+        ))
     }
 }
 

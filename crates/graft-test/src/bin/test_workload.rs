@@ -108,11 +108,27 @@ fn workload_writer(
     interval: Duration,
     ticks: usize,
 ) -> Result<(), Culprit<WorkloadErr>> {
-    let mut page_tracker = PageTracker::default();
-
     let handle = runtime
-        .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
+        .open_volume(&vid, VolumeConfig::new(SyncDirection::Push))
         .or_into_ctx()?;
+
+    // pull the volume explicitly before continuing
+    handle.pull_from_remote().or_into_ctx()?;
+
+    // load the page tracker from the volume, if the volume is empty this will
+    // initialize a new page tracker
+    let reader = handle.reader().or_into_ctx()?;
+    let first_page = reader.read(0.into()).or_into_ctx()?;
+    let mut page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
+
+    // the page tracker should only ever be empty when there is no remote snapshot
+    if page_tracker.is_empty() {
+        assert_always_or_unreachable!(
+            reader.snapshot().remote().is_none(),
+            "page tracker should only be empty when there is no remote snapshot",
+            &json!({ "snapshot": reader.snapshot() })
+        );
+    }
 
     for _ in 0..ticks {
         // randomly pick a page offset and a page value.
@@ -166,9 +182,9 @@ fn workload_reader(
 
     let subscription = handle.subscribe_to_remote_changes();
 
-    for _ in 0..ticks {
-        let pre_change_snapshot = handle.snapshot().or_into_ctx()?;
+    let mut last_snapshot = None;
 
+    for _ in 0..ticks {
         // wait for the next commit
         subscription.recv().expect("change subscription closed");
 
@@ -176,7 +192,9 @@ fn workload_reader(
         tracing::info!(snapshot=?reader.snapshot(), "received commit for volume {:?}", vid);
 
         antithesis_sdk::assert_always_or_unreachable!(
-            reader.snapshot() != &pre_change_snapshot,
+            last_snapshot
+                .replace(reader.snapshot().clone())
+                .is_none_or(|last| &last != reader.snapshot()),
             "the snapshot should be different after receiving a commit notification",
             &json!({ "snapshot": reader.snapshot() })
         );
@@ -220,14 +238,20 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
-                .with_default_directive(LevelFilter::TRACE.into())
-                .from_env()?,
+                .with_default_directive(LevelFilter::DEBUG.into())
+                .from_env()?
+                .add_directive("graft_test=trace".parse().unwrap())
+                .add_directive("graft_client=trace".parse().unwrap())
+                .add_directive("graft_core=trace".parse().unwrap())
+                .add_directive("graft_server=trace".parse().unwrap()),
         )
         .with_span_events(FmtSpan::CLOSE)
         .with_ansi(!running_in_antithesis)
+        .without_time()
         .finish()
         .try_init()?;
-    tracing::info!("starting test workload runner");
+
+    tracing::info!("starting test workload process");
 
     let mut rng = antithesis_sdk::random::AntithesisRng;
 
@@ -254,8 +278,8 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
     let storage = Storage::open_temporary().unwrap();
-    let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
-    let sync_task = runtime.start_sync_task(clients, Duration::from_secs(1));
+    let mut runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
+    let sync_task = runtime.start_sync_task(clients, Duration::from_secs(1), 8);
 
     antithesis_sdk::lifecycle::setup_complete(&json!({ "workload": workload }));
 
@@ -264,8 +288,8 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
     } else {
         (100, Duration::from_secs(60))
     };
-    tracing::info!(?ticks, "starting test workload");
 
+    tracing::info!(?ticks, "running test workload");
     workload.start(runtime.clone(), rng, ticks).or_into_ctx()?;
 
     tracing::info!("workload finished");

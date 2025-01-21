@@ -1,22 +1,33 @@
+use crossbeam::channel::{bounded, Sender};
 use culprit::{Result, ResultExt};
 use graft_core::VolumeId;
 
 use crate::{runtime::storage::snapshot::SnapshotKindMask, ClientErr};
 
 use super::{
-    fetcher::Fetcher, shared::Shared, snapshot::VolumeSnapshot, storage::snapshot::SnapshotKind,
-    volume_reader::VolumeReader, volume_writer::VolumeWriter,
+    fetcher::Fetcher,
+    shared::Shared,
+    snapshot::VolumeSnapshot,
+    storage::{snapshot::SnapshotKind, volume_config::SyncDirection},
+    sync::SyncControl,
+    volume_reader::VolumeReader,
+    volume_writer::VolumeWriter,
 };
 
 #[derive(Clone)]
 pub struct VolumeHandle<F> {
     vid: VolumeId,
     shared: Shared<F>,
+    sync_control: Option<Sender<SyncControl>>,
 }
 
 impl<F: Fetcher> VolumeHandle<F> {
-    pub(crate) fn new(vid: VolumeId, shared: Shared<F>) -> Self {
-        Self { vid, shared }
+    pub(crate) fn new(
+        vid: VolumeId,
+        shared: Shared<F>,
+        sync_control: Option<Sender<SyncControl>>,
+    ) -> Self {
+        Self { vid, shared, sync_control }
     }
 
     /// Retrieve the latest snapshot for the volume
@@ -70,5 +81,16 @@ impl<F: Fetcher> VolumeHandle<F> {
             .storage()
             .local_changeset()
             .subscribe(self.vid.clone())
+    }
+
+    /// Sync this volume to the latest remote snapshot
+    pub fn pull_from_remote(&self) -> Result<(), ClientErr> {
+        let (tx, rx) = bounded(1);
+        self.sync_control
+            .as_ref()
+            .expect("sync control channel missing")
+            .send(SyncControl::new(self.vid.clone(), SyncDirection::Pull, tx))
+            .expect("sync control channel closed");
+        rx.recv().expect("sync control response channel closed")
     }
 }

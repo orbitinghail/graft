@@ -179,6 +179,11 @@ mod tests {
             ],
         };
 
+        // this is a hack to try and order the following two concurrent requests
+        // with the writer task... it doens't work reliably. we need a better
+        // way to reliably block the writer task from doing work
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
         let req1 = server.post("/").bytes(req1.encode_to_vec().into());
         let req2 = server.post("/").bytes(req2.encode_to_vec().into());
 
