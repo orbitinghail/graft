@@ -35,24 +35,22 @@ pub async fn handler<C: Cache>(
         return Err(ApiErrCtx::TooManyOffsets.into());
     }
 
-    let (checkpoint, needs_update) = match state.catalog().latest_snapshot(&vid).or_into_ctx()? {
-        Some(s) => (s.checkpoint(), s.lsn() < lsn),
-        None => (LSN::ZERO, true),
-    };
+    // ensure we've replayed the catalog up to the requested LSN
+    state
+        .updater()
+        .update_catalog_from_client(state.metastore_client(), state.catalog(), &vid, Some(lsn))
+        .await
+        .or_into_ctx()?;
 
-    if needs_update {
-        // update the catalog from the metastore
-        state
-            .updater()
-            .update_catalog_from_client(state.metastore_client(), state.catalog(), &vid, Some(lsn))
-            .await
-            .or_into_ctx()?;
-    }
+    // load the snapshot, this should never be missing since we just updated
+    let snapshot = state
+        .catalog()
+        .snapshot(vid.clone(), lsn)
+        .or_into_ctx()?
+        .expect("missing snapshot after update");
+    let checkpoint = snapshot.checkpoint();
 
     let mut loading = FuturesUnordered::new();
-
-    // TODO: For security we should prevent a request from loading any pages outside of the snapshot.
-    // this requires looking up the snapshot's page count
 
     let segments = state.catalog().scan_segments(&vid, &(checkpoint..=lsn));
     for result in segments {

@@ -69,7 +69,10 @@ impl VolumeCatalogUpdater {
         vid: &VolumeId,
         min_lsn: Option<LSN>,
     ) -> Result<(), Culprit<UpdateErr>> {
-        tracing::debug!(?min_lsn, "updating catalog for volume {vid:?}");
+        tracing::debug!(
+            ?min_lsn,
+            "updating catalog for volume {vid:?} from object store"
+        );
 
         // read the latest lsn for the volume in the catalog
         let initial_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
@@ -199,6 +202,13 @@ impl VolumeCatalogUpdater {
 
         // we only need to reply commits that happened after the last snapshot
         let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or_default();
+
+        tracing::trace!(
+            ?min_lsn,
+            ?initial_lsn,
+            ?start_lsn,
+            "updating catalog for volume {vid:?} from metastore"
+        );
 
         // update the catalog from the client
         // TODO: switch this to an async client once one exists

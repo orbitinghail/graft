@@ -11,6 +11,12 @@ Later:
 - garbage collection
 - authentication (api keys)
 
+# Storage commit lock and snapshots
+
+Currently we store four snapshots per volume in local storage. Some issues:
+1. we don't consistently manage the commit lock. we should be taking it every time we touch snapshots at the very least. And we should be minimizing the lock scope each time.
+2. it's still not completely clear what all the snapshot states are... perhaps this needs to be simplified or encoded into the typesystem?
+
 # Client fetching
 
 We want the client to support pre-fetching whenever it fetches pages from the server. We also want to avoid fetching pages we already have as well as overfetching the same page from multiple concurrent tasks.

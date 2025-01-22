@@ -19,14 +19,15 @@ where
     type Rejection = ApiErr;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let is_protobuf = req
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .is_some_and(|v| v == CONTENT_TYPE_PROTOBUF);
+        let content_type = req.headers().get(header::CONTENT_TYPE);
+        let is_protobuf = content_type == Some(&CONTENT_TYPE_PROTOBUF);
         if !is_protobuf {
             return Err(Culprit::new_with_note(
                 ApiErrCtx::InvalidRequestBody,
-                "invalid content type",
+                format!(
+                    "expected content type '{:?}' but received '{:?}'",
+                    CONTENT_TYPE_PROTOBUF, content_type
+                ),
             )
             .into());
         }

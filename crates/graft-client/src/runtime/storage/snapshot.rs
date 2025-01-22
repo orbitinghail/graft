@@ -82,7 +82,7 @@ impl AsRef<[u8]> for SnapshotKey {
 #[repr(C)]
 pub struct Snapshot {
     lsn: LSN,
-    page_count: PageCount,
+    pages: PageCount,
 
     // Padding to align to 8 bytes
     #[serde(skip)]
@@ -91,8 +91,8 @@ pub struct Snapshot {
 
 impl Snapshot {
     #[inline]
-    pub fn new(lsn: LSN, page_count: PageCount) -> Self {
-        Self { lsn, page_count, _padding: [0; 4] }
+    pub fn new(lsn: LSN, pages: PageCount) -> Self {
+        Self { lsn, pages, _padding: [0; 4] }
     }
 
     #[inline]
@@ -101,8 +101,8 @@ impl Snapshot {
     }
 
     #[inline]
-    pub fn page_count(&self) -> PageCount {
-        self.page_count
+    pub fn pages(&self) -> PageCount {
+        self.pages
     }
 }
 
@@ -110,7 +110,7 @@ impl Debug for Snapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Snapshot")
             .field(&self.lsn())
-            .field(&self.page_count())
+            .field(&self.pages())
             .finish()
     }
 }
@@ -129,7 +129,7 @@ impl Into<Slice> for Snapshot {
 
 impl From<graft_proto::Snapshot> for Snapshot {
     fn from(proto: graft_proto::Snapshot) -> Self {
-        Self::new(proto.lsn(), proto.page_count())
+        Self::new(proto.lsn(), proto.pages())
     }
 }
 

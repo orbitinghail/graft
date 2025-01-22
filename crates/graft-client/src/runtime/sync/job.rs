@@ -1,6 +1,7 @@
 use culprit::{Result, ResultExt};
 use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 use graft_proto::pagestore::v1::PageAtOffset;
+use serde::Serialize;
 use tryiter::TryIteratorExt;
 
 use crate::{
@@ -94,7 +95,7 @@ impl PullJob {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct PushJob {
     /// The volume to push to the remote.
     vid: VolumeId,
@@ -126,17 +127,15 @@ impl PushJob {
             .map(|s| s.lsn())
             .unwrap_or_default();
         let lsn_range = start_lsn..=self.snapshot.lsn();
-        let page_count = self.snapshot.page_count();
+        let page_count = self.snapshot.pages();
 
         // update the sync snapshot to the current snapshot
         // we do this OUTSIDE of the batch to ensure that the snapshot is updated even if the push fails
         // this allows us to detect a failed push during recovery
         storage
-            .set_snapshot(&self.vid, SnapshotKind::Sync, self.snapshot)
+            .set_snapshot(&self.vid, SnapshotKind::Sync, self.snapshot.clone())
             .or_into_ctx()?;
 
-        // load all of the pages into memory
-        // TODO: stream pages directly to the pagestore
         let mut pages = Vec::new();
         let mut upsert_page = |offset: PageOffset, page: Page| {
             // binary search upsert the page into pages
@@ -152,26 +151,42 @@ impl PushJob {
             }
         };
 
-        {
-            let mut commits = storage.query_commits(&self.vid, lsn_range.clone());
-            while let Some((lsn, offsets)) = commits.try_next().or_into_ctx()? {
-                let mut commit_pages = storage.query_pages(&self.vid, lsn, &offsets);
-                while let Some((offset, page)) = commit_pages.try_next().or_into_ctx()? {
-                    // it's a fatal error if the page is None or Pending
-                    let page = page
-                        .expect("page missing from storage")
-                        .expect("page missing from storage");
+        // load all of the pages into memory
+        // TODO: stream pages directly to the pagestore
+        let mut commits = storage.query_commits(&self.vid, lsn_range.clone());
+        let mut found_commit = false;
+        while let Some((lsn, offsets)) = commits.try_next().or_into_ctx()? {
+            found_commit = true;
+            let mut commit_pages = storage.query_pages(&self.vid, lsn, &offsets);
+            while let Some((offset, page)) = commit_pages.try_next().or_into_ctx()? {
+                // it's a fatal error if the page is None or Pending
+                let page = page
+                    .expect("page missing from storage")
+                    .expect("page missing from storage");
 
-                    // if the page is still contained within the page_count, include it
-                    if page_count.contains(offset) {
-                        upsert_page(offset, page);
-                    }
+                // if the page is still contained within the page_count, include it
+                if page_count.contains(offset) {
+                    upsert_page(offset, page);
                 }
             }
         }
 
-        // write the pages to the pagestore
-        let segments = clients.pagestore().write_pages(&self.vid, pages)?;
+        #[cfg(feature = "antithesis")]
+        antithesis_sdk::assert_always_or_unreachable!(
+            found_commit,
+            "push job should always find at least one commit",
+            &serde_json::json!({
+                "job": self,
+                "lsn_range": lsn_range,
+            })
+        );
+
+        // write the pages to the pagestore if there are any pages
+        let segments = if !pages.is_empty() {
+            clients.pagestore().write_pages(&self.vid, pages)?
+        } else {
+            Vec::new()
+        };
 
         // commit the segments to the metastore
         let last_remote_lsn = self.remote_snapshot.as_ref().map(|s| s.lsn());

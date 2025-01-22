@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Once},
-    thread::JoinHandle,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, thread::JoinHandle, time::Duration};
 
 use bytes::{Buf, BufMut, BytesMut};
 use culprit::{Culprit, ResultExt};
@@ -28,6 +23,7 @@ use graft_server::{
     supervisor::{ShutdownErr, Supervisor},
     volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
+use rand::Rng;
 use thiserror::Error;
 use tokio::{
     net::TcpListener,
@@ -38,18 +34,14 @@ use tokio::{
 };
 use url::Url;
 
-pub fn setup_logger() {
-    // setup logger only once
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        env_logger::Builder::from_default_env()
-            .filter_module("graft_core", log::LevelFilter::Trace)
-            .filter_module("graft_test", log::LevelFilter::Trace)
-            .filter_module("graft_server", log::LevelFilter::Trace)
-            .filter_module("graft_client", log::LevelFilter::Trace)
-            .filter_level(log::LevelFilter::Info)
-            .init();
-    });
+pub mod test_tracing;
+
+pub fn worker_id(rng: &mut impl Rng) -> String {
+    bs58::encode(rng.gen::<u64>().to_le_bytes()).into_string()
+}
+
+pub fn running_in_antithesis() -> bool {
+    std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok()
 }
 
 pub struct GraftBackend {
@@ -186,6 +178,10 @@ impl PageTracker {
         self.pages.get(&offset)
     }
 
+    pub fn len(&self) -> usize {
+        self.pages.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.pages.is_empty()
     }
@@ -207,7 +203,7 @@ impl PageTracker {
 
     pub fn deserialize_from_page(page: &Page) -> Result<Self, Culprit<PageTrackerErr>> {
         if page.is_empty() {
-            log::warn!("empty page, initializing new page tracker");
+            tracing::warn!("empty page, initializing new page tracker");
             return Ok(Self::default());
         }
 

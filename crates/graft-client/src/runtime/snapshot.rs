@@ -1,4 +1,4 @@
-use graft_core::VolumeId;
+use graft_core::{page_count::PageCount, VolumeId};
 use serde::{Deserialize, Serialize};
 
 use super::storage::snapshot::Snapshot;
@@ -28,6 +28,12 @@ impl VolumeSnapshot {
     #[inline]
     pub fn remote(&self) -> Option<&Snapshot> {
         self.remote.as_ref()
+    }
+
+    /// Returns the number of pages in the volume at this snapshot
+    #[inline]
+    pub fn pages(&self) -> PageCount {
+        self.local.pages()
     }
 
     pub(crate) fn with_local(self, local: Snapshot) -> Self {

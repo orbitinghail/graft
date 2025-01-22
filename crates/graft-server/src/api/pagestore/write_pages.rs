@@ -1,7 +1,6 @@
 use std::{sync::Arc, vec};
 
 use axum::{extract::State, response::IntoResponse};
-use bytes::BytesMut;
 use culprit::{Culprit, ResultExt};
 use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 use graft_proto::{
@@ -9,10 +8,12 @@ use graft_proto::{
     pagestore::v1::{WritePagesRequest, WritePagesResponse},
 };
 use hashbrown::HashSet;
-use prost::Message;
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::{api::error::ApiErrCtx, segment::bus::WritePageReq};
+use crate::{
+    api::{error::ApiErrCtx, response::ProtoResponse},
+    segment::bus::WritePageReq,
+};
 
 use crate::api::{error::ApiErr, extractors::Protobuf};
 
@@ -81,18 +82,12 @@ pub async fn handler<C>(
         expected_pages, count
     );
 
-    let response = WritePagesResponse { segments };
-    let mut buf = BytesMut::with_capacity(response.encoded_len());
-    response
-        .encode(&mut buf)
-        .expect("insufficient buffer capacity");
-
-    Ok(buf.freeze())
+    Ok(ProtoResponse::new(WritePagesResponse { segments }))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{future::IntoFuture, time::Duration};
 
     use axum::handler::Handler;
     use axum_test::TestServer;
@@ -100,8 +95,9 @@ mod tests {
     use graft_client::ClientBuilder;
     use graft_proto::pagestore::v1::PageAtOffset;
     use object_store::memory::InMemory;
+    use prost::Message;
     use splinter::SplinterRef;
-    use tokio::sync::mpsc;
+    use tokio::{sync::mpsc, time::sleep};
     use tracing_test::traced_test;
 
     use crate::{
@@ -128,11 +124,11 @@ mod tests {
         let (store_tx, store_rx) = mpsc::channel(8);
         let commit_bus = Bus::new(128);
 
-        SegmentWriterTask::new(
+        let writer_controller = SegmentWriterTask::new(
             Default::default(),
             page_rx,
             store_tx,
-            Duration::from_secs(10),
+            Duration::from_secs(1),
         )
         .testonly_spawn();
 
@@ -179,16 +175,34 @@ mod tests {
             ],
         };
 
-        // this is a hack to try and order the following two concurrent requests
-        // with the writer task... it doens't work reliably. we need a better
-        // way to reliably block the writer task from doing work
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        // we pause the writer here to ensure that both requests are placed in
+        // the same segment
+        writer_controller.pause();
 
-        let req1 = server.post("/").bytes(req1.encode_to_vec().into());
-        let req2 = server.post("/").bytes(req2.encode_to_vec().into());
+        let local = tokio::task::LocalSet::new();
+        let req1 = local.spawn_local(
+            server
+                .post("/")
+                .bytes(req1.encode_to_vec().into())
+                .into_future(),
+        );
+        let req2 = local.spawn_local(
+            server
+                .post("/")
+                .bytes(req2.encode_to_vec().into())
+                .into_future(),
+        );
+
+        // this sleep allows tokio to advance past the writer timer as well as
+        // advance each request until they are waiting for the next commit
+        sleep(Duration::from_secs(5)).await;
+
+        // resume the writer, causing the segment to flush
+        writer_controller.resume();
 
         // wait for both requests to complete
-        let (resp1, resp2) = tokio::join!(req1, req2);
+        local.await;
+        let (resp1, resp2) = (req1.await.unwrap(), req2.await.unwrap());
 
         let resp1 = WritePagesResponse::decode(resp1.into_bytes()).unwrap();
         assert_eq!(resp1.segments.len(), 1, "expected 1 segment");
@@ -199,7 +213,8 @@ mod tests {
         let resp2 = WritePagesResponse::decode(resp2.into_bytes()).unwrap();
         assert_eq!(resp2.segments.len(), 1, "expected 1 segment");
         assert_eq!(
-            resp2.segments[0].sid, resp1.segments[0].sid,
+            resp2.segments[0].sid().unwrap(),
+            resp1.segments[0].sid().unwrap(),
             "expected same segment"
         );
         let offsets = SplinterRef::from_bytes(resp2.segments[0].offsets.clone()).unwrap();

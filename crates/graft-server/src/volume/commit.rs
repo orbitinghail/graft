@@ -172,7 +172,7 @@ impl From<Snapshot> for CommitMeta {
         Self::new(
             snapshot.lsn(),
             snapshot.checkpoint(),
-            snapshot.page_count(),
+            snapshot.pages(),
             snapshot
                 .system_time()
                 .unwrap_or_default()

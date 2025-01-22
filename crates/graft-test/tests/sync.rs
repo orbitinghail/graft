@@ -9,11 +9,11 @@ use graft_client::runtime::{
     },
 };
 use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
-use graft_test::{setup_logger, start_graft_backend};
+use graft_test::{start_graft_backend, test_tracing::tracing_init};
 
 #[test]
 fn test_client_sync_sanity() {
-    setup_logger();
+    tracing_init(None);
 
     let (backend, clients) = start_graft_backend();
 
@@ -53,13 +53,13 @@ fn test_client_sync_sanity() {
 
         // wait for client 2 to receive the write
         subscription
-            .recv_timeout(Duration::from_secs(5))
+            .recv_timeout(Duration::from_millis(100))
             .expect("subscription failed");
 
         let snapshot = handle2.snapshot().unwrap();
-        log::info!("received remote snapshot: {snapshot:?}");
+        tracing::info!("received remote snapshot: {snapshot:?}");
         assert_eq!(snapshot.local().lsn(), i + 1);
-        assert_eq!(snapshot.local().page_count(), 1);
+        assert_eq!(snapshot.local().pages(), 1);
 
         let reader = handle2.reader_at(snapshot);
         let received = reader.read(offset).unwrap();

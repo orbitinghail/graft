@@ -126,7 +126,7 @@ mod tests {
         let snapshot = resp.snapshot.unwrap();
         assert_eq!(snapshot.vid().unwrap(), &vid);
         assert_eq!(snapshot.lsn(), 0);
-        assert_eq!(snapshot.page_count(), 1);
+        assert_eq!(snapshot.pages(), 1);
         assert!(snapshot.timestamp.is_some());
     }
 }

@@ -13,8 +13,6 @@ antithesis_sdk = { workspace = true }
 culprit = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-env_logger = { workspace = true }
-log = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 serde = { workspace = true, features = ["derive"] }
@@ -26,3 +24,4 @@ futures = { workspace = true }
 config = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
+bs58 = { workspace = true }

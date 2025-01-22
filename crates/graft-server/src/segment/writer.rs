@@ -57,17 +57,19 @@ impl SupervisedTask for SegmentWriterTask {
     async fn run(mut self, ctx: TaskCtx) -> Result<(), Culprit<WriterErr>> {
         loop {
             tokio::select! {
+                biased;
+
+                _ = ctx.wait_shutdown() => {
+                    // Shutdown immediately, discarding any pending writes
+                    break;
+                }
+
                 Some(req) = self.input.recv() => {
                     self.handle_page_request(req).await?;
                 }
 
                 _ = sleep_until(self.next_flush) => {
                     self.handle_flush().await?;
-                }
-
-                _ = ctx.wait_shutdown() => {
-                    // Shutdown immediately, discarding any pending writes
-                    break;
                 }
             }
         }

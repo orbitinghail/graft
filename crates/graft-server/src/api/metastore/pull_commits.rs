@@ -18,9 +18,8 @@ use crate::api::{
 use super::MetastoreApiState;
 
 /// Returns a list of segments added in the lsn range. This method will also
-/// return the latest Snapshot of the Volume. If the provided LSN is missing or
-/// before the last checkpoint, only segments starting at the last checkpoint
-/// will be returned.
+/// return the latest Snapshot of the Volume. If no lsn range is specified, only
+/// commits starting at the last checkpoint will be returned.
 #[tracing::instrument(name = "metastore/v1/pull_commits", skip(state, req))]
 pub async fn handler(
     State(state): State<Arc<MetastoreApiState>>,
@@ -47,12 +46,9 @@ pub async fn handler(
         .into());
     };
 
-    // resolve the start of the range; skipping up to the last checkpoint if needed
+    // resolve the start of the range, defaulting to the last checkpoint
     let checkpoint = snapshot.checkpoint();
-    let start_lsn = lsns
-        .map(|l| l.start())
-        .unwrap_or(checkpoint)
-        .max(checkpoint);
+    let start_lsn = lsns.map(|l| l.start()).unwrap_or(checkpoint);
 
     // calculate the resolved lsn range
     let lsns = start_lsn..=snapshot.lsn();
@@ -167,7 +163,7 @@ mod tests {
         let last_commit = resp.commits.last().unwrap();
         let snapshot = last_commit.snapshot.as_ref().unwrap();
         assert_eq!(snapshot.lsn(), 9);
-        assert_eq!(snapshot.page_count(), 1);
+        assert_eq!(snapshot.pages(), 1);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
         for segment in &last_commit.segments {
             assert_eq!(segment.offsets, offsets);

@@ -28,17 +28,24 @@ pub fn prost_request<Req: Message, Resp: Message + Default>(
         .send_bytes(&req.encode_to_vec())
         .or_any_status()?;
 
+    if resp.content_type() != APPLICATION_PROTOBUF {
+        return Err(
+            Culprit::new(ClientErr::ProtobufDecodeErr).with_note(format!(
+                "expected content type '{}' but received '{}'",
+                APPLICATION_PROTOBUF,
+                resp.content_type()
+            )),
+        );
+    }
+
     let status = resp.status();
     log::trace!("received response with status {}", resp.status());
 
     let success = (200..300).contains(&status);
 
-    let content_length: Option<u64> = resp.header("Content-Length").and_then(|s| s.parse().ok());
-    let limit = content_length.unwrap_or(MAX_READ_SIZE.as_u64());
-
     // read the response into a Bytes object
-    let mut reader = resp.into_reader().take(limit);
-    let mut writer = BytesMut::with_capacity(limit as usize).writer();
+    let mut reader = resp.into_reader().take(MAX_READ_SIZE.as_u64());
+    let mut writer = BytesMut::new().writer();
     std::io::copy(&mut reader, &mut writer).or_into_ctx()?;
     let body = writer.into_inner().freeze();
     let body_size = ByteUnit::new(body.len() as u64);
@@ -64,7 +71,7 @@ pub fn prost_request<Req: Message, Resp: Message + Default>(
         antithesis_sdk::assert_always_or_unreachable!(
             !(500..600).contains(&status),
             "client requests should not return 5xx errors",
-            &serde_json::json!({ "code": err.code().as_str_name(), "message": err.message })
+            &serde_json::json!({ "status": status, "code": err.code().as_str_name(), "message": err.message })
         );
         Err(err.into())
     }

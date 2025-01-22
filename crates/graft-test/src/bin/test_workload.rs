@@ -17,15 +17,14 @@ use graft_client::{
     ClientBuildErr, ClientBuilder, ClientErr, ClientPair, MetastoreClient, PagestoreClient,
 };
 use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
-use graft_test::{PageTracker, PageTrackerErr};
+use graft_test::{
+    running_in_antithesis, test_tracing::tracing_init, worker_id, PageTracker, PageTrackerErr,
+};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
-use tracing::level_filters::LevelFilter;
-use tracing_subscriber::{
-    filter::FromEnvError, fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter,
-};
+use tracing_subscriber::filter::FromEnvError;
 use url::Url;
 
 #[derive(Parser)]
@@ -86,15 +85,21 @@ enum Workload {
 impl Workload {
     fn start(
         self,
+        worker_id: &str,
         handle: Runtime<NetFetcher>,
         rng: impl Rng,
         ticks: usize,
     ) -> Result<(), Culprit<WorkloadErr>> {
         match self {
-            Workload::Writer { vid, interval_ms: interval } => {
-                workload_writer(handle, rng, vid, Duration::from_millis(interval), ticks)
-            }
-            Workload::Reader { vid } => workload_reader(handle, rng, vid, ticks),
+            Workload::Writer { vid, interval_ms: interval } => workload_writer(
+                worker_id,
+                handle,
+                rng,
+                vid,
+                Duration::from_millis(interval),
+                ticks,
+            ),
+            Workload::Reader { vid } => workload_reader(worker_id, handle, rng, vid, ticks),
         }
     }
 }
@@ -102,6 +107,7 @@ impl Workload {
 /// This workload continuously writes and reads pages to a volume, verifying the
 /// contents of pages are always correct
 fn workload_writer(
+    worker_id: &str,
     runtime: Runtime<NetFetcher>,
     mut rng: impl Rng,
     vid: VolumeId,
@@ -113,7 +119,10 @@ fn workload_writer(
         .or_into_ctx()?;
 
     // pull the volume explicitly before continuing
-    handle.pull_from_remote().or_into_ctx()?;
+    tracing::info!("pulling volume {:?}", vid);
+    handle
+        .pull_from_remote(Duration::from_secs(1))
+        .or_into_ctx()?;
 
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
@@ -122,13 +131,15 @@ fn workload_writer(
     let mut page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
     // the page tracker should only ever be empty when there is no remote snapshot
-    if page_tracker.is_empty() {
-        assert_always_or_unreachable!(
-            reader.snapshot().remote().is_none(),
-            "page tracker should only be empty when there is no remote snapshot",
-            &json!({ "snapshot": reader.snapshot() })
-        );
-    }
+    assert_always_or_unreachable!(
+        page_tracker.is_empty() ^ reader.snapshot().remote().is_some(),
+        "page tracker should only be empty when there is no remote snapshot",
+        &json!({
+            "snapshot": reader.snapshot(),
+            "tracker_len": page_tracker.len(),
+            "worker": worker_id
+        })
+    );
 
     for _ in 0..ticks {
         // randomly pick a page offset and a page value.
@@ -142,7 +153,7 @@ fn workload_writer(
         // verify the offset is missing or present as expected
         let reader = handle.reader().or_into_ctx()?;
         let page = reader.read(offset).or_into_ctx()?;
-        let details = json!({ "offset": offset });
+        let details = json!({ "offset": offset, "worker": worker_id });
         if let Some(existing) = existing_hash {
             assert_always_or_unreachable!(
                 existing == page,
@@ -171,6 +182,7 @@ fn workload_writer(
 }
 
 fn workload_reader(
+    worker_id: &str,
     runtime: Runtime<NetFetcher>,
     _rng: impl Rng,
     vid: VolumeId,
@@ -183,6 +195,7 @@ fn workload_reader(
     let subscription = handle.subscribe_to_remote_changes();
 
     let mut last_snapshot = None;
+    let mut seen_nonempty = false;
 
     for _ in 0..ticks {
         // wait for the next commit
@@ -196,20 +209,36 @@ fn workload_reader(
                 .replace(reader.snapshot().clone())
                 .is_none_or(|last| &last != reader.snapshot()),
             "the snapshot should be different after receiving a commit notification",
-            &json!({ "snapshot": reader.snapshot() })
+            &json!({ "snapshot": reader.snapshot(), "worker": worker_id })
         );
-        antithesis_sdk::assert_always_or_unreachable!(
-            reader.snapshot().local().page_count() > 0,
-            "the snapshot should have at least one page",
-            &json!({ "snapshot": reader.snapshot() })
-        );
+
+        let page_count = reader.snapshot().local().pages();
+        if seen_nonempty {
+            antithesis_sdk::assert_always_or_unreachable!(
+                page_count > 0,
+                "the snapshot should never be empty after we have seen a non-empty snapshot",
+                &json!({ "snapshot": reader.snapshot(), "worker": worker_id })
+            );
+        }
+
+        if page_count == 0 {
+            tracing::info!("volume is empty, waiting for the next commit");
+            continue;
+        } else {
+            seen_nonempty = true;
+        }
 
         // load the page index
         let first_page = reader.read(0.into()).or_into_ctx()?;
         let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
         // ensure all pages are either empty or have the expected hash
-        for offset in reader.snapshot().local().page_count().offsets() {
+        for offset in reader.snapshot().local().pages().offsets() {
+            if offset == 0 {
+                // skip the page tracker
+                continue;
+            }
+
             tracing::info!("reading page at offset {offset}");
             let page = reader.read(offset).or_into_ctx()?;
 
@@ -217,13 +246,13 @@ fn workload_reader(
                 assert_always_or_unreachable!(
                     expected_hash == page,
                     "page should have expected contents",
-                    &json!({ "offset": offset })
+                    &json!({ "offset": offset, "worker": worker_id })
                 );
             } else {
                 assert_always_or_unreachable!(
                     page.is_empty(),
                     "page should be empty as it has never been written to",
-                    &json!({ "offset": offset })
+                    &json!({ "offset": offset, "worker": worker_id })
                 );
             }
         }
@@ -233,31 +262,10 @@ fn workload_reader(
 
 fn main() -> Result<(), Culprit<WorkloadErr>> {
     antithesis_init();
-    let running_in_antithesis = std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok();
-
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::DEBUG.into())
-                .from_env()?
-                .add_directive("graft_test=trace".parse().unwrap())
-                .add_directive("graft_client=trace".parse().unwrap())
-                .add_directive("graft_core=trace".parse().unwrap())
-                .add_directive("graft_server=trace".parse().unwrap()),
-        )
-        .with_span_events(FmtSpan::CLOSE)
-        .with_ansi(!running_in_antithesis)
-        .without_time()
-        .finish()
-        .try_init()?;
-
-    tracing::info!("starting test workload process");
-
     let mut rng = antithesis_sdk::random::AntithesisRng;
-
+    let worker_id = worker_id(&mut rng);
+    tracing_init(Some(worker_id.clone()));
     let args = Args::parse();
-
-    tracing::info!("loading workload config from file {}", args.workload);
 
     let workload: Workload = Config::builder()
         .add_source(config::Environment::with_prefix("WORKLOAD").separator("_"))
@@ -265,7 +273,11 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
         .build()?
         .try_deserialize()?;
 
-    tracing::info!(?workload, "loaded workload");
+    tracing::info!(
+        workload_file = args.workload,
+        ?workload,
+        "STARTING TEST WORKLOAD"
+    );
 
     let metastore_client: MetastoreClient =
         ClientBuilder::new(Url::parse("http://metastore:3001").unwrap())
@@ -283,20 +295,27 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
 
     antithesis_sdk::lifecycle::setup_complete(&json!({ "workload": workload }));
 
-    let (ticks, shutdown_timeout) = if running_in_antithesis {
+    let (ticks, shutdown_timeout) = if running_in_antithesis() {
         (rng.gen_range(100..5000), Duration::from_secs(3600))
     } else {
         (100, Duration::from_secs(60))
     };
 
     tracing::info!(?ticks, "running test workload");
-    workload.start(runtime.clone(), rng, ticks).or_into_ctx()?;
+    workload
+        .start(&worker_id, runtime.clone(), rng, ticks)
+        .or_into_ctx()?;
 
     tracing::info!("workload finished");
     tracing::info!("waiting for sync task to shutdown");
     sync_task.shutdown_timeout(shutdown_timeout).or_into_ctx()?;
 
-    antithesis_sdk::assert_reachable!("test workload finishes");
+    antithesis_sdk::assert_reachable!(
+        "test workload finishes",
+        &json!({
+            "worker": worker_id
+        })
+    );
 
     tracing::info!("shutdown complete");
 

@@ -8,6 +8,7 @@ use fjall::{KvSeparationOptions, PartitionCreateOptions, Slice};
 use graft_core::{
     byte_unit::ByteUnit,
     lsn::{LSNRangeExt, LSN},
+    page_count::PageCount,
     page_offset::PageOffset,
     zerocopy_err::ZerocopyErr,
     VolumeId,
@@ -299,10 +300,7 @@ impl Storage {
         memtable: Memtable,
     ) -> Result<Snapshot> {
         let mut batch = self.keyspace.batch();
-        let mut max_offset = snapshot
-            .as_ref()
-            .and_then(|s| s.page_count().last_offset())
-            .unwrap_or(PageOffset::ZERO);
+        let mut pages = snapshot.as_ref().map_or(PageCount::ZERO, |s| s.pages());
         let read_lsn = snapshot.map(|s| s.lsn());
         let commit_lsn = read_lsn
             .map(|lsn| lsn.next().expect("lsn overflow"))
@@ -315,14 +313,14 @@ impl Storage {
         let mut page_key = PageKey::new(vid.clone(), PageOffset::ZERO, commit_lsn);
         for (offset, page) in memtable {
             page_key.set_offset(offset);
-            max_offset = max_offset.max(offset);
+            pages = pages.max(offset.pages());
             offsets.insert(offset.into());
             batch.insert(&self.pages, page_key.as_bytes(), PageValue::from(page));
         }
 
         // write out a new volume snapshot
         let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Local);
-        let snapshot = Snapshot::new(commit_lsn, max_offset.pages());
+        let snapshot = Snapshot::new(commit_lsn, pages);
         batch.insert(&self.snapshots, snapshot_key, snapshot.as_bytes());
 
         // write out a new commit
@@ -360,6 +358,10 @@ impl Storage {
         snapshot: Snapshot,
         changed: SplinterRef<Bytes>,
     ) -> Result<()> {
+        // acquire the commit lock
+        // TODO: reduce the scope of this lock
+        let _permit = self.commit_lock.lock();
+
         let mut batch = self.keyspace.batch();
 
         // update the remote snapshot for the volume
@@ -382,7 +384,16 @@ impl Storage {
         batch.insert(
             &self.snapshots,
             snapshot_key,
-            Snapshot::new(local_lsn, snapshot.page_count()),
+            Snapshot::new(local_lsn, snapshot.pages()),
+        );
+
+        // set the sync snapshot so we don't roundtrip this commit back to the
+        // server
+        let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Sync);
+        batch.insert(
+            &self.snapshots,
+            snapshot_key,
+            Snapshot::new(local_lsn, snapshot.pages()),
         );
 
         // mark changed pages
@@ -508,7 +519,7 @@ mod tests {
         assert_eq!(config.sync(), SyncDirection::Pull);
         let snapshot = set.local().unwrap();
         assert_eq!(snapshot.lsn(), LSN::new(1));
-        assert_eq!(snapshot.page_count(), 1);
+        assert_eq!(snapshot.pages(), 1);
 
         // check the second volume
         let (vid, config, set) = iter.try_next().unwrap().unwrap();
@@ -516,7 +527,7 @@ mod tests {
         assert_eq!(config.sync(), SyncDirection::Push);
         let snapshot = set.local().unwrap();
         assert_eq!(snapshot.lsn(), LSN::new(0));
-        assert_eq!(snapshot.page_count(), 1);
+        assert_eq!(snapshot.pages(), 1);
 
         // iter is empty
         assert!(iter.next().is_none());
@@ -532,7 +543,7 @@ mod tests {
         assert_eq!(config.sync(), SyncDirection::Push);
         let snapshot = set.local().unwrap();
         assert_eq!(snapshot.lsn(), LSN::new(0));
-        assert_eq!(snapshot.page_count(), 1);
+        assert_eq!(snapshot.pages(), 1);
 
         // iter is empty
         assert!(iter.next().is_none());

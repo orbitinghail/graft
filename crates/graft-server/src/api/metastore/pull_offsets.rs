@@ -66,6 +66,8 @@ pub async fn handler(
     // calculate the resolved lsn range
     let lsns = start_lsn..=snapshot.lsn();
 
+    tracing::trace!(?lsns, "resolved LSN range");
+
     // ensure the catalog contains the requested LSNs
     state
         .updater
@@ -160,7 +162,7 @@ mod tests {
         let resp = PullOffsetsResponse::decode(resp.into_bytes()).unwrap();
         let snapshot = resp.snapshot.unwrap();
         assert_eq!(snapshot.lsn(), 9);
-        assert_eq!(snapshot.page_count(), 1);
+        assert_eq!(snapshot.pages(), 1);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
         assert_eq!(resp.range.map(|r| r.start()..=r.end().unwrap()), Some(lsns));
         let splinter = Splinter::from_bytes(resp.offsets).unwrap();

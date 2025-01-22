@@ -118,7 +118,7 @@ mod tests {
         // verify the snapshot
         let snapshot = reader.snapshot();
         assert_eq!(snapshot.local().lsn(), 1);
-        assert_eq!(snapshot.local().page_count(), 1);
+        assert_eq!(snapshot.local().pages(), 1);
 
         // open a new writer, verify it can read the page; write another page
         let mut writer = handle.writer().unwrap();
@@ -134,7 +134,7 @@ mod tests {
         // verify the snapshot
         let snapshot = reader.snapshot();
         assert_eq!(snapshot.local().lsn(), 2);
-        assert_eq!(snapshot.local().page_count(), 2);
+        assert_eq!(snapshot.local().pages(), 2);
 
         // upgrade to a writer and overwrite the first page
         let mut writer = reader.upgrade();
@@ -148,7 +148,7 @@ mod tests {
         // verify the snapshot
         let snapshot = reader.snapshot();
         assert_eq!(snapshot.local().lsn(), 3);
-        assert_eq!(snapshot.local().page_count(), 2);
+        assert_eq!(snapshot.local().pages(), 2);
     }
 
     #[test]

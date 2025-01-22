@@ -21,13 +21,15 @@ impl<M> ProtoResponse<M> {
 impl<M: Message> IntoResponse for ProtoResponse<M> {
     fn into_response(self) -> Response<Body> {
         let mut buf = BytesMut::with_capacity(self.msg.encoded_len());
+
         self.msg
             .encode(&mut buf)
             .expect("insufficient buffer capacity");
 
-        let headers = [(header::CONTENT_TYPE, CONTENT_TYPE_PROTOBUF)];
-        let body = buf.freeze();
-
-        (headers, body).into_response()
+        (
+            [(header::CONTENT_TYPE, CONTENT_TYPE_PROTOBUF)],
+            buf.freeze(),
+        )
+            .into_response()
     }
 }

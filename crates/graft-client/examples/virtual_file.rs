@@ -245,7 +245,7 @@ fn write_page(ctx: &Context, vid: &VolumeId, offset: PageOffset, data: Bytes) ->
             vid,
             snapshot.as_ref().map(|s| s.lsn()),
             snapshot
-                .map(|s| s.page_count().max(offset.pages()))
+                .map(|s| s.pages().max(offset.pages()))
                 .unwrap_or(offset.pages()),
             segments,
         )
@@ -284,7 +284,7 @@ fn print_snapshot(snapshot: Option<Snapshot>) {
             );
             println!("lsn: {}", snapshot.lsn());
             println!("checkpoint: {}", snapshot.checkpoint());
-            println!("page count: {}", snapshot.page_count());
+            println!("page count: {}", snapshot.pages());
             println!(
                 "unix timestamp: {:?}",
                 snapshot.timestamp.map(|t| t.seconds)

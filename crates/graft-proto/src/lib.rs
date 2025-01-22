@@ -87,13 +87,13 @@ impl Snapshot {
         self.lsn() == self.checkpoint()
     }
 
-    pub fn page_count(&self) -> PageCount {
+    pub fn pages(&self) -> PageCount {
         self.page_count.into()
     }
 
     /// Returns the range of page offsets in the snapshot.
     pub fn offsets(&self) -> PageRange {
-        self.page_count().offsets()
+        self.pages().offsets()
     }
 
     pub fn system_time(&self) -> Result<Option<SystemTime>, TimestampError> {
