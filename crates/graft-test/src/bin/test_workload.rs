@@ -130,8 +130,8 @@ fn workload_writer(
 
     // the page tracker should only ever be empty when there is no remote snapshot
     assert_always_or_unreachable!(
-        page_tracker.is_empty() ^ reader.snapshot().remote().is_some(),
-        "page tracker should only be empty when there is no remote snapshot",
+        page_tracker.is_empty() ^ reader.snapshot().remote().is_some_and(|s| s.lsn() > 0),
+        "page tracker should only be empty when the remote snapshot is either empty or at LSN 0",
         &json!({
             "snapshot": reader.snapshot(),
             "tracker_len": page_tracker.len(),
