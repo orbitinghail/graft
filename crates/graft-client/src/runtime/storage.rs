@@ -74,8 +74,11 @@ impl From<lsm_tree::Error> for StorageErr {
 pub struct Storage {
     keyspace: fjall::Keyspace,
 
-    /// Used to store volume configs
-    /// maps from VolumeId to VolumeConfig
+    /// Used to store volume state broken out by prefix.
+    ///
+    /// config/{vid} -> VolumeConfig
+    /// snapshot/{vid} -> Snapshot
+    /// watermarks/{vid} -> Watermarks
     volumes: fjall::Partition,
 
     /// Used to store volume snapshots

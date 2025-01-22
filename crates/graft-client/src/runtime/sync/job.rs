@@ -19,8 +19,8 @@ pub enum Job {
 }
 
 impl Job {
-    pub fn pull(vid: VolumeId, snapshot: Option<Snapshot>) -> Self {
-        Job::Pull(PullJob { vid, snapshot })
+    pub fn pull(vid: VolumeId, remote_snapshot: Option<Snapshot>) -> Self {
+        Job::Pull(PullJob { vid, remote_snapshot })
     }
 
     pub fn push(
@@ -51,7 +51,7 @@ pub struct PullJob {
     vid: VolumeId,
 
     /// The last snapshot of the volume that was pulled from the remote.
-    snapshot: Option<Snapshot>,
+    remote_snapshot: Option<Snapshot>,
 }
 
 impl PullJob {
@@ -59,12 +59,12 @@ impl PullJob {
         log::debug!(
             "pulling volume {:?}; last snapshot {:?}",
             self.vid,
-            self.snapshot
+            self.remote_snapshot
         );
 
         // pull starting at the next LSN after the last pulled snapshot
         let start_lsn = self
-            .snapshot
+            .remote_snapshot
             .as_ref()
             .and_then(|s| s.lsn().next())
             .unwrap_or_default();
@@ -77,7 +77,7 @@ impl PullJob {
                 "invalid snapshot LSN; expected >= {}; got {}; last snapshot {:?}",
                 start_lsn,
                 snapshot.lsn(),
-                self.snapshot
+                self.remote_snapshot
             );
             log::debug!("received remote snapshot at LSN {}", snapshot.lsn(),);
 
@@ -129,9 +129,10 @@ impl PushJob {
         let lsn_range = start_lsn..=self.snapshot.lsn();
         let page_count = self.snapshot.pages();
 
-        // update the sync snapshot to the current snapshot
-        // we do this OUTSIDE of the batch to ensure that the snapshot is updated even if the push fails
-        // this allows us to detect a failed push during recovery
+        // update the sync snapshot to the current snapshot.
+        // we do this OUTSIDE of the batch to ensure that the snapshot is
+        // updated even if the push fails this allows us to detect a failed push
+        // during recovery
         storage
             .set_snapshot(&self.vid, SnapshotKind::Sync, self.snapshot.clone())
             .or_into_ctx()?;

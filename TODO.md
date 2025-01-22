@@ -1,12 +1,17 @@
-Now: Client Runtime
+Todo:
+- update the sync lsn watermarks (potentially refactor out watermarks from snapshots)
+- provide a mechanism to handle conflicts during sync commit
+- add a Runtime error type rather than using ClientErr directly
+- minimize and audit storage commit lock
+
+Next: Client Runtime
 - sync recovery
 - prefetcher
   - do we need an index tracking which offsets we have for the latest snapshot? if not, how does the prefetcher avoid re-fetching offsets we already have? or more generally, how can we avoid refetching efficiently?
 - update virtual file module to use the new runtime code
 
-Next: SQLite extension
-
-Later:
+Then:
+- SQLite extension
 - consider switching pagestore to websockets or http streaming bodies
 - garbage collection
 - authentication (api keys)
@@ -17,9 +22,9 @@ Currently we store four snapshots per volume in local storage. Some issues:
 1. we don't consistently manage the commit lock. we should be taking it every time we touch snapshots at the very least. And we should be minimizing the lock scope each time.
 2. it's still not completely clear what all the snapshot states are... perhaps this needs to be simplified or encoded into the typesystem?
 
-# Client fetching
+# Client prefetching and overfetching
 
-We want the client to support pre-fetching whenever it fetches pages from the server. We also want to avoid fetching pages we already have as well as overfetching the same page from multiple concurrent tasks.
+We want the client to support prefetching whenever it fetches pages from the server. We also want to avoid fetching pages we already have as well as overfetching the same page from multiple concurrent tasks.
 
 For now, we can solve refetching via checking storage for every page we decide to prefetch.
 
@@ -38,9 +43,6 @@ fetcher.fetch(vid, lsn, offset).await
 ```
 
 Detecing overlap between tokens is not trivial to do perfectly. The issue stems from two concurrent requests for the same offsets in different LSNs. In this case, if the offsets didn't change between the two LSNs, we will fetch the same page multiple times. Need to think about how likely this will be in my primary use cases.
-
-# client id
-A basic form of idempotency should be provided via the commit process taking a client id. This can be used to reject duplicate commits.
 
 # local storage & syncing
 
@@ -120,7 +122,49 @@ sync from local to remote
         restart the sync process
 ```
 
-# Volume Write/Replicate example
+## Receiving a remote commit
+
+When we pull from the server, we create a new local LSN corresponding to the remote LSN we receive. We want to ensure that we don't round trip this LSN back to the server as a new commit, which would create an infinite loop between client and server. It's also wasteful.
+
+One way to solve this is by nooping the push. We should be able to detect this state since the remote commit will not correspond to any commits in the commits partition.
+
+The other way to solve this is to fast-forward the sync watermarks. This makes sense since the Pull will have to check to see if we have local outstanding commits anyways. If we do, the pull should reject since it has no current way of merging remote and local changes. Once it validates that the local state is clean, it can safely commit along with fast forwarding the sync watermarks.
+
+## Sync watermarks
+
+The runtime will track two LSNs corresponding to the current push sync state:
+- last_sync: the last local LSN that was successfully pushed
+- pending_sync: the last local LSN that attempted to push
+
+Invariants:
+- last_sync <= pending_sync
+- pending_sync <= local
+- (implies: last_sync <= local)
+
+States:
+- last_sync < pending_sync && no active sync job: volume needs recovery, other sync jobs paused
+- last_sync < local && last_sync == pending_sync: volume has pending commits to sync
+
+The PushJob updates both watermarks in the following way:
+- assert that last_sync == pending_sync
+- set pending_sync = local
+- sync_range = last_sync..=local
+- iterate commits
+  - assert that all commits are present in the sync range
+  - push changed pages to the page store
+- commit to the metastore
+  - success: delete synced commits, set last_sync = pending_sync
+  - failure: set pending_sync = last_sync
+  - crash: will leave volume in needs-recovery state
+
+The Sync task needs to generate recovery jobs instead of other jobs whenever it detects recovery is needed. The recovery job will have to reconcile with the server to determine if the commit did actually go through or not. Using this information the the partial sync can be completed like normal.
+
+Tasks:
+- Figure out where we are storing the sync watermarks
+- update the push job
+- update job gen to check for sync watermarks and detect volume state
+
+## Volume Write/Replicate example
 
 ```
 create volume
@@ -156,3 +200,19 @@ read:
         page @ offset=2, lsn=3
           write at local lsn 20
 ```
+
+# Checkpointing
+
+The current impl of Checkpointing is incomplete and inconsistent. It's also very expensive as it invalidates every offset in a volume to downstream readers.
+
+The idea of checkpointing is to periodically truncate the offset log prefix to allow unused page versions to be deleted.
+
+Another way to think about it is that it's a watermark LSN, such that we only keep the last page version per-offset that existed prior to the watermark.
+
+Knowing this watermark LSN is sufficient for clients to do GC. They can read the page count at the watermark LSN to also truncate volume size.
+
+However, on the server side it's a bit more tricky. We need to effectively know which segments we can delete. This is done via ref-counting. Every volume holds a ref on every segment that contains at least one alive page for the volume. When we checkpoint, we want to remove these refs for pages that are no longer valid.
+
+However, this is also doable using the watermark and page count. We simply need to scan the log and remove refs on any expired segments.
+
+The summary of all this, is that when we checkpoint we just need to update the checkpoint LSN in the metastore for the volume. In addition, this process should probably be automatic and configured per volume rather than part of the API.

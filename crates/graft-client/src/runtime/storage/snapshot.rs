@@ -80,6 +80,27 @@ impl AsRef<[u8]> for SnapshotKey {
     KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq, Serialize, Deserialize,
 )]
 #[repr(C)]
+pub struct Snapshots {
+    local_lsn: LSN,
+    remote_lsn: LSN,
+    local_pages: PageCount,
+    remote_pages: PageCount,
+}
+
+#[derive(
+    KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[repr(C)]
+pub struct Watermarks {
+    pending_sync: LSN,
+    last_sync: LSN,
+    checkpoint: LSN,
+}
+
+#[derive(
+    KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[repr(C)]
 pub struct Snapshot {
     lsn: LSN,
     pages: PageCount,

@@ -120,7 +120,7 @@ fn workload_writer(
 
     // pull the volume explicitly before continuing
     tracing::info!("pulling volume {:?}", vid);
-    handle.pull_from_remote().or_into_ctx()?;
+    handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
 
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker

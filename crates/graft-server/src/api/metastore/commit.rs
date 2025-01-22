@@ -2,9 +2,8 @@ use std::{sync::Arc, time::SystemTime};
 
 use axum::extract::State;
 use culprit::{Culprit, ResultExt};
-use graft_core::{lsn::LSN, page_count::PageCount, page_offset::PageOffset, SegmentId, VolumeId};
+use graft_core::{lsn::LSN, page_count::PageCount, VolumeId};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
-use splinter::{ops::Merge, Splinter, SplinterRef};
 
 use crate::{
     api::{
@@ -52,24 +51,14 @@ pub async fn handler(
     };
 
     let mut commit = CommitBuilder::default();
-    let mut all_offsets = Splinter::default();
     for segment in req.segments {
-        let sid: SegmentId = segment.sid.try_into()?;
-        let offsets = SplinterRef::from_bytes(segment.offsets).or_into_ctx()?;
-        all_offsets.merge(&offsets);
-        commit.write_offsets(sid, offsets.inner());
+        let sid = segment.sid().or_into_ctx()?;
+        let offsets = segment.offsets().or_into_ctx()?;
+        commit.write_offsets(sid.clone(), offsets.inner());
     }
 
-    // this commit is a checkpoint if the splinter contains all lsns up to the last offset
-    let checkpoint = if all_offsets
-        .iter()
-        .map(PageOffset::new)
-        .eq(page_count.offsets())
-    {
-        commit_lsn
-    } else {
-        snapshot.map(|s| s.checkpoint()).unwrap_or_default()
-    };
+    // checkpoint doesn't change
+    let checkpoint = snapshot.map(|s| s.checkpoint()).unwrap_or_default();
 
     let meta = CommitMeta::new(commit_lsn, checkpoint, page_count, SystemTime::now());
     let commit = commit.build(vid.clone(), meta.clone());
@@ -92,9 +81,11 @@ pub async fn handler(
 mod tests {
     use axum::handler::Handler;
     use axum_test::TestServer;
+    use graft_core::SegmentId;
     use graft_proto::common::v1::SegmentInfo;
     use object_store::memory::InMemory;
     use prost::Message;
+    use splinter::Splinter;
     use tracing_test::traced_test;
 
     use crate::{

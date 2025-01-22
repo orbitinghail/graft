@@ -83,13 +83,14 @@ impl<F: Fetcher> VolumeHandle<F> {
             .subscribe(self.vid.clone())
     }
 
-    /// Sync this volume to the latest remote snapshot
-    pub fn pull_from_remote(&self) -> Result<(), ClientErr> {
+    /// Sync this volume with the remote. This function blocks until the sync
+    /// has completed, returning any error that occurs.
+    pub fn sync_with_remote(&self, direction: SyncDirection) -> Result<(), ClientErr> {
         let (tx, rx) = bounded(1);
         self.sync_control
             .as_ref()
             .expect("sync control channel missing")
-            .send(SyncControl::new(self.vid.clone(), SyncDirection::Pull, tx))
+            .send(SyncControl::new(self.vid.clone(), direction, tx))
             .expect("sync control channel closed");
         rx.recv()
             .expect("sync control response channel disconnected")
