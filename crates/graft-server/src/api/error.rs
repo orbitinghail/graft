@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use culprit::Culprit;
-use graft_core::{gid::GidParseErr, page::PageSizeErr};
+use graft_core::{gid::GidParseErr, lsn::InvalidLSN, page::PageSizeErr};
 use graft_proto::common::v1::{GraftErr, GraftErrCode};
 use splinter::DecodeErr;
 use thiserror::Error;
@@ -73,6 +73,9 @@ pub enum ApiErrCtx {
 
     #[error("requested too many page offsets")]
     TooManyOffsets,
+
+    #[error("invalid LSN")]
+    InvalidLSN,
 }
 
 impl From<io::Error> for ApiErrCtx {
@@ -88,6 +91,12 @@ impl From<UpdateErr> for ApiErrCtx {
             UpdateErr::StoreErr(err) => Self::VolumeStoreErr(err),
             UpdateErr::ClientErr(err) => Self::ClientErr(err),
         }
+    }
+}
+
+impl From<InvalidLSN> for ApiErrCtx {
+    fn from(_: InvalidLSN) -> Self {
+        Self::InvalidLSN
     }
 }
 

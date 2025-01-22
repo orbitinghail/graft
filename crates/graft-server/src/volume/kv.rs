@@ -29,12 +29,12 @@ impl CommitKey {
 
     #[inline]
     pub fn lsn(&self) -> LSN {
-        self.lsn.into()
+        self.lsn.try_into().expect("invalid LSN")
     }
 
     pub fn range<R: RangeBounds<LSN>>(vid: &VolumeId, lsns: &R) -> Range<CommitKey> {
-        let start = CommitKey::new(vid.clone(), lsns.try_start().unwrap_or(LSN::ZERO));
-        let end = CommitKey::new(vid.clone(), lsns.try_end_exclusive().unwrap_or(LSN::MAX));
+        let start = CommitKey::new(vid.clone(), lsns.try_start().unwrap_or(LSN::FIRST));
+        let end = CommitKey::new(vid.clone(), lsns.try_end_exclusive().unwrap_or(LSN::LAST));
         start..end
     }
 }
@@ -80,7 +80,7 @@ impl SegmentKey {
     }
 
     pub fn lsn(&self) -> LSN {
-        self.commit.lsn.into()
+        self.commit.lsn.try_into().expect("invalid LSN")
     }
 
     pub fn sid(&self) -> &SegmentId {

@@ -111,7 +111,7 @@ impl VolumeCatalogUpdater {
         }
 
         // we only need to reply commits that happened after the last snapshot
-        let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or_default();
+        let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or(LSN::FIRST);
         let lsns = start_lsn..;
 
         // update the catalog from the store
@@ -201,7 +201,7 @@ impl VolumeCatalogUpdater {
         }
 
         // we only need to reply commits that happened after the last snapshot
-        let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or_default();
+        let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or(LSN::FIRST);
 
         tracing::trace!(
             ?min_lsn,
@@ -224,7 +224,7 @@ impl VolumeCatalogUpdater {
         let mut batch = catalog.batch_insert();
         for commit in commits {
             let snapshot = commit.snapshot.expect("missing snapshot");
-            let meta: CommitMeta = snapshot.into();
+            let meta: CommitMeta = snapshot.try_into().expect("invalid LSN");
 
             batch
                 .insert_snapshot(vid.clone(), meta, commit.segments)

@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use culprit::{Culprit, ResultExt};
 use fjall::Config;
 use graft_client::{ClientBuildErr, ClientBuilder, MetastoreClient, PagestoreClient};
+use graft_core::lsn::LSN;
 use graft_core::{
     page::{Page, PageSizeErr, EMPTY_PAGE, PAGESIZE},
     page_offset::PageOffset,
@@ -150,8 +151,8 @@ fn get_cached_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>
 fn pull_snapshot(ctx: &Context, vid: &VolumeId) -> Result<Option<Snapshot>> {
     // pull starting at the next LSN after the last cached snapshot
     let start_lsn = get_cached_snapshot(ctx, vid)?
-        .and_then(|s| s.lsn().next())
-        .unwrap_or_default();
+        .and_then(|s| s.lsn().expect("invalid LSN").next())
+        .unwrap_or(LSN::FIRST);
 
     match ctx.metastore.pull_offsets(vid, start_lsn..).or_into_ctx()? {
         Some((snapshot, _, offsets)) => {
@@ -202,7 +203,7 @@ fn read_page(ctx: &Context, vid: &VolumeId, offset: PageOffset) -> Result<Page> 
             .pagestore
             .read_pages(
                 vid,
-                snapshot.lsn(),
+                snapshot.lsn().expect("invalid LSN"),
                 Splinter::from_iter([offset]).serialize_to_bytes(),
             )
             .or_into_ctx()?;
@@ -243,7 +244,7 @@ fn write_page(ctx: &Context, vid: &VolumeId, offset: PageOffset, data: Bytes) ->
         .metastore
         .commit(
             vid,
-            snapshot.as_ref().map(|s| s.lsn()),
+            snapshot.as_ref().map(|s| s.lsn().expect("invalid LSN")),
             snapshot
                 .map(|s| s.pages().max(offset.pages()))
                 .unwrap_or(offset.pages()),
@@ -282,8 +283,11 @@ fn print_snapshot(snapshot: Option<Snapshot>) {
                 "vid: {}",
                 snapshot.vid().expect("failed to parse snapshot vid")
             );
-            println!("lsn: {}", snapshot.lsn());
-            println!("checkpoint: {}", snapshot.checkpoint());
+            println!("lsn: {}", snapshot.lsn().expect("invalid LSN"));
+            println!(
+                "checkpoint: {}",
+                snapshot.checkpoint().expect("invalid LSN")
+            );
             println!("page count: {}", snapshot.pages());
             println!(
                 "unix timestamp: {:?}",

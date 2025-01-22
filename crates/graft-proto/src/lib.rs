@@ -1,19 +1,14 @@
 // pull in the generated types
 include!("mod.rs");
 
-use std::{
-    error::Error,
-    fmt::Display,
-    ops::{Bound, RangeBounds},
-    time::SystemTime,
-};
+use std::{error::Error, fmt::Display, ops::RangeBounds, time::SystemTime};
 
 use bytes::Bytes;
 use common::v1::{Commit, GraftErr, LsnRange, SegmentInfo};
-use culprit::Culprit;
+use culprit::{Culprit, ResultExt};
 use graft_core::{
     gid::GidParseErr,
-    lsn::{LSNRangeExt, LSN},
+    lsn::{InvalidLSN, LSNRangeExt, LSN},
     page::{Page, PageSizeErr},
     page_count::PageCount,
     page_offset::PageOffset,
@@ -75,16 +70,12 @@ impl Snapshot {
         Ok(self.vid.as_ref().try_into()?)
     }
 
-    pub fn lsn(&self) -> LSN {
-        self.lsn.into()
+    pub fn lsn(&self) -> Result<LSN, Culprit<InvalidLSN>> {
+        LSN::try_from(self.lsn).or_into_ctx()
     }
 
-    pub fn checkpoint(&self) -> LSN {
-        self.checkpoint_lsn.into()
-    }
-
-    pub fn is_checkpoint(&self) -> bool {
-        self.lsn() == self.checkpoint()
+    pub fn checkpoint(&self) -> Result<LSN, Culprit<InvalidLSN>> {
+        LSN::try_from(self.checkpoint_lsn).or_into_ctx()
     }
 
     pub fn pages(&self) -> PageCount {
@@ -103,30 +94,20 @@ impl Snapshot {
 
 impl LsnRange {
     pub fn from_range<T: RangeBounds<LSN>>(range: T) -> Self {
-        let inclusive_start = range.try_start().unwrap_or(LSN::ZERO).into();
+        let inclusive_start = range.try_start().unwrap_or(LSN::FIRST).into();
         let inclusive_end = range.try_end().map(|lsn| lsn.into());
         Self { inclusive_start, inclusive_end }
     }
 
-    pub fn start(&self) -> LSN {
-        self.inclusive_start.into()
+    pub fn start(&self) -> Result<LSN, Culprit<InvalidLSN>> {
+        LSN::try_from(self.inclusive_start).or_into_ctx()
     }
 
-    pub fn end(&self) -> Option<LSN> {
-        self.inclusive_end.map(|end| end.into())
-    }
-}
-
-impl RangeBounds<LSN> for LsnRange {
-    fn start_bound(&self) -> Bound<&LSN> {
-        Bound::Included((&self.inclusive_start).into())
-    }
-
-    fn end_bound(&self) -> Bound<&LSN> {
-        self.inclusive_end
-            .as_ref()
-            .map(|end| Bound::Included(end.into()))
-            .unwrap_or(Bound::Unbounded)
+    pub fn end(&self) -> Result<Option<LSN>, Culprit<InvalidLSN>> {
+        match self.inclusive_end {
+            Some(end) => LSN::try_from(end).or_into_ctx().map(Some),
+            None => Ok(None),
+        }
     }
 }
 

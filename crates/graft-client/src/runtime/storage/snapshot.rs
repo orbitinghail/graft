@@ -1,7 +1,11 @@
 use std::fmt::Debug;
 
 use fjall::Slice;
-use graft_core::{lsn::LSN, page_count::PageCount, VolumeId};
+use graft_core::{
+    lsn::{MaybeLSN, LSN},
+    page_count::PageCount,
+    VolumeId,
+};
 use serde::{Deserialize, Serialize};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
@@ -81,10 +85,10 @@ impl AsRef<[u8]> for SnapshotKey {
 )]
 #[repr(C)]
 pub struct Snapshots {
-    local_lsn: LSN,
-    remote_lsn: LSN,
-    local_pages: PageCount,
-    remote_pages: PageCount,
+    local: LSN,
+    remote: MaybeLSN,
+    pages: PageCount,
+    _padding: [u8; 4],
 }
 
 #[derive(
@@ -150,7 +154,7 @@ impl Into<Slice> for Snapshot {
 
 impl From<graft_proto::Snapshot> for Snapshot {
     fn from(proto: graft_proto::Snapshot) -> Self {
-        Self::new(proto.lsn(), proto.pages())
+        Self::new(proto.lsn().expect("invalid LSN"), proto.pages())
     }
 }
 

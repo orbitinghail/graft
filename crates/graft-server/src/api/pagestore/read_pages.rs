@@ -25,7 +25,7 @@ pub async fn handler<C: Cache>(
     Protobuf(req): Protobuf<ReadPagesRequest>,
 ) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let lsn: LSN = req.lsn.into();
+    let lsn = LSN::try_from(req.lsn).or_into_ctx()?;
     let mut offsets = Splinter::from_bytes(req.offsets).or_into_ctx()?;
     let num_offsets = offsets.cardinality();
 
@@ -159,7 +159,7 @@ mod tests {
             .unwrap();
 
         // setup test data
-        let lsn: LSN = 2.into();
+        let lsn: LSN = LSN::new(2);
         let vid = VolumeId::random();
 
         // segment 1 is in the store
@@ -196,7 +196,7 @@ mod tests {
         batch
             .insert_snapshot(
                 vid.clone(),
-                CommitMeta::new(lsn, LSN::ZERO, PageCount::new(4), SystemTime::now()),
+                CommitMeta::new(lsn, LSN::FIRST, PageCount::new(4), SystemTime::now()),
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),

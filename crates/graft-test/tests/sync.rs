@@ -41,7 +41,7 @@ fn test_client_sync_sanity() {
     let offset = PageOffset::new(0);
 
     // write and wait for replication multiple times
-    for i in 0..5 {
+    for i in 1..10 {
         // write multiple times to the volume
         let mut writer = handle.writer().unwrap();
         writer.write(offset, page.clone());

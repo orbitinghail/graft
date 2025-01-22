@@ -1,5 +1,5 @@
 use culprit::{Result, ResultExt};
-use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{lsn::LSN, page::Page, page_offset::PageOffset, VolumeId};
 use graft_proto::pagestore::v1::PageAtOffset;
 use serde::Serialize;
 use tryiter::TryIteratorExt;
@@ -67,27 +67,24 @@ impl PullJob {
             .remote_snapshot
             .as_ref()
             .and_then(|s| s.lsn().next())
-            .unwrap_or_default();
+            .unwrap_or(LSN::FIRST);
 
         if let Some((snapshot, _, changed)) =
             clients.metastore().pull_offsets(&self.vid, start_lsn..)?
         {
+            let snapshot_lsn = snapshot.lsn().expect("invalid LSN");
+
             assert!(
-                snapshot.lsn() >= start_lsn,
+                snapshot_lsn >= start_lsn,
                 "invalid snapshot LSN; expected >= {}; got {}; last snapshot {:?}",
                 start_lsn,
-                snapshot.lsn(),
+                snapshot_lsn,
                 self.remote_snapshot
             );
-            log::debug!("received remote snapshot at LSN {}", snapshot.lsn(),);
+            log::debug!("received remote snapshot at LSN {}", snapshot_lsn);
 
             storage
-                .receive_remote_commit(
-                    &self.vid,
-                    snapshot.is_checkpoint(),
-                    snapshot.into(),
-                    changed,
-                )
+                .receive_remote_commit(&self.vid, snapshot.into(), changed)
                 .or_into_ctx()?;
         }
 
@@ -125,7 +122,7 @@ impl PushJob {
             .sync_snapshot
             .as_ref()
             .map(|s| s.lsn())
-            .unwrap_or_default();
+            .unwrap_or(LSN::FIRST);
         let lsn_range = start_lsn..=self.snapshot.lsn();
         let page_count = self.snapshot.pages();
 
@@ -197,12 +194,7 @@ impl PushJob {
                 .commit(&self.vid, last_remote_lsn, page_count, segments)?;
 
         storage
-            .complete_sync(
-                &self.vid,
-                remote_snapshot.is_checkpoint(),
-                remote_snapshot.into(),
-                lsn_range,
-            )
+            .complete_sync(&self.vid, remote_snapshot.into(), lsn_range)
             .or_into_ctx()?;
 
         Ok(())

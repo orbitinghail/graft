@@ -1,7 +1,7 @@
 Todo:
-- update the sync lsn watermarks (potentially refactor out watermarks from snapshots)
-- provide a mechanism to handle conflicts during sync commit
-- add a Runtime error type rather than using ClientErr directly
+- switch to watermarks/snapshots system in storage
+  - remove VolumeSnapshot type
+- build out the new sync system
 - minimize and audit storage commit lock
 
 Next: Client Runtime

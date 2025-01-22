@@ -27,7 +27,10 @@ pub async fn handler(
 ) -> Result<ProtoResponse<PullCommitsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsns = req.range;
-    let end_lsn = lsns.and_then(|l| l.end());
+    let end_lsn = match lsns {
+        Some(l) => l.end().or_into_ctx()?,
+        None => None,
+    };
 
     tracing::info!(?vid, ?lsns);
 
@@ -48,7 +51,10 @@ pub async fn handler(
 
     // resolve the start of the range, defaulting to the last checkpoint
     let checkpoint = snapshot.checkpoint();
-    let start_lsn = lsns.map(|l| l.start()).unwrap_or(checkpoint);
+    let start_lsn = match lsns {
+        Some(l) => l.start().or_into_ctx()?,
+        None => checkpoint,
+    };
 
     // calculate the resolved lsn range
     let lsns = start_lsn..=snapshot.lsn();
@@ -143,8 +149,13 @@ mod tests {
             .into_iter()
             .collect::<Splinter>()
             .serialize_to_bytes();
-        for lsn in 0u64..10 {
-            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, PageCount::new(1), SystemTime::now());
+        for lsn in 1u64..11 {
+            let meta = CommitMeta::new(
+                LSN::new(lsn),
+                LSN::FIRST,
+                PageCount::new(1),
+                SystemTime::now(),
+            );
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), offsets);
             let commit = commit.build(vid.clone(), meta);
@@ -162,7 +173,7 @@ mod tests {
         assert_eq!(resp.commits.len(), 5);
         let last_commit = resp.commits.last().unwrap();
         let snapshot = last_commit.snapshot.as_ref().unwrap();
-        assert_eq!(snapshot.lsn(), 9);
+        assert_eq!(snapshot.lsn().unwrap(), 9);
         assert_eq!(snapshot.pages(), 1);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
         for segment in &last_commit.segments {

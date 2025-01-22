@@ -7,8 +7,12 @@ use bytes::{BufMut, Bytes, BytesMut};
 use culprit::{Culprit, ResultExt};
 use fjall::Slice;
 use graft_core::{
-    gid::GidParseErr, lsn::LSN, page_count::PageCount, page_range::PageRange,
-    zerocopy_err::ZerocopyErr, SegmentId, VolumeId,
+    gid::GidParseErr,
+    lsn::{InvalidLSN, LSN},
+    page_count::PageCount,
+    page_range::PageRange,
+    zerocopy_err::ZerocopyErr,
+    SegmentId, VolumeId,
 };
 use graft_proto::common::v1::Snapshot;
 use object_store::{path::Path, PutPayload};
@@ -117,12 +121,12 @@ impl CommitMeta {
 
     #[inline]
     pub fn lsn(&self) -> LSN {
-        self.lsn.into()
+        self.lsn.try_into().expect("invalid LSN")
     }
 
     #[inline]
     pub fn checkpoint(&self) -> LSN {
-        self.checkpoint_lsn.into()
+        self.checkpoint_lsn.try_into().expect("invalid LSN")
     }
 
     #[inline]
@@ -167,17 +171,19 @@ impl Into<Slice> for CommitMeta {
     }
 }
 
-impl From<Snapshot> for CommitMeta {
-    fn from(snapshot: Snapshot) -> Self {
-        Self::new(
-            snapshot.lsn(),
-            snapshot.checkpoint(),
+impl TryFrom<Snapshot> for CommitMeta {
+    type Error = Culprit<InvalidLSN>;
+
+    fn try_from(snapshot: Snapshot) -> Result<Self, Self::Error> {
+        Ok(Self::new(
+            snapshot.lsn()?,
+            snapshot.checkpoint()?,
             snapshot.pages(),
             snapshot
                 .system_time()
                 .unwrap_or_default()
                 .unwrap_or(SystemTime::UNIX_EPOCH),
-        )
+        ))
     }
 }
 

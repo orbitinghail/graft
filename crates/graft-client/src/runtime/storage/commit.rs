@@ -1,12 +1,12 @@
 use fjall::Slice;
 use graft_core::{lsn::LSN, VolumeId};
-use zerocopy::{big_endian::U64, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
+use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, U64};
 
 #[derive(Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, Unaligned)]
 #[repr(C)]
 pub struct CommitKey {
     vid: VolumeId,
-    lsn: U64,
+    lsn: U64<BigEndian>,
 }
 
 impl CommitKey {
@@ -17,7 +17,7 @@ impl CommitKey {
 
     #[inline]
     pub fn lsn(&self) -> LSN {
-        self.lsn.into()
+        self.lsn.try_into().expect("invalid LSN")
     }
 
     #[inline]

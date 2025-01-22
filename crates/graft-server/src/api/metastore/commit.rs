@@ -22,7 +22,11 @@ pub async fn handler(
     Protobuf(req): Protobuf<CommitRequest>,
 ) -> Result<ProtoResponse<CommitResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let snapshot_lsn: Option<LSN> = req.snapshot_lsn.map(Into::into);
+    let snapshot_lsn: Option<LSN> = req
+        .snapshot_lsn
+        .map(LSN::try_from)
+        .transpose()
+        .or_into_ctx()?;
     let page_count: PageCount = req.page_count.into();
 
     tracing::info!(
@@ -40,7 +44,7 @@ pub async fn handler(
         .or_into_ctx()?;
 
     let commit_lsn = match (snapshot_lsn, snapshot.as_ref().map(|s| s.lsn())) {
-        (None, None) => LSN::ZERO,
+        (None, None) => LSN::FIRST,
         (Some(snapshot), Some(latest)) if snapshot == latest => latest.saturating_next(),
 
         // in every other case, the commit is out of sync
@@ -58,7 +62,7 @@ pub async fn handler(
     }
 
     // checkpoint doesn't change
-    let checkpoint = snapshot.map(|s| s.checkpoint()).unwrap_or_default();
+    let checkpoint = snapshot.map(|s| s.checkpoint()).unwrap_or(LSN::FIRST);
 
     let meta = CommitMeta::new(commit_lsn, checkpoint, page_count, SystemTime::now());
     let commit = commit.build(vid.clone(), meta.clone());
@@ -118,12 +122,15 @@ mod tests {
         let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
 
         // let's commit and validate the store 10 times
-        for i in 0..10 {
+        for i in 1..10 {
             tracing::info!(i);
+
+            let snapshot_lsn = (i != 1).then(|| i - 1);
+            let lsn = LSN::new(i);
 
             let commit = CommitRequest {
                 vid: vid.copy_to_bytes(),
-                snapshot_lsn: (i != 0).then(|| i - 1),
+                snapshot_lsn,
                 page_count: 1,
                 segments: vec![SegmentInfo::new(&SegmentId::random(), offsets.clone())],
             };
@@ -133,16 +140,16 @@ mod tests {
             let resp = CommitResponse::decode(resp.into_bytes()).unwrap();
             let snapshot = resp.snapshot.unwrap();
             assert_eq!(snapshot.vid().unwrap(), &vid);
-            assert_eq!(snapshot.lsn(), i);
+            assert_eq!(snapshot.lsn().expect("invalid LSN"), i);
             assert_eq!(snapshot.pages(), 1);
             assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
 
             // check the commit in the store and the catalog
-            let commit = store.get_commit(vid.clone(), i.into()).await.unwrap();
-            assert_eq!(commit.meta().lsn(), i);
+            let commit = store.get_commit(vid.clone(), lsn).await.unwrap();
+            assert_eq!(commit.meta().lsn(), lsn);
 
             let snapshot = catalog.latest_snapshot(&vid).unwrap().unwrap();
-            assert_eq!(snapshot.lsn(), i);
+            assert_eq!(snapshot.lsn(), lsn);
         }
     }
 }

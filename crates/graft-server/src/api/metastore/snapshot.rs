@@ -19,7 +19,7 @@ pub async fn handler(
     Protobuf(req): Protobuf<SnapshotRequest>,
 ) -> Result<ProtoResponse<SnapshotResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
-    let lsn: Option<LSN> = req.lsn.map(Into::into);
+    let lsn: Option<LSN> = req.lsn.map(LSN::try_from).transpose().or_into_ctx()?;
 
     tracing::info!(?vid, ?lsn);
 
@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has a commit
-        let meta = CommitMeta::new(LSN::ZERO, LSN::ZERO, PageCount::new(1), SystemTime::now());
+        let meta = CommitMeta::new(LSN::FIRST, LSN::FIRST, PageCount::new(1), SystemTime::now());
         let mut commit = CommitBuilder::default();
         commit.write_offsets(
             SegmentId::random(),
@@ -125,7 +125,7 @@ mod tests {
         let resp = SnapshotResponse::decode(resp.into_bytes()).unwrap();
         let snapshot = resp.snapshot.unwrap();
         assert_eq!(snapshot.vid().unwrap(), &vid);
-        assert_eq!(snapshot.lsn(), 0);
+        assert_eq!(snapshot.lsn().unwrap(), 1);
         assert_eq!(snapshot.pages(), 1);
         assert!(snapshot.timestamp.is_some());
     }

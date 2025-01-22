@@ -18,6 +18,10 @@ use crate::api::{
 
 use super::MetastoreApiState;
 
+/// Returns a set of changed offsets in the lsn range. This method will also
+/// return the latest Snapshot of the Volume. If no lsn range is specified, it
+/// will return offsets changed between the last checkpoint and the latest
+/// snapshot.
 #[tracing::instrument(name = "metastore/v1/pull_offsets", skip(state, req))]
 pub async fn handler(
     State(state): State<Arc<MetastoreApiState>>,
@@ -25,7 +29,10 @@ pub async fn handler(
 ) -> Result<ProtoResponse<PullOffsetsResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsns = req.range;
-    let end_lsn = lsns.and_then(|l| l.end());
+    let end_lsn = match lsns {
+        Some(l) => l.end().or_into_ctx()?,
+        None => None,
+    };
 
     tracing::info!(?vid, ?lsns);
 
@@ -44,12 +51,12 @@ pub async fn handler(
         .into());
     };
 
-    // resolve the start of the range; skipping up to the last checkpoint if needed
+    // resolve the start of the range, defaulting to the last checkpoint
     let checkpoint = snapshot.checkpoint();
-    let start_lsn = lsns
-        .map(|l| l.start())
-        .unwrap_or(checkpoint)
-        .max(checkpoint);
+    let start_lsn = match lsns {
+        Some(l) => l.start().or_into_ctx()?,
+        None => checkpoint,
+    };
 
     // if the snapshot happens before the start_lsn, return a missing snapshot error
     if snapshot.lsn() < start_lsn {
@@ -144,8 +151,13 @@ mod tests {
 
         // case 2: catalog is empty, store has 10 commits
         let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
-        for lsn in 0u64..=9 {
-            let meta = CommitMeta::new(lsn.into(), LSN::ZERO, PageCount::new(1), SystemTime::now());
+        for lsn in 1u64..=9 {
+            let meta = CommitMeta::new(
+                LSN::new(lsn),
+                LSN::FIRST,
+                PageCount::new(1),
+                SystemTime::now(),
+            );
             let mut commit = CommitBuilder::default();
             commit.write_offsets(SegmentId::random(), &offsets);
             let commit = commit.build(vid.clone(), meta);
@@ -161,10 +173,14 @@ mod tests {
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = PullOffsetsResponse::decode(resp.into_bytes()).unwrap();
         let snapshot = resp.snapshot.unwrap();
-        assert_eq!(snapshot.lsn(), 9);
+        assert_eq!(snapshot.lsn().unwrap(), 9);
         assert_eq!(snapshot.pages(), 1);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
-        assert_eq!(resp.range.map(|r| r.start()..=r.end().unwrap()), Some(lsns));
+        assert_eq!(
+            resp.range
+                .map(|r| r.start().unwrap()..=r.end().unwrap().unwrap()),
+            Some(lsns)
+        );
         let splinter = Splinter::from_bytes(resp.offsets).unwrap();
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);

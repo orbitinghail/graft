@@ -184,8 +184,8 @@ impl Storage {
         vid: &VolumeId,
         lsns: impl RangeBounds<LSN>,
     ) -> impl TryIterator<Ok = (LSN, SplinterRef<Slice>), Err = Culprit<StorageErr>> + '_ {
-        let start = CommitKey::new(vid.clone(), lsns.try_start().unwrap_or_default());
-        let end = CommitKey::new(vid.clone(), lsns.try_end().unwrap_or_default());
+        let start = CommitKey::new(vid.clone(), lsns.try_start().unwrap_or(LSN::FIRST));
+        let end = CommitKey::new(vid.clone(), lsns.try_end().unwrap_or(LSN::FIRST));
         self.commits
             .snapshot()
             .range(start..=end)
@@ -279,9 +279,9 @@ impl Storage {
     /// offset. Notably, this will return a page from an earlier LSN if the page
     /// hasn't changed since then.
     pub fn read(&self, vid: &VolumeId, lsn: LSN, offset: PageOffset) -> Result<(LSN, PageValue)> {
-        let zero = PageKey::new(vid.clone(), offset, LSN::ZERO);
+        let first_key = PageKey::new(vid.clone(), offset, LSN::FIRST);
         let key = PageKey::new(vid.clone(), offset, lsn);
-        let range = zero..=key;
+        let range = first_key..=key;
 
         // Search for the latest page between LSN(0) and the requested LSN,
         // returning PageValue::Pending if none found.
@@ -307,7 +307,7 @@ impl Storage {
         let read_lsn = snapshot.map(|s| s.lsn());
         let commit_lsn = read_lsn
             .map(|lsn| lsn.next().expect("lsn overflow"))
-            .unwrap_or_default();
+            .unwrap_or(LSN::FIRST);
 
         // construct a changed offsets splinter
         let mut offsets = Splinter::default();
@@ -357,7 +357,6 @@ impl Storage {
     pub fn receive_remote_commit(
         &self,
         vid: &VolumeId,
-        is_checkpoint: bool,
         snapshot: Snapshot,
         changed: SplinterRef<Bytes>,
     ) -> Result<()> {
@@ -377,16 +376,10 @@ impl Storage {
         let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Remote);
         batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
 
-        // update the checkpoint snapshot for the volume if needed
-        if is_checkpoint {
-            let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Checkpoint);
-            batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
-        }
-
         // compute the next local LSN
         let local_lsn = self
             .snapshot(&vid, SnapshotKind::Local)?
-            .map_or(LSN::ZERO, |s| s.lsn().next().expect("lsn overflow"));
+            .map_or(LSN::FIRST, |s| s.lsn().next().expect("lsn overflow"));
 
         // write out a local snapshot for the volume
         let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Local);
@@ -441,7 +434,6 @@ impl Storage {
     pub fn complete_sync(
         &self,
         vid: &VolumeId,
-        is_checkpoint: bool,
         remote_snapshot: Snapshot,
         synced_lsns: impl RangeBounds<LSN>,
     ) -> Result<()> {
@@ -451,14 +443,8 @@ impl Storage {
         let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Remote);
         batch.insert(&self.snapshots, snapshot_key, remote_snapshot.as_ref());
 
-        // update the checkpoint snapshot for the volume if needed
-        if is_checkpoint {
-            let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Checkpoint);
-            batch.insert(&self.snapshots, snapshot_key, remote_snapshot.as_ref());
-        }
-
         // remove all commits in the synced range
-        let mut key = CommitKey::new(vid.clone(), LSN::ZERO);
+        let mut key = CommitKey::new(vid.clone(), LSN::FIRST);
         for lsn in synced_lsns.iter() {
             key.set_lsn(lsn);
             batch.remove(&self.commits, key.as_ref());
@@ -527,7 +513,7 @@ mod tests {
         assert_eq!(vid, vids[0]);
         assert_eq!(config.sync(), SyncDirection::Pull);
         let snapshot = set.local().unwrap();
-        assert_eq!(snapshot.lsn(), LSN::new(1));
+        assert_eq!(snapshot.lsn(), LSN::new(2));
         assert_eq!(snapshot.pages(), 1);
 
         // check the second volume
@@ -535,7 +521,7 @@ mod tests {
         assert_eq!(vid, vids[1]);
         assert_eq!(config.sync(), SyncDirection::Push);
         let snapshot = set.local().unwrap();
-        assert_eq!(snapshot.lsn(), LSN::new(0));
+        assert_eq!(snapshot.lsn(), LSN::new(1));
         assert_eq!(snapshot.pages(), 1);
 
         // iter is empty
@@ -551,7 +537,7 @@ mod tests {
         assert_eq!(vid, vids[1]);
         assert_eq!(config.sync(), SyncDirection::Push);
         let snapshot = set.local().unwrap();
-        assert_eq!(snapshot.lsn(), LSN::new(0));
+        assert_eq!(snapshot.lsn(), LSN::new(1));
         assert_eq!(snapshot.pages(), 1);
 
         // iter is empty

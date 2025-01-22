@@ -50,7 +50,7 @@ impl PageKey {
     }
 
     pub fn lsn(&self) -> LSN {
-        self.lsn.into()
+        self.lsn.try_into().expect("invalid LSN")
     }
 }
 

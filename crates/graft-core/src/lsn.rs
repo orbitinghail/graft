@@ -1,15 +1,26 @@
 use std::{
     fmt::Display,
-    num::ParseIntError,
+    num::{NonZero, ParseIntError},
     ops::{Bound, RangeBounds, RangeInclusive},
+    u64,
 };
 
 use serde::{Deserialize, Serialize};
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use thiserror::Error;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
+
+#[derive(Debug, Error)]
+#[error("LSN must be non-zero")]
+pub struct InvalidLSN;
+
+impl<S, D: TryFromBytes> From<ValidityError<S, D>> for InvalidLSN {
+    fn from(_: ValidityError<S, D>) -> Self {
+        InvalidLSN
+    }
+}
 
 #[derive(
     Debug,
-    Default,
     Clone,
     Copy,
     PartialEq,
@@ -18,22 +29,30 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
     Ord,
     Serialize,
     Deserialize,
-    FromBytes,
+    TryFromBytes,
     KnownLayout,
     IntoBytes,
     Immutable,
 )]
 #[repr(transparent)]
-pub struct LSN(u64);
+pub struct LSN(NonZero<u64>);
+
+// We use NonZero to enable Option optimizations
+static_assertions::assert_eq_size!(Option<LSN>, LSN);
 
 impl LSN {
-    pub const ZERO: Self = Self(0);
-    pub const MAX: Self = Self(u64::MAX);
-    pub const ALL: RangeInclusive<Self> = Self::ZERO..=Self::MAX;
+    pub const FIRST: Self = unsafe { Self::new_unchecked(1) };
+    pub const LAST: Self = unsafe { Self::new_unchecked(u64::MAX) };
+    pub const ALL: RangeInclusive<Self> = Self::FIRST..=Self::LAST;
 
     #[inline]
     pub fn new(lsn: u64) -> Self {
-        Self(lsn)
+        Self(NonZero::new(lsn).expect("LSN must be non-zero"))
+    }
+
+    #[inline]
+    const unsafe fn new_unchecked(lsn: u64) -> Self {
+        Self(NonZero::new_unchecked(lsn))
     }
 
     #[inline]
@@ -48,19 +67,37 @@ impl LSN {
 
     #[inline]
     pub fn prev(&self) -> Option<Self> {
-        self.0.checked_sub(1).map(Self)
+        let n = self.0.get().saturating_sub(1);
+        if n == 0 {
+            None
+        } else {
+            // SAFETY: n is non-zero
+            unsafe { Some(Self(NonZero::new_unchecked(n))) }
+        }
     }
 
     #[inline]
     pub fn saturating_prev(&self) -> Self {
-        Self(self.0.saturating_sub(1))
+        let n = self.0.get().saturating_sub(1);
+        if n == 0 {
+            Self::FIRST
+        } else {
+            // SAFETY: n is non-zero
+            unsafe { Self(NonZero::new_unchecked(n)) }
+        }
     }
 
     /// Returns the difference between this LSN and another LSN.
     /// If the other LSN is greater than this LSN, None is returned.
     #[inline]
     pub fn since(&self, other: &Self) -> Option<u64> {
-        self.0.checked_sub(other.0)
+        let me = self.0.get();
+        let other = other.0.get();
+        if me >= other {
+            Some(me - other)
+        } else {
+            None
+        }
     }
 
     /// Formats the LSN as a fixed-width hexadecimal string.
@@ -71,8 +108,7 @@ impl LSN {
 
     /// Parses an LSN from a hexadecimal string.
     pub fn from_hex(s: &str) -> Result<Self, ParseIntError> {
-        let v = u64::from_str_radix(s, 16)?;
-        Ok(Self(v))
+        Ok(Self::new(u64::from_str_radix(s, 16)?))
     }
 }
 
@@ -83,59 +119,71 @@ impl Display for LSN {
     }
 }
 
-impl<'a> From<&'a u64> for &'a LSN {
+impl<'a> TryFrom<&'a u64> for &'a LSN {
+    type Error = InvalidLSN;
+
     #[inline]
-    fn from(value: &'a u64) -> Self {
-        zerocopy::transmute_ref!(value)
+    fn try_from(value: &'a u64) -> Result<Self, Self::Error> {
+        Ok(zerocopy::try_transmute_ref!(value)?)
     }
 }
 
 impl From<&LSN> for u64 {
     #[inline]
     fn from(value: &LSN) -> Self {
-        value.0
-    }
-}
-
-impl From<u64> for LSN {
-    #[inline]
-    fn from(lsn: u64) -> Self {
-        Self(lsn)
+        value.0.get()
     }
 }
 
 impl From<LSN> for u64 {
     #[inline]
     fn from(lsn: LSN) -> Self {
-        lsn.0
+        lsn.0.get()
+    }
+}
+
+impl TryFrom<u64> for LSN {
+    type Error = InvalidLSN;
+
+    #[inline]
+    fn try_from(lsn: u64) -> Result<Self, Self::Error> {
+        match NonZero::new(lsn) {
+            Some(lsn) => Ok(Self(lsn)),
+            None => Err(InvalidLSN),
+        }
     }
 }
 
 impl PartialEq<u64> for LSN {
     #[inline]
     fn eq(&self, other: &u64) -> bool {
-        self.0 == *other
+        self.0.get() == *other
     }
 }
 
 impl PartialOrd<u64> for LSN {
     #[inline]
     fn partial_cmp(&self, other: &u64) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(other)
+        self.0.get().partial_cmp(other)
     }
 }
 
 impl<E: zerocopy::ByteOrder> From<LSN> for zerocopy::U64<E> {
     #[inline]
     fn from(val: LSN) -> Self {
-        zerocopy::U64::new(val.0)
+        zerocopy::U64::new(val.0.get())
     }
 }
 
-impl<E: zerocopy::ByteOrder> From<zerocopy::U64<E>> for LSN {
+impl<E: zerocopy::ByteOrder> TryFrom<zerocopy::U64<E>> for LSN {
+    type Error = InvalidLSN;
+
     #[inline]
-    fn from(val: zerocopy::U64<E>) -> Self {
-        Self(val.get())
+    fn try_from(value: zerocopy::U64<E>) -> Result<Self, Self::Error> {
+        match NonZero::new(value.get()) {
+            Some(lsn) => Ok(Self(lsn)),
+            None => Err(InvalidLSN),
+        }
     }
 }
 
@@ -188,8 +236,8 @@ impl<T: RangeBounds<LSN>> LSNRangeExt for T {
     }
 
     fn iter(&self) -> LSNRangeIter {
-        let start = self.try_start().unwrap_or(LSN::ZERO).into();
-        let end = self.try_end().unwrap_or(LSN::MAX).into();
+        let start = self.try_start().unwrap_or(LSN::FIRST).into();
+        let end = self.try_end().unwrap_or(LSN::LAST).into();
         LSNRangeIter { range: start..=end }
     }
 }
@@ -204,7 +252,47 @@ impl Iterator for LSNRangeIter {
     type Item = LSN;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.range.next().map(LSN)
+        self.range.next().map(|n| {
+            // SAFETY: we know n is non-zero because next is monotonically
+            // increasing
+            unsafe { LSN::new_unchecked(n) }
+        })
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    FromBytes,
+    KnownLayout,
+    IntoBytes,
+    Immutable,
+    Default,
+)]
+#[repr(transparent)]
+/// A MaybeLSN behaves identically to an Option<LSN> and exists for interop with
+/// the zerocopy crate.
+///
+/// This type is a temporary workaround until
+/// https://github.com/google/zerocopy/issues/2255 is resolved
+pub struct MaybeLSN(Option<NonZero<u64>>);
+
+impl From<MaybeLSN> for Option<LSN> {
+    fn from(value: MaybeLSN) -> Self {
+        value.0.map(LSN)
+    }
+}
+
+impl From<Option<LSN>> for MaybeLSN {
+    fn from(value: Option<LSN>) -> Self {
+        Self(value.map(|lsn| lsn.0))
     }
 }
 
@@ -214,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_lsn_next() {
-        let lsn = LSN::new(0);
-        assert_eq!(lsn.saturating_next(), 1);
+        let lsn = LSN::FIRST;
+        assert_eq!(lsn.saturating_next(), 2);
     }
 }
