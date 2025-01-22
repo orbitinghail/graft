@@ -109,7 +109,7 @@ impl IntoResponse for ApiErr {
 
         match code {
             GraftErrCode::Client | GraftErrCode::SnapshotMissing => {
-                tracing::info!(culprit = ?self.0, "client error")
+                tracing::debug!(culprit = ?self.0, "client error")
             }
             _ => tracing::error!(culprit = ?self.0, "api error"),
         }

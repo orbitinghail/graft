@@ -358,6 +358,12 @@ impl Storage {
         snapshot: Snapshot,
         changed: SplinterRef<Bytes>,
     ) -> Result<()> {
+        log::trace!(
+            "volume {:?} received remote commit with snapshot {:?}",
+            vid,
+            snapshot
+        );
+
         // acquire the commit lock
         // TODO: reduce the scope of this lock
         let _permit = self.commit_lock.lock();

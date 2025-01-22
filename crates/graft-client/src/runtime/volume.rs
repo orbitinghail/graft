@@ -1,7 +1,5 @@
-use std::time::Duration;
-
-use crossbeam::channel::{bounded, RecvTimeoutError, Sender};
-use culprit::{Culprit, Result, ResultExt};
+use crossbeam::channel::{bounded, Sender};
+use culprit::{Result, ResultExt};
 use graft_core::VolumeId;
 
 use crate::{runtime::storage::snapshot::SnapshotKindMask, ClientErr};
@@ -86,19 +84,14 @@ impl<F: Fetcher> VolumeHandle<F> {
     }
 
     /// Sync this volume to the latest remote snapshot
-    pub fn pull_from_remote(&self, timeout: Duration) -> Result<(), ClientErr> {
+    pub fn pull_from_remote(&self) -> Result<(), ClientErr> {
         let (tx, rx) = bounded(1);
         self.sync_control
             .as_ref()
             .expect("sync control channel missing")
             .send(SyncControl::new(self.vid.clone(), SyncDirection::Pull, tx))
             .expect("sync control channel closed");
-        rx.recv_timeout(timeout).map_err(|err| match err {
-            RecvTimeoutError::Timeout => Culprit::from_err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "sync timeout",
-            )),
-            RecvTimeoutError::Disconnected => panic!("sync control channel disconnected"),
-        })?
+        rx.recv()
+            .expect("sync control response channel disconnected")
     }
 }

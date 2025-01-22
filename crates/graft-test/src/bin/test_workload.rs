@@ -83,7 +83,7 @@ enum Workload {
 }
 
 impl Workload {
-    fn start(
+    fn run(
         self,
         worker_id: &str,
         handle: Runtime<NetFetcher>,
@@ -120,9 +120,7 @@ fn workload_writer(
 
     // pull the volume explicitly before continuing
     tracing::info!("pulling volume {:?}", vid);
-    handle
-        .pull_from_remote(Duration::from_secs(1))
-        .or_into_ctx()?;
+    handle.pull_from_remote().or_into_ctx()?;
 
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
@@ -303,7 +301,7 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
 
     tracing::info!(?ticks, "running test workload");
     workload
-        .start(&worker_id, runtime.clone(), rng, ticks)
+        .run(&worker_id, runtime.clone(), rng, ticks)
         .or_into_ctx()?;
 
     tracing::info!("workload finished");
