@@ -29,7 +29,7 @@ impl<F: Fetcher> VolumeWriter<F> {
 
     /// Access this writer's snapshot
     #[inline]
-    pub fn snapshot(&self) -> &Snapshot {
+    pub fn snapshot(&self) -> Option<&Snapshot> {
         self.reader.snapshot()
     }
 
@@ -51,8 +51,8 @@ impl<F: Fetcher> VolumeWriter<F> {
         let (vid, snapshot, shared) = self.reader.into_parts();
         let snapshot = shared
             .storage()
-            .commit(&vid, Some(snapshot), self.memtable)
+            .commit(&vid, snapshot, self.memtable)
             .or_into_ctx()?;
-        Ok(VolumeReader::new(vid, snapshot, shared))
+        Ok(VolumeReader::new(vid, Some(snapshot), shared))
     }
 }

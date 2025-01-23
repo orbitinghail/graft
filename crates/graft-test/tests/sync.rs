@@ -24,7 +24,7 @@ fn test_client_sync_sanity() {
     // create a second client to sync to
     let storage2 = Storage::open_temporary().unwrap();
     let mut runtime2 = Runtime::new(NetFetcher::new(clients.clone()), storage2);
-    let sync2 = runtime2.start_sync_task(clients, Duration::from_millis(10), 8);
+    let sync2 = runtime2.start_sync_task(clients, Duration::from_millis(100), 8);
 
     // register the volume with both clients, pushing from client 1 to client 2
     let vid = VolumeId::random();
@@ -52,13 +52,15 @@ fn test_client_sync_sanity() {
         writer.commit().unwrap();
 
         // wait for client 2 to receive the write
+        // this timeout has to be large enough to allow both sync tasks to run
+        // as well as the segment flush interval in the backend
         subscription
-            .recv_timeout(Duration::from_millis(100))
+            .recv_timeout(Duration::from_secs(5))
             .expect("subscription failed");
 
-        let snapshot = handle2.snapshot().unwrap();
+        let snapshot = handle2.snapshot().unwrap().unwrap();
         tracing::info!("received remote snapshot: {snapshot:?}");
-        assert_eq!(snapshot.local(), i + 1);
+        assert_eq!(snapshot.local(), i);
         assert_eq!(snapshot.pages(), 1);
 
         let reader = handle2.reader_at(snapshot);

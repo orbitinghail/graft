@@ -128,10 +128,10 @@ fn workload_writer(
     let first_page = reader.read(0.into()).or_into_ctx()?;
     let mut page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
-    // ensure the page tracker is only empty when we expect it
+    // ensure the page tracker is only empty when we expect it to be
     assert_always_or_unreachable!(
-        page_tracker.is_empty() ^ reader.snapshot().remote().is_some_and(|lsn| lsn > 1),
-        "page tracker should only be empty when the remote snapshot is either empty or above LSN 1",
+        page_tracker.is_empty() ^ reader.snapshot().is_none(),
+        "page tracker should only be empty when the snapshot is missing",
         &json!({
             "snapshot": reader.snapshot(),
             "tracker_len": page_tracker.len(),
@@ -200,22 +200,24 @@ fn workload_reader(
         subscription.recv().expect("change subscription closed");
 
         let reader = handle.reader().or_into_ctx()?;
-        tracing::info!(snapshot=?reader.snapshot(), "received commit for volume {:?}", vid);
+        let snapshot = reader.snapshot().expect("snapshot missing");
+
+        tracing::info!(snapshot=?snapshot, "received commit for volume {:?}", vid);
 
         antithesis_sdk::assert_always_or_unreachable!(
             last_snapshot
-                .replace(reader.snapshot().clone())
-                .is_none_or(|last| &last != reader.snapshot()),
+                .replace(snapshot.clone())
+                .is_none_or(|last| &last != snapshot),
             "the snapshot should be different after receiving a commit notification",
-            &json!({ "snapshot": reader.snapshot(), "worker": worker_id })
+            &json!({ "snapshot": snapshot, "worker": worker_id })
         );
 
-        let page_count = reader.snapshot().pages();
+        let page_count = snapshot.pages();
         if seen_nonempty {
             antithesis_sdk::assert_always_or_unreachable!(
                 page_count > 0,
                 "the snapshot should never be empty after we have seen a non-empty snapshot",
-                &json!({ "snapshot": reader.snapshot(), "worker": worker_id })
+                &json!({ "snapshot": snapshot, "worker": worker_id })
             );
         }
 
@@ -231,7 +233,7 @@ fn workload_reader(
         let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
         // ensure all pages are either empty or have the expected hash
-        for offset in reader.snapshot().pages().offsets() {
+        for offset in snapshot.pages().offsets() {
             if offset == 0 {
                 // skip the page tracker
                 continue;

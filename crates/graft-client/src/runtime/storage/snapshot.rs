@@ -23,13 +23,6 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    pub const DEFAULT: Self = Self {
-        local: LSN::FIRST,
-        remote: MaybeLSN::EMPTY,
-        pages: PageCount::ZERO,
-        _padding: [0; 4],
-    };
-
     #[inline]
     pub fn new(local: LSN, remote: Option<LSN>, pages: PageCount) -> Self {
         Self {
@@ -75,11 +68,5 @@ impl Debug for Snapshot {
 impl Into<Slice> for Snapshot {
     fn into(self) -> Slice {
         self.as_bytes().into()
-    }
-}
-
-impl Default for Snapshot {
-    fn default() -> Self {
-        Self::DEFAULT.clone()
     }
 }

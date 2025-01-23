@@ -164,7 +164,9 @@ impl<F: Fetcher> SyncTask<F> {
                         panic!("commit subscriber error: {:?}", err);
                     }
                     let vids = self.commits.changed();
-                    self.handle_commit(vids)?;
+                    if !vids.is_empty() {
+                        self.handle_commit(vids)?;
+                    }
                 }
 
                 default(self.refresh_interval) => self.handle_tick()?,
@@ -190,16 +192,14 @@ impl<F: Fetcher> SyncTask<F> {
 
     /// Synchronously sync a volume with the remote
     fn sync(&mut self, vid: VolumeId, dir: SyncDirection) -> Result<(), ClientErr> {
-        let state = self.shared.storage().volume_state(&vid).or_into_ctx()?;
-
         if dir.matches(SyncDirection::Pull) {
-            Job::pull(state.clone())
+            Job::pull(vid.clone())
                 .run(self.shared.storage(), &self.clients)
                 .or_into_culprit("error while pulling volume")?;
         }
 
         if dir.matches(SyncDirection::Push) {
-            Job::push(state)
+            Job::push(vid)
                 .run(self.shared.storage(), &self.clients)
                 .or_into_culprit("error while pushing volume")?;
         }
@@ -240,9 +240,9 @@ impl<F: Fetcher> SyncTask<F> {
                 let can_pull = config.sync().matches(SyncDirection::Pull);
                 let has_pending_commits = state.has_pending_commits();
                 if can_push && has_pending_commits && sync.matches(SyncDirection::Push) {
-                    Ok(Some(Job::push(state)))
+                    Ok(Some(Job::push(state.vid().clone())))
                 } else if can_pull && sync.matches(SyncDirection::Pull) {
-                    Ok(Some(Job::pull(state)))
+                    Ok(Some(Job::pull(state.vid().clone())))
                 } else {
                     Ok(None)
                 }

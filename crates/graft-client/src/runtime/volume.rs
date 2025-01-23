@@ -30,13 +30,8 @@ impl<F: Fetcher> VolumeHandle<F> {
     }
 
     /// Retrieve the latest snapshot for the volume
-    pub fn snapshot(&self) -> Result<Snapshot, ClientErr> {
-        Ok(self
-            .shared
-            .storage()
-            .snapshot(&self.vid)
-            .or_into_ctx()?
-            .expect("snapshot missing"))
+    pub fn snapshot(&self) -> Result<Option<Snapshot>, ClientErr> {
+        Ok(self.shared.storage().snapshot(&self.vid).or_into_ctx()?)
     }
 
     /// Open a VolumeReader at the latest snapshot
@@ -50,7 +45,7 @@ impl<F: Fetcher> VolumeHandle<F> {
 
     /// Open a VolumeReader at the provided snapshot
     pub fn reader_at(&self, snapshot: Snapshot) -> VolumeReader<F> {
-        VolumeReader::new(self.vid.clone(), snapshot, self.shared.clone())
+        VolumeReader::new(self.vid.clone(), Some(snapshot), self.shared.clone())
     }
 
     /// Open a VolumeWriter at the latest snapshot

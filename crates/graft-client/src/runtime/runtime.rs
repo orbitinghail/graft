@@ -60,13 +60,6 @@ impl<F: Fetcher> Runtime<F> {
                 .or_into_ctx()?;
         }
 
-        // if no local snapshot exists, create an empty one
-        if storage.snapshot(&vid).or_into_ctx()?.is_none() {
-            storage
-                .commit(&vid, None, Default::default())
-                .or_into_ctx()?;
-        }
-
         storage.set_volume_config(&vid, config).or_into_ctx()?;
 
         Ok(VolumeHandle::new(
@@ -100,6 +93,7 @@ mod tests {
 
         // open a reader and verify that no pages are returned
         let reader = handle.reader().unwrap();
+        assert_eq!(reader.snapshot(), None);
         assert_eq!(reader.read(0.into()).unwrap(), EMPTY_PAGE);
 
         // open a writer and write a page, verify RYOW, then commit
@@ -112,8 +106,8 @@ mod tests {
         assert_eq!(reader.read(0.into()).unwrap(), page);
 
         // verify the snapshot
-        let snapshot = reader.snapshot();
-        assert_eq!(snapshot.local(), 2);
+        let snapshot = reader.snapshot().unwrap();
+        assert_eq!(snapshot.local(), 1);
         assert_eq!(snapshot.pages(), 1);
 
         // open a new writer, verify it can read the page; write another page
@@ -128,8 +122,8 @@ mod tests {
         assert_eq!(reader.read(1.into()).unwrap(), page2);
 
         // verify the snapshot
-        let snapshot = reader.snapshot();
-        assert_eq!(snapshot.local(), 3);
+        let snapshot = reader.snapshot().unwrap();
+        assert_eq!(snapshot.local(), 2);
         assert_eq!(snapshot.pages(), 2);
 
         // upgrade to a writer and overwrite the first page
@@ -142,8 +136,8 @@ mod tests {
         assert_eq!(reader.read(0.into()).unwrap(), page2);
 
         // verify the snapshot
-        let snapshot = reader.snapshot();
-        assert_eq!(snapshot.local(), 4);
+        let snapshot = reader.snapshot().unwrap();
+        assert_eq!(snapshot.local(), 3);
         assert_eq!(snapshot.pages(), 2);
     }
 

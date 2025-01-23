@@ -255,20 +255,21 @@ impl VolumeState {
     #[inline]
     pub fn config(&self) -> &VolumeConfig {
         #[cfg(feature = "antithesis")]
-        antithesis_sdk::assert_unreachable!(
+        antithesis_sdk::assert_always_or_unreachable!(
+            self.config.is_some(),
             "volume config should always be present",
             &serde_json::json!({ "state": self })
         );
         debug_assert!(
-            false,
+            self.config.is_some(),
             "volume config should always be present; got {self:?}"
         );
         self.config.as_ref().unwrap_or(&VolumeConfig::DEFAULT)
     }
 
     #[inline]
-    pub fn snapshot(&self) -> &Snapshot {
-        self.snapshot.as_ref().unwrap_or(&Snapshot::DEFAULT)
+    pub fn snapshot(&self) -> Option<&Snapshot> {
+        self.snapshot.as_ref()
     }
 
     #[inline]
@@ -278,12 +279,12 @@ impl VolumeState {
 
     pub fn has_pending_commits(&self) -> bool {
         let last_sync = self.watermarks().last_sync();
-        let local = self.snapshot().local();
+        let local = self.snapshot().map(|s| s.local());
         debug_assert!(
-            last_sync <= Some(local),
+            last_sync <= local,
             "invariant violation: last_sync should never be larger than local"
         );
-        last_sync < Some(local)
+        last_sync < local
     }
 
     pub fn needs_recovery(&self) -> bool {

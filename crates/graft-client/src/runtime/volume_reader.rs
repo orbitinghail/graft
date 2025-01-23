@@ -18,12 +18,12 @@ use super::{
 #[derive(Clone, Debug)]
 pub struct VolumeReader<F> {
     vid: VolumeId,
-    snapshot: Snapshot,
+    snapshot: Option<Snapshot>,
     shared: Shared<F>,
 }
 
 impl<F: Fetcher> VolumeReader<F> {
-    pub(crate) fn new(vid: VolumeId, snapshot: Snapshot, shared: Shared<F>) -> Self {
+    pub(crate) fn new(vid: VolumeId, snapshot: Option<Snapshot>, shared: Shared<F>) -> Self {
         Self { vid, snapshot, shared }
     }
 
@@ -34,26 +34,30 @@ impl<F: Fetcher> VolumeReader<F> {
 
     /// Access this reader's snapshot
     #[inline]
-    pub fn snapshot(&self) -> &Snapshot {
-        &self.snapshot
+    pub fn snapshot(&self) -> Option<&Snapshot> {
+        self.snapshot.as_ref()
     }
 
     /// Read a page from the snapshot
     pub fn read(&self, offset: PageOffset) -> Result<Page, ClientErr> {
-        match self
-            .shared
-            .storage()
-            .read(self.vid(), self.snapshot.local(), offset)
-            .or_into_ctx()?
-        {
-            (_, PageValue::Available(page)) => Ok(page),
-            (_, PageValue::Empty) => Ok(EMPTY_PAGE),
-            (_, PageValue::Pending) => self.shared.fetcher().fetch_page(
-                self.shared.storage(),
-                self.vid(),
-                self.snapshot(),
-                offset,
-            ),
+        if let Some(snapshot) = self.snapshot() {
+            match self
+                .shared
+                .storage()
+                .read(self.vid(), snapshot.local(), offset)
+                .or_into_ctx()?
+            {
+                (_, PageValue::Available(page)) => Ok(page),
+                (_, PageValue::Empty) => Ok(EMPTY_PAGE),
+                (_, PageValue::Pending) => self.shared.fetcher().fetch_page(
+                    self.shared.storage(),
+                    self.vid(),
+                    snapshot,
+                    offset,
+                ),
+            }
+        } else {
+            Ok(EMPTY_PAGE)
         }
     }
 
@@ -63,7 +67,7 @@ impl<F: Fetcher> VolumeReader<F> {
     }
 
     /// decompose this reader into snapshot and storage
-    pub(crate) fn into_parts(self) -> (VolumeId, Snapshot, Shared<F>) {
+    pub(crate) fn into_parts(self) -> (VolumeId, Option<Snapshot>, Shared<F>) {
         (self.vid, self.snapshot, self.shared)
     }
 }

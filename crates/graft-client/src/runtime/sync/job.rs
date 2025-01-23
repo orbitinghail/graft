@@ -1,13 +1,15 @@
 use culprit::{Result, ResultExt};
-use graft_core::{lsn::LSN, page::Page, page_offset::PageOffset};
+use graft_core::{
+    lsn::{LSNRangeExt, LSN},
+    page::Page,
+    page_offset::PageOffset,
+    VolumeId,
+};
 use graft_proto::pagestore::v1::PageAtOffset;
 use serde::Serialize;
 use tryiter::TryIteratorExt;
 
-use crate::{
-    runtime::storage::{volume_state::VolumeState, Storage},
-    ClientErr, ClientPair,
-};
+use crate::{runtime::storage::Storage, ClientErr, ClientPair};
 
 #[derive(Debug)]
 pub enum Job {
@@ -16,12 +18,12 @@ pub enum Job {
 }
 
 impl Job {
-    pub fn pull(state: VolumeState) -> Self {
-        Job::Pull(PullJob { state })
+    pub fn pull(vid: VolumeId) -> Self {
+        Job::Pull(PullJob { vid })
     }
 
-    pub fn push(state: VolumeState) -> Self {
-        Job::Push(PushJob { state })
+    pub fn push(vid: VolumeId) -> Self {
+        Job::Push(PushJob { vid })
     }
 
     pub fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
@@ -34,28 +36,28 @@ impl Job {
 
 #[derive(Debug)]
 pub struct PullJob {
-    state: VolumeState,
+    vid: VolumeId,
 }
 
 impl PullJob {
     fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
+        let state = storage.volume_state(&self.vid).or_into_ctx()?;
+
         log::debug!(
             "pulling volume {:?}; snapshot {:?}",
-            self.state.vid(),
-            self.state.snapshot()
+            self.vid,
+            state.snapshot()
         );
 
         // pull starting at the next LSN after the last pulled snapshot
-        let start_lsn = self
-            .state
+        let start_lsn = state
             .snapshot()
-            .remote()
-            .and_then(|lsn| lsn.next())
+            .and_then(|s| s.remote())
+            .map(|lsn| lsn.next().expect("lsn overflow"))
             .unwrap_or(LSN::FIRST);
 
-        if let Some((snapshot, _, changed)) = clients
-            .metastore()
-            .pull_offsets(self.state.vid(), start_lsn..)?
+        if let Some((snapshot, _, changed)) =
+            clients.metastore().pull_offsets(&self.vid, start_lsn..)?
         {
             let snapshot_lsn = snapshot.lsn().expect("invalid LSN");
 
@@ -64,12 +66,12 @@ impl PullJob {
                 "invalid snapshot LSN; expected >= {}; got {}; last snapshot {:?}",
                 start_lsn,
                 snapshot_lsn,
-                self.state.snapshot()
+                state.snapshot()
             );
             log::debug!("received remote snapshot at LSN {}", snapshot_lsn);
 
             storage
-                .receive_remote_commit(self.state.vid(), snapshot, changed)
+                .receive_remote_commit(&self.vid, snapshot, changed)
                 .or_into_ctx()?;
         }
 
@@ -79,13 +81,13 @@ impl PullJob {
 
 #[derive(Debug, Serialize)]
 pub struct PushJob {
-    state: VolumeState,
+    vid: VolumeId,
 }
 
 impl PushJob {
     fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         if let Err(err) = self.run_inner(storage, clients) {
-            if let Err(inner) = storage.rollback_sync_to_remote(self.state.vid()) {
+            if let Err(inner) = storage.rollback_sync_to_remote(&self.vid) {
                 log::error!("failed to rollback sync to remote: {:?}", inner);
                 Err(err.with_note(format!("rollback failed after push job failed: {}", inner)))
             } else {
@@ -97,11 +99,14 @@ impl PushJob {
     }
 
     fn run_inner(&self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
+        // prepare the sync
+        let (snapshot, lsns, mut commits) =
+            storage.prepare_sync_to_remote(&self.vid).or_into_ctx()?;
+
         log::debug!(
-            "pushing volume {:?}; current snapshot {:?}; current watermarks {:?}",
-            self.state.vid(),
-            self.state.snapshot(),
-            self.state.watermarks(),
+            "pushing volume {:?}; current snapshot {:?}",
+            &self.vid,
+            snapshot,
         );
 
         // setup temporary storage for pages
@@ -121,17 +126,16 @@ impl PushJob {
             }
         };
 
-        // prepare the sync
-        let (snapshot, lsns, mut commits) = storage
-            .prepare_sync_to_remote(self.state.vid())
-            .or_into_ctx()?;
-
         let page_count = snapshot.pages();
+
+        let mut num_commits = 0;
+        let expected_num_commits = lsns.try_len().expect("lsns is RangeInclusive");
 
         // load all of the pages into memory
         // TODO: stream pages directly to the remote
         while let Some((lsn, offsets)) = commits.try_next().or_into_ctx()? {
-            let mut commit_pages = storage.query_pages(self.state.vid(), lsn, &offsets);
+            num_commits += 1;
+            let mut commit_pages = storage.query_pages(&self.vid, lsn, &offsets);
             while let Some((offset, page)) = commit_pages.try_next().or_into_ctx()? {
                 // it's a fatal error if the page is None or Pending
                 let page = page
@@ -147,33 +151,31 @@ impl PushJob {
 
         #[cfg(feature = "antithesis")]
         antithesis_sdk::assert_always_or_unreachable!(
-            !pages.is_empty(),
-            "push job should always push at least one page",
+            num_commits == expected_num_commits,
+            "push job always pushes all expected commits",
             &serde_json::json!({ "job": self, })
         );
-        debug_assert!(
-            !pages.is_empty(),
-            "push job should always push at least one page"
+        debug_assert_eq!(
+            num_commits, expected_num_commits,
+            "push job always pushes all expected commits"
         );
 
         // write the pages to the pagestore if there are any pages
         let segments = if !pages.is_empty() {
-            clients.pagestore().write_pages(self.state.vid(), pages)?
+            clients.pagestore().write_pages(&self.vid, pages)?
         } else {
             Vec::new()
         };
 
         // commit the segments to the metastore
-        let snapshot = clients.metastore().commit(
-            self.state.vid(),
-            snapshot.remote(),
-            page_count,
-            segments,
-        )?;
+        let remote_snapshot =
+            clients
+                .metastore()
+                .commit(&self.vid, snapshot.remote(), page_count, segments)?;
 
         // complete the sync
         storage
-            .complete_sync_to_remote(self.state.vid(), snapshot, lsns)
+            .complete_sync_to_remote(&self.vid, snapshot, remote_snapshot, lsns)
             .or_into_ctx()?;
 
         Ok(())

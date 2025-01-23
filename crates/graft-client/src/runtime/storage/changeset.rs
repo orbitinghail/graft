@@ -13,7 +13,7 @@ use parking_lot::{Mutex, RwLock};
 type InnerSet<K> = Arc<RwLock<HashMap<K, AtomicU64>>>;
 
 pub struct ChangeSet<K> {
-    version: AtomicU64,
+    next_version: AtomicU64,
     subscribers: Mutex<Vec<(Option<K>, Sender<()>)>>,
     set: InnerSet<K>,
 }
@@ -21,7 +21,7 @@ pub struct ChangeSet<K> {
 impl<K> Default for ChangeSet<K> {
     fn default() -> Self {
         Self {
-            version: AtomicU64::new(0),
+            next_version: AtomicU64::new(0),
             subscribers: Default::default(),
             set: Default::default(),
         }
@@ -30,11 +30,11 @@ impl<K> Default for ChangeSet<K> {
 
 impl<K: Eq + Hash + Clone> ChangeSet<K> {
     pub fn version(&self) -> u64 {
-        self.version.load(Ordering::SeqCst)
+        self.next_version.load(Ordering::SeqCst)
     }
 
     fn next_version(&self) -> u64 {
-        self.version.fetch_add(1, Ordering::SeqCst)
+        self.next_version.fetch_add(1, Ordering::SeqCst)
     }
 
     fn notify(&self, key: &K) {
@@ -128,7 +128,7 @@ impl<K: Clone + Eq + Hash> SetSubscriber<K> {
             .filter_map(|(k, v)| {
                 let version = v.load(Ordering::SeqCst);
                 max_version = max_version.max(version);
-                (version > self.version).then_some(k.clone())
+                (version >= self.version).then_some(k.clone())
             })
             .collect();
 

@@ -320,10 +320,15 @@ impl Storage {
         remote_snapshot: graft_proto::Snapshot,
         changed: SplinterRef<Bytes>,
     ) -> Result<()> {
+        // resolve the remote lsn and page count
+        let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
+        let remote_pages = remote_snapshot.pages();
+
         log::trace!(
-            "volume {:?} received remote commit with snapshot {:?}",
+            "volume {:?} received remote commit at LSN {} with pages {}",
             vid,
-            remote_snapshot
+            remote_lsn,
+            remote_pages
         );
 
         // acquire the commit lock and start a new batch
@@ -357,16 +362,12 @@ impl Storage {
 
             return Err(Culprit::new_with_note(
                 StorageErr::RemoteConflict,
-                format!("Volume {vid} has pending commits, refusing to accept remote changes"),
+                format!("Volume {vid:?} has pending commits, refusing to accept remote changes"),
             ));
         }
 
-        // resolve the remote lsn
-        let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
-        let remote_pages = remote_snapshot.pages();
-
         // compute the next local lsn
-        let local_lsn = snapshot.local().next().expect("lsn overflow");
+        let local_lsn = snapshot.map_or(LSN::FIRST, |s| s.local().next().expect("lsn overflow"));
 
         // persist the new volume snapshot
         batch.insert(
@@ -449,17 +450,38 @@ impl Storage {
             ));
         }
 
+        // ensure that we only run this job when we actually have commits to sync
+        #[cfg(feature = "antithesis")]
+        antithesis_sdk::assert_always_or_unreachable!(
+            state.has_pending_commits(),
+            "the sync push job only runs when we have local commits to push",
+            &serde_json::json!({ "vid": vid, "state": state })
+        );
+        debug_assert!(
+            state.has_pending_commits(),
+            "the sync push job only runs when we have local commits to push"
+        );
+
+        // resolve the snapshot; we can expect it to be available because this
+        // function should only run when we have local commits to sync
+        let snapshot = state.snapshot().expect("volume snapshot missing").clone();
+        let local_lsn = snapshot.local();
+
         // update pending_sync to the local LSN
         self.volumes.insert(
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
-            state
-                .watermarks()
-                .clone()
-                .with_pending_sync(state.snapshot().local()),
+            state.watermarks().clone().with_pending_sync(local_lsn),
         )?;
 
+        // calculate the LSN range of commits to sync
+        let start = state
+            .watermarks()
+            .last_sync()
+            .map_or(LSN::FIRST, |s| s.next().expect("LSN overflow"));
+        let end = local_lsn;
+        let lsns = start..=end;
+
         // create a commit iterator
-        let lsns = state.watermarks().last_sync().unwrap_or(LSN::FIRST)..=state.snapshot().local();
         let commit_start = CommitKey::new(vid.clone(), *lsns.start());
         let commit_end = CommitKey::new(vid.clone(), *lsns.end());
         let mut cursor = commit_start.lsn();
@@ -473,13 +495,13 @@ impl Storage {
 
                 // detect missing commits
                 assert_eq!(lsn, cursor, "missing commit detected");
-                cursor = lsn;
+                cursor = cursor.next().expect("lsn overflow");
 
                 let splinter = SplinterRef::from_bytes(v).or_into_ctx()?;
                 Ok((lsn, splinter))
             });
 
-        Ok((state.snapshot().clone(), lsns, commits))
+        Ok((snapshot, lsns, commits))
     }
 
     /// Rollback a failed push operation by setting Watermarks::pending_sync to
@@ -503,6 +525,7 @@ impl Storage {
     pub fn complete_sync_to_remote(
         &self,
         vid: &VolumeId,
+        sync_start_snapshot: Snapshot,
         remote_snapshot: graft_proto::Snapshot,
         synced_lsns: impl RangeBounds<LSN>,
     ) -> Result<()> {
@@ -512,15 +535,29 @@ impl Storage {
 
         let state = self.volume_state(vid)?;
 
-        let local_lsn = state.snapshot().local();
-        let pages = state.snapshot().pages();
+        // resolve the snapshot; we can expect it to be available because this
+        // function should only run after we have synced a local commit
+        let snapshot = state.snapshot().expect("volume snapshot missing");
+
+        let local_lsn = snapshot.local();
+        let pages = snapshot.pages();
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
 
+        log::trace!(
+            "completing sync to remote LSN {} for volume {:?}",
+            remote_lsn,
+            state,
+        );
+
         // check invariants
+        assert!(
+            snapshot.remote() < Some(remote_lsn),
+            "remote LSN should be monotonically increasing"
+        );
         assert_eq!(
-            pages,
-            remote_snapshot.pages(),
-            "remote page count changed after push"
+            state.watermarks().pending_sync(),
+            Some(sync_start_snapshot.local()),
+            "the pending_sync watermark must be equal to the local LSN at the start of the sync"
         );
 
         // persist the updated remote LSN to the snapshot
@@ -595,7 +632,7 @@ mod tests {
         let state = iter.try_next().unwrap().unwrap();
         assert_eq!(state.vid(), &vids[0]);
         assert_eq!(state.config().sync(), SyncDirection::Pull);
-        let snapshot = state.snapshot();
+        let snapshot = state.snapshot().unwrap();
         assert_eq!(snapshot.local(), LSN::new(2));
         assert_eq!(snapshot.pages(), 1);
 
@@ -603,7 +640,7 @@ mod tests {
         let state = iter.try_next().unwrap().unwrap();
         assert_eq!(state.vid(), &vids[1]);
         assert_eq!(state.config().sync(), SyncDirection::Push);
-        let snapshot = state.snapshot();
+        let snapshot = state.snapshot().unwrap();
         assert_eq!(snapshot.local(), LSN::new(1));
         assert_eq!(snapshot.pages(), 1);
 
@@ -618,7 +655,7 @@ mod tests {
         let state = iter.try_next().unwrap().unwrap();
         assert_eq!(state.vid(), &vids[1]);
         assert_eq!(state.config().sync(), SyncDirection::Push);
-        let snapshot = state.snapshot();
+        let snapshot = state.snapshot().unwrap();
         assert_eq!(snapshot.local(), LSN::new(1));
         assert_eq!(snapshot.pages(), 1);
 
