@@ -9,7 +9,7 @@ use graft_client::{
         fetcher::NetFetcher,
         runtime::Runtime,
         storage::{
-            volume_config::{SyncDirection, VolumeConfig},
+            volume_state::{SyncDirection, VolumeConfig},
             Storage,
         },
         sync::ShutdownErr,
@@ -128,10 +128,10 @@ fn workload_writer(
     let first_page = reader.read(0.into()).or_into_ctx()?;
     let mut page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
-    // the page tracker should only ever be empty when there is no remote snapshot
+    // ensure the page tracker is only empty when we expect it
     assert_always_or_unreachable!(
-        page_tracker.is_empty() ^ reader.snapshot().remote().is_some_and(|s| s.lsn() > 0),
-        "page tracker should only be empty when the remote snapshot is either empty or at LSN 0",
+        page_tracker.is_empty() ^ reader.snapshot().remote().is_some_and(|lsn| lsn > 1),
+        "page tracker should only be empty when the remote snapshot is either empty or above LSN 1",
         &json!({
             "snapshot": reader.snapshot(),
             "tracker_len": page_tracker.len(),
@@ -210,7 +210,7 @@ fn workload_reader(
             &json!({ "snapshot": reader.snapshot(), "worker": worker_id })
         );
 
-        let page_count = reader.snapshot().local().pages();
+        let page_count = reader.snapshot().pages();
         if seen_nonempty {
             antithesis_sdk::assert_always_or_unreachable!(
                 page_count > 0,
@@ -231,7 +231,7 @@ fn workload_reader(
         let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
         // ensure all pages are either empty or have the expected hash
-        for offset in reader.snapshot().local().pages().offsets() {
+        for offset in reader.snapshot().pages().offsets() {
             if offset == 0 {
                 // skip the page tracker
                 continue;

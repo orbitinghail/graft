@@ -11,15 +11,12 @@ use job::Job;
 use thiserror::Error;
 use tryiter::{TryIterator, TryIteratorExt};
 
-use crate::{
-    runtime::storage::snapshot::{SnapshotKind, SnapshotKindMask},
-    ClientErr, ClientPair,
-};
+use crate::{ClientErr, ClientPair};
 
 use super::{
     fetcher::Fetcher,
     shared::Shared,
-    storage::{changeset::SetSubscriber, volume_config::SyncDirection},
+    storage::{changeset::SetSubscriber, volume_state::SyncDirection},
 };
 
 #[derive(Debug, Error)]
@@ -193,33 +190,18 @@ impl<F: Fetcher> SyncTask<F> {
 
     /// Synchronously sync a volume with the remote
     fn sync(&mut self, vid: VolumeId, dir: SyncDirection) -> Result<(), ClientErr> {
-        let kind_mask = SnapshotKindMask::default()
-            .with(SnapshotKind::Local)
-            .with(SnapshotKind::Sync)
-            .with(SnapshotKind::Remote);
-        let mut snapshots = self
-            .shared
-            .storage()
-            .snapshots(&vid, kind_mask)
-            .or_into_ctx()?;
+        let state = self.shared.storage().volume_state(&vid).or_into_ctx()?;
 
         if dir.matches(SyncDirection::Pull) {
-            Job::pull(vid.clone(), snapshots.remote().cloned())
+            Job::pull(state.clone())
                 .run(self.shared.storage(), &self.clients)
-                .or_into_culprit("error while pulling the volume")?;
+                .or_into_culprit("error while pulling volume")?;
         }
 
         if dir.matches(SyncDirection::Push) {
-            Job::push(
-                vid,
-                snapshots.take_remote(),
-                snapshots.take_sync(),
-                snapshots
-                    .take_local()
-                    .expect("local snapshot should not be missing"),
-            )
-            .run(self.shared.storage(), &self.clients)
-            .or_into_culprit("error while pushing the volume")?;
+            Job::push(state)
+                .run(self.shared.storage(), &self.clients)
+                .or_into_culprit("error while pushing volume")?;
         }
 
         Ok(())
@@ -248,33 +230,19 @@ impl<F: Fetcher> SyncTask<F> {
         sync: SyncDirection,
         vids: Option<HashSet<VolumeId>>,
     ) -> impl TryIterator<Ok = Job, Err = Culprit<ClientErr>> + '_ {
-        let kind_mask = SnapshotKindMask::default()
-            .with(SnapshotKind::Local)
-            .with(SnapshotKind::Sync)
-            .with(SnapshotKind::Remote);
         self.shared
             .storage()
-            .query_volumes(sync, kind_mask, vids)
+            .query_volumes(sync, vids)
             .map_err(|err| err.map_ctx(ClientErr::from))
-            .try_filter_map(move |(vid, config, mut snapshots)| {
+            .try_filter_map(move |state| {
+                let config = state.config();
                 let can_push = config.sync().matches(SyncDirection::Push);
                 let can_pull = config.sync().matches(SyncDirection::Pull);
-                let has_changed = snapshots.sync() != snapshots.local();
-                if can_push && has_changed && sync.matches(SyncDirection::Push) {
-                    // generate a push job if the volume is configured for push
-                    // and has changed and we want to push
-                    Ok(Some(Job::push(
-                        vid,
-                        snapshots.take_remote(),
-                        snapshots.take_sync(),
-                        snapshots.take_local().expect(
-                            "local snapshot should not be missing when sync snapshot != local snapshot",
-                        ),
-                    )))
+                let has_pending_commits = state.has_pending_commits();
+                if can_push && has_pending_commits && sync.matches(SyncDirection::Push) {
+                    Ok(Some(Job::push(state)))
                 } else if can_pull && sync.matches(SyncDirection::Pull) {
-                    // generate a pull job if the volume is configured for pull
-                    // and we want to pull
-                    Ok(Some(Job::pull(vid, snapshots.take_remote())))
+                    Ok(Some(Job::pull(state)))
                 } else {
                     Ok(None)
                 }

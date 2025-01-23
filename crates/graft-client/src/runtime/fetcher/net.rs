@@ -29,7 +29,7 @@ impl Fetcher for NetFetcher {
         if let Some(snapshot) = self.clients.metastore().snapshot(vid, None)? {
             let changed = Splinter::default().serialize_to_splinter_ref();
             storage
-                .receive_remote_commit(vid, snapshot.into(), changed)
+                .receive_remote_commit(vid, snapshot, changed)
                 .or_into_ctx()?;
         }
         Ok(())
@@ -39,23 +39,23 @@ impl Fetcher for NetFetcher {
         &self,
         storage: &Storage,
         vid: &VolumeId,
-        local: &Snapshot,
-        remote: &Snapshot,
+        snapshot: &Snapshot,
         offset: PageOffset,
     ) -> Result<Page, ClientErr> {
-        let offsets = Splinter::from_iter([offset]).serialize_to_bytes();
-        let pages = self
-            .clients
-            .pagestore()
-            .read_pages(vid, remote.lsn(), offsets)?;
-        if pages.is_empty() {
+        if let Some(remote) = snapshot.remote() {
+            let offsets = Splinter::from_iter([offset]).serialize_to_bytes();
+            let pages = self.clients.pagestore().read_pages(vid, remote, offsets)?;
+            if pages.is_empty() {
+                return Ok(EMPTY_PAGE);
+            }
+            let page = pages[0].clone();
+            assert!(page.offset() == offset, "received page at wrong offset");
+            storage
+                .receive_pages(vid, snapshot.local(), pages)
+                .or_into_ctx()?;
+            Ok(page.page().expect("page has invalid size"))
+        } else {
             return Ok(EMPTY_PAGE);
         }
-        let page = pages[0].clone();
-        assert!(page.offset() == offset, "received page at wrong offset");
-        storage
-            .receive_pages(vid, local.lsn(), pages)
-            .or_into_ctx()?;
-        Ok(page.page().expect("page has invalid size"))
     }
 }

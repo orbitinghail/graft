@@ -1,6 +1,9 @@
+use culprit::{Culprit, ResultExt};
 use fjall::Slice;
 use graft_core::{lsn::LSN, VolumeId};
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, U64};
+
+use super::StorageErr;
 
 #[derive(Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, Unaligned)]
 #[repr(C)]
@@ -15,14 +18,19 @@ impl CommitKey {
         Self { vid, lsn: lsn.into() }
     }
 
+    #[track_caller]
+    pub(crate) fn ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
+        Ok(Self::try_ref_from_bytes(&bytes).or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
+    }
+
     #[inline]
     pub fn lsn(&self) -> LSN {
         self.lsn.try_into().expect("invalid LSN")
     }
 
     #[inline]
-    pub fn set_lsn(&mut self, lsn: LSN) {
-        self.lsn = lsn.into();
+    pub fn with_lsn(self, lsn: LSN) -> Self {
+        Self { lsn: lsn.into(), ..self }
     }
 }
 

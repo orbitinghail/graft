@@ -284,13 +284,29 @@ impl Iterator for LSNRangeIter {
 /// https://github.com/google/zerocopy/issues/2255 is resolved
 pub struct MaybeLSN(Option<NonZero<u64>>);
 
+impl MaybeLSN {
+    pub const EMPTY: Self = Self(None);
+
+    #[inline]
+    pub const fn some(lsn: LSN) -> Self {
+        Self(Some(lsn.0))
+    }
+
+    #[inline]
+    pub const fn none() -> Self {
+        Self(None)
+    }
+}
+
 impl From<MaybeLSN> for Option<LSN> {
+    #[inline]
     fn from(value: MaybeLSN) -> Self {
         value.0.map(LSN)
     }
 }
 
 impl From<Option<LSN>> for MaybeLSN {
+    #[inline]
     fn from(value: Option<LSN>) -> Self {
         Self(value.map(|lsn| lsn.0))
     }

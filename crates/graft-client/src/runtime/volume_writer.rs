@@ -1,10 +1,11 @@
 use culprit::{Result, ResultExt};
-use graft_core::{page::Page, page_offset::PageOffset};
+use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 
 use crate::ClientErr;
 
 use super::{
-    fetcher::Fetcher, snapshot::VolumeSnapshot, storage::memtable::Memtable,
+    fetcher::Fetcher,
+    storage::{memtable::Memtable, snapshot::Snapshot},
     volume_reader::VolumeReader,
 };
 
@@ -21,9 +22,14 @@ impl<F> From<VolumeReader<F>> for VolumeWriter<F> {
 }
 
 impl<F: Fetcher> VolumeWriter<F> {
+    #[inline]
+    pub fn vid(&self) -> &VolumeId {
+        self.reader.vid()
+    }
+
     /// Access this writer's snapshot
     #[inline]
-    pub fn snapshot(&self) -> &VolumeSnapshot {
+    pub fn snapshot(&self) -> &Snapshot {
         self.reader.snapshot()
     }
 
@@ -42,15 +48,11 @@ impl<F: Fetcher> VolumeWriter<F> {
 
     /// Commit the transaction
     pub fn commit(self) -> Result<VolumeReader<F>, ClientErr> {
-        let (snapshot, shared) = self.reader.into_parts();
-        let local = shared
+        let (vid, snapshot, shared) = self.reader.into_parts();
+        let snapshot = shared
             .storage()
-            .commit(
-                snapshot.vid(),
-                Some(snapshot.local().clone()),
-                self.memtable,
-            )
+            .commit(&vid, Some(snapshot), self.memtable)
             .or_into_ctx()?;
-        Ok(VolumeReader::new(snapshot.with_local(local), shared))
+        Ok(VolumeReader::new(vid, snapshot, shared))
     }
 }

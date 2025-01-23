@@ -16,13 +16,11 @@ pub trait Fetcher: Send + Sync + 'static {
     fn pull_snapshot(&self, storage: &Storage, vid: &VolumeId) -> Result<(), ClientErr>;
 
     /// Fetch a specific page, update storage, and return it.
-    /// Snapshot refers to a valid remote Snapshot.
     fn fetch_page(
         &self,
         storage: &Storage,
         vid: &VolumeId,
-        local: &Snapshot,
-        remote: &Snapshot,
+        snapshot: &Snapshot,
         offset: PageOffset,
     ) -> Result<Page, ClientErr>;
 }

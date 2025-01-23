@@ -9,7 +9,6 @@ pub mod runtime {
     pub mod fetcher;
     pub mod runtime;
     mod shared;
-    pub mod snapshot;
     pub mod storage;
     pub mod sync;
     pub mod volume;

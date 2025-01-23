@@ -26,6 +26,8 @@ use zerocopy::BE;
 
 use zerocopy::U32;
 
+use super::StorageErr;
+
 #[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned)]
 #[repr(C)]
 pub struct PageKey {
@@ -44,9 +46,14 @@ impl PageKey {
         }
     }
 
+    #[track_caller]
+    pub(crate) fn ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
+        Ok(Self::try_ref_from_bytes(&bytes).or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
+    }
+
     #[inline]
-    pub fn set_offset(&mut self, offset: PageOffset) {
-        self.offset = offset.into();
+    pub fn with_offset(self, offset: PageOffset) -> Self {
+        Self { offset: offset.into(), ..self }
     }
 
     pub fn lsn(&self) -> LSN {

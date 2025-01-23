@@ -2,13 +2,12 @@ use crossbeam::channel::{bounded, Sender};
 use culprit::{Result, ResultExt};
 use graft_core::VolumeId;
 
-use crate::{runtime::storage::snapshot::SnapshotKindMask, ClientErr};
+use crate::ClientErr;
 
 use super::{
     fetcher::Fetcher,
     shared::Shared,
-    snapshot::VolumeSnapshot,
-    storage::{snapshot::SnapshotKind, volume_config::SyncDirection},
+    storage::{snapshot::Snapshot, volume_state::SyncDirection},
     sync::SyncControl,
     volume_reader::VolumeReader,
     volume_writer::VolumeWriter,
@@ -31,30 +30,27 @@ impl<F: Fetcher> VolumeHandle<F> {
     }
 
     /// Retrieve the latest snapshot for the volume
-    pub fn snapshot(&self) -> Result<VolumeSnapshot, ClientErr> {
-        let mask = SnapshotKindMask::default()
-            .with(SnapshotKind::Local)
-            .with(SnapshotKind::Remote);
-        let mut set = self
+    pub fn snapshot(&self) -> Result<Snapshot, ClientErr> {
+        Ok(self
             .shared
             .storage()
-            .snapshots(&self.vid, mask)
-            .or_into_ctx()?;
-        Ok(VolumeSnapshot::new(
-            self.vid.clone(),
-            set.take_local().expect("local snapshot missing"),
-            set.take_remote(),
-        ))
+            .snapshot(&self.vid)
+            .or_into_ctx()?
+            .expect("snapshot missing"))
     }
 
     /// Open a VolumeReader at the latest snapshot
     pub fn reader(&self) -> Result<VolumeReader<F>, ClientErr> {
-        Ok(VolumeReader::new(self.snapshot()?, self.shared.clone()))
+        Ok(VolumeReader::new(
+            self.vid.clone(),
+            self.snapshot()?,
+            self.shared.clone(),
+        ))
     }
 
     /// Open a VolumeReader at the provided snapshot
-    pub fn reader_at(&self, snapshot: VolumeSnapshot) -> VolumeReader<F> {
-        VolumeReader::new(snapshot, self.shared.clone())
+    pub fn reader_at(&self, snapshot: Snapshot) -> VolumeReader<F> {
+        VolumeReader::new(self.vid.clone(), snapshot, self.shared.clone())
     }
 
     /// Open a VolumeWriter at the latest snapshot
@@ -63,7 +59,7 @@ impl<F: Fetcher> VolumeHandle<F> {
     }
 
     /// Open a VolumeWriter at the provided snapshot
-    pub fn writer_at(&self, snapshot: VolumeSnapshot) -> VolumeWriter<F> {
+    pub fn writer_at(&self, snapshot: Snapshot) -> VolumeWriter<F> {
         VolumeWriter::from(self.reader_at(snapshot))
     }
 

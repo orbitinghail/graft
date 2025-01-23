@@ -4,12 +4,12 @@ use std::time::Duration;
 
 use graft_core::VolumeId;
 
-use crate::{runtime::storage::volume_config::SyncDirection, ClientErr, ClientPair};
+use crate::{runtime::storage::volume_state::SyncDirection, ClientErr, ClientPair};
 
 use super::{
     fetcher::Fetcher,
     shared::Shared,
-    storage::{snapshot::SnapshotKind, volume_config::VolumeConfig, Storage},
+    storage::{volume_state::VolumeConfig, Storage},
     sync::{SyncControl, SyncTask, SyncTaskHandle},
     volume::VolumeHandle,
 };
@@ -61,11 +61,7 @@ impl<F: Fetcher> Runtime<F> {
         }
 
         // if no local snapshot exists, create an empty one
-        if storage
-            .snapshot(&vid, SnapshotKind::Local)
-            .or_into_ctx()?
-            .is_none()
-        {
+        if storage.snapshot(&vid).or_into_ctx()?.is_none() {
             storage
                 .commit(&vid, None, Default::default())
                 .or_into_ctx()?;
@@ -117,8 +113,8 @@ mod tests {
 
         // verify the snapshot
         let snapshot = reader.snapshot();
-        assert_eq!(snapshot.local().lsn(), 2);
-        assert_eq!(snapshot.local().pages(), 1);
+        assert_eq!(snapshot.local(), 2);
+        assert_eq!(snapshot.pages(), 1);
 
         // open a new writer, verify it can read the page; write another page
         let mut writer = handle.writer().unwrap();
@@ -133,8 +129,8 @@ mod tests {
 
         // verify the snapshot
         let snapshot = reader.snapshot();
-        assert_eq!(snapshot.local().lsn(), 3);
-        assert_eq!(snapshot.local().pages(), 2);
+        assert_eq!(snapshot.local(), 3);
+        assert_eq!(snapshot.pages(), 2);
 
         // upgrade to a writer and overwrite the first page
         let mut writer = reader.upgrade();
@@ -147,8 +143,8 @@ mod tests {
 
         // verify the snapshot
         let snapshot = reader.snapshot();
-        assert_eq!(snapshot.local().lsn(), 4);
-        assert_eq!(snapshot.local().pages(), 2);
+        assert_eq!(snapshot.local(), 4);
+        assert_eq!(snapshot.pages(), 2);
     }
 
     #[test]

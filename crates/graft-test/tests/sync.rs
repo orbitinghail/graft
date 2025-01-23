@@ -4,7 +4,7 @@ use graft_client::runtime::{
     fetcher::NetFetcher,
     runtime::Runtime,
     storage::{
-        volume_config::{SyncDirection, VolumeConfig},
+        volume_state::{SyncDirection, VolumeConfig},
         Storage,
     },
 };
@@ -58,8 +58,8 @@ fn test_client_sync_sanity() {
 
         let snapshot = handle2.snapshot().unwrap();
         tracing::info!("received remote snapshot: {snapshot:?}");
-        assert_eq!(snapshot.local().lsn(), i + 1);
-        assert_eq!(snapshot.local().pages(), 1);
+        assert_eq!(snapshot.local(), i + 1);
+        assert_eq!(snapshot.pages(), 1);
 
         let reader = handle2.reader_at(snapshot);
         let received = reader.read(offset).unwrap();

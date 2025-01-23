@@ -1,4 +1,11 @@
-use std::{collections::HashSet, fmt::Debug, io, ops::RangeBounds, path::Path, sync::Arc};
+use std::{
+    collections::HashSet,
+    fmt::Debug,
+    io,
+    ops::{RangeBounds, RangeInclusive},
+    path::Path,
+    sync::Arc,
+};
 
 use bytes::Bytes;
 use changeset::ChangeSet;
@@ -17,18 +24,21 @@ use graft_proto::pagestore::v1::PageAtOffset;
 use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
 use parking_lot::Mutex;
-use snapshot::{Snapshot, SnapshotKey, SnapshotKind, SnapshotKindMask, SnapshotSet};
+use snapshot::Snapshot;
 use splinter::{DecodeErr, Splinter, SplinterRef};
 use tryiter::{TryIterator, TryIteratorExt};
-use volume_config::{SyncDirection, VolumeConfig};
-use zerocopy::{IntoBytes, TryFromBytes};
+use volume_state::{
+    SyncDirection, VolumeConfig, VolumeQueryIter, VolumeState, VolumeStateKey, VolumeStateTag,
+    Watermarks,
+};
+use zerocopy::IntoBytes;
 
 pub mod changeset;
 pub(crate) mod commit;
 pub(crate) mod memtable;
 pub(crate) mod page;
 pub mod snapshot;
-pub mod volume_config;
+pub mod volume_state;
 
 type Result<T> = std::result::Result<T, Culprit<StorageErr>>;
 
@@ -49,6 +59,9 @@ pub enum StorageErr {
     #[error("Corrupt volume config: {0}")]
     CorruptVolumeConfig(ZerocopyErr),
 
+    #[error("Volume state {0:?} is corrupt: {1}")]
+    CorruptVolumeState(VolumeStateTag, ZerocopyErr),
+
     #[error("Corrupt page: {0}")]
     CorruptPage(#[from] PageValueConversionErr),
 
@@ -57,6 +70,14 @@ pub enum StorageErr {
 
     #[error("Illegal concurrent write to volume")]
     ConcurrentWrite,
+
+    #[error("Volume needs recovery")]
+    VolumeNeedsRecovery,
+
+    #[error(
+        "The local Volume state is ahead of the remote state, refusing to accept remote changes"
+    )]
+    RemoteConflict,
 }
 
 impl From<io::Error> for StorageErr {
@@ -74,16 +95,13 @@ impl From<lsm_tree::Error> for StorageErr {
 pub struct Storage {
     keyspace: fjall::Keyspace,
 
-    /// Used to store volume state broken out by prefix.
+    /// Used to store volume state broken out by tag.
+    /// Keyed by VolumeStateKey.
     ///
-    /// config/{vid} -> VolumeConfig
-    /// snapshot/{vid} -> Snapshot
-    /// watermarks/{vid} -> Watermarks
+    /// {vid}/VolumeStateTag::Config -> VolumeConfig
+    /// {vid}/VolumeStateTag::Snapshot -> Snapshot
+    /// {vid}/VolumeStateTag::Watermarks -> Watermarks
     volumes: fjall::Partition,
-
-    /// Used to store volume snapshots
-    /// maps from (VolumeId, SnapshotKind) to Snapshot
-    snapshots: fjall::Partition,
 
     /// Used to store page contents
     /// maps from (VolumeId, Offset, LSN) to PageValue
@@ -115,7 +133,6 @@ impl Storage {
     pub fn open_config(config: fjall::Config) -> Result<Self> {
         let keyspace = config.open()?;
         let volumes = keyspace.open_partition("volumes", Default::default())?;
-        let snapshots = keyspace.open_partition("snapshots", Default::default())?;
         let pages = keyspace.open_partition(
             "pages",
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
@@ -127,7 +144,6 @@ impl Storage {
         Ok(Storage {
             keyspace,
             volumes,
-            snapshots,
             pages,
             commits,
             commit_lock: Default::default(),
@@ -151,52 +167,42 @@ impl Storage {
     /// Add a new volume to the storage. This function will overwrite any
     /// existing configuration for the volume.
     pub fn set_volume_config(&self, vid: &VolumeId, config: VolumeConfig) -> Result<()> {
-        Ok(self.volumes.insert(vid.as_bytes(), config)?)
+        let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Config);
+        Ok(self.volumes.insert(key, config)?)
+    }
+
+    pub fn volume_state(&self, vid: &VolumeId) -> Result<VolumeState> {
+        let mut state = VolumeState::new(vid.clone());
+        let mut iter = self.volumes.snapshot().prefix(vid);
+        while let Some((key, value)) = iter.try_next()? {
+            let key = VolumeStateKey::ref_from_bytes(&key)?;
+            debug_assert_eq!(key.vid(), vid, "vid mismatch");
+            state.accumulate(key.tag(), value)?;
+        }
+        Ok(state)
+    }
+
+    pub fn snapshot(&self, vid: &VolumeId) -> Result<Option<Snapshot>> {
+        let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot);
+        if let Some(snapshot) = self.volumes.get(key)? {
+            Ok(Some(Snapshot::from_bytes(&snapshot)?))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn query_volumes(
         &self,
         sync: SyncDirection,
-        kind_mask: SnapshotKindMask,
         vids: Option<HashSet<VolumeId>>,
-    ) -> impl TryIterator<Ok = (VolumeId, VolumeConfig, SnapshotSet), Err = Culprit<StorageErr>> + '_
-    {
-        let seqno = self.keyspace.instant();
-        let volumes = self.volumes.snapshot_at(seqno).iter().err_into();
-
-        volumes.try_filter_map(move |(vid, config)| {
-            let vid = VolumeId::try_read_from_bytes(&vid)
-                .map_err(|e| StorageErr::CorruptKey(e.into()))?;
-            let config = VolumeConfig::try_read_from_bytes(&config)
-                .map_err(|e| StorageErr::CorruptVolumeConfig(e.into()))?;
-            let matches_vid = vids.as_ref().map_or(true, |set| set.contains(&vid));
-            if matches_vid && sync.matches(config.sync()) {
-                let set = self.snapshots_with_seqno(seqno, &vid, kind_mask)?;
-                Ok(Some((vid, config, set)))
-            } else {
-                Ok(None)
-            }
+    ) -> impl TryIterator<Ok = VolumeState, Err = Culprit<StorageErr>> {
+        let iter = self.volumes.snapshot().iter().err_into();
+        let iter = VolumeQueryIter::new(iter);
+        iter.try_filter(move |state| {
+            let matches_vid = vids.as_ref().map_or(true, |s| s.contains(state.vid()));
+            let matches_dir = state.config().sync().matches(sync);
+            Ok(matches_vid && matches_dir)
         })
-    }
-
-    pub fn query_commits(
-        &self,
-        vid: &VolumeId,
-        lsns: impl RangeBounds<LSN>,
-    ) -> impl TryIterator<Ok = (LSN, SplinterRef<Slice>), Err = Culprit<StorageErr>> + '_ {
-        let start = CommitKey::new(vid.clone(), lsns.try_start().unwrap_or(LSN::FIRST));
-        let end = CommitKey::new(vid.clone(), lsns.try_end().unwrap_or(LSN::FIRST));
-        self.commits
-            .snapshot()
-            .range(start..=end)
-            .err_into()
-            .map_ok(|(k, v)| {
-                let lsn = CommitKey::try_ref_from_bytes(&k)
-                    .map_err(|e| StorageErr::CorruptKey(e.into()))?
-                    .lsn();
-                let splinter = SplinterRef::from_bytes(v).or_into_ctx()?;
-                Ok((lsn, splinter))
-            })
     }
 
     /// Returns an iterator of PageValue's at an exact LSN for a volume.
@@ -227,54 +233,6 @@ impl Storage {
             })
     }
 
-    pub fn snapshots(&self, vid: &VolumeId, kind_mask: SnapshotKindMask) -> Result<SnapshotSet> {
-        let seqno = self.keyspace.instant();
-        self.snapshots_with_seqno(seqno, vid, kind_mask)
-    }
-
-    fn snapshots_with_seqno(
-        &self,
-        seqno: u64,
-        vid: &VolumeId,
-        kind_mask: SnapshotKindMask,
-    ) -> Result<SnapshotSet> {
-        let mut snapshots = self
-            .snapshots
-            .snapshot_at(seqno)
-            .prefix(vid)
-            .err_into::<StorageErr>()
-            .try_filter_map(move |(k, v)| {
-                let key = SnapshotKey::try_read_from_bytes(&k)
-                    .map_err(|e| StorageErr::CorruptKey(e.into()))?;
-                if kind_mask.contains(key.kind()) {
-                    let val = Snapshot::try_read_from_bytes(&v)
-                        .map_err(|e| StorageErr::CorruptSnapshot(e.into()))?;
-                    Ok(Some((key, val)))
-                } else {
-                    Ok(None)
-                }
-            });
-
-        let mut set = SnapshotSet::default();
-        while let Some((key, snapshot)) = snapshots.try_next()? {
-            assert_eq!(key.vid(), vid);
-            set.insert(key.kind(), snapshot);
-        }
-        Ok(set)
-    }
-
-    pub fn snapshot(&self, vid: &VolumeId, kind: SnapshotKind) -> Result<Option<Snapshot>> {
-        let key = snapshot::SnapshotKey::new(vid.clone(), kind);
-        if let Some(snapshot) = self.snapshots.get(key)? {
-            Ok(Some(
-                Snapshot::try_read_from_bytes(&snapshot)
-                    .map_err(|e| StorageErr::CorruptSnapshot(e.into()))?,
-            ))
-        } else {
-            Ok(None)
-        }
-    }
-
     /// Returns the most recent visible page in a volume by LSN at a particular
     /// offset. Notably, this will return a page from an earlier LSN if the page
     /// hasn't changed since then.
@@ -286,9 +244,7 @@ impl Storage {
         // Search for the latest page between LSN(0) and the requested LSN,
         // returning PageValue::Pending if none found.
         if let Some((key, page)) = self.pages.snapshot().range(range).next_back().transpose()? {
-            let lsn = PageKey::try_ref_from_bytes(&key)
-                .or_ctx(|e| StorageErr::CorruptKey(e.into()))?
-                .lsn();
+            let lsn = PageKey::ref_from_bytes(&key)?.lsn();
             let bytes: Bytes = page.into();
             Ok((lsn, PageValue::try_from(bytes).or_into_ctx()?))
         } else {
@@ -304,29 +260,30 @@ impl Storage {
     ) -> Result<Snapshot> {
         let mut batch = self.keyspace.batch();
         let mut pages = snapshot.as_ref().map_or(PageCount::ZERO, |s| s.pages());
-        let read_lsn = snapshot.map(|s| s.lsn());
+        let read_lsn = snapshot.as_ref().map(|s| s.local());
+        let remote_lsn = snapshot.and_then(|s| s.remote());
         let commit_lsn = read_lsn
             .map(|lsn| lsn.next().expect("lsn overflow"))
             .unwrap_or(LSN::FIRST);
 
-        // construct a changed offsets splinter
+        // this Splinter will contain all of the offsets this commit changed
         let mut offsets = Splinter::default();
 
-        // write out the memtable
+        // persist the memtable
         let mut page_key = PageKey::new(vid.clone(), PageOffset::ZERO, commit_lsn);
         for (offset, page) in memtable {
-            page_key.set_offset(offset);
+            page_key = page_key.with_offset(offset);
             pages = pages.max(offset.pages());
             offsets.insert(offset.into());
             batch.insert(&self.pages, page_key.as_bytes(), PageValue::from(page));
         }
 
-        // write out a new volume snapshot
-        let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Local);
-        let snapshot = Snapshot::new(commit_lsn, pages);
-        batch.insert(&self.snapshots, snapshot_key, snapshot.as_bytes());
+        // persist the new volume snapshot
+        let snapshot_key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot);
+        let snapshot = Snapshot::new(commit_lsn, remote_lsn, pages);
+        batch.insert(&self.volumes, snapshot_key, snapshot.as_bytes());
 
-        // write out a new commit
+        // persist the new commit
         let commit_key = CommitKey::new(vid.clone(), commit_lsn);
         batch.insert(&self.commits, commit_key, offsets.serialize_to_bytes());
 
@@ -335,8 +292,11 @@ impl Storage {
 
         // check to see if the read snapshot is the latest local snapshot while
         // holding the commit lock
-        let latest = self.snapshot(vid, SnapshotKind::Local)?;
-        if latest.map(|l| l.lsn()) != read_lsn {
+        let latest = self.snapshot(vid)?;
+        if latest.map(|l| l.local()) != read_lsn {
+            #[cfg(feature = "antithesis")]
+            antithesis_sdk::assert_reachable!("concurrent write to volume");
+
             return Err(Culprit::new_with_note(
                 StorageErr::ConcurrentWrite,
                 format!("Illegal concurrent write to Volume {vid}"),
@@ -357,52 +317,80 @@ impl Storage {
     pub fn receive_remote_commit(
         &self,
         vid: &VolumeId,
-        snapshot: Snapshot,
+        remote_snapshot: graft_proto::Snapshot,
         changed: SplinterRef<Bytes>,
     ) -> Result<()> {
         log::trace!(
             "volume {:?} received remote commit with snapshot {:?}",
             vid,
-            snapshot
+            remote_snapshot
         );
 
-        // acquire the commit lock
-        // TODO: reduce the scope of this lock
+        // acquire the commit lock and start a new batch
         let _permit = self.commit_lock.lock();
-
         let mut batch = self.keyspace.batch();
 
-        // update the remote snapshot for the volume
-        let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Remote);
-        batch.insert(&self.snapshots, snapshot_key, snapshot.as_ref());
+        // retrieve the current volume state
+        let state = self.volume_state(vid)?;
+        let snapshot = state.snapshot();
+        let watermarks = state.watermarks();
 
-        // compute the next local LSN
-        let local_lsn = self
-            .snapshot(&vid, SnapshotKind::Local)?
-            .map_or(LSN::FIRST, |s| s.lsn().next().expect("lsn overflow"));
+        // ensure that we can accept this remote commit
+        if state.needs_recovery() {
+            #[cfg(feature = "antithesis")]
+            antithesis_sdk::assert_reachable!(
+                "volume needs recovery",
+                &serde_json::json!({ "vid": vid, "state": state })
+            );
 
-        // write out a local snapshot for the volume
-        let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Local);
+            return Err(Culprit::new_with_note(
+                StorageErr::VolumeNeedsRecovery,
+                format!("Volume {vid} needs recovery"),
+            ));
+        }
+        if state.has_pending_commits() {
+            #[cfg(feature = "antithesis")]
+            antithesis_sdk::assert_reachable!(
+                "volume has pending commits while receiving remote commit",
+                &serde_json::json!({ "vid": vid, "state": state })
+            );
+
+            return Err(Culprit::new_with_note(
+                StorageErr::RemoteConflict,
+                format!("Volume {vid} has pending commits, refusing to accept remote changes"),
+            ));
+        }
+
+        // resolve the remote lsn
+        let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
+        let remote_pages = remote_snapshot.pages();
+
+        // compute the next local lsn
+        let local_lsn = snapshot.local().next().expect("lsn overflow");
+
+        // persist the new volume snapshot
         batch.insert(
-            &self.snapshots,
-            snapshot_key,
-            Snapshot::new(local_lsn, snapshot.pages()),
+            &self.volumes,
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
+            Snapshot::new(local_lsn, Some(remote_lsn), remote_pages),
         );
 
-        // set the sync snapshot so we don't roundtrip this commit back to the
-        // server
-        let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Sync);
+        // fast forward the sync watermarks to ensure we don't roundtrip this
+        // commit back to the server
         batch.insert(
-            &self.snapshots,
-            snapshot_key,
-            Snapshot::new(local_lsn, snapshot.pages()),
+            &self.volumes,
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
+            watermarks
+                .clone()
+                .with_last_sync(local_lsn)
+                .with_pending_sync(local_lsn),
         );
 
         // mark changed pages
         let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, local_lsn);
         let pending = Bytes::from(PageValue::Pending);
         for offset in changed.iter() {
-            key.set_offset(offset.into());
+            key = key.with_offset(offset.into());
             batch.insert(&self.pages, key.as_ref(), pending.as_ref());
         }
 
@@ -419,7 +407,7 @@ impl Storage {
         let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, lsn);
         let mut batch = self.keyspace.batch();
         for page in pages {
-            key.set_offset(page.offset());
+            key = key.with_offset(page.offset());
             batch.insert(
                 &self.pages,
                 key.as_ref(),
@@ -429,38 +417,134 @@ impl Storage {
         Ok(batch.commit()?)
     }
 
-    /// Complete a sync operation by updating the remote snapshot for the volume
-    /// and removing all synced commits.
-    pub fn complete_sync(
+    /// Prepare to sync a volume to the remote.
+    /// Returns:
+    /// - the volume snapshot
+    /// - the range of LSNs to sync
+    /// - an iterator of commits to sync
+    pub fn prepare_sync_to_remote(
         &self,
         vid: &VolumeId,
-        remote_snapshot: Snapshot,
+    ) -> Result<(
+        Snapshot,
+        RangeInclusive<LSN>,
+        impl TryIterator<Ok = (LSN, SplinterRef<Slice>), Err = Culprit<StorageErr>>,
+    )> {
+        // acquire the commit lock
+        let _permit = self.commit_lock.lock();
+
+        // retrieve the current volume state
+        let state = self.volume_state(vid)?;
+
+        // fail if the volume needs recovery
+        if state.needs_recovery() {
+            #[cfg(feature = "antithesis")]
+            antithesis_sdk::assert_reachable!(
+                "volume needs recovery",
+                &serde_json::json!({ "vid": vid, "state": state })
+            );
+            return Err(Culprit::new_with_note(
+                StorageErr::VolumeNeedsRecovery,
+                format!("Volume {vid} needs recovery"),
+            ));
+        }
+
+        // update pending_sync to the local LSN
+        self.volumes.insert(
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
+            state
+                .watermarks()
+                .clone()
+                .with_pending_sync(state.snapshot().local()),
+        )?;
+
+        // create a commit iterator
+        let lsns = state.watermarks().last_sync().unwrap_or(LSN::FIRST)..=state.snapshot().local();
+        let commit_start = CommitKey::new(vid.clone(), *lsns.start());
+        let commit_end = CommitKey::new(vid.clone(), *lsns.end());
+        let mut cursor = commit_start.lsn();
+        let commits = self
+            .commits
+            .snapshot()
+            .range(commit_start..=commit_end)
+            .err_into()
+            .map_ok(move |(k, v)| {
+                let lsn = CommitKey::ref_from_bytes(&k)?.lsn();
+
+                // detect missing commits
+                assert_eq!(lsn, cursor, "missing commit detected");
+                cursor = lsn;
+
+                let splinter = SplinterRef::from_bytes(v).or_into_ctx()?;
+                Ok((lsn, splinter))
+            });
+
+        Ok((state.snapshot().clone(), lsns, commits))
+    }
+
+    /// Rollback a failed push operation by setting Watermarks::pending_sync to
+    /// Watermarks::last_sync
+    pub fn rollback_sync_to_remote(&self, vid: &VolumeId) -> Result<()> {
+        // acquire the commit lock
+        let _permit = self.commit_lock.lock();
+
+        let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks);
+        let watermarks = match self.volumes.get(&key)? {
+            Some(watermarks) => Watermarks::from_bytes(&watermarks)?,
+            None => Watermarks::default(),
+        };
+        self.volumes
+            .insert(key, watermarks.rollback_pending_sync())?;
+        Ok(())
+    }
+
+    /// Complete a push operation by updating the volume snapshot, updating
+    /// Watermarks::last_sync, and removing all synced commits.
+    pub fn complete_sync_to_remote(
+        &self,
+        vid: &VolumeId,
+        remote_snapshot: graft_proto::Snapshot,
         synced_lsns: impl RangeBounds<LSN>,
     ) -> Result<()> {
+        // acquire the commit lock and start a new batch
+        let _permit = self.commit_lock.lock();
         let mut batch = self.keyspace.batch();
 
-        // update the remote snapshot for the volume
-        let snapshot_key = SnapshotKey::new(vid.clone(), SnapshotKind::Remote);
-        batch.insert(&self.snapshots, snapshot_key, remote_snapshot.as_ref());
+        let state = self.volume_state(vid)?;
+
+        let local_lsn = state.snapshot().local();
+        let pages = state.snapshot().pages();
+        let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
+
+        // check invariants
+        assert_eq!(
+            pages,
+            remote_snapshot.pages(),
+            "remote page count changed after push"
+        );
+
+        // persist the updated remote LSN to the snapshot
+        batch.insert(
+            &self.volumes,
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
+            Snapshot::new(local_lsn, Some(remote_lsn), pages),
+        );
+
+        // commit the pending sync
+        batch.insert(
+            &self.volumes,
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
+            state.watermarks().clone().commit_pending_sync(),
+        );
 
         // remove all commits in the synced range
         let mut key = CommitKey::new(vid.clone(), LSN::FIRST);
         for lsn in synced_lsns.iter() {
-            key.set_lsn(lsn);
+            key = key.with_lsn(lsn);
             batch.remove(&self.commits, key.as_ref());
         }
 
         Ok(batch.commit()?)
-    }
-
-    pub fn set_snapshot(
-        &self,
-        vid: &VolumeId,
-        kind: SnapshotKind,
-        snapshot: Snapshot,
-    ) -> Result<()> {
-        let snapshot_key = SnapshotKey::new(vid.clone(), kind);
-        Ok(self.snapshots.insert(snapshot_key, snapshot)?)
     }
 }
 
@@ -505,23 +589,22 @@ mod tests {
 
         // ensure that we can query back out the snapshots
         let sync = SyncDirection::Both;
-        let mask = SnapshotKindMask::default().with(SnapshotKind::Local);
-        let mut iter = storage.query_volumes(sync, mask, None);
+        let mut iter = storage.query_volumes(sync, None);
 
         // check the first volume
-        let (vid, config, set) = iter.try_next().unwrap().unwrap();
-        assert_eq!(vid, vids[0]);
-        assert_eq!(config.sync(), SyncDirection::Pull);
-        let snapshot = set.local().unwrap();
-        assert_eq!(snapshot.lsn(), LSN::new(2));
+        let state = iter.try_next().unwrap().unwrap();
+        assert_eq!(state.vid(), &vids[0]);
+        assert_eq!(state.config().sync(), SyncDirection::Pull);
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.local(), LSN::new(2));
         assert_eq!(snapshot.pages(), 1);
 
         // check the second volume
-        let (vid, config, set) = iter.try_next().unwrap().unwrap();
-        assert_eq!(vid, vids[1]);
-        assert_eq!(config.sync(), SyncDirection::Push);
-        let snapshot = set.local().unwrap();
-        assert_eq!(snapshot.lsn(), LSN::new(1));
+        let state = iter.try_next().unwrap().unwrap();
+        assert_eq!(state.vid(), &vids[1]);
+        assert_eq!(state.config().sync(), SyncDirection::Push);
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.local(), LSN::new(1));
         assert_eq!(snapshot.pages(), 1);
 
         // iter is empty
@@ -529,15 +612,14 @@ mod tests {
 
         // verify that the sync direction filter works
         let sync = SyncDirection::Push;
-        let mask = SnapshotKindMask::default().with(SnapshotKind::Local);
-        let mut iter = storage.query_volumes(sync, mask, None);
+        let mut iter = storage.query_volumes(sync, None);
 
         // should be the second volume
-        let (vid, config, set) = iter.try_next().unwrap().unwrap();
-        assert_eq!(vid, vids[1]);
-        assert_eq!(config.sync(), SyncDirection::Push);
-        let snapshot = set.local().unwrap();
-        assert_eq!(snapshot.lsn(), LSN::new(1));
+        let state = iter.try_next().unwrap().unwrap();
+        assert_eq!(state.vid(), &vids[1]);
+        assert_eq!(state.config().sync(), SyncDirection::Push);
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.local(), LSN::new(1));
         assert_eq!(snapshot.pages(), 1);
 
         // iter is empty
@@ -545,13 +627,12 @@ mod tests {
 
         // verify that the volume id filter works
         let sync = SyncDirection::Both;
-        let mask = SnapshotKindMask::default().with(SnapshotKind::Local);
         let vid_set = HashSet::from_iter([vids[0].clone()]);
-        let mut iter = storage.query_volumes(sync, mask, Some(vid_set));
+        let mut iter = storage.query_volumes(sync, Some(vid_set));
 
         // should be the first volume
-        let (vid, _, _) = iter.try_next().unwrap().unwrap();
-        assert_eq!(vid, vids[0]);
+        let state = iter.try_next().unwrap().unwrap();
+        assert_eq!(state.vid(), &vids[0]);
 
         // iter is empty
         assert!(iter.next().is_none());

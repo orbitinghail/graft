@@ -1,8 +1,5 @@
 Todo:
-- switch to watermarks/snapshots system in storage
-  - remove VolumeSnapshot type
-- build out the new sync system
-- minimize and audit storage commit lock
+- fix bugs in new sync code
 
 Next: Client Runtime
 - sync recovery

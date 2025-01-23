@@ -24,8 +24,7 @@ impl Fetcher for MockFetcher {
         &self,
         _storage: &Storage,
         _vid: &VolumeId,
-        _local: &Snapshot,
-        _remote: &Snapshot,
+        _snapshot: &Snapshot,
         _offset: PageOffset,
     ) -> Result<page::Page, ClientErr> {
         Ok(EMPTY_PAGE)
