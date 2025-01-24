@@ -5,7 +5,10 @@ use graft_core::{
     VolumeId,
 };
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, iter::FusedIterator};
+use std::{
+    fmt::{Debug, Display},
+    iter::FusedIterator,
+};
 use tryiter::TryIteratorExt;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
@@ -17,8 +20,9 @@ use super::{snapshot::Snapshot, StorageErr};
 #[repr(u8)]
 pub enum VolumeStateTag {
     Config = 1,
-    Snapshot = 2,
-    Watermarks = 3,
+    Status = 2,
+    Snapshot = 3,
+    Watermarks = 4,
 }
 
 #[derive(
@@ -140,6 +144,60 @@ impl Into<Slice> for VolumeConfig {
 }
 
 #[derive(
+    KnownLayout,
+    Immutable,
+    TryFromBytes,
+    IntoBytes,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+    Serialize,
+    Default,
+)]
+#[repr(u8)]
+pub enum VolumeStatus {
+    #[default]
+    Ok = 0,
+
+    /// The last commit graft attempted to push to the server was rejected
+    RejectedCommit = 1,
+
+    /// The local and remote volume state have diverged
+    Conflict = 2,
+}
+
+impl VolumeStatus {
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, Culprit<StorageErr>> {
+        Ok(Self::try_read_from_bytes(&bytes)
+            .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Status, e.into()))?)
+    }
+}
+
+impl AsRef<[u8]> for VolumeStatus {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl Into<Slice> for VolumeStatus {
+    fn into(self) -> Slice {
+        self.as_bytes().into()
+    }
+}
+
+impl Display for VolumeStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VolumeStatus::Ok => write!(f, "ok"),
+            VolumeStatus::RejectedCommit => write!(f, "rejected commit"),
+            VolumeStatus::Conflict => write!(f, "conflict"),
+        }
+    }
+}
+
+#[derive(
     Debug,
     KnownLayout,
     Immutable,
@@ -154,8 +212,14 @@ impl Into<Slice> for VolumeConfig {
 )]
 #[repr(C)]
 pub struct Watermarks {
+    /// last_sync is the last local LSN that successfully synced with the server
     last_sync: MaybeLSN,
+
+    /// pending_sync is a local LSN that is in the process of syncing to the server
+    /// when pending_sync > last_sync it means that we are actively syncing (last_sync..=pending_sync)
     pending_sync: MaybeLSN,
+
+    /// checkpoint is the last local LSN that represents a volume checkpoint
     checkpoint: MaybeLSN,
 }
 
@@ -233,6 +297,7 @@ impl From<Watermarks> for Slice {
 pub struct VolumeState {
     vid: VolumeId,
     config: Option<VolumeConfig>,
+    status: Option<VolumeStatus>,
     snapshot: Option<Snapshot>,
     watermarks: Option<Watermarks>,
 }
@@ -242,6 +307,7 @@ impl VolumeState {
         Self {
             vid,
             config: None,
+            status: None,
             snapshot: None,
             watermarks: None,
         }
@@ -265,6 +331,11 @@ impl VolumeState {
             "volume config should always be present; got {self:?}"
         );
         self.config.as_ref().unwrap_or(&VolumeConfig::DEFAULT)
+    }
+
+    #[inline]
+    pub fn status(&self) -> VolumeStatus {
+        self.status.unwrap_or(VolumeStatus::Ok)
     }
 
     #[inline]
@@ -305,6 +376,9 @@ impl VolumeState {
         match tag {
             VolumeStateTag::Config => {
                 self.config = Some(VolumeConfig::from_bytes(&value)?);
+            }
+            VolumeStateTag::Status => {
+                self.status = Some(VolumeStatus::from_bytes(&value)?);
             }
             VolumeStateTag::Snapshot => {
                 self.snapshot = Some(Snapshot::from_bytes(&value)?);

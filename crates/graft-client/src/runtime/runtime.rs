@@ -53,14 +53,15 @@ impl<F: Fetcher> Runtime<F> {
         config: VolumeConfig,
     ) -> Result<VolumeHandle<F>, ClientErr> {
         let storage = self.shared.storage();
-        if config.sync().matches(SyncDirection::Pull) {
+        let sync = config.sync();
+        storage.set_volume_config(&vid, config).or_into_ctx()?;
+
+        if sync.matches(SyncDirection::Pull) {
             self.shared
                 .fetcher()
                 .pull_snapshot(storage, vid)
                 .or_into_ctx()?;
         }
-
-        storage.set_volume_config(&vid, config).or_into_ctx()?;
 
         Ok(VolumeHandle::new(
             vid.clone(),

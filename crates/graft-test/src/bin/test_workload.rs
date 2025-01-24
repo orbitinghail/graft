@@ -9,10 +9,11 @@ use graft_client::{
         fetcher::NetFetcher,
         runtime::Runtime,
         storage::{
-            volume_state::{SyncDirection, VolumeConfig},
+            volume_state::{SyncDirection, VolumeConfig, VolumeStatus},
             Storage,
         },
         sync::ShutdownErr,
+        volume::VolumeHandle,
     },
     ClientBuildErr, ClientBuilder, ClientErr, ClientPair, MetastoreClient, PagestoreClient,
 };
@@ -104,16 +105,12 @@ impl Workload {
     }
 }
 
-/// This workload continuously writes and reads pages to a volume, verifying the
-/// contents of pages are always correct
-fn workload_writer(
+fn load_volume(
+    runtime: &Runtime<NetFetcher>,
+    vid: &VolumeId,
     worker_id: &str,
-    runtime: Runtime<NetFetcher>,
-    mut rng: impl Rng,
-    vid: VolumeId,
-    interval: Duration,
-    ticks: usize,
-) -> Result<(), Culprit<WorkloadErr>> {
+) -> Result<(VolumeHandle<NetFetcher>, PageTracker), Culprit<WorkloadErr>> {
+    // open the volume
     let handle = runtime
         .open_volume(&vid, VolumeConfig::new(SyncDirection::Push))
         .or_into_ctx()?;
@@ -125,12 +122,13 @@ fn workload_writer(
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
     let reader = handle.reader().or_into_ctx()?;
+    tracing::info!("loading page tracker at snapshot {:?}", reader.snapshot());
     let first_page = reader.read(0.into()).or_into_ctx()?;
-    let mut page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
+    let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
     // ensure the page tracker is only empty when we expect it to be
     assert_always_or_unreachable!(
-        page_tracker.is_empty() ^ reader.snapshot().is_none(),
+        page_tracker.is_empty() ^ reader.snapshot().is_some(),
         "page tracker should only be empty when the snapshot is missing",
         &json!({
             "snapshot": reader.snapshot(),
@@ -139,7 +137,30 @@ fn workload_writer(
         })
     );
 
+    tracing::info!("loaded page tracker with {} pages", page_tracker.len());
+
+    Ok((handle, page_tracker))
+}
+
+/// This workload continuously writes and reads pages to a volume, verifying the
+/// contents of pages are always correct
+fn workload_writer(
+    worker_id: &str,
+    runtime: Runtime<NetFetcher>,
+    mut rng: impl Rng,
+    vid: VolumeId,
+    interval: Duration,
+    ticks: usize,
+) -> Result<(), Culprit<WorkloadErr>> {
+    let (handle, mut page_tracker) = load_volume(&runtime, &vid, worker_id)?;
+
     for _ in 0..ticks {
+        // check the volume status to see if we need to reset
+        let status = handle.status().or_into_ctx()?;
+        if status != VolumeStatus::Ok {
+            tracing::warn!("volume has status {status}, resetting");
+        }
+
         // randomly pick a page offset and a page value.
         // select the next offset to ensure we don't pick the 0th page
         let offset = PageOffset::test_random(&mut rng, 16).next();

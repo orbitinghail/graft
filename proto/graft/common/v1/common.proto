@@ -12,6 +12,7 @@ enum GraftErrCode {
 
   // special cases
   GRAFT_ERR_CODE_SNAPSHOT_MISSING = 3;
+  GRAFT_ERR_CODE_COMMIT_REJECTED = 4;
 }
 
 message GraftErr {

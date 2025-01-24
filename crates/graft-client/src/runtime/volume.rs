@@ -7,7 +7,10 @@ use crate::ClientErr;
 use super::{
     fetcher::Fetcher,
     shared::Shared,
-    storage::{snapshot::Snapshot, volume_state::SyncDirection},
+    storage::{
+        snapshot::Snapshot,
+        volume_state::{SyncDirection, VolumeStatus},
+    },
     sync::SyncControl,
     volume_reader::VolumeReader,
     volume_writer::VolumeWriter,
@@ -27,6 +30,15 @@ impl<F: Fetcher> VolumeHandle<F> {
         sync_control: Option<Sender<SyncControl>>,
     ) -> Self {
         Self { vid, shared, sync_control }
+    }
+
+    /// Retrieve the current volume status
+    pub fn status(&self) -> Result<VolumeStatus, ClientErr> {
+        Ok(self
+            .shared
+            .storage()
+            .get_volume_status(&self.vid)
+            .or_into_ctx()?)
     }
 
     /// Retrieve the latest snapshot for the volume
@@ -78,12 +90,29 @@ impl<F: Fetcher> VolumeHandle<F> {
     /// has completed, returning any error that occurs.
     pub fn sync_with_remote(&self, direction: SyncDirection) -> Result<(), ClientErr> {
         let (tx, rx) = bounded(1);
+        self.control(SyncControl::Sync {
+            vid: self.vid.clone(),
+            direction,
+            complete: tx,
+        });
+        rx.recv()
+            .expect("sync control response channel disconnected")
+    }
+
+    /// Reset this volume to the remote. This will cause all pending commits to
+    /// be rolled back and the volume status to be cleared.
+    pub fn reset_to_remote(&self) -> Result<(), ClientErr> {
+        let (tx, rx) = bounded(1);
+        self.control(SyncControl::ResetToRemote { vid: self.vid.clone(), complete: tx });
+        rx.recv()
+            .expect("sync control response channel disconnected")
+    }
+
+    fn control(&self, msg: SyncControl) {
         self.sync_control
             .as_ref()
             .expect("sync control channel missing")
-            .send(SyncControl::new(self.vid.clone(), direction, tx))
+            .send(msg)
             .expect("sync control channel closed");
-        rx.recv()
-            .expect("sync control response channel disconnected")
     }
 }

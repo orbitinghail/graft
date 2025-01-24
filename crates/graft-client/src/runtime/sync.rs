@@ -29,20 +29,16 @@ pub enum ShutdownErr {
 }
 
 #[derive(Debug)]
-pub struct SyncControl {
-    vid: VolumeId,
-    direction: SyncDirection,
-    complete: Sender<Result<(), ClientErr>>,
-}
-
-impl SyncControl {
-    pub fn new(
+pub enum SyncControl {
+    Sync {
         vid: VolumeId,
         direction: SyncDirection,
         complete: Sender<Result<(), ClientErr>>,
-    ) -> Self {
-        Self { vid, direction, complete }
-    }
+    },
+    ResetToRemote {
+        vid: VolumeId,
+        complete: Sender<Result<(), ClientErr>>,
+    },
 }
 
 mod job;
@@ -124,10 +120,13 @@ impl<F: Fetcher> SyncTask<F> {
             control,
             shutdown_signal: shutdown_rx,
         };
-        SyncTaskHandle {
-            handle: thread::spawn(move || task.run()),
-            shutdown_signal: shutdown_tx,
-        }
+
+        let handle = thread::Builder::new()
+            .name("graft-sync".into())
+            .spawn(move || task.run())
+            .expect("failed to spawn sync task");
+
+        SyncTaskHandle { handle, shutdown_signal: shutdown_tx }
     }
 
     fn run(mut self) {
@@ -176,10 +175,17 @@ impl<F: Fetcher> SyncTask<F> {
     }
 
     fn handle_control(&mut self, msg: SyncControl) -> Result<(), ClientErr> {
-        let result = self.sync(msg.vid, msg.direction);
+        let (complete, result) = match msg {
+            SyncControl::Sync { vid, direction, complete } => {
+                (complete, self.sync_volume(vid, direction))
+            }
+            SyncControl::ResetToRemote { vid, complete } => {
+                (complete, self.reset_volume_to_remote(vid))
+            }
+        };
         // we try to send the error to the client first and then fallback to
         // reporting the error in the sync thread if the channel is disconnected
-        if let Err(err) = msg.complete.try_send(result) {
+        if let Err(err) = complete.try_send(result) {
             match err {
                 TrySendError::Full(err) => {
                     panic!("SyncControl completion channel should never be full! {err:?}",)
@@ -191,7 +197,7 @@ impl<F: Fetcher> SyncTask<F> {
     }
 
     /// Synchronously sync a volume with the remote
-    fn sync(&mut self, vid: VolumeId, dir: SyncDirection) -> Result<(), ClientErr> {
+    fn sync_volume(&mut self, vid: VolumeId, dir: SyncDirection) -> Result<(), ClientErr> {
         if dir.matches(SyncDirection::Pull) {
             Job::pull(vid.clone())
                 .run(self.shared.storage(), &self.clients)
@@ -207,8 +213,15 @@ impl<F: Fetcher> SyncTask<F> {
         Ok(())
     }
 
+    /// Reset the volume to the remote. This will cause all pending commits to
+    /// be rolled back and the volume status to be cleared.
+    fn reset_volume_to_remote(&mut self, vid: VolumeId) -> Result<(), ClientErr> {
+        Job::pull_and_reset(vid)
+            .run(self.shared.storage(), &self.clients)
+            .or_into_culprit("error while resetting volume to the remote")
+    }
+
     fn handle_tick(&mut self) -> Result<(), ClientErr> {
-        log::debug!("handle_tick");
         let mut jobs = self.jobs(SyncDirection::Both, None);
         while let Some(job) = jobs.try_next()? {
             job.run(self.shared.storage(), &self.clients)?;

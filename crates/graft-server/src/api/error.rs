@@ -111,7 +111,7 @@ impl IntoResponse for ApiErr {
             DuplicatePageOffset => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             SnapshotMissing => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
-            RejectedCommit => (StatusCode::CONFLICT, GraftErrCode::Client),
+            RejectedCommit => (StatusCode::CONFLICT, GraftErrCode::CommitRejected),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, GraftErrCode::Server),
         };
         let message = self.0.ctx().to_string();

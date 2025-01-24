@@ -19,7 +19,11 @@ pub enum Job {
 
 impl Job {
     pub fn pull(vid: VolumeId) -> Self {
-        Job::Pull(PullJob { vid })
+        Job::Pull(PullJob { vid, reset: false })
+    }
+
+    pub fn pull_and_reset(vid: VolumeId) -> Self {
+        Job::Pull(PullJob { vid, reset: true })
     }
 
     pub fn push(vid: VolumeId) -> Self {
@@ -37,6 +41,11 @@ impl Job {
 #[derive(Debug)]
 pub struct PullJob {
     vid: VolumeId,
+
+    /// when reset is true, the PullJob will reset the volume to the remote
+    /// volume state. This will rollback any pending local commits and clear the
+    /// volume status.
+    reset: bool,
 }
 
 impl PullJob {
@@ -70,9 +79,15 @@ impl PullJob {
             );
             log::debug!("received remote snapshot at LSN {}", snapshot_lsn);
 
-            storage
-                .receive_remote_commit(&self.vid, snapshot, changed)
-                .or_into_ctx()?;
+            if self.reset {
+                storage
+                    .reset_volume_to_remote(&self.vid, snapshot, changed)
+                    .or_into_ctx()?;
+            } else {
+                storage
+                    .receive_remote_commit(&self.vid, snapshot, changed)
+                    .or_into_ctx()?;
+            }
         }
 
         Ok(())
@@ -87,7 +102,7 @@ pub struct PushJob {
 impl PushJob {
     fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         if let Err(err) = self.run_inner(storage, clients) {
-            if let Err(inner) = storage.rollback_sync_to_remote(&self.vid) {
+            if let Err(inner) = storage.rollback_sync_to_remote(&self.vid, err.ctx()) {
                 log::error!("failed to rollback sync to remote: {:?}", inner);
                 Err(err.with_note(format!("rollback failed after push job failed: {}", inner)))
             } else {

@@ -55,6 +55,7 @@ pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
     let (result_tx, result_rx) = oneshot::channel();
 
     let runtime = tokio::runtime::Builder::new_current_thread()
+        .thread_name("graft-backend")
         .enable_all()
         .start_paused(true)
         .build()
@@ -64,13 +65,17 @@ pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
     let metastore = runtime.block_on(run_metastore(&mut supervisor));
     let pagestore = runtime.block_on(run_pagestore(metastore.clone(), &mut supervisor));
 
-    let handle = std::thread::spawn(move || {
-        runtime.block_on(async {
-            let timeout = shutdown_rx.await.expect("shutdown channel closed");
-            let result = supervisor.shutdown(timeout).await;
-            result_tx.send(result).expect("result channel closed");
+    let builder = std::thread::Builder::new().name("graft-backend".to_string());
+
+    let handle = builder
+        .spawn(move || {
+            runtime.block_on(async {
+                let timeout = shutdown_rx.await.expect("shutdown channel closed");
+                let result = supervisor.shutdown(timeout).await;
+                result_tx.send(result).expect("result channel closed");
+            })
         })
-    });
+        .expect("failed to spawn backend thread");
 
     (
         GraftBackend { shutdown_tx, result_rx, handle },

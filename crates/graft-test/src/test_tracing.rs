@@ -28,6 +28,7 @@ pub fn tracing_init(prefix: Option<String>) {
                     .add_directive("graft_core=trace".parse().unwrap())
                     .add_directive("graft_server=trace".parse().unwrap()),
             )
+            .with_thread_names(true)
             .with_span_events(FmtSpan::CLOSE)
             .with_ansi(color)
             .with_timer(TimeAndPrefix::new(prefix))

@@ -19,6 +19,7 @@ pub struct Snapshot {
     local: LSN,
     remote: MaybeLSN,
     pages: PageCount,
+    #[serde(skip)]
     _padding: [u8; 4],
 }
 

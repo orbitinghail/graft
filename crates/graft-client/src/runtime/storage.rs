@@ -20,7 +20,7 @@ use graft_core::{
     zerocopy_err::ZerocopyErr,
     VolumeId,
 };
-use graft_proto::pagestore::v1::PageAtOffset;
+use graft_proto::{common::v1::GraftErrCode, pagestore::v1::PageAtOffset};
 use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
 use parking_lot::Mutex;
@@ -29,9 +29,11 @@ use splinter::{DecodeErr, Splinter, SplinterRef};
 use tryiter::{TryIterator, TryIteratorExt};
 use volume_state::{
     SyncDirection, VolumeConfig, VolumeQueryIter, VolumeState, VolumeStateKey, VolumeStateTag,
-    Watermarks,
+    VolumeStatus, Watermarks,
 };
 use zerocopy::IntoBytes;
+
+use crate::ClientErr;
 
 pub mod changeset;
 pub(crate) mod commit;
@@ -171,6 +173,20 @@ impl Storage {
         Ok(self.volumes.insert(key, config)?)
     }
 
+    fn set_volume_status(&self, vid: &VolumeId, status: VolumeStatus) -> Result<()> {
+        let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Status);
+        Ok(self.volumes.insert(key, status)?)
+    }
+
+    pub fn get_volume_status(&self, vid: &VolumeId) -> Result<VolumeStatus> {
+        let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Status);
+        if let Some(value) = self.volumes.get(key)? {
+            Ok(VolumeStatus::from_bytes(&value)?)
+        } else {
+            Ok(VolumeStatus::Ok)
+        }
+    }
+
     pub fn volume_state(&self, vid: &VolumeId) -> Result<VolumeState> {
         let mut state = VolumeState::new(vid.clone());
         let mut iter = self.volumes.snapshot().prefix(vid);
@@ -294,9 +310,6 @@ impl Storage {
         // holding the commit lock
         let latest = self.snapshot(vid)?;
         if latest.map(|l| l.local()) != read_lsn {
-            #[cfg(feature = "antithesis")]
-            antithesis_sdk::assert_reachable!("concurrent write to volume");
-
             return Err(Culprit::new_with_note(
                 StorageErr::ConcurrentWrite,
                 format!("Illegal concurrent write to Volume {vid}"),
@@ -320,19 +333,30 @@ impl Storage {
         remote_snapshot: graft_proto::Snapshot,
         changed: SplinterRef<Bytes>,
     ) -> Result<()> {
+        // acquire the commit lock
+        let _permit = self.commit_lock.lock();
+        self.receive_remote_commit_holding_lock(vid, remote_snapshot, changed)
+    }
+
+    /// Receive a remote commit into storage; it's only safe to call this
+    /// function while holding the commit lock
+    fn receive_remote_commit_holding_lock(
+        &self,
+        vid: &VolumeId,
+        remote_snapshot: graft_proto::Snapshot,
+        changed: SplinterRef<Bytes>,
+    ) -> Result<()> {
         // resolve the remote lsn and page count
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
         let remote_pages = remote_snapshot.pages();
 
         log::trace!(
-            "volume {:?} received remote commit at LSN {} with pages {}",
+            "volume {:?} received remote commit at LSN {} with {} pages",
             vid,
             remote_lsn,
             remote_pages
         );
 
-        // acquire the commit lock and start a new batch
-        let _permit = self.commit_lock.lock();
         let mut batch = self.keyspace.batch();
 
         // retrieve the current volume state
@@ -359,6 +383,9 @@ impl Storage {
                 "volume has pending commits while receiving remote commit",
                 &serde_json::json!({ "vid": vid, "state": state })
             );
+
+            // mark the volume as having a remote conflict
+            self.set_volume_status(vid, VolumeStatus::Conflict)?;
 
             return Err(Culprit::new_with_note(
                 StorageErr::RemoteConflict,
@@ -506,10 +533,11 @@ impl Storage {
 
     /// Rollback a failed push operation by setting Watermarks::pending_sync to
     /// Watermarks::last_sync
-    pub fn rollback_sync_to_remote(&self, vid: &VolumeId) -> Result<()> {
+    pub fn rollback_sync_to_remote(&self, vid: &VolumeId, err: &ClientErr) -> Result<()> {
         // acquire the commit lock
         let _permit = self.commit_lock.lock();
 
+        // rollback the pending_sync watermark
         let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks);
         let watermarks = match self.volumes.get(&key)? {
             Some(watermarks) => Watermarks::from_bytes(&watermarks)?,
@@ -517,6 +545,14 @@ impl Storage {
         };
         self.volumes
             .insert(key, watermarks.rollback_pending_sync())?;
+
+        // set the volume status based on the error
+        if let ClientErr::GraftErr(err) = err {
+            if err.code() == GraftErrCode::CommitRejected {
+                self.set_volume_status(vid, VolumeStatus::RejectedCommit)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -544,7 +580,8 @@ impl Storage {
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
 
         log::trace!(
-            "completing sync to remote LSN {} for volume {:?}",
+            "completing sync to remote: pushed local LSN {} to remote LSN {} for volume {:?}",
+            sync_start_snapshot.local(),
             remote_lsn,
             state,
         );
@@ -582,6 +619,84 @@ impl Storage {
         }
 
         Ok(batch.commit()?)
+    }
+
+    /// Reset the volume to the provided remote snapshot.
+    /// This will cause all pending commits to be rolled back and the volume
+    /// status to be cleared.
+    pub fn reset_volume_to_remote(
+        &self,
+        vid: &VolumeId,
+        remote_snapshot: graft_proto::Snapshot,
+        changed: SplinterRef<Bytes>,
+    ) -> Result<()> {
+        // acquire the commit lock and start a new batch
+        let _permit = self.commit_lock.lock();
+
+        // retrieve the current volume state
+        let state = self.volume_state(&vid)?;
+        let snapshot = state.snapshot();
+        let local_lsn = snapshot.map(|s| s.local());
+        let target_lsn = state.watermarks().last_sync();
+
+        log::trace!(
+            "resetting volume {:?} from {:?} to {:?}",
+            vid,
+            local_lsn,
+            target_lsn,
+        );
+
+        if target_lsn == local_lsn {
+            // no need to reset, we can just receive the remote commit
+            return self.receive_remote_commit_holding_lock(vid, remote_snapshot, changed);
+        }
+
+        // invariants
+        assert!(
+            target_lsn < local_lsn,
+            "refusing to reset to a LSN larger than the current LSN; local={:?}, target={:?}",
+            local_lsn,
+            target_lsn
+        );
+
+        let mut batch = self.keyspace.batch();
+
+        // reset the snapshot
+        if let Some(target_lsn) = target_lsn {
+            batch.insert(
+                &self.volumes,
+                VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
+                Snapshot::new(
+                    target_lsn,
+                    Some(remote_snapshot.lsn().expect("invalid LSN")),
+                    remote_snapshot.pages(),
+                ),
+            );
+        } else {
+            batch.remove(
+                &self.volumes,
+                VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
+            );
+        }
+
+        // clear the status
+        batch.remove(
+            &self.volumes,
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Status),
+        );
+
+        // rollback the pending_sync watermark
+        batch.insert(
+            &self.volumes,
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
+            state.watermarks().clone().rollback_pending_sync(),
+        );
+
+        // TODO: remove all pending commits (asserting lsn > target_lsn)
+
+        // TODO: remove all offsets with LSN > target_lsn
+
+        todo!("finish this function")
     }
 }
 
