@@ -20,7 +20,7 @@ use graft_core::{
     zerocopy_err::ZerocopyErr,
     VolumeId,
 };
-use graft_proto::{common::v1::GraftErrCode, pagestore::v1::PageAtOffset};
+use graft_proto::pagestore::v1::PageAtOffset;
 use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
 use parking_lot::{Mutex, MutexGuard};
@@ -550,11 +550,9 @@ impl Storage {
         self.volumes
             .insert(key, watermarks.rollback_pending_sync())?;
 
-        // set the volume status based on the error
-        if let ClientErr::GraftErr(err) = err {
-            if err.code() == GraftErrCode::CommitRejected {
-                self.set_volume_status(vid, VolumeStatus::RejectedCommit)?;
-            }
+        // if the server rejected the commit, update the volume status
+        if err.is_commit_rejected() {
+            self.set_volume_status(vid, VolumeStatus::RejectedCommit)?;
         }
 
         Ok(())

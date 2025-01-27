@@ -54,7 +54,7 @@ pub enum ApiErrCtx {
     CatalogErr(#[from] VolumeCatalogErr),
 
     #[error("volume store error")]
-    VolumeStoreErr(#[from] VolumeStoreErr),
+    VolumeStoreErr(VolumeStoreErr),
 
     #[error("failed to load snapshot for volume")]
     SnapshotMissing,
@@ -81,6 +81,15 @@ pub enum ApiErrCtx {
 impl From<io::Error> for ApiErrCtx {
     fn from(error: io::Error) -> Self {
         Self::IoErr(error.kind())
+    }
+}
+
+impl From<VolumeStoreErr> for ApiErrCtx {
+    fn from(value: VolumeStoreErr) -> Self {
+        match value {
+            VolumeStoreErr::CommitAlreadyExists => Self::RejectedCommit,
+            other => Self::VolumeStoreErr(other),
+        }
     }
 }
 

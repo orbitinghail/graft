@@ -177,10 +177,7 @@ impl<F: Fetcher> SyncTask<F> {
                 Err(err) => {
                     log::error!("sync task error: {:?}", err);
                     log::trace!("sleeping for 1 second before restarting");
-                    precept::expect_unreachable!(
-                        "error occurred in sync task",
-                        { "error": err.to_string() }
-                    );
+                    precept::expect_unreachable!("error occurred in sync task");
                     sleep(Duration::from_secs(1));
                 }
             }

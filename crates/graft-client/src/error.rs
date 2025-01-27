@@ -57,4 +57,11 @@ impl ClientErr {
             _ => false,
         }
     }
+
+    pub(crate) fn is_commit_rejected(&self) -> bool {
+        match self {
+            Self::GraftErr(err) => err.code() == GraftErrCode::CommitRejected,
+            _ => false,
+        }
+    }
 }

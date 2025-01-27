@@ -176,22 +176,22 @@ fn workload_writer<F: Fetcher>(
         let new_page: Page = rng.gen();
         let existing_hash = page_tracker.upsert(offset, &new_page);
 
-        tracing::info!(?offset, "writing page");
+        let reader = handle.reader().or_into_ctx()?;
+        tracing::info!(?offset, snapshot=?reader.snapshot(), "writing page");
 
         // verify the offset is missing or present as expected
-        let reader = handle.reader().or_into_ctx()?;
         let page = reader.read(offset).or_into_ctx()?;
         if let Some(existing) = existing_hash {
             expect_always_or_unreachable!(
                 existing == page,
                 "page should have expected contents",
-                { "offset": offset, "worker": worker_id }
+                { "offset": offset, "worker": worker_id, "snapshot": reader.snapshot() }
             );
         } else {
             expect_always_or_unreachable!(
                 page.is_empty(),
                 "page should be empty as it has never been written to",
-                { "offset": offset, "worker": worker_id }
+                { "offset": offset, "worker": worker_id, "snapshot": reader.snapshot() }
             );
         }
 

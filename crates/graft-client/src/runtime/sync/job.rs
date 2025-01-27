@@ -105,6 +105,11 @@ impl PushJob {
             if let Err(inner) = storage.rollback_sync_to_remote(&self.vid, err.ctx()) {
                 log::error!("failed to rollback sync to remote: {:?}", inner);
                 Err(err.with_note(format!("rollback failed after push job failed: {}", inner)))
+            } else if err.ctx().is_commit_rejected() {
+                // rejected commits are not job failures, the
+                // rollback_sync_to_remote function updates the volume status to
+                // RejectedCommit
+                Ok(())
             } else {
                 Err(err)
             }

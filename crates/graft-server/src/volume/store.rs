@@ -6,7 +6,7 @@ use graft_core::{
     lsn::{LSNRangeExt, LSN},
     VolumeId,
 };
-use object_store::ObjectStore;
+use object_store::{Attributes, ObjectStore, PutMode, PutOptions, TagSet};
 
 use crate::volume::commit::{commit_key_prefix, CommitValidationErr};
 
@@ -19,6 +19,9 @@ pub enum VolumeStoreErr {
     #[error("object store error")]
     ObjectStoreErr,
 
+    #[error("commit already exists")]
+    CommitAlreadyExists,
+
     #[error("commit validation error: {0}")]
     CommitValidationErr(#[from] CommitValidationErr),
 
@@ -27,8 +30,11 @@ pub enum VolumeStoreErr {
 }
 
 impl From<object_store::Error> for VolumeStoreErr {
-    fn from(_: object_store::Error) -> Self {
-        VolumeStoreErr::ObjectStoreErr
+    fn from(err: object_store::Error) -> Self {
+        match err {
+            object_store::Error::AlreadyExists { .. } => VolumeStoreErr::CommitAlreadyExists,
+            _ => VolumeStoreErr::ObjectStoreErr,
+        }
     }
 }
 
@@ -43,7 +49,17 @@ impl VolumeStore {
 
     pub async fn commit(&self, commit: Commit) -> Result<(), Culprit<VolumeStoreErr>> {
         let key = commit_key(commit.vid(), commit.meta().lsn());
-        self.store.put(&key, commit.into_payload()).await?;
+        self.store
+            .put_opts(
+                &key,
+                commit.into_payload(),
+                PutOptions {
+                    mode: PutMode::Create,
+                    tags: TagSet::default(),
+                    attributes: Attributes::default(),
+                },
+            )
+            .await?;
         Ok(())
     }
 
