@@ -35,6 +35,7 @@ use tokio::{
 use url::Url;
 
 pub mod test_tracing;
+pub mod workload;
 
 pub fn worker_id(rng: &mut impl Rng) -> String {
     bs58::encode(rng.gen::<u64>().to_le_bytes()).into_string()

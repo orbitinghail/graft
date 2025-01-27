@@ -1,5 +1,7 @@
 use std::{
     collections::HashSet,
+    fmt::Debug,
+    sync::Arc,
     thread::{self, sleep, JoinHandle},
     time::{Duration, Instant},
 };
@@ -8,6 +10,7 @@ use crossbeam::channel::{bounded, select_biased, Receiver, Sender, TrySendError}
 use culprit::{Culprit, Result, ResultExt};
 use graft_core::VolumeId;
 use job::Job;
+use parking_lot::RwLock;
 use thiserror::Error;
 use tryiter::{TryIterator, TryIteratorExt};
 
@@ -20,12 +23,21 @@ use super::{
 };
 
 #[derive(Debug, Error)]
+pub enum StartupErr {
+    #[error("the Sync task is already running")]
+    AlreadyRunning,
+}
+
+#[derive(Debug, Error)]
 pub enum ShutdownErr {
     #[error("error while shutting down Sync task")]
     JoinError,
 
     #[error("timeout while waiting for Sync task to cleanly shutdown")]
     Timeout,
+
+    #[error("the Sync task is not running")]
+    TaskNotRunning,
 }
 
 #[derive(Debug)]
@@ -39,55 +51,107 @@ pub enum SyncControl {
         vid: VolumeId,
         complete: Sender<Result<(), ClientErr>>,
     },
+    Shutdown,
 }
 
 mod job;
 
+#[derive(Clone, Default)]
 pub struct SyncTaskHandle {
+    inner: Arc<RwLock<Option<SyncTaskHandleInner>>>,
+}
+
+struct SyncTaskHandleInner {
     handle: JoinHandle<()>,
-    shutdown_signal: Sender<()>,
+    control: Sender<SyncControl>,
 }
 
 impl SyncTaskHandle {
-    pub fn shutdown_timeout(self, timeout: Duration) -> Result<(), ShutdownErr> {
+    pub fn control(&self) -> Option<Sender<SyncControl>> {
+        self.inner
+            .read()
+            .as_ref()
+            .map(|inner| inner.control.clone())
+    }
+
+    pub fn spawn<F: Fetcher>(
+        &self,
+        shared: Shared<F>,
+        clients: ClientPair,
+        refresh_interval: Duration,
+        control_channel_size: usize,
+    ) -> Result<(), StartupErr> {
+        let mut inner = self.inner.write();
+        if inner.is_some() {
+            return Err(Culprit::new(StartupErr::AlreadyRunning));
+        }
+
+        let (control_tx, control_rx) = bounded(control_channel_size);
+        let commits = shared.storage().local_changeset().subscribe_all();
+
+        let task = SyncTask {
+            shared,
+            clients,
+            refresh_interval,
+            commits,
+            control: control_rx,
+        };
+
+        let handle = thread::Builder::new()
+            .name("graft-sync".into())
+            .spawn(move || task.run())
+            .expect("failed to spawn sync task");
+
+        inner.replace(SyncTaskHandleInner { handle, control: control_tx });
+        Ok(())
+    }
+
+    pub fn shutdown_timeout(&self, timeout: Duration) -> Result<(), ShutdownErr> {
         self.shutdown(Instant::now() + timeout)
     }
 
-    pub fn shutdown(self, deadline: Instant) -> Result<(), ShutdownErr> {
-        if let Err(_) = self.shutdown_signal.send_deadline((), deadline) {
-            log::warn!("timeout waiting for sync task to shutdown");
-            return Err(Culprit::new(ShutdownErr::Timeout));
-        }
+    pub fn shutdown(&self, deadline: Instant) -> Result<(), ShutdownErr> {
+        if let Some(inner) = self.inner.write().take() {
+            // drop the control channel to trigger shutdown
+            if let Err(_) = inner.control.send_deadline(SyncControl::Shutdown, deadline) {
+                return Err(Culprit::new_with_note(
+                    ShutdownErr::Timeout,
+                    "timeout while waiting to send Shutdown message to sync task",
+                ));
+            }
 
-        let (tx, rx) = bounded(0);
-        std::thread::spawn(move || {
-            tx.send(self.handle.join()).unwrap();
-        });
+            let (tx, rx) = bounded(0);
+            std::thread::spawn(move || {
+                tx.send(inner.handle.join()).unwrap();
+            });
 
-        // wait for the thread to complete or the timeout to elapse
-        match rx.recv_deadline(deadline) {
-            Ok(Ok(())) => {
-                log::debug!("sync task shutdown completed");
-                Ok(())
+            // wait for the thread to complete or the timeout to elapse
+            match rx.recv_deadline(deadline) {
+                Ok(Ok(())) => {
+                    log::debug!("sync task shutdown completed");
+                    Ok(())
+                }
+                Ok(Err(err)) => {
+                    log::error!("sync task shutdown error: {:?}", err);
+                    let msg = match err.downcast_ref::<&'static str>() {
+                        Some(s) => *s,
+                        None => match err.downcast_ref::<String>() {
+                            Some(s) => &s[..],
+                            None => "unknown panic",
+                        },
+                    };
+                    Err(Culprit::new_with_note(
+                        ShutdownErr::JoinError,
+                        format!("sync task panic: {msg}"),
+                    ))
+                }
+                Err(_) => {
+                    log::warn!("timeout waiting for sync task to shutdown");
+                    Err(Culprit::new(ShutdownErr::Timeout))
+                }
             }
-            Ok(Err(err)) => {
-                log::error!("sync task shutdown error: {:?}", err);
-                let msg = match err.downcast_ref::<&'static str>() {
-                    Some(s) => *s,
-                    None => match err.downcast_ref::<String>() {
-                        Some(s) => &s[..],
-                        None => "unknown panic",
-                    },
-                };
-                Err(Culprit::new_with_note(
-                    ShutdownErr::JoinError,
-                    format!("sync task panic: {msg}"),
-                ))
-            }
-            Err(_) => {
-                log::warn!("timeout waiting for sync task to shutdown");
-                Err(Culprit::new(ShutdownErr::Timeout))
-            }
+        } else {
+            Err(Culprit::new(ShutdownErr::TaskNotRunning))
         }
     }
 }
@@ -100,35 +164,9 @@ pub struct SyncTask<F> {
     refresh_interval: Duration,
     commits: SetSubscriber<VolumeId>,
     control: Receiver<SyncControl>,
-    shutdown_signal: Receiver<()>,
 }
 
 impl<F: Fetcher> SyncTask<F> {
-    pub fn spawn(
-        shared: Shared<F>,
-        clients: ClientPair,
-        refresh_interval: Duration,
-        control: Receiver<SyncControl>,
-    ) -> SyncTaskHandle {
-        let commits = shared.storage().local_changeset().subscribe_all();
-        let (shutdown_tx, shutdown_rx) = bounded(0);
-        let task = Self {
-            shared,
-            clients,
-            refresh_interval,
-            commits,
-            control,
-            shutdown_signal: shutdown_rx,
-        };
-
-        let handle = thread::Builder::new()
-            .name("graft-sync".into())
-            .spawn(move || task.run())
-            .expect("failed to spawn sync task");
-
-        SyncTaskHandle { handle, shutdown_signal: shutdown_tx }
-    }
-
     fn run(mut self) {
         loop {
             match self.run_inner() {
@@ -139,6 +177,11 @@ impl<F: Fetcher> SyncTask<F> {
                 Err(err) => {
                     log::error!("sync task error: {:?}", err);
                     log::trace!("sleeping for 1 second before restarting");
+                    #[cfg(feature = "antithesis")]
+                    antithesis_sdk::assert_unreachable!(
+                        "error occurred in sync task",
+                        &serde_json::json!({ "error": err.to_string() })
+                    );
                     sleep(Duration::from_secs(1));
                 }
             }
@@ -148,14 +191,14 @@ impl<F: Fetcher> SyncTask<F> {
     fn run_inner(&mut self) -> Result<(), ClientErr> {
         loop {
             select_biased! {
-                recv(self.shutdown_signal) -> _ => {
-                    log::debug!("sync task received shutdown request");
-                    break;
-                }
-
                 recv(self.control) -> control => {
-                    let control = control.expect("sync task control channel closed");
-                    self.handle_control(control)?;
+                    match control.ok() {
+                        None| Some(SyncControl::Shutdown) => {
+                            log::debug!("sync task shutting down");
+                            break
+                        }
+                        Some(control) => self.handle_control(control)?,
+                    }
                 }
 
                 recv(self.commits.ready()) -> result => {
@@ -181,6 +224,9 @@ impl<F: Fetcher> SyncTask<F> {
             }
             SyncControl::ResetToRemote { vid, complete } => {
                 (complete, self.reset_volume_to_remote(vid))
+            }
+            SyncControl::Shutdown => {
+                unreachable!("shutdown message is handled in sync task select loop")
             }
         };
         // we try to send the error to the client first and then fallback to

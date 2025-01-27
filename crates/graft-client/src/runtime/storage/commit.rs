@@ -24,6 +24,11 @@ impl CommitKey {
     }
 
     #[inline]
+    pub fn vid(&self) -> &VolumeId {
+        &self.vid
+    }
+
+    #[inline]
     pub fn lsn(&self) -> LSN {
         self.lsn.try_into().expect("invalid LSN")
     }

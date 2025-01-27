@@ -18,13 +18,17 @@ fn test_client_sync_sanity() {
     let (backend, clients) = start_graft_backend();
 
     let storage = Storage::open_temporary().unwrap();
-    let mut runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
-    let sync = runtime.start_sync_task(clients.clone(), Duration::from_secs(1), 8);
+    let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
+    runtime
+        .start_sync_task(clients.clone(), Duration::from_secs(1), 8)
+        .unwrap();
 
     // create a second client to sync to
     let storage2 = Storage::open_temporary().unwrap();
-    let mut runtime2 = Runtime::new(NetFetcher::new(clients.clone()), storage2);
-    let sync2 = runtime2.start_sync_task(clients, Duration::from_millis(100), 8);
+    let runtime2 = Runtime::new(NetFetcher::new(clients.clone()), storage2);
+    runtime2
+        .start_sync_task(clients, Duration::from_millis(100), 8)
+        .unwrap();
 
     // register the volume with both clients, pushing from client 1 to client 2
     let vid = VolumeId::random();
@@ -69,7 +73,7 @@ fn test_client_sync_sanity() {
     }
 
     // shutdown everything
-    sync.shutdown_timeout(Duration::from_secs(5)).unwrap();
-    sync2.shutdown_timeout(Duration::from_secs(5)).unwrap();
+    runtime.shutdown_sync_task(Duration::from_secs(5)).unwrap();
+    runtime2.shutdown_sync_task(Duration::from_secs(5)).unwrap();
     backend.shutdown(Duration::from_secs(5)).unwrap();
 }

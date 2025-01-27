@@ -1,0 +1,12 @@
+[package]
+name = "precept"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+antithesis_sdk = { workspace = true, optional = true}
+serde_json = { workspace = true, optional= true }
+log = { workspace = true }
+
+[features]
+antithesis = ["antithesis_sdk", "serde_json"]

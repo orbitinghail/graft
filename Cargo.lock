@@ -1256,6 +1256,7 @@ dependencies = [
  "bytes",
  "clap",
  "config",
+ "crossbeam",
  "culprit",
  "futures",
  "graft-client",
@@ -2249,6 +2250,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77957b295656769bb8ad2b6a6b09d897d94f05c41b069aede1fcdaa675eaea04"
 dependencies = [
  "zerocopy 0.7.35",
+]
+
+[[package]]
+name = "precept"
+version = "0.1.0"
+dependencies = [
+ "antithesis_sdk",
+ "log",
+ "serde_json",
 ]
 
 [[package]]

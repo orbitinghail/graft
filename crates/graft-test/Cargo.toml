@@ -11,6 +11,7 @@ splinter = { path = "../splinter" }
 
 antithesis_sdk = { workspace = true }
 culprit = { workspace = true }
+crossbeam = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }

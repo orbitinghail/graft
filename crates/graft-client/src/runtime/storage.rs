@@ -23,7 +23,7 @@ use graft_core::{
 use graft_proto::{common::v1::GraftErrCode, pagestore::v1::PageAtOffset};
 use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use snapshot::Snapshot;
 use splinter::{DecodeErr, Splinter, SplinterRef};
 use tryiter::{TryIterator, TryIteratorExt};
@@ -113,7 +113,11 @@ pub struct Storage {
     /// maps from (VolumeId, LSN) to Splinter of written offsets
     commits: fjall::Partition,
 
-    /// Used to serialize the Volume commit process
+    /// Must be held while performing read+write transactions.
+    /// Read-only and write-only transactions don't need to hold the lock as
+    /// long as they are safe:
+    /// To make read-only txns safe, always use fjall snapshots
+    /// To make write-only txns safe, they must be monotonic
     commit_lock: Arc<Mutex<()>>,
 
     /// Used to notify subscribers of new local commits
@@ -333,15 +337,19 @@ impl Storage {
         remote_snapshot: graft_proto::Snapshot,
         changed: SplinterRef<Bytes>,
     ) -> Result<()> {
-        // acquire the commit lock
-        let _permit = self.commit_lock.lock();
-        self.receive_remote_commit_holding_lock(vid, remote_snapshot, changed)
+        self.receive_remote_commit_holding_lock(
+            self.commit_lock.lock(),
+            vid,
+            remote_snapshot,
+            changed,
+        )
     }
 
     /// Receive a remote commit into storage; it's only safe to call this
     /// function while holding the commit lock
     fn receive_remote_commit_holding_lock(
         &self,
+        _permit: MutexGuard<'_, ()>,
         vid: &VolumeId,
         remote_snapshot: graft_proto::Snapshot,
         changed: SplinterRef<Bytes>,
@@ -631,7 +639,7 @@ impl Storage {
         changed: SplinterRef<Bytes>,
     ) -> Result<()> {
         // acquire the commit lock and start a new batch
-        let _permit = self.commit_lock.lock();
+        let permit = self.commit_lock.lock();
 
         // retrieve the current volume state
         let state = self.volume_state(&vid)?;
@@ -639,16 +647,9 @@ impl Storage {
         let local_lsn = snapshot.map(|s| s.local());
         let target_lsn = state.watermarks().last_sync();
 
-        log::trace!(
-            "resetting volume {:?} from {:?} to {:?}",
-            vid,
-            local_lsn,
-            target_lsn,
-        );
-
         if target_lsn == local_lsn {
             // no need to reset, we can just receive the remote commit
-            return self.receive_remote_commit_holding_lock(vid, remote_snapshot, changed);
+            return self.receive_remote_commit_holding_lock(permit, vid, remote_snapshot, changed);
         }
 
         // invariants
@@ -657,6 +658,13 @@ impl Storage {
             "refusing to reset to a LSN larger than the current LSN; local={:?}, target={:?}",
             local_lsn,
             target_lsn
+        );
+
+        log::trace!(
+            "resetting volume {:?} from {:?} to {:?}",
+            vid,
+            local_lsn,
+            target_lsn,
         );
 
         let mut batch = self.keyspace.batch();
@@ -692,11 +700,34 @@ impl Storage {
             state.watermarks().clone().rollback_pending_sync(),
         );
 
-        // TODO: remove all pending commits (asserting lsn > target_lsn)
+        // remove all pending commits
+        let mut commits = self.commits.snapshot().prefix(vid);
+        while let Some((key, value)) = commits.try_next().or_into_ctx()? {
+            let key = CommitKey::ref_from_bytes(&key)?;
+            assert_eq!(
+                key.vid(),
+                vid,
+                "refusing to remove commit from another volume"
+            );
+            assert!(
+                Some(key.lsn()) > target_lsn,
+                "invariant violation: no commits should exist at or below target_lsn"
+            );
+            batch.remove(&self.commits, key.as_ref());
 
-        // TODO: remove all offsets with LSN > target_lsn
+            // remove the commit's offsets
+            let splinter = SplinterRef::from_bytes(value).or_into_ctx()?;
 
-        todo!("finish this function")
+            let mut key = PageKey::new(vid.clone(), 0.into(), key.lsn());
+            for offset in splinter.iter() {
+                key = key.with_offset(offset.into());
+                batch.remove(&self.pages, key.as_ref());
+            }
+        }
+
+        // now that we have reset to the earlier volume state, we can receive
+        // the remote commit
+        return self.receive_remote_commit_holding_lock(permit, vid, remote_snapshot, changed);
     }
 }
 

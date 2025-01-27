@@ -128,7 +128,7 @@ mod tests {
             Default::default(),
             page_rx,
             store_tx,
-            Duration::from_secs(1),
+            Duration::from_secs(100),
         )
         .testonly_spawn();
 
@@ -195,7 +195,7 @@ mod tests {
 
         // this sleep allows tokio to advance past the writer timer as well as
         // advance each request until they are waiting for the next commit
-        sleep(Duration::from_secs(5)).await;
+        local.run_until(sleep(Duration::from_secs(5))).await;
 
         // resume the writer, causing the segment to flush
         writer_controller.resume();

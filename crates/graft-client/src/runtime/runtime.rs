@@ -1,4 +1,3 @@
-use crossbeam::channel::{bounded, Sender};
 use culprit::{Result, ResultExt};
 use std::time::Duration;
 
@@ -10,20 +9,20 @@ use super::{
     fetcher::Fetcher,
     shared::Shared,
     storage::{volume_state::VolumeConfig, Storage},
-    sync::{SyncControl, SyncTask, SyncTaskHandle},
+    sync::{ShutdownErr, StartupErr, SyncTaskHandle},
     volume::VolumeHandle,
 };
 
 pub struct Runtime<F> {
     shared: Shared<F>,
-    sync_control: Option<Sender<SyncControl>>,
+    sync: SyncTaskHandle,
 }
 
 impl<F> Clone for Runtime<F> {
     fn clone(&self) -> Self {
         Self {
             shared: self.shared.clone(),
-            sync_control: self.sync_control.clone(),
+            sync: self.sync.clone(),
         }
     }
 }
@@ -32,19 +31,26 @@ impl<F: Fetcher> Runtime<F> {
     pub fn new(fetcher: F, storage: Storage) -> Self {
         Self {
             shared: Shared::new(fetcher, storage),
-            sync_control: None,
+            sync: SyncTaskHandle::default(),
         }
     }
 
     pub fn start_sync_task(
-        &mut self,
+        &self,
         clients: ClientPair,
         refresh_interval: Duration,
         control_channel_size: usize,
-    ) -> SyncTaskHandle {
-        let (tx, rx) = bounded(control_channel_size);
-        self.sync_control = Some(tx);
-        SyncTask::spawn(self.shared.clone(), clients, refresh_interval, rx)
+    ) -> Result<(), StartupErr> {
+        self.sync.spawn(
+            self.shared.clone(),
+            clients,
+            refresh_interval,
+            control_channel_size,
+        )
+    }
+
+    pub fn shutdown_sync_task(&self, timeout: Duration) -> Result<(), ShutdownErr> {
+        self.sync.shutdown_timeout(timeout)
     }
 
     pub fn open_volume(
@@ -66,7 +72,7 @@ impl<F: Fetcher> Runtime<F> {
         Ok(VolumeHandle::new(
             vid.clone(),
             self.shared.clone(),
-            self.sync_control.clone(),
+            self.sync.control(),
         ))
     }
 }
