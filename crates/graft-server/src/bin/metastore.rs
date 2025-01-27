@@ -1,6 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use antithesis_sdk::antithesis_init;
 use config::Config;
 use futures::FutureExt;
 use graft_server::{
@@ -19,7 +18,6 @@ use graft_server::{
     },
 };
 use serde::Deserialize;
-use serde_json::json;
 use tokio::{net::TcpListener, select, signal::ctrl_c};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter};
@@ -47,7 +45,7 @@ impl Default for MetastoreConfig {
 
 #[tokio::main]
 async fn main() {
-    antithesis_init();
+    precept::init();
     let running_in_antithesis = std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok();
 
     tracing_subscriber::fmt()
@@ -64,7 +62,7 @@ async fn main() {
         .expect("failed to initialize tracing subscriber");
     tracing::info!("starting metastore");
 
-    antithesis_sdk::lifecycle::setup_complete(&json!({}));
+    precept::setup_complete!();
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 

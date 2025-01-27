@@ -374,10 +374,9 @@ impl Storage {
 
         // ensure that we can accept this remote commit
         if state.needs_recovery() {
-            #[cfg(feature = "antithesis")]
-            antithesis_sdk::assert_reachable!(
+            precept::expect_reachable!(
                 "volume needs recovery",
-                &serde_json::json!({ "vid": vid, "state": state })
+                { "vid": vid, "state": state }
             );
 
             return Err(Culprit::new_with_note(
@@ -386,10 +385,9 @@ impl Storage {
             ));
         }
         if state.has_pending_commits() {
-            #[cfg(feature = "antithesis")]
-            antithesis_sdk::assert_reachable!(
+            precept::expect_reachable!(
                 "volume has pending commits while receiving remote commit",
-                &serde_json::json!({ "vid": vid, "state": state })
+                { "vid": vid, "state": state }
             );
 
             // mark the volume as having a remote conflict
@@ -474,10 +472,9 @@ impl Storage {
 
         // fail if the volume needs recovery
         if state.needs_recovery() {
-            #[cfg(feature = "antithesis")]
-            antithesis_sdk::assert_reachable!(
+            precept::expect_reachable!(
                 "volume needs recovery",
-                &serde_json::json!({ "vid": vid, "state": state })
+                { "vid": vid, "state": state }
             );
             return Err(Culprit::new_with_note(
                 StorageErr::VolumeNeedsRecovery,
@@ -486,11 +483,10 @@ impl Storage {
         }
 
         // ensure that we only run this job when we actually have commits to sync
-        #[cfg(feature = "antithesis")]
-        antithesis_sdk::assert_always_or_unreachable!(
+        precept::expect_always_or_unreachable!(
             state.has_pending_commits(),
             "the sync push job only runs when we have local commits to push",
-            &serde_json::json!({ "vid": vid, "state": state })
+            { "vid": vid, "state": state }
         );
         debug_assert!(
             state.has_pending_commits(),

@@ -7,6 +7,7 @@ edition = "2021"
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 splinter = { path = "../splinter" }
+precept = { path = "../precept" }
 
 bytes = { workspace = true }
 culprit = { workspace = true }
@@ -25,13 +26,10 @@ ureq = { workspace = true }
 url = { workspace = true }
 zerocopy = { workspace = true }
 
-antithesis_sdk = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
 env_logger = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 
 [features]
-antithesis = ["antithesis_sdk", "serde_json"]
+antithesis = ["precept/antithesis"]

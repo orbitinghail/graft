@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use antithesis_sdk::antithesis_init;
 use clap::Parser;
 use config::Config;
 use culprit::{Culprit, ResultExt};
@@ -15,7 +14,6 @@ use graft_test::{
     workload::{Workload, WorkloadErr},
 };
 use rand::Rng;
-use serde_json::json;
 use url::Url;
 
 #[derive(Parser)]
@@ -27,8 +25,8 @@ struct Args {
 }
 
 fn main() -> Result<(), Culprit<WorkloadErr>> {
-    antithesis_init();
-    let mut rng = antithesis_sdk::random::AntithesisRng;
+    precept::init();
+    let mut rng = precept::random::rng();
     let worker_id = worker_id(&mut rng);
     tracing_init(Some(worker_id.clone()));
     let args = Args::parse();
@@ -61,7 +59,7 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
         .start_sync_task(clients, Duration::from_secs(1), 8)
         .or_into_ctx()?;
 
-    antithesis_sdk::lifecycle::setup_complete(&json!({ "workload": workload }));
+    precept::setup_complete!({ "workload": workload });
 
     let (ticks, shutdown_timeout) = if running_in_antithesis() {
         (rng.gen_range(100..5000), Duration::from_secs(3600))
@@ -78,12 +76,7 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
     tracing::info!("waiting for sync task to shutdown");
     runtime.shutdown_sync_task(shutdown_timeout).or_into_ctx()?;
 
-    antithesis_sdk::assert_reachable!(
-        "test workload finishes",
-        &json!({
-            "worker": worker_id
-        })
-    );
+    precept::expect_reachable!("test workload finishes", { "worker": worker_id });
 
     tracing::info!("shutdown complete");
 

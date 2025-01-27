@@ -7,6 +7,7 @@ edition = "2021"
 antithesis_sdk = { workspace = true, optional = true}
 serde_json = { workspace = true, optional= true }
 log = { workspace = true }
+rand = { workspace = true }
 
 [features]
 antithesis = ["antithesis_sdk", "serde_json"]

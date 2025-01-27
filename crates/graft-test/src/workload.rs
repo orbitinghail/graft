@@ -1,7 +1,6 @@
 use std::{thread::sleep, time::Duration, u64};
 
 use super::{PageTracker, PageTrackerErr};
-use antithesis_sdk::assert_always_or_unreachable;
 use config::ConfigError;
 use crossbeam::channel::RecvTimeoutError;
 use culprit::{Culprit, ResultExt};
@@ -20,9 +19,9 @@ use graft_client::{
 };
 use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 use graft_server::supervisor;
+use precept::{expect_always_or_unreachable, expect_reachable};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use thiserror::Error;
 use tracing_subscriber::filter::FromEnvError;
 
@@ -123,14 +122,14 @@ fn load_tracker<F: Fetcher>(
     let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
     // ensure the page tracker is only empty when we expect it to be
-    assert_always_or_unreachable!(
+    expect_always_or_unreachable!(
         page_tracker.is_empty() ^ reader.snapshot().is_some(),
         "page tracker should only be empty when the snapshot is missing",
-        &json!({
+        {
             "snapshot": reader.snapshot(),
             "tracker_len": page_tracker.len(),
             "worker": worker_id
-        })
+        }
     );
 
     tracing::info!("loaded page tracker with {} pages", page_tracker.len());
@@ -182,18 +181,17 @@ fn workload_writer<F: Fetcher>(
         // verify the offset is missing or present as expected
         let reader = handle.reader().or_into_ctx()?;
         let page = reader.read(offset).or_into_ctx()?;
-        let details = json!({ "offset": offset, "worker": worker_id });
         if let Some(existing) = existing_hash {
-            assert_always_or_unreachable!(
+            expect_always_or_unreachable!(
                 existing == page,
                 "page should have expected contents",
-                &details
+                { "offset": offset, "worker": worker_id }
             );
         } else {
-            assert_always_or_unreachable!(
+            expect_always_or_unreachable!(
                 page.is_empty(),
                 "page should be empty as it has never been written to",
-                &details
+                { "offset": offset, "worker": worker_id }
             );
         }
 
@@ -238,9 +236,9 @@ fn workload_reader<F: Fetcher>(
             Err(RecvTimeoutError::Disconnected) => panic!("subscription closed"),
         }
 
-        antithesis_sdk::assert_reachable!(
+        expect_reachable!(
             "reader workload received commit",
-            &json!({ "worker": worker_id })
+            { "worker": worker_id }
         );
 
         let reader = handle.reader().or_into_ctx()?;
@@ -248,20 +246,20 @@ fn workload_reader<F: Fetcher>(
 
         tracing::info!(snapshot=?snapshot, "received commit for volume {:?}", vid);
 
-        antithesis_sdk::assert_always_or_unreachable!(
+        expect_always_or_unreachable!(
             last_snapshot
                 .replace(snapshot.clone())
                 .is_none_or(|last| &last != snapshot),
             "the snapshot should be different after receiving a commit notification",
-            &json!({ "snapshot": snapshot, "worker": worker_id })
+            { "snapshot": snapshot, "worker": worker_id }
         );
 
         let page_count = snapshot.pages();
         if seen_nonempty {
-            antithesis_sdk::assert_always_or_unreachable!(
+            expect_always_or_unreachable!(
                 page_count > 0,
                 "the snapshot should never be empty after we have seen a non-empty snapshot",
-                &json!({ "snapshot": snapshot, "worker": worker_id })
+                { "snapshot": snapshot, "worker": worker_id }
             );
         }
 
@@ -287,16 +285,16 @@ fn workload_reader<F: Fetcher>(
             let page = reader.read(offset).or_into_ctx()?;
 
             if let Some(expected_hash) = page_tracker.get_hash(offset) {
-                assert_always_or_unreachable!(
+                expect_always_or_unreachable!(
                     expected_hash == page,
                     "page should have expected contents",
-                    &json!({ "offset": offset, "worker": worker_id })
+                    { "offset": offset, "worker": worker_id }
                 );
             } else {
-                assert_always_or_unreachable!(
+                expect_always_or_unreachable!(
                     page.is_empty(),
                     "page should be empty as it has never been written to",
-                    &json!({ "offset": offset, "worker": worker_id })
+                    { "offset": offset, "worker": worker_id }
                 );
             }
         }

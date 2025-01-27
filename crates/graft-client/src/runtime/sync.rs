@@ -177,10 +177,9 @@ impl<F: Fetcher> SyncTask<F> {
                 Err(err) => {
                     log::error!("sync task error: {:?}", err);
                     log::trace!("sleeping for 1 second before restarting");
-                    #[cfg(feature = "antithesis")]
-                    antithesis_sdk::assert_unreachable!(
+                    precept::expect_unreachable!(
                         "error occurred in sync task",
-                        &serde_json::json!({ "error": err.to_string() })
+                        { "error": err.to_string() }
                     );
                     sleep(Duration::from_secs(1));
                 }

@@ -1,6 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use antithesis_sdk::antithesis_init;
 use config::Config;
 use futures::{select, FutureExt};
 use graft_client::ClientBuilder;
@@ -72,7 +71,7 @@ impl Default for PagestoreConfig {
 
 #[tokio::main]
 async fn main() {
-    antithesis_init();
+    precept::init();
     let running_in_antithesis = std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok();
 
     tracing_subscriber::fmt()

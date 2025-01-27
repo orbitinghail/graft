@@ -320,11 +320,10 @@ impl VolumeState {
 
     #[inline]
     pub fn config(&self) -> &VolumeConfig {
-        #[cfg(feature = "antithesis")]
-        antithesis_sdk::assert_always_or_unreachable!(
+        precept::expect_always_or_unreachable!(
             self.config.is_some(),
             "volume config should always be present",
-            &serde_json::json!({ "state": self })
+            { "state": self }
         );
         debug_assert!(
             self.config.is_some(),

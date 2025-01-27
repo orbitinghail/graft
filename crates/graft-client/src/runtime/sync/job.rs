@@ -163,12 +163,10 @@ impl PushJob {
                 }
             }
         }
-
-        #[cfg(feature = "antithesis")]
-        antithesis_sdk::assert_always_or_unreachable!(
+        precept::expect_always_or_unreachable!(
             num_commits == expected_num_commits,
             "push job always pushes all expected commits",
-            &serde_json::json!({ "job": self, })
+            { "job": self }
         );
         debug_assert_eq!(
             num_commits, expected_num_commits,

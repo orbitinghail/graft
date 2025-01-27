@@ -8,8 +8,8 @@ graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 graft-client = { path = "../graft-client" }
 splinter = { path = "../splinter" }
+precept = { path = "../precept" }
 
-antithesis_sdk = { workspace = true }
 culprit = { workspace = true }
 tryiter = { workspace = true }
 tokio = { workspace = true, features = [
@@ -42,7 +42,6 @@ tempfile = { workspace = true }
 foldhash = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
 config = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }

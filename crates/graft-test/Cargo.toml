@@ -8,8 +8,8 @@ graft-client = { path = "../graft-client", features = ["antithesis"]}
 graft-server = { path = "../graft-server" }
 graft-core = { path = "../graft-core", features = ["testutil"] }
 splinter = { path = "../splinter" }
+precept = { path = "../precept", features = ["antithesis"] }
 
-antithesis_sdk = { workspace = true }
 culprit = { workspace = true }
 crossbeam = { workspace = true }
 url = { workspace = true }

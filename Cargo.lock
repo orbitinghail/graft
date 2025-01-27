@@ -1133,7 +1133,6 @@ checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 name = "graft-client"
 version = "0.1.0"
 dependencies = [
- "antithesis_sdk",
  "bytes",
  "clap",
  "crossbeam",
@@ -1145,9 +1144,9 @@ dependencies = [
  "log",
  "lsm-tree",
  "parking_lot",
+ "precept",
  "prost",
  "serde",
- "serde_json",
  "splinter",
  "static_assertions",
  "tempfile",
@@ -1193,7 +1192,6 @@ dependencies = [
 name = "graft-server"
 version = "0.1.0"
 dependencies = [
- "antithesis_sdk",
  "assert_matches",
  "axum",
  "axum-test",
@@ -1215,10 +1213,10 @@ dependencies = [
  "nix",
  "object_store",
  "pausable_future",
+ "precept",
  "prost",
  "rlimit",
  "serde",
- "serde_json",
  "splinter",
  "static_assertions",
  "tempfile",
@@ -1250,7 +1248,6 @@ dependencies = [
 name = "graft-test"
 version = "0.1.0"
 dependencies = [
- "antithesis_sdk",
  "blake3",
  "bs58",
  "bytes",
@@ -1262,6 +1259,7 @@ dependencies = [
  "graft-client",
  "graft-core",
  "graft-server",
+ "precept",
  "rand",
  "serde",
  "serde_json",
@@ -2258,6 +2256,7 @@ version = "0.1.0"
 dependencies = [
  "antithesis_sdk",
  "log",
+ "rand",
  "serde_json",
 ]
 

@@ -67,11 +67,10 @@ pub fn prost_request<Req: Message, Resp: Message + Default>(
             );
             Culprit::from_err(err).with_note(note)
         })?;
-        #[cfg(feature = "antithesis")]
-        antithesis_sdk::assert_always_or_unreachable!(
+        precept::expect_always_or_unreachable!(
             !(500..600).contains(&status),
             "client requests should not return 5xx errors",
-            &serde_json::json!({ "status": status, "code": err.code().as_str_name(), "message": err.message })
+            { "status": status, "code": err.code().as_str_name(), "message": err.message }
         );
         Err(err.into())
     }
