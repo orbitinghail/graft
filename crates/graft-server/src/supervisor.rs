@@ -66,17 +66,14 @@ pub trait SupervisedTask {
     fn run(self, ctx: TaskCtx) -> impl Future<Output = Result<(), Culprit<Self::Err>>> + Send;
 
     #[cfg(test)]
-    fn testonly_spawn(self) -> pausable_future::Controller
+    fn testonly_spawn(self)
     where
         Self: Sized + Send + 'static,
     {
         let cfg = self.cfg();
         let ctx = TaskCtx { shutdown: CancellationToken::new() };
         tracing::info!("spawning task {:?}", cfg);
-        let task = pausable_future::Pausable::new(async move { self.run(ctx).await.unwrap() });
-        let controller = task.controller();
-        tokio::spawn(task);
-        controller
+        tokio::spawn(async move { self.run(ctx).await.unwrap() });
     }
 }
 

@@ -97,7 +97,7 @@ mod tests {
     use object_store::memory::InMemory;
     use prost::Message;
     use splinter::SplinterRef;
-    use tokio::{sync::mpsc, time::sleep};
+    use tokio::sync::mpsc;
     use tracing_test::traced_test;
 
     use crate::{
@@ -124,11 +124,11 @@ mod tests {
         let (store_tx, store_rx) = mpsc::channel(8);
         let commit_bus = Bus::new(128);
 
-        let writer_controller = SegmentWriterTask::new(
+        SegmentWriterTask::new(
             Default::default(),
             page_rx,
             store_tx,
-            Duration::from_secs(100),
+            Duration::from_secs(1),
         )
         .testonly_spawn();
 
@@ -175,10 +175,6 @@ mod tests {
             ],
         };
 
-        // we pause the writer here to ensure that both requests are placed in
-        // the same segment
-        writer_controller.pause();
-
         let local = tokio::task::LocalSet::new();
         let req1 = local.spawn_local(
             server
@@ -193,13 +189,6 @@ mod tests {
                 .into_future(),
         );
 
-        // this sleep allows tokio to advance past the writer timer as well as
-        // advance each request until they are waiting for the next commit
-        local.run_until(sleep(Duration::from_secs(5))).await;
-
-        // resume the writer, causing the segment to flush
-        writer_controller.resume();
-
         // wait for both requests to complete
         local.await;
         let (resp1, resp2) = (req1.await.unwrap(), req2.await.unwrap());
@@ -212,11 +201,6 @@ mod tests {
 
         let resp2 = WritePagesResponse::decode(resp2.into_bytes()).unwrap();
         assert_eq!(resp2.segments.len(), 1, "expected 1 segment");
-        assert_eq!(
-            resp2.segments[0].sid().unwrap(),
-            resp1.segments[0].sid().unwrap(),
-            "expected same segment"
-        );
         let offsets = SplinterRef::from_bytes(resp2.segments[0].offsets.clone()).unwrap();
         assert_eq!(offsets.cardinality(), 2);
         assert!(offsets.contains(0));

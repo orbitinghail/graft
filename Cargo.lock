@@ -1212,7 +1212,6 @@ dependencies = [
  "memmap2",
  "nix",
  "object_store",
- "pausable_future",
  "precept",
  "prost",
  "rlimit",
@@ -2128,15 +2127,6 @@ name = "pathdiff"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
-
-[[package]]
-name = "pausable_future"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb9260b3106a317a7a9a9d2099fa544433d0af5904a1e90824f45585b4fd85f9"
-dependencies = [
- "pin-project-lite",
-]
 
 [[package]]
 name = "percent-encoding"

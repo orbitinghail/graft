@@ -49,7 +49,6 @@ measured = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
-pausable_future = { workspace = true }
 
 axum-test = { workspace = true }
 tracing-test = { workspace = true }
