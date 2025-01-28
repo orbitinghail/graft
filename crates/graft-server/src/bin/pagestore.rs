@@ -81,7 +81,7 @@ async fn main() {
                 .from_env()
                 .expect("failed to initialize env filter"),
         )
-        .with_span_events(FmtSpan::CLOSE)
+        .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
         .with_ansi(!running_in_antithesis)
         .finish()
         .try_init()

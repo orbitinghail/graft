@@ -19,7 +19,10 @@ use crate::{ClientErr, ClientPair};
 use super::{
     fetcher::Fetcher,
     shared::Shared,
-    storage::{changeset::SetSubscriber, volume_state::SyncDirection},
+    storage::{
+        changeset::SetSubscriber,
+        volume_state::{SyncDirection, VolumeStatus},
+    },
 };
 
 #[derive(Debug, Error)]
@@ -128,11 +131,11 @@ impl SyncTaskHandle {
             // wait for the thread to complete or the timeout to elapse
             match rx.recv_deadline(deadline) {
                 Ok(Ok(())) => {
-                    log::debug!("sync task shutdown completed");
+                    tracing::debug!("sync task shutdown completed");
                     Ok(())
                 }
                 Ok(Err(err)) => {
-                    log::error!("sync task shutdown error: {:?}", err);
+                    tracing::error!(?err, "sync task shutdown error");
                     let msg = match err.downcast_ref::<&'static str>() {
                         Some(s) => *s,
                         None => match err.downcast_ref::<String>() {
@@ -146,7 +149,7 @@ impl SyncTaskHandle {
                     ))
                 }
                 Err(_) => {
-                    log::warn!("timeout waiting for sync task to shutdown");
+                    tracing::warn!("timeout waiting for sync task to shutdown");
                     Err(Culprit::new(ShutdownErr::Timeout))
                 }
             }
@@ -171,13 +174,13 @@ impl<F: Fetcher> SyncTask<F> {
         loop {
             match self.run_inner() {
                 Ok(()) => {
-                    log::trace!("sync task inner loop completed without error; shutting down");
+                    tracing::trace!("sync task inner loop completed without error; shutting down");
                     break;
                 }
                 Err(err) => {
-                    log::error!("sync task error: {:?}", err);
-                    log::trace!("sleeping for 1 second before restarting");
-                    precept::expect_unreachable!("error occurred in sync task");
+                    tracing::error!("sync task error: {:?}", err);
+                    // we want to explore system states that include sync task errors
+                    precept::expect_reachable!("error occurred in sync task");
                     sleep(Duration::from_secs(1));
                 }
             }
@@ -190,7 +193,7 @@ impl<F: Fetcher> SyncTask<F> {
                 recv(self.control) -> control => {
                     match control.ok() {
                         None| Some(SyncControl::Shutdown) => {
-                            log::debug!("sync task shutting down");
+                            tracing::debug!("sync task shutting down");
                             break
                         }
                         Some(control) => self.handle_control(control)?,
@@ -272,7 +275,6 @@ impl<F: Fetcher> SyncTask<F> {
     }
 
     fn handle_commit(&mut self, vids: HashSet<VolumeId>) -> Result<(), ClientErr> {
-        log::debug!("handle_commit: {:?}", vids);
         let mut jobs = self.jobs(SyncDirection::Push, Some(vids));
         while let Some(job) = jobs.try_next()? {
             job.run(self.shared.storage(), &self.clients)?;
@@ -290,6 +292,11 @@ impl<F: Fetcher> SyncTask<F> {
             .query_volumes(sync, vids)
             .map_err(|err| err.map_ctx(ClientErr::from))
             .try_filter_map(move |state| {
+                if state.status() != VolumeStatus::Ok {
+                    // volume must be healthy
+                    return Ok(None);
+                }
+
                 let config = state.config();
                 let can_push = config.sync().matches(SyncDirection::Push);
                 let can_pull = config.sync().matches(SyncDirection::Pull);

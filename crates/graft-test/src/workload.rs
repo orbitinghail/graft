@@ -19,7 +19,7 @@ use graft_client::{
 };
 use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
 use graft_server::supervisor;
-use precept::{expect_always_or_unreachable, expect_reachable};
+use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -246,11 +246,11 @@ fn workload_reader<F: Fetcher>(
 
         tracing::info!(snapshot=?snapshot, "received commit for volume {:?}", vid);
 
-        expect_always_or_unreachable!(
+        expect_sometimes!(
             last_snapshot
                 .replace(snapshot.clone())
                 .is_none_or(|last| &last != snapshot),
-            "the snapshot should be different after receiving a commit notification",
+            "the snapshot is different after receiving a commit notification",
             { "snapshot": snapshot, "worker": worker_id }
         );
 

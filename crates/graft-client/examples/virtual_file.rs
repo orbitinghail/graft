@@ -16,6 +16,10 @@ use graft_proto::{common::v1::Snapshot, pagestore::v1::PageAtOffset};
 use prost::Message;
 use splinter::Splinter;
 use thiserror::Error;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 use tryiter::TryIteratorExt;
 use url::Url;
 
@@ -299,7 +303,17 @@ fn print_snapshot(snapshot: Option<Snapshot>) {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env()
+                .expect("failed to initialize env filter"),
+        )
+        .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
+        .finish()
+        .try_init()
+        .expect("failed to initialize tracing subscriber");
 
     let mut args = Cli::parse();
     let client_id = args.client_id.unwrap_or_else(|| "default".to_string());

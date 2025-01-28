@@ -13,7 +13,6 @@ bytes = { workspace = true }
 culprit = { workspace = true }
 crossbeam = { workspace = true }
 fjall = { workspace = true, features = ["bytes"] }
-log = { workspace = true }
 lsm-tree = { workspace = true, features = ["bytes"] }
 parking_lot = { workspace = true }
 prost = { workspace = true }
@@ -21,6 +20,7 @@ serde = { workspace = true }
 static_assertions = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 tryiter = { workspace = true }
 ureq = { workspace = true }
 url = { workspace = true }
@@ -28,7 +28,7 @@ zerocopy = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
-env_logger = { workspace = true }
+tracing-subscriber = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 
 [features]

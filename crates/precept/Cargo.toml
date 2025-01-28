@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 antithesis_sdk = { workspace = true, optional = true}
 serde_json = { workspace = true, optional= true }
-log = { workspace = true }
+tracing = { workspace = true }
 rand = { workspace = true }
 
 [features]

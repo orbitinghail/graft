@@ -3,6 +3,7 @@ use culprit::{Culprit, ResultExt};
 use graft_core::byte_unit::ByteUnit;
 use graft_proto::common::v1::GraftErr;
 use std::{any::type_name, io::Read};
+use tracing::field;
 
 use ureq::{Agent, OrAnyStatus};
 use url::Url;
@@ -20,13 +21,21 @@ pub fn prost_request<Req: Message, Resp: Message + Default>(
     url: Url,
     req: Req,
 ) -> Result<Resp, Culprit<ClientErr>> {
-    log::trace!("sending request to {}", url);
+    let span = tracing::debug_span!(
+        "graft_client::net::request",
+        path = url.path(),
+        status = field::Empty
+    )
+    .entered();
 
     let resp = agent
         .request_url("POST", &url)
         .set(CONTENT_TYPE, APPLICATION_PROTOBUF)
         .send_bytes(&req.encode_to_vec())
         .or_any_status()?;
+
+    let status = resp.status();
+    span.record("status", resp.status());
 
     if resp.content_type() != APPLICATION_PROTOBUF {
         return Err(
@@ -37,9 +46,6 @@ pub fn prost_request<Req: Message, Resp: Message + Default>(
             )),
         );
     }
-
-    let status = resp.status();
-    log::trace!("received response with status {}", resp.status());
 
     let success = (200..300).contains(&status);
 

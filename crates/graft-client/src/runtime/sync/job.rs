@@ -50,12 +50,13 @@ pub struct PullJob {
 
 impl PullJob {
     fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
+        let _guard = tracing::debug_span!("pull job").entered();
         let state = storage.volume_state(&self.vid).or_into_ctx()?;
 
-        log::debug!(
-            "pulling volume {:?}; snapshot {:?}",
+        tracing::debug!(
+            snapshot=?state.snapshot(),
+            "pulling volume {:?}",
             self.vid,
-            state.snapshot()
         );
 
         // pull starting at the next LSN after the last pulled snapshot
@@ -77,7 +78,7 @@ impl PullJob {
                 snapshot_lsn,
                 state.snapshot()
             );
-            log::debug!("received remote snapshot at LSN {}", snapshot_lsn);
+            tracing::debug!("received remote snapshot at LSN {snapshot_lsn}");
 
             if self.reset {
                 storage
@@ -103,7 +104,7 @@ impl PushJob {
     fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         if let Err(err) = self.run_inner(storage, clients) {
             if let Err(inner) = storage.rollback_sync_to_remote(&self.vid, err.ctx()) {
-                log::error!("failed to rollback sync to remote: {:?}", inner);
+                tracing::error!("failed to rollback sync to remote: {inner:?}");
                 Err(err.with_note(format!("rollback failed after push job failed: {}", inner)))
             } else if err.ctx().is_commit_rejected() {
                 // rejected commits are not job failures, the
@@ -119,14 +120,16 @@ impl PushJob {
     }
 
     fn run_inner(&self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
+        let _guard = tracing::debug_span!("push job").entered();
+
         // prepare the sync
         let (snapshot, lsns, mut commits) =
             storage.prepare_sync_to_remote(&self.vid).or_into_ctx()?;
 
-        log::debug!(
-            "pushing volume {:?}; current snapshot {:?}",
+        tracing::debug!(
+            snapshot=?snapshot,
+            "pushing volume {:?}",
             &self.vid,
-            snapshot,
         );
 
         // setup temporary storage for pages

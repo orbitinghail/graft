@@ -358,11 +358,8 @@ impl Storage {
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
         let remote_pages = remote_snapshot.pages();
 
-        log::trace!(
-            "volume {:?} received remote commit at LSN {} with {} pages",
-            vid,
-            remote_lsn,
-            remote_pages
+        tracing::trace!(
+            "volume {vid:?} received remote commit at LSN {remote_lsn} with {remote_pages} pages",
         );
 
         let mut batch = self.keyspace.batch();
@@ -581,11 +578,9 @@ impl Storage {
         let pages = snapshot.pages();
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
 
-        log::trace!(
-            "completing sync to remote: pushed local LSN {} to remote LSN {} for volume {:?}",
+        tracing::trace!(
+            "completing sync to remote: pushed local LSN {} to remote LSN {remote_lsn} for volume {state:?}",
             sync_start_snapshot.local(),
-            remote_lsn,
-            state,
         );
 
         // check invariants
@@ -654,12 +649,7 @@ impl Storage {
             target_lsn
         );
 
-        log::trace!(
-            "resetting volume {:?} from {:?} to {:?}",
-            vid,
-            local_lsn,
-            target_lsn,
-        );
+        tracing::trace!("resetting volume {vid:?} from {local_lsn:?} to {target_lsn:?}",);
 
         let mut batch = self.keyspace.batch();
 
@@ -718,6 +708,9 @@ impl Storage {
                 batch.remove(&self.pages, key.as_ref());
             }
         }
+
+        // commit the changes
+        batch.commit().or_into_ctx()?;
 
         // now that we have reset to the earlier volume state, we can receive
         // the remote commit
