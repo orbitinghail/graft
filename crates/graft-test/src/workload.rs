@@ -15,7 +15,7 @@ use graft_client::{
             StorageErr,
         },
         sync::{ShutdownErr, StartupErr},
-        volume::VolumeHandle,
+        volume_reader::VolumeReader,
     },
     ClientBuildErr, ClientErr,
 };
@@ -124,12 +124,11 @@ impl Workload {
 }
 
 fn load_tracker<F: Fetcher>(
-    handle: &VolumeHandle<F>,
+    reader: &VolumeReader<F>,
     worker_id: &str,
 ) -> Result<PageTracker, Culprit<WorkloadErr>> {
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
-    let reader = handle.reader().or_into_ctx()?;
     let first_page = reader.read(0.into()).or_into_ctx()?;
     let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
@@ -163,8 +162,6 @@ fn workload_writer<F: Fetcher, R: Rng>(
     tracing::info!("pulling volume {:?}", vid);
     handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
 
-    let mut page_tracker = load_tracker(&handle, env.worker_id).or_into_ctx()?;
-
     while env.ticker.tick() {
         // check the volume status to see if we need to reset
         let status = handle.status().or_into_ctx()?;
@@ -174,32 +171,17 @@ fn workload_writer<F: Fetcher, R: Rng>(
             handle.reset_to_remote().or_into_ctx()?;
             span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
             drop(span);
-
-            // reload the page tracker from the volume
-            page_tracker = load_tracker(&handle, env.worker_id).or_into_ctx()?;
         }
 
-        // check that the in-memory is in sync with storage
-        let pt = load_tracker(&handle, env.worker_id).or_into_ctx()?;
-        let diff = page_tracker.diff(&pt);
-        expect_always_or_unreachable!(
-            diff.is_empty(),
-            "page tracker should be in sync with storage",
-            {
-                "worker": env.worker_id,
-                "snapshot": handle.reader().or_into_ctx()?.snapshot(),
-                "diff": diff,
-            }
-        );
+        // open a reader
+        let reader = handle.reader().or_into_ctx()?;
 
         // randomly pick a page offset and a page value.
         // select the next offset to ensure we don't pick the 0th page
         let offset = PageOffset::test_random(&mut env.rng, 16).next();
         let new_page: Page = env.rng.gen();
         let new_hash = PageHash::new(&new_page);
-        let expected_hash = page_tracker.upsert(offset, new_hash.clone());
 
-        let reader = handle.reader().or_into_ctx()?;
         let span = tracing::info_span!(
             "write_page",
             offset=offset.to_string(),
@@ -207,6 +189,10 @@ fn workload_writer<F: Fetcher, R: Rng>(
             ?new_hash
         )
         .entered();
+
+        // load the tracker and the expected page hash
+        let mut page_tracker = load_tracker(&reader, env.worker_id).or_into_ctx()?;
+        let expected_hash = page_tracker.upsert(offset, new_hash.clone());
 
         // verify the offset is missing or present as expected
         let page = reader.read(offset).or_into_ctx()?;
@@ -239,21 +225,23 @@ fn workload_writer<F: Fetcher, R: Rng>(
 
         let mut writer = handle.writer().or_into_ctx()?;
 
-        // write the page to the volume and update the page index
-        writer.write(offset, new_page);
+        // write out the updated page tracker and the new page
         writer.write(0.into(), page_tracker.serialize_into_page().or_into_ctx()?);
+        writer.write(offset, new_page);
 
         let pre_commit_remote = writer.snapshot().and_then(|s| s.remote());
         let reader = writer.commit().or_into_ctx()?;
         let post_commit_remote = reader.snapshot().and_then(|s| s.remote());
 
-        if pre_commit_remote != post_commit_remote {
-            tracing::info!(
-                "remote LSN changed concurrently with local commit; from {:?} to {:?}",
-                pre_commit_remote,
-                post_commit_remote
-            );
-        }
+        expect_sometimes!(
+            pre_commit_remote != post_commit_remote,
+            "remote LSN changed concurrently with local commit",
+            {
+                "pre_commit": pre_commit_remote,
+                "snapshot": reader.snapshot(),
+                "worker": env.worker_id
+            }
+        );
 
         drop(span);
 
@@ -327,8 +315,7 @@ fn workload_reader<F: Fetcher, R: Rng>(
         }
 
         // load the page index
-        let first_page = reader.read(0.into()).or_into_ctx()?;
-        let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
+        let page_tracker = load_tracker(&reader, env.worker_id).or_into_ctx()?;
 
         // ensure all pages are either empty or have the expected hash
         for offset in snapshot.pages().offsets() {
@@ -337,25 +324,42 @@ fn workload_reader<F: Fetcher, R: Rng>(
                 continue;
             }
 
-            let span = tracing::info_span!("read_page", offset=offset.to_string(), snapshot=?reader.snapshot(), hash=field::Empty).entered();
+            let span = tracing::info_span!(
+                "read_page",
+                offset = offset.to_string(),
+                hash = field::Empty
+            )
+            .entered();
+
             let page = reader.read(offset).or_into_ctx()?;
             let actual_hash = PageHash::new(&page);
+            span.record("hash", actual_hash.to_string());
 
             if let Some(expected_hash) = page_tracker.get_hash(offset) {
                 expect_always_or_unreachable!(
                     expected_hash == &actual_hash,
                     "page should have expected contents",
-                    { "offset": offset, "worker": env.worker_id }
+                    {
+                        "offset": offset,
+                        "worker": env.worker_id,
+                        "snapshot": snapshot,
+                        "expected": expected_hash,
+                        "actual": actual_hash
+                    }
                 );
             } else {
                 expect_always_or_unreachable!(
                     page.is_empty(),
                     "page should be empty as it has never been written to",
-                    { "offset": offset, "worker": env.worker_id }
+                    {
+                        "offset": offset,
+                        "worker": env.worker_id,
+                        "snapshot": snapshot,
+                        "actual": actual_hash
+                    }
                 );
             }
 
-            span.record("hash", actual_hash.to_string());
             drop(span);
         }
     }

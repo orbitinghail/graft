@@ -27,6 +27,7 @@ use page::{PageKey, PageValue, PageValueConversionErr};
 use parking_lot::{Mutex, MutexGuard};
 use snapshot::Snapshot;
 use splinter::{DecodeErr, Splinter, SplinterRef};
+use tracing::field;
 use tryiter::{TryIterator, TryIteratorExt};
 use volume_state::{
     SyncDirection, VolumeConfig, VolumeQueryIter, VolumeState, VolumeStateKey, VolumeStateTag,
@@ -315,6 +316,15 @@ impl Storage {
         // holding the commit lock
         let latest = self.snapshot(vid)?;
         if latest.as_ref().map(|l| l.local()) != read_lsn {
+            precept::expect_reachable!(
+                "concurrent write to volume",
+                {
+                    "vid": vid,
+                    "snapshot": snapshot,
+                    "latest": latest,
+                }
+            );
+
             return Err(Culprit::new_with_note(
                 StorageErr::ConcurrentWrite,
                 format!("Illegal concurrent write to Volume {vid}"),
@@ -364,8 +374,11 @@ impl Storage {
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
         let remote_pages = remote_snapshot.pages();
 
-        tracing::trace!(
-            "volume {vid:?} received remote commit at LSN {remote_lsn} with {remote_pages} pages",
+        let span = tracing::debug_span!(
+            "receive_remote_commit",
+            ?vid,
+            ?remote_lsn,
+            result = field::Empty,
         );
 
         let mut batch = self.keyspace.batch();
@@ -406,10 +419,11 @@ impl Storage {
         let local_lsn = snapshot.map_or(LSN::FIRST, |s| s.local().next().expect("lsn overflow"));
 
         // persist the new volume snapshot
+        let new_snapshot = Snapshot::new(local_lsn, Some(remote_lsn), remote_pages);
         batch.insert(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
-            Snapshot::new(local_lsn, Some(remote_lsn), remote_pages),
+            new_snapshot.as_bytes(),
         );
 
         // fast forward the sync watermarks to ensure we don't roundtrip this
@@ -435,6 +449,9 @@ impl Storage {
 
         // notify listeners of the new remote commit
         self.remote_changeset.mark_changed(&vid);
+
+        // log the result
+        span.record("result", new_snapshot.to_string());
 
         Ok(())
     }
