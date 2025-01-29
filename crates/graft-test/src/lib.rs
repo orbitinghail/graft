@@ -197,6 +197,38 @@ impl PageTracker {
         self.pages.insert(offset, hash)
     }
 
+    // returns a hashmap containing offsets that differ between this tracker and other
+    pub fn diff(&self, other: &PageTracker) -> HashMap<PageOffset, PageHash> {
+        let mut diff: HashMap<PageOffset, PageHash> = self
+            .pages
+            .iter()
+            .filter_map(|(offset, hash)| {
+                if let Some(other_hash) = other.pages.get(offset) {
+                    // page in both self and other
+                    if hash != other_hash {
+                        Some((*offset, hash.clone()))
+                    } else {
+                        None
+                    }
+                } else {
+                    // page in self, not in other
+                    Some((*offset, hash.clone()))
+                }
+            })
+            .collect();
+
+        // add any pages in other that are not in self
+        diff.extend(other.pages.iter().filter_map(|(offset, hash)| {
+            if !self.pages.contains_key(offset) {
+                Some((*offset, hash.clone()))
+            } else {
+                None
+            }
+        }));
+
+        diff
+    }
+
     pub fn get_hash(&self, offset: PageOffset) -> Option<&PageHash> {
         self.pages.get(&offset)
     }

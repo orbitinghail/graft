@@ -63,15 +63,15 @@ impl From<ConfigError> for WorkloadErr {
 
 impl WorkloadErr {
     fn should_retry(&self) -> bool {
-        if let WorkloadErr::ClientErr(ClientErr::HttpErr(kind)) = self {
-            match kind {
+        match self {
+            WorkloadErr::ClientErr(ClientErr::HttpErr(kind)) => match kind {
                 ErrorKind::Dns => true,
                 ErrorKind::ConnectionFailed => true,
                 ErrorKind::TooManyRedirects => true,
                 _ => false,
-            }
-        } else {
-            false
+            },
+            WorkloadErr::StorageErr(StorageErr::ConcurrentWrite) => true,
+            _ => false,
         }
     }
 }
@@ -112,6 +112,7 @@ impl Workload {
             } {
                 if err.ctx().should_retry() {
                     tracing::warn!("retrying workload after error: {:?}", err);
+                    precept::expect_reachable!("retryable error occurred");
                     continue;
                 } else {
                     return Err(err);
@@ -180,14 +181,14 @@ fn workload_writer<F: Fetcher, R: Rng>(
 
         // check that the in-memory is in sync with storage
         let pt = load_tracker(&handle, env.worker_id).or_into_ctx()?;
+        let diff = page_tracker.diff(&pt);
         expect_always_or_unreachable!(
-            pt == page_tracker,
+            diff.is_empty(),
             "page tracker should be in sync with storage",
             {
                 "worker": env.worker_id,
                 "snapshot": handle.reader().or_into_ctx()?.snapshot(),
-                "tracker": page_tracker,
-                "storage": pt
+                "diff": diff,
             }
         );
 
