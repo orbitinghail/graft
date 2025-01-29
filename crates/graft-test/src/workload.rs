@@ -48,11 +48,14 @@ pub enum WorkloadErr {
     #[error("page tracker error: {0}")]
     PageTrackerErr(#[from] PageTrackerErr),
 
-    #[error("storage error: {0}")]
-    StorageErr(#[from] StorageErr),
-
     #[error("supervisor shutdown error: {0}")]
     SupervisorShutdownErr(#[from] supervisor::ShutdownErr),
+}
+
+impl From<StorageErr> for WorkloadErr {
+    fn from(err: StorageErr) -> Self {
+        WorkloadErr::ClientErr(ClientErr::StorageErr(err))
+    }
 }
 
 impl From<ConfigError> for WorkloadErr {
@@ -70,7 +73,7 @@ impl WorkloadErr {
                 ErrorKind::TooManyRedirects => true,
                 _ => false,
             },
-            WorkloadErr::StorageErr(StorageErr::ConcurrentWrite) => true,
+            WorkloadErr::ClientErr(ClientErr::StorageErr(StorageErr::ConcurrentWrite)) => true,
             _ => false,
         }
     }
