@@ -49,12 +49,22 @@ impl<F: Fetcher> VolumeReader<F> {
             {
                 (_, PageValue::Available(page)) => Ok(page),
                 (_, PageValue::Empty) => Ok(EMPTY_PAGE),
-                (_, PageValue::Pending) => self.shared.fetcher().fetch_page(
-                    self.shared.storage(),
-                    self.vid(),
-                    snapshot,
-                    offset,
-                ),
+                (local_lsn, PageValue::Pending) => {
+                    if let Some(remote_lsn) = snapshot.remote() {
+                        self.shared
+                            .fetcher()
+                            .fetch_page(
+                                self.shared.storage(),
+                                self.vid(),
+                                remote_lsn,
+                                local_lsn,
+                                offset,
+                            )
+                            .or_into_ctx()
+                    } else {
+                        Ok(EMPTY_PAGE)
+                    }
+                }
             }
         } else {
             Ok(EMPTY_PAGE)

@@ -15,6 +15,7 @@ use fjall::{KvSeparationOptions, PartitionCreateOptions, Slice};
 use graft_core::{
     byte_unit::ByteUnit,
     lsn::{LSNRangeExt, LSN},
+    page::PageSizeErr,
     page_count::PageCount,
     page_offset::PageOffset,
     zerocopy_err::ZerocopyErr,
@@ -91,6 +92,12 @@ impl From<io::Error> for StorageErr {
 impl From<lsm_tree::Error> for StorageErr {
     fn from(err: lsm_tree::Error) -> Self {
         StorageErr::FjallErr(err.into())
+    }
+}
+
+impl From<PageSizeErr> for StorageErr {
+    fn from(err: PageSizeErr) -> Self {
+        StorageErr::CorruptPage(err.into())
     }
 }
 
@@ -438,11 +445,8 @@ impl Storage {
         let mut batch = self.keyspace.batch();
         for page in pages {
             key = key.with_offset(page.offset());
-            batch.insert(
-                &self.pages,
-                key.as_ref(),
-                PageValue::try_from(page.data).or_into_ctx()?,
-            );
+            let page = page.page().or_into_ctx()?;
+            batch.insert(&self.pages, key.as_ref(), PageValue::from(page));
         }
         Ok(batch.commit()?)
     }

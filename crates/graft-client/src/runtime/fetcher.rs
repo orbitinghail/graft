@@ -1,9 +1,9 @@
 use culprit::Result;
-use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{lsn::LSN, page::Page, page_offset::PageOffset, VolumeId};
 
 use crate::ClientErr;
 
-use super::storage::{snapshot::Snapshot, Storage};
+use super::storage::Storage;
 
 mod mock;
 mod net;
@@ -17,7 +17,8 @@ pub trait Fetcher: Send + Sync + 'static {
         &self,
         storage: &Storage,
         vid: &VolumeId,
-        snapshot: &Snapshot,
+        remote_lsn: LSN,
+        local_lsn: LSN,
         offset: PageOffset,
     ) -> Result<Page, ClientErr>;
 }
