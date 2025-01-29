@@ -286,6 +286,9 @@ impl Storage {
         snapshot: Option<Snapshot>,
         memtable: Memtable,
     ) -> Result<Snapshot> {
+        let span =
+            tracing::debug_span!("volume_commit", ?vid, ?snapshot, result = field::Empty).entered();
+
         let mut batch = self.keyspace.batch();
         let mut pages = snapshot.as_ref().map_or(PageCount::ZERO, |s| s.pages());
         let read_lsn = snapshot.as_ref().map(|s| s.local());
@@ -342,6 +345,9 @@ impl Storage {
         // notify listeners of the new local commit
         self.local_changeset.mark_changed(&vid);
 
+        // log the result
+        span.record("result", snapshot.to_string());
+
         // return the new snapshot
         Ok(snapshot)
     }
@@ -379,7 +385,8 @@ impl Storage {
             ?vid,
             ?remote_lsn,
             result = field::Empty,
-        );
+        )
+        .entered();
 
         let mut batch = self.keyspace.batch();
 
@@ -650,13 +657,26 @@ impl Storage {
         // acquire the commit lock and start a new batch
         let permit = self.commit_lock.lock();
 
+        let span = tracing::debug_span!(
+            "reset_volume_to_remote",
+            ?vid,
+            local_lsn = field::Empty,
+            target_lsn = field::Empty,
+        )
+        .entered();
+
         // retrieve the current volume state
         let state = self.volume_state(&vid)?;
         let snapshot = state.snapshot();
         let local_lsn = snapshot.map(|s| s.local());
         let target_lsn = state.watermarks().last_sync();
 
+        span.record("local_lsn", format!("{:?}", local_lsn));
+        span.record("target_lsn", format!("{:?}", target_lsn));
+
         if target_lsn == local_lsn {
+            drop(span);
+
             // no need to reset, we can just receive the remote commit
             return self.receive_remote_commit_holding_lock(permit, vid, remote_snapshot, changed);
         }
@@ -668,8 +688,6 @@ impl Storage {
             local_lsn,
             target_lsn
         );
-
-        tracing::trace!("resetting volume {vid:?} from {local_lsn:?} to {target_lsn:?}",);
 
         let mut batch = self.keyspace.batch();
 
@@ -730,7 +748,10 @@ impl Storage {
         }
 
         // commit the changes
-        batch.commit().or_into_ctx()?;
+        batch.commit()?;
+
+        // log the reset
+        drop(span);
 
         // now that we have reset to the earlier volume state, we can receive
         // the remote commit

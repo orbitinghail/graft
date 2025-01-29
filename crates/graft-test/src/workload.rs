@@ -223,7 +223,7 @@ fn workload_writer<F: Fetcher, R: Rng>(
             );
         }
 
-        let mut writer = handle.writer().or_into_ctx()?;
+        let mut writer = reader.upgrade();
 
         // write out the updated page tracker and the new page
         writer.write(0.into(), page_tracker.serialize_into_page().or_into_ctx()?);
