@@ -8,10 +8,10 @@ use graft_client::runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Stor
 use graft_core::VolumeId;
 use graft_test::{
     start_graft_backend,
-    test_tracing::tracing_init,
-    worker_id,
     workload::{Workload, WorkloadErr},
+    Ticker,
 };
+use graft_tracing::{tracing_init, TracingConsumer, PROCESS_ID};
 use rand::thread_rng;
 
 struct WorkloadRunner<F> {
@@ -21,12 +21,12 @@ struct WorkloadRunner<F> {
 
 #[test]
 fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
-    tracing_init(None);
+    tracing_init(TracingConsumer::Test);
 
     let (backend, clients) = start_graft_backend();
 
     let vid = VolumeId::random();
-    let ticks = 10;
+    let ticker = Ticker::new(10);
 
     let writer = {
         let storage = Storage::open_temporary().or_into_ctx()?;
@@ -38,11 +38,7 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
         let r2 = runtime.clone();
         let workload = thread::Builder::new()
             .name("writer".into())
-            .spawn(move || {
-                let mut rng = thread_rng();
-                let id = worker_id(&mut rng);
-                workload.run(&id, r2, rng, ticks)
-            })
+            .spawn(move || workload.run(PROCESS_ID.as_str(), r2, thread_rng(), ticker))
             .unwrap();
         WorkloadRunner { runtime, workload }
     };
@@ -57,11 +53,7 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
         let r2 = runtime.clone();
         let workload = thread::Builder::new()
             .name("reader".into())
-            .spawn(move || {
-                let mut rng = thread_rng();
-                let id = worker_id(&mut rng);
-                workload.run(&id, r2, rng, ticks)
-            })
+            .spawn(move || workload.run(PROCESS_ID.as_str(), r2, thread_rng(), ticker))
             .unwrap();
         WorkloadRunner { runtime, workload }
     };

@@ -1,5 +1,7 @@
 use std::{thread::sleep, time::Duration, u64};
 
+use crate::{PageHash, Ticker};
+
 use super::{PageTracker, PageTrackerErr};
 use config::ConfigError;
 use crossbeam::channel::RecvTimeoutError;
@@ -23,13 +25,11 @@ use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing_subscriber::filter::FromEnvError;
+use tracing::field;
+use ureq::ErrorKind;
 
 #[derive(Debug, Error)]
 pub enum WorkloadErr {
-    #[error("failed to initialize tracing subscriber")]
-    TracingInit,
-
     #[error("invalid workload configuration")]
     InvalidConfig,
 
@@ -61,15 +61,18 @@ impl From<ConfigError> for WorkloadErr {
     }
 }
 
-impl From<FromEnvError> for WorkloadErr {
-    fn from(_: FromEnvError) -> Self {
-        WorkloadErr::TracingInit
-    }
-}
-
-impl From<tracing_subscriber::util::TryInitError> for WorkloadErr {
-    fn from(_: tracing_subscriber::util::TryInitError) -> Self {
-        WorkloadErr::TracingInit
+impl WorkloadErr {
+    fn should_retry(&self) -> bool {
+        if let WorkloadErr::ClientErr(ClientErr::HttpErr(kind)) = self {
+            match kind {
+                ErrorKind::Dns => true,
+                ErrorKind::ConnectionFailed => true,
+                ErrorKind::TooManyRedirects => true,
+                _ => false,
+            }
+        } else {
+            false
+        }
     }
 }
 
@@ -81,32 +84,41 @@ pub enum Workload {
     Reader { vid: VolumeId, interval_ms: u64 },
 }
 
+struct WorkloadEnv<F: Fetcher, R: Rng> {
+    worker_id: &'static str,
+    runtime: Runtime<F>,
+    rng: R,
+    ticker: Ticker,
+}
+
 impl Workload {
-    pub fn run<F: Fetcher>(
+    pub fn run<F: Fetcher, R: Rng>(
         self,
-        worker_id: &str,
-        handle: Runtime<F>,
-        rng: impl Rng,
-        ticks: usize,
+        worker_id: &'static str,
+        runtime: Runtime<F>,
+        rng: R,
+        ticker: Ticker,
     ) -> Result<(), Culprit<WorkloadErr>> {
-        match self {
-            Workload::Writer { vid, interval_ms: interval } => workload_writer(
-                worker_id,
-                handle,
-                rng,
-                vid,
-                Duration::from_millis(interval),
-                ticks,
-            ),
-            Workload::Reader { vid, interval_ms: interval } => workload_reader(
-                worker_id,
-                handle,
-                rng,
-                vid,
-                ticks,
-                Duration::from_millis(interval),
-            ),
+        let mut env = WorkloadEnv { worker_id, runtime, rng, ticker };
+
+        while env.ticker.tick() {
+            if let Err(err) = match self {
+                Workload::Writer { ref vid, interval_ms: interval } => {
+                    workload_writer(&mut env, vid, Duration::from_millis(interval))
+                }
+                Workload::Reader { ref vid, interval_ms: interval } => {
+                    workload_reader(&mut env, vid, Duration::from_millis(interval))
+                }
+            } {
+                if err.ctx().should_retry() {
+                    tracing::warn!("retrying workload after error: {:?}", err);
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
         }
+        Ok(())
     }
 }
 
@@ -117,7 +129,6 @@ fn load_tracker<F: Fetcher>(
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
     let reader = handle.reader().or_into_ctx()?;
-    tracing::info!("loading page tracker at snapshot {:?}", reader.snapshot());
     let first_page = reader.read(0.into()).or_into_ctx()?;
     let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
@@ -132,66 +143,96 @@ fn load_tracker<F: Fetcher>(
         }
     );
 
-    tracing::info!("loaded page tracker with {} pages", page_tracker.len());
-
     Ok(page_tracker)
 }
 
 /// This workload continuously writes and reads pages to a volume, verifying the
 /// contents of pages are always correct
-fn workload_writer<F: Fetcher>(
-    worker_id: &str,
-    runtime: Runtime<F>,
-    mut rng: impl Rng,
-    vid: VolumeId,
+fn workload_writer<F: Fetcher, R: Rng>(
+    env: &mut WorkloadEnv<F, R>,
+    vid: &VolumeId,
     interval: Duration,
-    ticks: usize,
 ) -> Result<(), Culprit<WorkloadErr>> {
-    // open the volume
-    let handle = runtime
-        .open_volume(&vid, VolumeConfig::new(SyncDirection::Push))
+    let handle = env
+        .runtime
+        .open_volume(vid, VolumeConfig::new(SyncDirection::Both))
         .or_into_ctx()?;
 
-    // pull the volume explicitly before continuing
+    // pull the volume explicitly to ensure we are up to date
     tracing::info!("pulling volume {:?}", vid);
     handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
 
-    let mut page_tracker = load_tracker(&handle, worker_id)?;
+    let mut page_tracker = load_tracker(&handle, env.worker_id).or_into_ctx()?;
 
-    for _ in 0..ticks {
+    while env.ticker.tick() {
         // check the volume status to see if we need to reset
         let status = handle.status().or_into_ctx()?;
         if status != VolumeStatus::Ok {
-            tracing::info!("volume has status {status}, resetting");
+            let span =
+                tracing::info_span!("volume_reset", ?status, result = field::Empty).entered();
             handle.reset_to_remote().or_into_ctx()?;
-            tracing::info!("volume reset to {:?}", handle.snapshot().or_into_ctx()?);
+            span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
+            drop(span);
 
             // reload the page tracker from the volume
-            page_tracker = load_tracker(&handle, worker_id)?;
+            page_tracker = load_tracker(&handle, env.worker_id).or_into_ctx()?;
         }
+
+        // check that the in-memory is in sync with storage
+        let pt = load_tracker(&handle, env.worker_id).or_into_ctx()?;
+        expect_always_or_unreachable!(
+            pt == page_tracker,
+            "page tracker should be in sync with storage",
+            {
+                "worker": env.worker_id,
+                "snapshot": handle.reader().or_into_ctx()?.snapshot(),
+                "tracker": page_tracker,
+                "storage": pt
+            }
+        );
 
         // randomly pick a page offset and a page value.
         // select the next offset to ensure we don't pick the 0th page
-        let offset = PageOffset::test_random(&mut rng, 16).next();
-        let new_page: Page = rng.gen();
-        let existing_hash = page_tracker.upsert(offset, &new_page);
+        let offset = PageOffset::test_random(&mut env.rng, 16).next();
+        let new_page: Page = env.rng.gen();
+        let new_hash = PageHash::new(&new_page);
+        let expected_hash = page_tracker.upsert(offset, new_hash.clone());
 
         let reader = handle.reader().or_into_ctx()?;
-        tracing::info!(?offset, snapshot=?reader.snapshot(), "writing page");
+        let span = tracing::info_span!(
+            "write_page",
+            offset=offset.to_string(),
+            snapshot=?reader.snapshot(),
+            ?new_hash
+        )
+        .entered();
 
         // verify the offset is missing or present as expected
         let page = reader.read(offset).or_into_ctx()?;
-        if let Some(existing) = existing_hash {
+        let actual_hash = PageHash::new(&page);
+
+        if let Some(expected_hash) = expected_hash {
             expect_always_or_unreachable!(
-                existing == page,
+                expected_hash == actual_hash,
                 "page should have expected contents",
-                { "offset": offset, "worker": worker_id, "snapshot": reader.snapshot() }
+                {
+                    "offset": offset,
+                    "worker": env.worker_id,
+                    "snapshot": reader.snapshot(),
+                    "expected": expected_hash,
+                    "actual": actual_hash
+                }
             );
         } else {
             expect_always_or_unreachable!(
                 page.is_empty(),
                 "page should be empty as it has never been written to",
-                { "offset": offset, "worker": worker_id, "snapshot": reader.snapshot() }
+                {
+                    "offset": offset,
+                    "worker": env.worker_id,
+                    "snapshot": reader.snapshot(),
+                    "actual": actual_hash
+                }
             );
         }
 
@@ -201,31 +242,45 @@ fn workload_writer<F: Fetcher>(
         writer.write(offset, new_page);
         writer.write(0.into(), page_tracker.serialize_into_page().or_into_ctx()?);
 
-        writer.commit().or_into_ctx()?;
+        let pre_commit_remote = writer.snapshot().and_then(|s| s.remote());
+        let reader = writer.commit().or_into_ctx()?;
+        let post_commit_remote = reader.snapshot().and_then(|s| s.remote());
+
+        if pre_commit_remote != post_commit_remote {
+            tracing::info!(
+                "remote LSN changed concurrently with local commit; from {:?} to {:?}",
+                pre_commit_remote,
+                post_commit_remote
+            );
+        }
+
+        drop(span);
 
         sleep(interval);
     }
     Ok(())
 }
 
-fn workload_reader<F: Fetcher>(
-    worker_id: &str,
-    runtime: Runtime<F>,
-    _rng: impl Rng,
-    vid: VolumeId,
-    ticks: usize,
+fn workload_reader<F: Fetcher, R: Rng>(
+    env: &mut WorkloadEnv<F, R>,
+    vid: &VolumeId,
     interval: Duration,
 ) -> Result<(), Culprit<WorkloadErr>> {
-    let handle = runtime
+    let handle = env
+        .runtime
         .open_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
         .or_into_ctx()?;
+
+    // pull the volume explicitly to ensure we are up to date
+    tracing::info!("pulling volume {:?}", vid);
+    handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
 
     let subscription = handle.subscribe_to_remote_changes();
 
     let mut last_snapshot = None;
     let mut seen_nonempty = false;
 
-    for _ in 0..ticks {
+    while env.ticker.tick() {
         // wait for the next commit
         match subscription.recv_timeout(interval) {
             Ok(()) => (),
@@ -238,7 +293,7 @@ fn workload_reader<F: Fetcher>(
 
         expect_reachable!(
             "reader workload received commit",
-            { "worker": worker_id }
+            { "worker": env.worker_id }
         );
 
         let reader = handle.reader().or_into_ctx()?;
@@ -251,7 +306,7 @@ fn workload_reader<F: Fetcher>(
                 .replace(snapshot.clone())
                 .is_none_or(|last| &last != snapshot),
             "the snapshot is different after receiving a commit notification",
-            { "snapshot": snapshot, "worker": worker_id }
+            { "snapshot": snapshot, "worker": env.worker_id }
         );
 
         let page_count = snapshot.pages();
@@ -259,7 +314,7 @@ fn workload_reader<F: Fetcher>(
             expect_always_or_unreachable!(
                 page_count > 0,
                 "the snapshot should never be empty after we have seen a non-empty snapshot",
-                { "snapshot": snapshot, "worker": worker_id }
+                { "snapshot": snapshot, "worker": env.worker_id }
             );
         }
 
@@ -281,22 +336,26 @@ fn workload_reader<F: Fetcher>(
                 continue;
             }
 
-            tracing::info!("reading page at offset {offset}");
+            let span = tracing::info_span!("read_page", offset=offset.to_string(), snapshot=?reader.snapshot(), hash=field::Empty).entered();
             let page = reader.read(offset).or_into_ctx()?;
+            let actual_hash = PageHash::new(&page);
 
             if let Some(expected_hash) = page_tracker.get_hash(offset) {
                 expect_always_or_unreachable!(
-                    expected_hash == page,
+                    expected_hash == &actual_hash,
                     "page should have expected contents",
-                    { "offset": offset, "worker": worker_id }
+                    { "offset": offset, "worker": env.worker_id }
                 );
             } else {
                 expect_always_or_unreachable!(
                     page.is_empty(),
                     "page should be empty as it has never been written to",
-                    { "offset": offset, "worker": worker_id }
+                    { "offset": offset, "worker": env.worker_id }
                 );
             }
+
+            span.record("hash", actual_hash.to_string());
+            drop(span);
         }
     }
     Ok(())

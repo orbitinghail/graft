@@ -281,7 +281,6 @@ impl Storage {
         let mut batch = self.keyspace.batch();
         let mut pages = snapshot.as_ref().map_or(PageCount::ZERO, |s| s.pages());
         let read_lsn = snapshot.as_ref().map(|s| s.local());
-        let remote_lsn = snapshot.and_then(|s| s.remote());
         let commit_lsn = read_lsn
             .map(|lsn| lsn.next().expect("lsn overflow"))
             .unwrap_or(LSN::FIRST);
@@ -298,11 +297,6 @@ impl Storage {
             batch.insert(&self.pages, page_key.as_bytes(), PageValue::from(page));
         }
 
-        // persist the new volume snapshot
-        let snapshot_key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot);
-        let snapshot = Snapshot::new(commit_lsn, remote_lsn, pages);
-        batch.insert(&self.volumes, snapshot_key, snapshot.as_bytes());
-
         // persist the new commit
         let commit_key = CommitKey::new(vid.clone(), commit_lsn);
         batch.insert(&self.commits, commit_key, offsets.serialize_to_bytes());
@@ -313,12 +307,17 @@ impl Storage {
         // check to see if the read snapshot is the latest local snapshot while
         // holding the commit lock
         let latest = self.snapshot(vid)?;
-        if latest.map(|l| l.local()) != read_lsn {
+        if latest.as_ref().map(|l| l.local()) != read_lsn {
             return Err(Culprit::new_with_note(
                 StorageErr::ConcurrentWrite,
                 format!("Illegal concurrent write to Volume {vid}"),
             ));
         }
+
+        // persist the new volume snapshot
+        let snapshot_key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot);
+        let snapshot = Snapshot::new(commit_lsn, latest.and_then(|l| l.remote()), pages);
+        batch.insert(&self.volumes, snapshot_key, snapshot.as_bytes());
 
         // commit the changes
         batch.commit()?;
@@ -372,7 +371,7 @@ impl Storage {
         // ensure that we can accept this remote commit
         if state.needs_recovery() {
             precept::expect_reachable!(
-                "volume needs recovery",
+                "volume needs recovery while receiving remote commit",
                 { "vid": vid, "state": state }
             );
 
@@ -470,7 +469,7 @@ impl Storage {
         // fail if the volume needs recovery
         if state.needs_recovery() {
             precept::expect_reachable!(
-                "volume needs recovery",
+                "volume needs recovery while preparing to sync to remote",
                 { "vid": vid, "state": state }
             );
             return Err(Culprit::new_with_note(

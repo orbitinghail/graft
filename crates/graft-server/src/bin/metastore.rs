@@ -17,10 +17,9 @@ use graft_server::{
         updater::VolumeCatalogUpdater,
     },
 };
+use graft_tracing::{tracing_init, TracingConsumer};
 use serde::Deserialize;
 use tokio::{net::TcpListener, select, signal::ctrl_c};
-use tracing::level_filters::LevelFilter;
-use tracing_subscriber::{fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -46,20 +45,7 @@ impl Default for MetastoreConfig {
 #[tokio::main]
 async fn main() {
     precept::init();
-    let running_in_antithesis = std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok();
-
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .from_env()
-                .expect("failed to initialize env filter"),
-        )
-        .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
-        .with_ansi(!running_in_antithesis)
-        .finish()
-        .try_init()
-        .expect("failed to initialize tracing subscriber");
+    tracing_init(TracingConsumer::Server);
     tracing::info!("starting metastore");
 
     precept::setup_complete!();

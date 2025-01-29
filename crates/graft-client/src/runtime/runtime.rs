@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use graft_core::VolumeId;
 
-use crate::{runtime::storage::volume_state::SyncDirection, ClientErr, ClientPair};
+use crate::{ClientErr, ClientPair};
 
 use super::{
     fetcher::Fetcher,
@@ -58,16 +58,10 @@ impl<F: Fetcher> Runtime<F> {
         vid: &VolumeId,
         config: VolumeConfig,
     ) -> Result<VolumeHandle<F>, ClientErr> {
-        let storage = self.shared.storage();
-        let sync = config.sync();
-        storage.set_volume_config(&vid, config).or_into_ctx()?;
-
-        if sync.matches(SyncDirection::Pull) {
-            self.shared
-                .fetcher()
-                .pull_snapshot(storage, vid)
-                .or_into_ctx()?;
-        }
+        self.shared
+            .storage()
+            .set_volume_config(&vid, config)
+            .or_into_ctx()?;
 
         Ok(VolumeHandle::new(
             vid.clone(),
@@ -81,7 +75,10 @@ impl<F: Fetcher> Runtime<F> {
 mod tests {
     use graft_core::page::{Page, EMPTY_PAGE};
 
-    use crate::runtime::{fetcher::MockFetcher, storage::StorageErr};
+    use crate::runtime::{
+        fetcher::MockFetcher,
+        storage::{volume_state::SyncDirection, StorageErr},
+    };
 
     use super::*;
 

@@ -8,11 +8,10 @@ use graft_client::{
     ClientBuilder, ClientPair, MetastoreClient, PagestoreClient,
 };
 use graft_test::{
-    running_in_antithesis,
-    test_tracing::tracing_init,
-    worker_id,
     workload::{Workload, WorkloadErr},
+    Ticker,
 };
+use graft_tracing::{running_in_antithesis, tracing_init, TracingConsumer, PROCESS_ID};
 use rand::Rng;
 use url::Url;
 
@@ -25,10 +24,10 @@ struct Args {
 }
 
 fn main() -> Result<(), Culprit<WorkloadErr>> {
+    let worker_id = PROCESS_ID.as_str();
     precept::init();
     let mut rng = precept::random::rng();
-    let worker_id = worker_id(&mut rng);
-    tracing_init(Some(worker_id.clone()));
+    tracing_init(TracingConsumer::Test);
     let args = Args::parse();
 
     let workload: Workload = Config::builder()
@@ -61,15 +60,18 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
 
     precept::setup_complete!({ "workload": workload });
 
-    let (ticks, shutdown_timeout) = if running_in_antithesis() {
-        (rng.gen_range(100..5000), Duration::from_secs(3600))
+    let (ticker, shutdown_timeout) = if running_in_antithesis() {
+        (
+            Ticker::new(rng.gen_range(100..5000)),
+            Duration::from_secs(3600),
+        )
     } else {
-        (100, Duration::from_secs(60))
+        (Ticker::new(100), Duration::from_secs(60))
     };
 
-    tracing::info!(?ticks, "running test workload");
+    tracing::info!(?ticker, "running test workload");
     workload
-        .run(&worker_id, runtime.clone(), rng, ticks)
+        .run(&worker_id, runtime.clone(), rng, ticker)
         .or_into_ctx()?;
 
     tracing::info!("workload finished");

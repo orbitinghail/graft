@@ -25,11 +25,10 @@ use graft_server::{
         updater::VolumeCatalogUpdater,
     },
 };
+use graft_tracing::{tracing_init, TracingConsumer};
 use rlimit::Resource;
 use serde::Deserialize;
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
-use tracing::level_filters::LevelFilter;
-use tracing_subscriber::{fmt::format::FmtSpan, util::SubscriberInitExt, EnvFilter};
 use url::Url;
 
 #[derive(Debug, Deserialize)]
@@ -72,20 +71,7 @@ impl Default for PagestoreConfig {
 #[tokio::main]
 async fn main() {
     precept::init();
-    let running_in_antithesis = std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok();
-
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .from_env()
-                .expect("failed to initialize env filter"),
-        )
-        .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
-        .with_ansi(!running_in_antithesis)
-        .finish()
-        .try_init()
-        .expect("failed to initialize tracing subscriber");
+    tracing_init(TracingConsumer::Server);
     tracing::info!("starting pagestore");
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");

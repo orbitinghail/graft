@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use culprit::{Culprit, ResultExt};
 use fjall::Slice;
@@ -58,11 +58,22 @@ impl Snapshot {
 
 impl Debug for Snapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Snapshot")
-            .field("local", &self.local())
-            .field("remote", &self.remote())
-            .field("pages", &self.pages())
-            .finish()
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for Snapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Snapshot[{}/{};{}]",
+            self.local(),
+            match self.remote() {
+                Some(lsn) => lsn.to_string(),
+                None => "_".to_string(),
+            },
+            self.pages()
+        )
     }
 }
 

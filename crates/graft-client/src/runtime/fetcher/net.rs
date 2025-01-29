@@ -25,16 +25,6 @@ impl NetFetcher {
 }
 
 impl Fetcher for NetFetcher {
-    fn pull_snapshot(&self, storage: &Storage, vid: &VolumeId) -> Result<(), ClientErr> {
-        if let Some(snapshot) = self.clients.metastore().snapshot(vid, None)? {
-            let changed = Splinter::default().serialize_to_splinter_ref();
-            storage
-                .receive_remote_commit(vid, snapshot, changed)
-                .or_into_ctx()?;
-        }
-        Ok(())
-    }
-
     fn fetch_page(
         &self,
         storage: &Storage,

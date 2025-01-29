@@ -1,4 +1,10 @@
-use std::{collections::HashMap, sync::Arc, thread::JoinHandle, time::Duration};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    sync::Arc,
+    thread::JoinHandle,
+    time::Duration,
+};
 
 use bytes::{Buf, BufMut, BytesMut};
 use culprit::{Culprit, ResultExt};
@@ -23,7 +29,7 @@ use graft_server::{
     supervisor::{ShutdownErr, Supervisor},
     volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
-use rand::Rng;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
     net::TcpListener,
@@ -34,16 +40,7 @@ use tokio::{
 };
 use url::Url;
 
-pub mod test_tracing;
 pub mod workload;
-
-pub fn worker_id(rng: &mut impl Rng) -> String {
-    bs58::encode(rng.gen::<u64>().to_le_bytes()).into_string()
-}
-
-pub fn running_in_antithesis() -> bool {
-    std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok()
-}
 
 pub struct GraftBackend {
     shutdown_tx: oneshot::Sender<Duration>,
@@ -161,6 +158,26 @@ pub async fn run_pagestore(
     ClientBuilder::new(endpoint).build().unwrap()
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Ticker {
+    remaining: usize,
+}
+
+impl Ticker {
+    pub fn new(remaining: usize) -> Self {
+        Self { remaining }
+    }
+
+    pub fn tick(&mut self) -> bool {
+        if self.remaining == 0 {
+            false
+        } else {
+            self.remaining -= 1;
+            true
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum PageTrackerErr {
     #[error("failed to serialize page tracker")]
@@ -170,14 +187,14 @@ pub enum PageTrackerErr {
     Deserialize,
 }
 
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct PageTracker {
     pages: HashMap<PageOffset, PageHash>,
 }
 
 impl PageTracker {
-    pub fn upsert(&mut self, offset: PageOffset, page: &Page) -> Option<PageHash> {
-        self.pages.insert(offset, PageHash::new(page))
+    pub fn upsert(&mut self, offset: PageOffset, hash: PageHash) -> Option<PageHash> {
+        self.pages.insert(offset, hash)
     }
 
     pub fn get_hash(&self, offset: PageOffset) -> Option<&PageHash> {
@@ -220,23 +237,77 @@ impl PageTracker {
     }
 }
 
-#[derive(Debug, Default, serde::Deserialize, serde:: Serialize, PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq, Clone)]
 pub struct PageHash([u8; 32]);
 
 impl PageHash {
     pub fn new(page: &Page) -> Self {
-        Self(blake3::hash(page.as_ref()).into())
+        if page.is_empty() {
+            Self([0; 32])
+        } else {
+            Self(blake3::hash(page.as_ref()).into())
+        }
     }
 }
 
-impl PartialEq<Page> for PageHash {
-    fn eq(&self, other: &Page) -> bool {
-        self.0 == <[u8; 32]>::from(blake3::hash(other.as_ref()))
+impl Serialize for PageHash {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&bs58::encode(&self.0).into_string())
+        } else {
+            serializer.serialize_bytes(&self.0)
+        }
     }
 }
 
-impl PartialEq<Page> for &PageHash {
-    fn eq(&self, other: &Page) -> bool {
-        self.0 == <[u8; 32]>::from(blake3::hash(other.as_ref()))
+impl<'de> Deserialize<'de> for PageHash {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if deserializer.is_human_readable() {
+            let s = <&'de str>::deserialize(deserializer)?;
+            let bytes = bs58::decode(s)
+                .into_vec()
+                .map_err(serde::de::Error::custom)?;
+            if bytes.len() != 32 {
+                return Err(serde::de::Error::custom("invalid hash length"));
+            }
+            let mut hash = [0; 32];
+            hash.copy_from_slice(&bytes);
+            Ok(Self(hash))
+        } else {
+            Ok(Self(<[u8; 32]>::deserialize(deserializer)?))
+        }
+    }
+}
+
+impl Debug for PageHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", bs58::encode(&self.0).into_string())
+    }
+}
+
+impl Display for PageHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", bs58::encode(&self.0).into_string())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use graft_core::page::{Page, EMPTY_PAGE};
+
+    use crate::PageHash;
+
+    #[test]
+    fn page_hash_serializes() {
+        let mut pages = (0..100).map(|_| rand::random::<Page>()).collect::<Vec<_>>();
+        pages.push(EMPTY_PAGE);
+
+        // round trip each one through serialize/deserialize
+        for page in pages {
+            let hash = PageHash::new(&page);
+            let json = serde_json::to_string(&hash).unwrap();
+            let hash2: PageHash = serde_json::from_str(&json).unwrap();
+            assert_eq!(hash, hash2);
+        }
     }
 }

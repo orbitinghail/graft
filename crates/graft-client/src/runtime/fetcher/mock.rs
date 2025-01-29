@@ -16,10 +16,6 @@ use super::Fetcher;
 pub struct MockFetcher;
 
 impl Fetcher for MockFetcher {
-    fn pull_snapshot(&self, _storage: &Storage, _vid: &VolumeId) -> Result<(), ClientErr> {
-        Ok(())
-    }
-
     fn fetch_page(
         &self,
         _storage: &Storage,

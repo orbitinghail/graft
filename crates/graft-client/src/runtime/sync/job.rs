@@ -50,14 +50,7 @@ pub struct PullJob {
 
 impl PullJob {
     fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
-        let _guard = tracing::debug_span!("pull job").entered();
         let state = storage.volume_state(&self.vid).or_into_ctx()?;
-
-        tracing::debug!(
-            snapshot=?state.snapshot(),
-            "pulling volume {:?}",
-            self.vid,
-        );
 
         // pull starting at the next LSN after the last pulled snapshot
         let start_lsn = state
@@ -65,10 +58,13 @@ impl PullJob {
             .and_then(|s| s.remote())
             .map(|lsn| lsn.next().expect("lsn overflow"))
             .unwrap_or(LSN::FIRST);
+        let lsns = start_lsn..;
 
-        if let Some((snapshot, _, changed)) =
-            clients.metastore().pull_offsets(&self.vid, start_lsn..)?
-        {
+        let _span =
+            tracing::debug_span!("PullJob", vid = ?self.vid, snapshot = ?state.snapshot(), ?lsns)
+                .entered();
+
+        if let Some((snapshot, _, changed)) = clients.metastore().pull_offsets(&self.vid, lsns)? {
             let snapshot_lsn = snapshot.lsn().expect("invalid LSN");
 
             assert!(
@@ -120,17 +116,11 @@ impl PushJob {
     }
 
     fn run_inner(&self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
-        let _guard = tracing::debug_span!("push job").entered();
-
         // prepare the sync
         let (snapshot, lsns, mut commits) =
             storage.prepare_sync_to_remote(&self.vid).or_into_ctx()?;
 
-        tracing::debug!(
-            snapshot=?snapshot,
-            "pushing volume {:?}",
-            &self.vid,
-        );
+        let _span = tracing::debug_span!("PushJob", vid=?self.vid, ?snapshot).entered();
 
         // setup temporary storage for pages
         // TODO: we will eventually stream pages directly to the remote

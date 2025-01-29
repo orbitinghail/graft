@@ -148,7 +148,12 @@ impl TryFrom<Bytes> for PageValue {
                 )),
             }
         } else {
-            Ok(PageValue::Available(Page::try_from(value).or_into_ctx()?))
+            let page = Page::try_from(value).or_into_ctx()?;
+            if page.is_empty() {
+                Ok(PageValue::Empty)
+            } else {
+                Ok(PageValue::Available(page))
+            }
         }
     }
 }

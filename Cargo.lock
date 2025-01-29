@@ -1117,6 +1117,7 @@ dependencies = [
  "fjall",
  "graft-core",
  "graft-proto",
+ "graft-tracing",
  "lsm-tree",
  "parking_lot",
  "precept",
@@ -1127,7 +1128,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.9",
  "tracing",
- "tracing-subscriber",
  "tryiter",
  "ureq",
  "url",
@@ -1182,6 +1182,7 @@ dependencies = [
  "graft-client",
  "graft-core",
  "graft-proto",
+ "graft-tracing",
  "hashbrown 0.15.2",
  "itertools 0.14.0",
  "lsm-tree",
@@ -1201,7 +1202,6 @@ dependencies = [
  "tokio-util",
  "tower-http",
  "tracing",
- "tracing-subscriber",
  "tracing-test",
  "tryiter",
  "url",
@@ -1235,6 +1235,7 @@ dependencies = [
  "graft-client",
  "graft-core",
  "graft-server",
+ "graft-tracing",
  "precept",
  "rand",
  "serde",
@@ -1243,8 +1244,18 @@ dependencies = [
  "thiserror 2.0.9",
  "tokio",
  "tracing",
- "tracing-subscriber",
+ "ureq",
  "url",
+]
+
+[[package]]
+name = "graft-tracing"
+version = "0.1.0"
+dependencies = [
+ "bs58",
+ "rand",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

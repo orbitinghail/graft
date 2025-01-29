@@ -1,0 +1,10 @@
+[package]
+name = "graft-tracing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
+rand = { workspace = true }
+bs58 = { workspace = true }

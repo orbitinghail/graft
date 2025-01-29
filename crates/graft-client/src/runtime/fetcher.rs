@@ -12,9 +12,6 @@ pub use mock::MockFetcher;
 pub use net::NetFetcher;
 
 pub trait Fetcher: Send + Sync + 'static {
-    /// Update storage with the latest snapshot of the specified Volume
-    fn pull_snapshot(&self, storage: &Storage, vid: &VolumeId) -> Result<(), ClientErr>;
-
     /// Fetch a specific page, update storage, and return it.
     fn fetch_page(
         &self,

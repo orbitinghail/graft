@@ -7,15 +7,16 @@ edition = "2021"
 graft-client = { path = "../graft-client", features = ["antithesis"]}
 graft-server = { path = "../graft-server" }
 graft-core = { path = "../graft-core", features = ["testutil"] }
+graft-tracing = { path = "../graft-tracing" }
 splinter = { path = "../splinter" }
 precept = { path = "../precept", features = ["antithesis"] }
 
 culprit = { workspace = true }
 crossbeam = { workspace = true }
 url = { workspace = true }
+ureq = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 clap = { workspace = true, features = ["derive"] }

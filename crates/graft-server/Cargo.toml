@@ -7,6 +7,7 @@ edition = "2021"
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 graft-client = { path = "../graft-client" }
+graft-tracing = { path = "../graft-tracing" }
 splinter = { path = "../splinter" }
 precept = { path = "../precept" }
 
@@ -23,7 +24,6 @@ static_assertions = { workspace = true }
 zerocopy = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 object_store = { workspace = true, features = ["aws"] }
 bytes = { workspace = true }
 memmap2 = { workspace = true }
