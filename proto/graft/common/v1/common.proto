@@ -28,10 +28,11 @@ message SegmentInfo {
 // A snapshot contains the metadata of a volume at a given LSN.
 message Snapshot {
   bytes vid = 1;
-  uint64 lsn = 2;
-  uint64 checkpoint_lsn = 3;
-  uint32 page_count = 4;
-  google.protobuf.Timestamp timestamp = 5;
+  bytes cid = 2;
+  uint64 lsn = 3;
+  uint64 checkpoint_lsn = 4;
+  uint32 page_count = 5;
+  google.protobuf.Timestamp timestamp = 6;
 }
 
 message Commit {

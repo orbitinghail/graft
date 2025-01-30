@@ -102,7 +102,7 @@ mod tests {
 
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
-    use graft_core::{lsn::LSN, page_count::PageCount, SegmentId};
+    use graft_core::{gid::ClientId, lsn::LSN, page_count::PageCount, SegmentId};
     use object_store::memory::InMemory;
     use prost::Message;
     use tracing_test::traced_test;
@@ -139,6 +139,7 @@ mod tests {
             .unwrap();
 
         let vid = VolumeId::random();
+        let cid = ClientId::random();
 
         // case 1: catalog and store are empty
         let req = PullOffsetsRequest { vid: vid.copy_to_bytes(), range: None };
@@ -153,6 +154,7 @@ mod tests {
         let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
         for lsn in 1u64..=9 {
             let meta = CommitMeta::new(
+                cid.clone(),
                 LSN::new(lsn),
                 LSN::FIRST,
                 PageCount::new(1),

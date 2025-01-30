@@ -1,7 +1,7 @@
 use culprit::{Result, ResultExt};
 use std::time::Duration;
 
-use graft_core::VolumeId;
+use graft_core::{gid::ClientId, VolumeId};
 
 use crate::{ClientErr, ClientPair};
 
@@ -28,9 +28,9 @@ impl<F> Clone for Runtime<F> {
 }
 
 impl<F: Fetcher> Runtime<F> {
-    pub fn new(fetcher: F, storage: Storage) -> Self {
+    pub fn new(cid: ClientId, fetcher: F, storage: Storage) -> Self {
         Self {
-            shared: Shared::new(fetcher, storage),
+            shared: Shared::new(cid, fetcher, storage),
             sync: SyncTaskHandle::default(),
         }
     }
@@ -84,8 +84,9 @@ mod tests {
 
     #[test]
     fn test_read_write_sanity() {
+        let cid = ClientId::random();
         let storage = Storage::open_temporary().unwrap();
-        let runtime = Runtime::new(MockFetcher, storage);
+        let runtime = Runtime::new(cid, MockFetcher, storage);
 
         let vid = VolumeId::random();
         let page = Page::test_filled(0x42);
@@ -149,8 +150,9 @@ mod tests {
     fn test_concurrent_commit_err() {
         // open two writers, commit the first, then commit the second
 
+        let cid = ClientId::random();
         let storage = Storage::open_temporary().unwrap();
-        let runtime = Runtime::new(MockFetcher, storage);
+        let runtime = Runtime::new(cid, MockFetcher, storage);
 
         let vid = VolumeId::random();
         let page = Page::test_filled(0x42);

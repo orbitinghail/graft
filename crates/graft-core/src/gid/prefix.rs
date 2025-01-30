@@ -8,14 +8,14 @@
 
 use static_assertions::const_assert_ne;
 use std::hash::Hash;
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
+use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 #[derive(
     Clone,
     Copy,
     PartialEq,
     Eq,
-    Hash,
+    ByteHash,
     PartialOrd,
     Ord,
     IntoBytes,
@@ -36,7 +36,7 @@ pub enum Volume {
     Copy,
     PartialEq,
     Eq,
-    Hash,
+    ByteHash,
     PartialOrd,
     Ord,
     IntoBytes,
@@ -57,7 +57,7 @@ pub enum Segment {
     Copy,
     PartialEq,
     Eq,
-    Hash,
+    ByteHash,
     PartialOrd,
     Ord,
     IntoBytes,

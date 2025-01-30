@@ -7,7 +7,7 @@ use bytes::Bytes;
 use common::v1::{Commit, GraftErr, LsnRange, SegmentInfo};
 use culprit::{Culprit, ResultExt};
 use graft_core::{
-    gid::GidParseErr,
+    gid::{ClientId, GidParseErr},
     lsn::{InvalidLSN, LSNRangeExt, LSN},
     page::{Page, PageSizeErr},
     page_count::PageCount,
@@ -52,6 +52,7 @@ impl SegmentInfo {
 impl Snapshot {
     pub fn new(
         vid: &VolumeId,
+        cid: &ClientId,
         lsn: LSN,
         checkpoint_lsn: LSN,
         page_count: PageCount,
@@ -59,6 +60,7 @@ impl Snapshot {
     ) -> Self {
         Self {
             vid: vid.copy_to_bytes(),
+            cid: cid.copy_to_bytes(),
             lsn: lsn.into(),
             checkpoint_lsn: checkpoint_lsn.into(),
             page_count: page_count.into(),
@@ -68,6 +70,10 @@ impl Snapshot {
 
     pub fn vid(&self) -> Result<&VolumeId, Culprit<GidParseErr>> {
         Ok(self.vid.as_ref().try_into()?)
+    }
+
+    pub fn cid(&self) -> Result<&VolumeId, Culprit<GidParseErr>> {
+        Ok(self.cid.as_ref().try_into()?)
     }
 
     pub fn lsn(&self) -> Result<LSN, Culprit<InvalidLSN>> {

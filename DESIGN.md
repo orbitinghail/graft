@@ -1,36 +1,6 @@
-# Graft <!-- omit from toc -->
+# Graft
 
-Transactional lazy replication to the edge. Optimized for scale and cost over latency. Leverages object storage for durability.
-# Outline <!-- omit from toc -->
-
-- [High Level Architecture](#high-level-architecture)
-- [Glossary](#glossary)
-- [GIDs](#gids)
-- [Metastore](#metastore)
-  - [Metastore Storage](#metastore-storage)
-  - [Storage Layout](#storage-layout)
-  - [API](#api)
-  - [Checkpointing](#checkpointing)
-  - [Garbage Collection](#garbage-collection)
-  - [API Keys](#api-keys)
-- [Pagestore](#pagestore)
-  - [Storage Layout](#storage-layout-1)
-  - [Segment Layout](#segment-layout)
-  - [Segment Cache](#segment-cache)
-  - [API](#api-1)
-  - [Pagestore internal dataflow](#pagestore-internal-dataflow)
-- [Volume Router](#volume-router)
-- [Client](#client)
-  - [Initialization](#initialization)
-  - [Local Storage](#local-storage)
-  - [Reading](#reading)
-  - [Writing](#writing)
-  - [Lite Client](#lite-client)
-- [Implementation Details](#implementation-details)
-
-# High Level Architecture
-
-https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
+Transactional blob storage engine supporting lazy partial replication to the edge. Optimized for scale and cost over latency. Leverages object storage for durability.
 
 # Glossary
 
@@ -81,8 +51,9 @@ https://link.excalidraw.com/readonly/CJ51JUnshsBnsrxqLB1M
 Graft uses a 16 byte identifier called a Graft Identifier (GID) to identify Segments and Volumes. GIDs are based on ULIDs with a prefix byte.
 
 The primary goals of GIDs are:
+
 - 128 bits in size
-- they are alphanumerically sortable by time
+- they are alphanumerically sortable by time in both their serialized and binary representations
 - they are "typed" such that equality takes the type into account
 - collisions have close to zero probability assuming that less than 10k GIDs are created per second
 
@@ -102,13 +73,20 @@ GIDs have the following layout:
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-Every GID has a 1 byte prefix which encodes it's type. There are currently two known GID types: Volume and Segment. The prefix may contain other types or namespace metadata in the future.
+Every GID has a 1 byte prefix which encodes it's type. There are currently three known GID types: Volume, Segment, and Client. The prefix may contain other types or namespace metadata in the future. The highest bit of the prefix is always set to ensure that GIDs bs58 serialize to exactly 22 bytes.
 
 Following the prefix is a 48 bit timestamp encoding milliseconds since the unix epoch and stored in network byte order (MSB first).
 
 Finally there are 72 bits of random noise allowing up to `2^72` GIDs to be generated per millisecond.
 
+GIDs are canonically serialized into 22 bytes using the bs58 algorithm with the Bitcoin alphabet:
+
+```
+123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+```
+
 # Metastore
+
 A service which stores Volume metadata including the log of segments per Volume. This service is also responsible for coordinating GC, authn, authz, and background tasks.
 
 ## Metastore Storage
@@ -145,27 +123,30 @@ Returns Snapshot metadata for a particular LSN (or the latest if null). Does not
 Retrieve the snapshot at the end of the given LSN range along with a Splinter containing all changed offsets. If the start of the range is Unbounded, it will be set to the last checkpoint.
 
 **`pull_commits(VolumeId, LSN Range)`**
-Retrieve all of the commits to the Volume in the provided LSN Range. If the start of the range is Unbounded, it will be set to the last checkpoint.  Returns: graft.metastore.v1.PullSegmentsResponse
+Retrieve all of the commits to the Volume in the provided LSN Range. If the start of the range is Unbounded, it will be set to the last checkpoint. Returns: graft.metastore.v1.PullSegmentsResponse
 
-**`commit(VolumeId, Snapshot LSN, page_count, segments)`**
-Commit changes to a Volume if it is safe to do so. The provided Snapshot LSN is the snapshot the commit was based on. Returns the newly committed Snapshot metadata on success.
+**`commit(VolumeId, ClientId, Snapshot LSN, page_count, segments)`**
+Commit changes to a Volume if it is safe to do so. The provided Snapshot LSN is the snapshot the commit was based on. Returns the newly committed Snapshot on success.
 
-A checkpoint may be created by issuing a commit that covers the entire offset range of the volume.
+The Commit handler is idempotent if the same ClientId tries to issue a duplicate commit. Currently the Metastore only compares the ClientId to detect duplicates. It's up to the Client to ensure that it doesn't submit two different commits at the same LSN. This may be improved via a checksum in the future.
 
 ## Checkpointing
+
 A Volume checkpoint represents the oldest LSN for which commit history is stored. Requesting commits or pages for LSNs earlier than the checkpoint may result in an error.
 
 Soon after a Volume checkpoint changes, background jobs on the client and server will begin removing orphaned data:
 
-* Remove any commits in Metastore storage older than the checkpoint LSN
-* For each removed commit, reduce the refcount on the commit's segments
+- Remove any commits in Metastore storage older than the checkpoint LSN
+- For each removed commit, reduce the refcount on the commit's segments
   -> Garbage Collection will delete segments with refcount=0 later
-* Remove all but the most recent page as of the Checkpoint LSN on clients
+- Remove all but the most recent page as of the Checkpoint LSN on clients
 
 ## Garbage Collection
+
 Once a segment is no longer referenced by any commit it can be deleted. A grace period will be used to provide safety while we gain confidence in the correctness of the system. To do this we can mark a segment for deletion with a timestamp, and then only delete it once the grace period has elapsed.
 
 ## API Keys
+
 For now we will proceed without authentication. Eventually, the Metastore will manage API keys, and associate them with Organizations. Authentication across the distributed system will be handled via Signed Tokens to ensure that the Pagestore and Metastore can validate tokens without centralized communication.
 
 # Pagestore
@@ -202,15 +183,17 @@ List of Pages stored back to back starting at the beginning of the segment.
 A SegmentIndex which has two sections: a Volume Index and a list of PageOffsets.
 
 The Volume Index is a list of (VolumeId, Start, Pages) tuples.
-    VolumeId: The VolumeId for this set of pages
-    Start: The position of the first page and page offset for this Volume
-    Pages: The number of pages stored in this Segment for this Volume
+
+- VolumeId: The VolumeId for this set of pages
+- Start: The position of the first page and page offset for this Volume
+- Pages: The number of pages stored in this Segment for this Volume
 
 The VolumeId Table is sorted by VolumeId.
 
 The list of PageOffsets is stored in the same order as pages are stored in the segment, and the index requires that each set of Offsets corresponding to a Volume is sorted.
 
 ## Segment Cache
+
 The Pagestore must cache recently read Segments in order to minimize round trips to Object Storage and improve performance. The disk cache should have a configurable target max size, and remove the least recently accessed Segment to reclaim space.
 
 In addition, we should have a memory based cache. One option is to read all of the Segment indexes into memory, and leave page caching up to the kernel. Research needs to be done on if this approach is feasible given the planned compute sizes.
@@ -251,9 +234,11 @@ The only data we will need to make globally available is where each Volume lives
 I'm still undecided, but leaning towards using CF as a volume registry to increase flexiblity in volume placement (and more importantly the ability to move volumes).
 
 # Client
+
 Graft Clients support reading and writing to Volumes.
 
 ## Local Storage
+
 The current Graft client runtime stores data in three Fjall partitions.
 
 ```
@@ -294,19 +279,23 @@ ChangedOffsets:
 ```
 
 ## Reading
+
 To issue a local read against a Volume snapshot:
 
 1. Lookup the latest page in storage such that `page.LSN <= snapshot.local`
-  - If this page is either Available or Empty return the page
+
+   - If this page is either Available or Empty return the page
 
 2. If `snapshot.remote` is empty, return an empty page
 
 3. Request the page from the Pagestore
-  - This may be batched along with prefetches
+
+   - This may be batched along with prefetches
 
 4. Save the requested page into storage at `page.LSN`
 
 ## Writing
+
 Writes commit locally and then are asynchronously committed remotely. This section only deals with the local commit.
 
 Writes go through a `VolumeWriter` which buffers newly written pages in a memtable. Reads check the memtable to enable RYOW before falling back to the regular Read algorithm. Each `VolumeWriter` is pinned to a Snapshot.
@@ -324,14 +313,17 @@ The commit process happens atomically via a Fjall batch.
 9. release the commit lock
 
 ## Sync
+
 The Graft Client runtime supports asynchronously pushing and pulling from the server. Since this process happens out of band, two writers committing to the same Volume will frequently conflict and will need to rebase or reset to continue.
 
 Future work:
-  * synchronous commit+push to make conflicts easier to detect
-  * MVCC automatic conflict resolution
-  * Rebase conflict resolution
+
+- synchronous commit+push to make conflicts easier to detect
+- MVCC automatic conflict resolution
+- Rebase conflict resolution
 
 ### Sync: Pull
+
 The Graft runtime polls pull_offsets for changes. When a change is detected, the runtime attempts to "accept" the change.
 
 The pull process happens atomically via a Fjall batch.
@@ -340,25 +332,32 @@ The pull process happens atomically via a Fjall batch.
 2. Read the latest Volume Snapshot and Watermarks
 3. If last_sync < pending_sync: FAIL with VolumeNeedsRecovery
 4. If last_sync < snapshot.local: FAIL with RemoteConflict
-  - set Volume status to VolumeStatus::Conflict
+
+   - set Volume status to VolumeStatus::Conflict
+
 5. Set `commit_lsn = snapshot.local.next()`
 6. Update the snapshot
-  - `local=commit_lsn, remote=remote_lsn, pages=remote_pages`
+
+   - `local=commit_lsn, remote=remote_lsn, pages=remote_pages`
+
 7. Update the watermarks
-  - `last_sync=commit_lsn`
-  - `pending_sync=commit_lsn`
+
+   - `last_sync=commit_lsn`
+   - `pending_sync=commit_lsn`
+
 8. For each changed offset in the remote commit, write out PageValue::Pending into the pages partition using `commit_lsn`. This ensures that future reads know to fetch the page from the Pagestore.
 9. Commit the Fjall batch
 10. release the commit lock
 
 FAIL states:
-  VolumeNeedsRecovery
-    This means that we had previously crashed in the middle of pushing the Volume to the server. The client needs to recover or reset the volume before continuing.
+VolumeNeedsRecovery
+This means that we had previously crashed in the middle of pushing the Volume to the server. The client needs to recover or reset the volume before continuing.
 
-  Conflict
-    This means that we have made local commits since the last successful sync. The client needs to reconcile with the server before continuing.
+Conflict
+This means that we have made local commits since the last successful sync. The client needs to reconcile with the server before continuing.
 
 ### Sync: Push
+
 When the Graft runtime detects a local commit has occurred, it tries to push the commit to the server.
 
 1. Take the local commit lock
@@ -366,16 +365,21 @@ When the Graft runtime detects a local commit has occurred, it tries to push the
 3. If last_sync < pending_sync: FAIL with VolumeNeedsRecovery
 4. update `watermarks.pending_sync` to `snapshot.local`
 5. calculate the LSN range to push:
-  - `start_lsn = watermarks.last_sync.next()`
-  - `end_lsn = snapshot.local`
+
+   - `start_lsn = watermarks.last_sync.next()`
+   - `end_lsn = snapshot.local`
+
 6. release the local commit lock
 7. iterate through the local commit splinters
-  - send the most recent page for each offset to the pagestore
-  - collect new segments
+
+   - send the most recent page for each offset to the pagestore
+   - collect new segments
+
 8. commit the segments to the metastore
 9. take the local commit lock
 
-On commit success:
+**On commit success:**
+
 1. Open a Fjall batch
 2. Read the latest Volume Snapshot and Watermarks
 3. Assert that the new remote LSN is larger than the last remote LSN
@@ -386,7 +390,8 @@ On commit success:
 8. Commit the batch
 9. Release the local commit lock
 
-On commit failure:
+**On commit failure:**
+
 1. Update `watermarks.pending_sync = watermarks.last_sync`
 2. Set Volume status to VolumeStatus::RejectedCommit
 
@@ -397,6 +402,7 @@ The Graft client runtime must be able to crash at any point and recover. Fjall a
 When a volume is in this failed push state, it needs to determine if the commit was successfully accepted by the Metastore or not. It does so by retrying the commit process with the same idempotency token.
 
 ## Lite Client
+
 In some cases, a Client may want to boot without any state and quickly read (+ possibly write) to a particular Volume snapshot. In the most minimal case, if the client already knows the LSN of the snapshot they want to access, they can read from the Page Server immediately. If they want to issue a write, they will need to read the latest snapshot to get the page count and current remote LSN.
 
 Supporting Lite Clients is desirable to help enable edge serverless workloads which want to optimize for latency and have no cached state.
@@ -406,10 +412,12 @@ Supporting Lite Clients is desirable to help enable edge serverless workloads wh
 The Metastore and Pagestore will be written in Rust using Tokio.
 
 The Client will be a Rust library, optimized to use a minimum amount of resources and be embedded into other libraries. The primary targets will be:
+
 - shared object to be used with SQLite
 - python library
 - rust library (eventually supporting async and wasm)
 
 Networking stack:
+
 - transport: TCP
 - application: Protobuf over HTTPs

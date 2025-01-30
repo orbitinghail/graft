@@ -7,7 +7,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use culprit::{Culprit, ResultExt};
 use fjall::Slice;
 use graft_core::{
-    gid::GidParseErr,
+    gid::{ClientId, GidParseErr},
     lsn::{InvalidLSN, LSN},
     page_count::PageCount,
     page_range::PageRange,
@@ -16,11 +16,11 @@ use graft_core::{
 };
 use graft_proto::common::v1::Snapshot;
 use object_store::{path::Path, PutPayload};
+use prost_types::TimestampError;
 use splinter::SplinterRef;
 use thiserror::Error;
 use zerocopy::{
-    ConvertError, FromBytes, Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32,
-    U64,
+    ConvertError, Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32, U64,
 };
 
 pub const COMMIT_MAGIC: U32<LittleEndian> = U32::from_bytes([0x31, 0x99, 0xBF, 0x00]);
@@ -94,11 +94,12 @@ pub struct CommitHeader {
     meta: CommitMeta,
 }
 
-static_assertions::const_assert_eq!(size_of::<CommitHeader>(), 48);
+static_assertions::const_assert_eq!(size_of::<CommitHeader>(), 64);
 
-#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout, Debug)]
+#[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout, Debug)]
 #[repr(C)]
 pub struct CommitMeta {
+    cid: ClientId,
     lsn: U64<LittleEndian>,
     checkpoint_lsn: U64<LittleEndian>,
     page_count: U32<LittleEndian>,
@@ -106,17 +107,29 @@ pub struct CommitMeta {
 }
 
 impl CommitMeta {
-    pub fn new(lsn: LSN, checkpoint: LSN, page_count: PageCount, timestamp: SystemTime) -> Self {
+    pub fn new(
+        cid: ClientId,
+        lsn: LSN,
+        checkpoint: LSN,
+        page_count: PageCount,
+        timestamp: SystemTime,
+    ) -> Self {
         assert!(
             checkpoint <= lsn,
             "checkpoint must be less than or equal to lsn"
         );
         Self {
+            cid,
             lsn: lsn.into(),
             checkpoint_lsn: checkpoint.into(),
             page_count: page_count.into(),
             timestamp: time_to_millis(timestamp).into(),
         }
+    }
+
+    #[inline]
+    pub fn cid(&self) -> &ClientId {
+        &self.cid
     }
 
     #[inline]
@@ -151,6 +164,7 @@ impl CommitMeta {
     pub fn into_snapshot(self, vid: &VolumeId) -> Snapshot {
         Snapshot::new(
             vid,
+            self.cid(),
             self.lsn(),
             self.checkpoint(),
             self.page_count(),
@@ -171,18 +185,29 @@ impl Into<Slice> for CommitMeta {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum TryFromSnapshotErr {
+    #[error("invalid client id: {0}")]
+    InvalidCid(#[from] GidParseErr),
+
+    #[error("invalid lsn: {0}")]
+    InvalidLsn(#[from] InvalidLSN),
+
+    #[error("invalid timestamp: {0}")]
+    InvalidTimestamp(#[from] TimestampError),
+}
+
 impl TryFrom<Snapshot> for CommitMeta {
-    type Error = Culprit<InvalidLSN>;
+    type Error = Culprit<TryFromSnapshotErr>;
 
     fn try_from(snapshot: Snapshot) -> Result<Self, Self::Error> {
+        let ts = snapshot.system_time()?.unwrap_or(SystemTime::UNIX_EPOCH);
         Ok(Self::new(
-            snapshot.lsn()?,
-            snapshot.checkpoint()?,
-            snapshot.pages(),
-            snapshot
-                .system_time()
-                .unwrap_or_default()
-                .unwrap_or(SystemTime::UNIX_EPOCH),
+            ClientId::try_from(snapshot.cid).or_into_ctx()?,
+            LSN::try_from(snapshot.lsn).or_into_ctx()?,
+            LSN::try_from(snapshot.checkpoint_lsn).or_into_ctx()?,
+            snapshot.page_count.into(),
+            ts,
         ))
     }
 }

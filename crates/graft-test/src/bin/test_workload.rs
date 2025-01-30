@@ -8,6 +8,7 @@ use graft_client::{
     runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Storage},
     ClientBuilder, ClientPair, MetastoreClient, PagestoreClient,
 };
+use graft_core::gid::ClientId;
 use graft_test::{
     workload::{Workload, WorkloadErr},
     Ticker,
@@ -24,7 +25,7 @@ struct Args {
     workload: String,
 }
 
-fn get_or_init_worker() -> (String, FileLock) {
+fn get_or_init_cid() -> (ClientId, FileLock) {
     let locks = temp_dir().join("worker_locks");
     std::fs::create_dir_all(&locks)
         .expect(&format!("failed to create workers directory: {locks:?}"));
@@ -38,20 +39,23 @@ fn get_or_init_worker() -> (String, FileLock) {
 
         let opts = FileOptions::new().read(true).write(true);
         if let Ok(lock) = FileLock::lock(&path, /*is_blocking*/ false, opts) {
-            let worker_id = path.file_name().unwrap();
-            assert!(worker_id.is_ascii(), "worker id is not ascii");
-            let worker_id = worker_id.to_string_lossy().to_string();
-            return (worker_id, lock);
+            let file_name = path.file_name().unwrap();
+            assert!(file_name.is_ascii(), "worker id is not ascii");
+            let file_name = file_name.to_string_lossy();
+            let cid: ClientId = file_name
+                .parse()
+                .expect(&format!("failed to parse ClientId from {}", file_name));
+            return (cid, lock);
         }
     }
 
     // we were unable to reuse an existing worker, create a new one
-    let worker_id = bs58::encode(rand::random::<u64>().to_le_bytes()).into_string();
-    let lock = locks.join(&worker_id);
+    let cid = ClientId::random();
+    let lock = locks.join(cid.to_string());
     let opts = FileOptions::new().create(true).read(true).write(true);
     let lock = FileLock::lock(lock, /*is_blocking*/ false, opts)
         .expect("failed to create new worker lock");
-    (worker_id, lock)
+    (cid, lock)
 }
 
 fn main() {
@@ -64,8 +68,8 @@ fn main() {
 fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
     precept::init();
     let mut rng = precept::random::rng();
-    let (worker_id, _worker_lock) = get_or_init_worker();
-    tracing_init(TracingConsumer::Test, Some(worker_id.clone()));
+    let (cid, _worker_lock) = get_or_init_cid();
+    tracing_init(TracingConsumer::Test, Some(cid.short()));
     let args = Args::parse();
 
     let workload: Workload = Config::builder()
@@ -77,6 +81,7 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
     tracing::info!(
         workload_file = args.workload,
         ?workload,
+        ?cid,
         "STARTING TEST WORKLOAD"
     );
 
@@ -90,9 +95,9 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
             .or_into_ctx()?;
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
-    let storage_path = temp_dir().join("storage").join(&worker_id);
+    let storage_path = temp_dir().join("storage").join(cid.pretty());
     let storage = Storage::open(storage_path).or_into_ctx()?;
-    let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
+    let runtime = Runtime::new(cid.clone(), NetFetcher::new(clients.clone()), storage);
     runtime
         .start_sync_task(clients, Duration::from_secs(1), 8)
         .or_into_ctx()?;
@@ -110,14 +115,14 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
 
     tracing::info!(?ticker, "running test workload");
     workload
-        .run(&worker_id, runtime.clone(), rng, ticker)
+        .run(cid.clone(), runtime.clone(), rng, ticker)
         .or_into_ctx()?;
 
     tracing::info!("workload finished");
     tracing::info!("waiting for sync task to shutdown");
     runtime.shutdown_sync_task(shutdown_timeout).or_into_ctx()?;
 
-    precept::expect_reachable!("test workload finishes", { "worker": worker_id });
+    precept::expect_reachable!("test workload finishes", { "worker": cid });
 
     tracing::info!("shutdown complete");
 

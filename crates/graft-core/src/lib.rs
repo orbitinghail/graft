@@ -8,7 +8,7 @@ pub mod page_offset;
 pub mod page_range;
 pub mod zerocopy_err;
 
-pub use gid::{SegmentId, VolumeId};
+pub use gid::{ClientId, SegmentId, VolumeId};
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;

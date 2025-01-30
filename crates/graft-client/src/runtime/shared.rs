@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use graft_core::gid::ClientId;
+
 use super::storage::Storage;
 
 #[derive(Debug)]
@@ -9,16 +11,22 @@ pub struct Shared<F> {
 
 #[derive(Debug)]
 struct Inner<F> {
+    cid: ClientId,
     fetcher: F,
     storage: Storage,
 }
 
 impl<F> Shared<F> {
     #[inline]
-    pub fn new(fetcher: F, storage: Storage) -> Self {
+    pub fn new(cid: ClientId, fetcher: F, storage: Storage) -> Self {
         Self {
-            inner: Arc::new(Inner { fetcher, storage }),
+            inner: Arc::new(Inner { cid, fetcher, storage }),
         }
+    }
+
+    #[inline]
+    pub fn cid(&self) -> &ClientId {
+        &self.inner.cid
     }
 
     #[inline]

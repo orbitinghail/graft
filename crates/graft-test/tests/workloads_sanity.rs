@@ -5,7 +5,7 @@ use std::{
 
 use culprit::{Culprit, ResultExt};
 use graft_client::runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Storage};
-use graft_core::VolumeId;
+use graft_core::{gid::ClientId, VolumeId};
 use graft_test::{
     start_graft_backend,
     workload::{Workload, WorkloadErr},
@@ -21,7 +21,7 @@ struct WorkloadRunner<F> {
 
 #[test]
 fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
-    let worker_id = tracing_init(TracingConsumer::Test, None);
+    tracing_init(TracingConsumer::Test, None);
 
     let (backend, clients) = start_graft_backend();
 
@@ -29,33 +29,33 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
     let ticker = Ticker::new(10);
 
     let writer = {
+        let cid = ClientId::random();
         let storage = Storage::open_temporary().or_into_ctx()?;
-        let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
+        let runtime = Runtime::new(cid.clone(), NetFetcher::new(clients.clone()), storage);
         runtime
             .start_sync_task(clients.clone(), Duration::from_millis(10), 8)
             .or_into_ctx()?;
         let workload = Workload::Writer { vid: vid.clone(), interval_ms: 10 };
         let r2 = runtime.clone();
-        let worker_id = worker_id.clone();
         let workload = thread::Builder::new()
             .name("writer".into())
-            .spawn(move || workload.run(&worker_id, r2, thread_rng(), ticker))
+            .spawn(move || workload.run(cid, r2, thread_rng(), ticker))
             .unwrap();
         WorkloadRunner { runtime, workload }
     };
 
     let reader = {
+        let cid = ClientId::random();
         let storage = Storage::open_temporary().or_into_ctx()?;
-        let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
+        let runtime = Runtime::new(cid.clone(), NetFetcher::new(clients.clone()), storage);
         runtime
             .start_sync_task(clients.clone(), Duration::from_millis(10), 8)
             .or_into_ctx()?;
         let workload = Workload::Reader { vid: vid.clone(), interval_ms: 10 };
         let r2 = runtime.clone();
-        let worker_id = worker_id.clone();
         let workload = thread::Builder::new()
             .name("reader".into())
-            .spawn(move || workload.run(&worker_id, r2, thread_rng(), ticker))
+            .spawn(move || workload.run(cid, r2, thread_rng(), ticker))
             .unwrap();
         WorkloadRunner { runtime, workload }
     };

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use culprit::{Culprit, ResultExt};
-use graft_core::{lsn::LSN, page_count::PageCount, VolumeId};
+use graft_core::{gid::ClientId, lsn::LSN, page_count::PageCount, VolumeId};
 use graft_proto::{
     common::v1::{Commit, LsnRange, SegmentInfo, Snapshot},
     metastore::v1::{
@@ -93,6 +93,7 @@ impl MetastoreClient {
     pub fn commit(
         &self,
         vid: &VolumeId,
+        cid: &ClientId,
         snapshot_lsn: Option<LSN>,
         page_count: PageCount,
         segments: Vec<SegmentInfo>,
@@ -100,6 +101,7 @@ impl MetastoreClient {
         let url = self.endpoint.join("commit").unwrap();
         let req = CommitRequest {
             vid: vid.copy_to_bytes(),
+            cid: cid.copy_to_bytes(),
             snapshot_lsn: snapshot_lsn.map(Into::into),
             page_count: page_count.into(),
             segments,

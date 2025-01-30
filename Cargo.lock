@@ -1202,6 +1202,7 @@ dependencies = [
  "object_store",
  "precept",
  "prost",
+ "prost-types",
  "rlimit",
  "serde",
  "splinter",

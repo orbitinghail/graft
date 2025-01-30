@@ -250,7 +250,7 @@ impl<F: Fetcher> SyncTask<F> {
         }
 
         if dir.matches(SyncDirection::Push) {
-            Job::push(vid)
+            Job::push(vid, self.shared.cid().clone())
                 .run(self.shared.storage(), &self.clients)
                 .or_into_culprit("error while pushing volume")?;
         }
@@ -302,7 +302,10 @@ impl<F: Fetcher> SyncTask<F> {
                 let can_pull = config.sync().matches(SyncDirection::Pull);
                 let has_pending_commits = state.has_pending_commits();
                 if can_push && has_pending_commits && sync.matches(SyncDirection::Push) {
-                    Ok(Some(Job::push(state.vid().clone())))
+                    Ok(Some(Job::push(
+                        state.vid().clone(),
+                        self.shared.cid().clone(),
+                    )))
                 } else if can_pull && sync.matches(SyncDirection::Pull) {
                     Ok(Some(Job::pull(state.vid().clone())))
                 } else {

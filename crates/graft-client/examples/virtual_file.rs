@@ -1,11 +1,13 @@
 use std::io::{self, Read};
 use std::ops::RangeBounds;
+use std::str::FromStr;
 
 use bytes::{BufMut, Bytes, BytesMut};
 use clap::{Parser, Subcommand};
 use culprit::{Culprit, ResultExt};
 use fjall::Config;
 use graft_client::{ClientBuildErr, ClientBuilder, MetastoreClient, PagestoreClient};
+use graft_core::gid::{ClientId, GidParseErr};
 use graft_core::lsn::LSN;
 use graft_core::{
     page::{Page, PageSizeErr, EMPTY_PAGE, PAGESIZE},
@@ -44,6 +46,9 @@ enum CliErr {
 
     #[error("io error")]
     Io(io::ErrorKind),
+
+    #[error("gid parse error")]
+    GidParseErr(#[from] GidParseErr),
 }
 
 impl From<fjall::Error> for CliErr {
@@ -82,7 +87,7 @@ struct Cli {
 
     /// Specify a client id to differentiate between multiple clients
     #[arg(short, long)]
-    client_id: Option<String>,
+    cid: Option<ClientId>,
 
     /// Use localhost for the metastore and pagestore URLs
     #[arg(short, long)]
@@ -128,6 +133,7 @@ fn page_key(volume_id: &VolumeId, offset: PageOffset) -> String {
 }
 
 struct Context {
+    cid: ClientId,
     volumes: fjall::Partition,
     pages: fjall::Partition,
     metastore: MetastoreClient,
@@ -245,6 +251,7 @@ fn write_page(ctx: &Context, vid: &VolumeId, offset: PageOffset, data: Bytes) ->
         .metastore
         .commit(
             vid,
+            &ctx.cid,
             snapshot.as_ref().map(|s| s.lsn().expect("invalid LSN")),
             snapshot
                 .map(|s| s.pages().max(offset.pages()))
@@ -303,9 +310,10 @@ fn main() -> Result<()> {
     tracing_init(TracingConsumer::Tool, None);
 
     let mut args = Cli::parse();
-    let client_id = args.client_id.unwrap_or_else(|| "default".to_string());
+    let default_cid = ClientId::from_str("QiAa1boZemVHi3G8puxCvR")?;
+    let cid = args.cid.unwrap_or(default_cid);
 
-    let config = Config::new(format!("/tmp/virtual_file_cache_{client_id}"));
+    let config = Config::new(format!("/tmp/virtual_file_cache/{cid}"));
     let keyspace = fjall::Keyspace::open(config)?;
 
     if args.localhost {
@@ -314,6 +322,7 @@ fn main() -> Result<()> {
     }
 
     let ctx = Context {
+        cid,
         volumes: keyspace.open_partition("volumes", Default::default())?,
         pages: keyspace.open_partition("pages", Default::default())?,
         metastore: ClientBuilder::new(args.metastore).build().or_into_ctx()?,

@@ -1,5 +1,6 @@
 use culprit::{Result, ResultExt};
 use graft_core::{
+    gid::ClientId,
     lsn::{LSNRangeExt, LSN},
     page::Page,
     page_offset::PageOffset,
@@ -26,8 +27,8 @@ impl Job {
         Job::Pull(PullJob { vid, reset: true })
     }
 
-    pub fn push(vid: VolumeId) -> Self {
-        Job::Push(PushJob { vid })
+    pub fn push(vid: VolumeId, cid: ClientId) -> Self {
+        Job::Push(PushJob { vid, cid })
     }
 
     pub fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
@@ -94,6 +95,7 @@ impl PullJob {
 #[derive(Debug, Serialize)]
 pub struct PushJob {
     vid: VolumeId,
+    cid: ClientId,
 }
 
 impl PushJob {
@@ -179,10 +181,13 @@ impl PushJob {
         };
 
         // commit the segments to the metastore
-        let remote_snapshot =
-            clients
-                .metastore()
-                .commit(&self.vid, snapshot.remote(), page_count, segments)?;
+        let remote_snapshot = clients.metastore().commit(
+            &self.vid,
+            &self.cid,
+            snapshot.remote(),
+            page_count,
+            segments,
+        )?;
 
         // complete the sync
         storage

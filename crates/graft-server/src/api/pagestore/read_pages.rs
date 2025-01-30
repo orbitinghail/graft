@@ -99,7 +99,12 @@ mod tests {
     use axum_test::TestServer;
     use bytes::Bytes;
     use graft_client::ClientBuilder;
-    use graft_core::{gid::SegmentId, page::Page, page_count::PageCount, page_offset::PageOffset};
+    use graft_core::{
+        gid::{ClientId, SegmentId},
+        page::Page,
+        page_count::PageCount,
+        page_offset::PageOffset,
+    };
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{memory::InMemory, path::Path, ObjectStore, PutPayload};
     use prost::Message;
@@ -161,6 +166,7 @@ mod tests {
         // setup test data
         let lsn: LSN = LSN::new(2);
         let vid = VolumeId::random();
+        let cid = ClientId::random();
 
         // segment 1 is in the store
         let sid1 = SegmentId::random();
@@ -196,7 +202,7 @@ mod tests {
         batch
             .insert_snapshot(
                 vid.clone(),
-                CommitMeta::new(lsn, LSN::FIRST, PageCount::new(4), SystemTime::now()),
+                CommitMeta::new(cid, lsn, LSN::FIRST, PageCount::new(4), SystemTime::now()),
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),

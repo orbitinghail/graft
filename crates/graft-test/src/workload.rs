@@ -20,7 +20,7 @@ use graft_client::{
     },
     ClientBuildErr, ClientErr,
 };
-use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{gid::ClientId, page::Page, page_offset::PageOffset, VolumeId};
 use graft_server::supervisor;
 use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
 use rand::Rng;
@@ -89,8 +89,8 @@ pub enum Workload {
     Reader { vid: VolumeId, interval_ms: u64 },
 }
 
-struct WorkloadEnv<'a, F: Fetcher, R: Rng> {
-    worker_id: &'a str,
+struct WorkloadEnv<F: Fetcher, R: Rng> {
+    cid: ClientId,
     runtime: Runtime<F>,
     rng: R,
     ticker: Ticker,
@@ -99,12 +99,12 @@ struct WorkloadEnv<'a, F: Fetcher, R: Rng> {
 impl Workload {
     pub fn run<F: Fetcher, R: Rng>(
         self,
-        worker_id: &str,
+        cid: ClientId,
         runtime: Runtime<F>,
         rng: R,
         ticker: Ticker,
     ) -> Result<(), Culprit<WorkloadErr>> {
-        let mut env = WorkloadEnv { worker_id, runtime, rng, ticker };
+        let mut env = WorkloadEnv { cid, runtime, rng, ticker };
 
         while env.ticker.tick() {
             if let Err(err) = match self {
@@ -143,7 +143,7 @@ fn reset_volume_if_needed<F: Fetcher>(
 
 fn load_tracker<F: Fetcher>(
     reader: &VolumeReader<F>,
-    worker_id: &str,
+    cid: &ClientId,
 ) -> Result<PageTracker, Culprit<WorkloadErr>> {
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
@@ -157,7 +157,7 @@ fn load_tracker<F: Fetcher>(
         {
             "snapshot": reader.snapshot(),
             "tracker_len": page_tracker.len(),
-            "worker": worker_id
+            "cid": cid
         }
     );
 
@@ -208,7 +208,7 @@ fn workload_writer<F: Fetcher, R: Rng>(
         .entered();
 
         // load the tracker and the expected page hash
-        let mut page_tracker = load_tracker(&reader, env.worker_id).or_into_ctx()?;
+        let mut page_tracker = load_tracker(&reader, &env.cid).or_into_ctx()?;
         let expected_hash = page_tracker.upsert(offset, new_hash.clone());
 
         // verify the offset is missing or present as expected
@@ -221,7 +221,7 @@ fn workload_writer<F: Fetcher, R: Rng>(
                 "page should have expected contents",
                 {
                     "offset": offset,
-                    "worker": env.worker_id,
+                    "cid": env.cid,
                     "snapshot": reader.snapshot(),
                     "expected": expected_hash,
                     "actual": actual_hash
@@ -233,7 +233,7 @@ fn workload_writer<F: Fetcher, R: Rng>(
                 "page should be empty as it has never been written to",
                 {
                     "offset": offset,
-                    "worker": env.worker_id,
+                    "cid": env.cid,
                     "snapshot": reader.snapshot(),
                     "actual": actual_hash
                 }
@@ -256,7 +256,7 @@ fn workload_writer<F: Fetcher, R: Rng>(
             {
                 "pre_commit": pre_commit_remote,
                 "snapshot": reader.snapshot(),
-                "worker": env.worker_id
+                "cid": env.cid
             }
         );
 
@@ -303,7 +303,7 @@ fn workload_reader<F: Fetcher, R: Rng>(
 
         expect_reachable!(
             "reader workload received commit",
-            { "worker": env.worker_id }
+            { "cid": env.cid }
         );
 
         let reader = handle.reader().or_into_ctx()?;
@@ -316,7 +316,7 @@ fn workload_reader<F: Fetcher, R: Rng>(
                 .replace(snapshot.clone())
                 .is_none_or(|last| &last != snapshot),
             "the snapshot is different after receiving a commit notification",
-            { "snapshot": snapshot, "worker": env.worker_id }
+            { "snapshot": snapshot, "cid": env.cid }
         );
 
         let page_count = snapshot.pages();
@@ -324,7 +324,7 @@ fn workload_reader<F: Fetcher, R: Rng>(
             expect_always_or_unreachable!(
                 page_count > 0,
                 "the snapshot should never be empty after we have seen a non-empty snapshot",
-                { "snapshot": snapshot, "worker": env.worker_id }
+                { "snapshot": snapshot, "cid": env.cid }
             );
         }
 
@@ -336,7 +336,7 @@ fn workload_reader<F: Fetcher, R: Rng>(
         }
 
         // load the page index
-        let page_tracker = load_tracker(&reader, env.worker_id).or_into_ctx()?;
+        let page_tracker = load_tracker(&reader, &env.cid).or_into_ctx()?;
 
         // ensure all pages are either empty or have the expected hash
         for offset in snapshot.pages().offsets() {
@@ -362,7 +362,7 @@ fn workload_reader<F: Fetcher, R: Rng>(
                     "page should have expected contents",
                     {
                         "offset": offset,
-                        "worker": env.worker_id,
+                        "cid": env.cid,
                         "snapshot": snapshot,
                         "expected": expected_hash,
                         "actual": actual_hash
@@ -374,7 +374,7 @@ fn workload_reader<F: Fetcher, R: Rng>(
                     "page should be empty as it has never been written to",
                     {
                         "offset": offset,
-                        "worker": env.worker_id,
+                        "cid": env.cid,
                         "snapshot": snapshot,
                         "actual": actual_hash
                     }

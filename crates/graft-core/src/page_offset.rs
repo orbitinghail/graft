@@ -6,7 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use splinter::SPLINTER_MAX_VALUE;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::page_count::PageCount;
 
@@ -19,7 +19,7 @@ use crate::page_count::PageCount;
     Eq,
     PartialOrd,
     Ord,
-    Hash,
+    ByteHash,
     Serialize,
     Deserialize,
     FromBytes,

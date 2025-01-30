@@ -8,7 +8,7 @@ use graft_client::runtime::{
         Storage,
     },
 };
-use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{gid::ClientId, page::Page, page_offset::PageOffset, VolumeId};
 use graft_test::start_graft_backend;
 use graft_tracing::{tracing_init, TracingConsumer};
 
@@ -19,14 +19,22 @@ fn test_client_sync_sanity() {
     let (backend, clients) = start_graft_backend();
 
     let storage = Storage::open_temporary().unwrap();
-    let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
+    let runtime = Runtime::new(
+        ClientId::random(),
+        NetFetcher::new(clients.clone()),
+        storage,
+    );
     runtime
         .start_sync_task(clients.clone(), Duration::from_secs(1), 8)
         .unwrap();
 
     // create a second client to sync to
     let storage2 = Storage::open_temporary().unwrap();
-    let runtime2 = Runtime::new(NetFetcher::new(clients.clone()), storage2);
+    let runtime2 = Runtime::new(
+        ClientId::random(),
+        NetFetcher::new(clients.clone()),
+        storage2,
+    );
     runtime2
         .start_sync_task(clients, Duration::from_millis(100), 8)
         .unwrap();

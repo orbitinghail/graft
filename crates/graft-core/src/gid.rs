@@ -1,6 +1,5 @@
 use std::{
     fmt::{Debug, Display},
-    hash::Hash,
     str::FromStr,
     time::SystemTime,
 };
@@ -10,7 +9,10 @@ use prefix::Prefix;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::GidTimestamp;
-use zerocopy::{ConvertError, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
+use zerocopy::{
+    ByteHash, ConvertError, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned,
+    ValidityError,
+};
 
 use crate::{byte_unit::ByteUnit, zerocopy_err::ZerocopyErr};
 
@@ -25,7 +27,7 @@ mod time;
     Eq,
     PartialOrd,
     Ord,
-    Hash,
+    ByteHash,
     IntoBytes,
     TryFromBytes,
     Immutable,
@@ -56,6 +58,7 @@ impl<P: Prefix> Gid<P> {
         }
     }
 
+    /// encodes the Gid to bs58 and returns it as a string
     pub fn pretty(&self) -> String {
         bs58::encode(self.as_bytes()).into_string()
     }
@@ -107,6 +110,13 @@ pub enum GidParseErr {
 impl<A, S, V> From<ConvertError<A, S, V>> for GidParseErr {
     #[inline]
     fn from(value: ConvertError<A, S, V>) -> Self {
+        Self::Corrupt(value.into())
+    }
+}
+
+impl<S, D: ?Sized + TryFromBytes> From<ValidityError<S, D>> for GidParseErr {
+    #[inline]
+    fn from(value: ValidityError<S, D>) -> Self {
         Self::Corrupt(value.into())
     }
 }
@@ -164,7 +174,7 @@ impl<P: Prefix> TryFrom<[u8; GID_SIZE.as_usize()]> for Gid<P> {
 
     #[inline]
     fn try_from(value: [u8; GID_SIZE.as_usize()]) -> Result<Self, Self::Error> {
-        Ok(Gid::<P>::try_read_from_bytes(&value)?)
+        Ok(Self::try_read_from_bytes(&value)?)
     }
 }
 

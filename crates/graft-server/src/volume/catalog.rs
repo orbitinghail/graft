@@ -15,7 +15,7 @@ use graft_proto::common::v1::SegmentInfo;
 use serde::{Deserialize, Serialize};
 use splinter::SplinterRef;
 use tryiter::TryIteratorExt;
-use zerocopy::{ConvertError, FromBytes, IntoBytes, SizeError, TryFromBytes};
+use zerocopy::{ConvertError, IntoBytes, SizeError, TryFromBytes};
 
 use super::{
     commit::{Commit, CommitMeta, OffsetsValidationErr},
@@ -174,12 +174,14 @@ impl VolumeCatalog {
         vid: VolumeId,
         lsn: LSN,
     ) -> Result<Option<CommitMeta>, Culprit<VolumeCatalogErr>> {
-        self.volumes
-            .get(CommitKey::new(vid, lsn))?
-            .map(|bytes| {
-                CommitMeta::read_from_bytes(&bytes).or_into_culprit("failed to decode CommitMeta")
-            })
-            .transpose()
+        if let Some(bytes) = self.volumes.get(CommitKey::new(vid, lsn))? {
+            Ok(Some(
+                CommitMeta::try_read_from_bytes(&bytes)
+                    .or_into_culprit("failed to decode CommitMeta")?,
+            ))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Return the latest snapshot for the specified Volume.
@@ -194,7 +196,8 @@ impl VolumeCatalog {
             .rev()
             .err_into()
             .map_ok(|(_, bytes)| {
-                CommitMeta::read_from_bytes(&bytes).or_into_culprit("failed to decode CommitMeta")
+                CommitMeta::try_read_from_bytes(&bytes)
+                    .or_into_culprit("failed to decode CommitMeta")
             })
             .try_next()
     }
@@ -238,7 +241,7 @@ impl VolumeCatalog {
             .map_ok(move |(key, meta)| {
                 let key = CommitKey::try_read_from_bytes(&key)
                     .or_into_culprit("failed to decode CommitKey")?;
-                let meta = CommitMeta::read_from_bytes(&meta)
+                let meta = CommitMeta::try_read_from_bytes(&meta)
                     .or_into_culprit("failed to decode CommitMeta")?;
 
                 // scan segments for this commit

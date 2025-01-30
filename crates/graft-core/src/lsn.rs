@@ -7,7 +7,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
+use zerocopy::{
+    ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError,
+};
 
 #[derive(Debug, Error)]
 #[error("LSN must be non-zero")]
@@ -33,6 +35,7 @@ impl<S, D: TryFromBytes> From<ValidityError<S, D>> for InvalidLSN {
     KnownLayout,
     IntoBytes,
     Immutable,
+    ByteHash,
 )]
 #[repr(transparent)]
 pub struct LSN(NonZero<u64>);

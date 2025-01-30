@@ -95,7 +95,7 @@ mod tests {
 
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
-    use graft_core::{lsn::LSN, page_count::PageCount, SegmentId};
+    use graft_core::{gid::ClientId, lsn::LSN, page_count::PageCount, SegmentId};
     use graft_proto::common::v1::LsnRange;
     use object_store::memory::InMemory;
     use prost::Message;
@@ -134,6 +134,7 @@ mod tests {
             .unwrap();
 
         let vid = VolumeId::random();
+        let cid = ClientId::random();
 
         // case 1: catalog and store are empty
         let req = PullCommitsRequest { vid: vid.copy_to_bytes(), range: None };
@@ -151,6 +152,7 @@ mod tests {
             .serialize_to_bytes();
         for lsn in 1u64..11 {
             let meta = CommitMeta::new(
+                cid.clone(),
                 LSN::new(lsn),
                 LSN::FIRST,
                 PageCount::new(1),

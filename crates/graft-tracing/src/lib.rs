@@ -21,7 +21,8 @@ pub enum TracingConsumer {
     Tool,
 }
 
-pub fn tracing_init(consumer: TracingConsumer, process_id: Option<String>) -> String {
+/// Initialize tracing. If no process_id is specified one will be randomly generated.
+pub fn tracing_init(consumer: TracingConsumer, process_id: Option<String>) {
     let process_id = process_id
         .unwrap_or_else(|| bs58::encode(rand::random::<u64>().to_le_bytes()).into_string());
 
@@ -68,8 +69,6 @@ pub fn tracing_init(consumer: TracingConsumer, process_id: Option<String>) -> St
             .try_init()
             .expect("failed to setup tracing subscriber");
     });
-
-    process_id
 }
 
 enum TimeFormat {
