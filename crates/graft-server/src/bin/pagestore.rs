@@ -71,7 +71,7 @@ impl Default for PagestoreConfig {
 #[tokio::main]
 async fn main() {
     precept::init();
-    tracing_init(TracingConsumer::Server);
+    tracing_init(TracingConsumer::Server, None);
     tracing::info!("starting pagestore");
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");

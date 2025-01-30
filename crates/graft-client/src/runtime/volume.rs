@@ -32,6 +32,11 @@ impl<F: Fetcher> VolumeHandle<F> {
         Self { vid, shared, sync_control }
     }
 
+    #[inline]
+    pub fn vid(&self) -> &VolumeId {
+        &self.vid
+    }
+
     /// Retrieve the current volume status
     pub fn status(&self) -> Result<VolumeStatus, ClientErr> {
         Ok(self

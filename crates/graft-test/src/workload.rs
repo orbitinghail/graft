@@ -15,6 +15,7 @@ use graft_client::{
             StorageErr,
         },
         sync::{ShutdownErr, StartupErr},
+        volume::VolumeHandle,
         volume_reader::VolumeReader,
     },
     ClientBuildErr, ClientErr,
@@ -74,6 +75,7 @@ impl WorkloadErr {
                 _ => false,
             },
             WorkloadErr::ClientErr(ClientErr::StorageErr(StorageErr::ConcurrentWrite)) => true,
+            WorkloadErr::ClientErr(ClientErr::StorageErr(StorageErr::RemoteConflict)) => true,
             _ => false,
         }
     }
@@ -87,8 +89,8 @@ pub enum Workload {
     Reader { vid: VolumeId, interval_ms: u64 },
 }
 
-struct WorkloadEnv<F: Fetcher, R: Rng> {
-    worker_id: &'static str,
+struct WorkloadEnv<'a, F: Fetcher, R: Rng> {
+    worker_id: &'a str,
     runtime: Runtime<F>,
     rng: R,
     ticker: Ticker,
@@ -97,7 +99,7 @@ struct WorkloadEnv<F: Fetcher, R: Rng> {
 impl Workload {
     pub fn run<F: Fetcher, R: Rng>(
         self,
-        worker_id: &'static str,
+        worker_id: &str,
         runtime: Runtime<F>,
         rng: R,
         ticker: Ticker,
@@ -124,6 +126,19 @@ impl Workload {
         }
         Ok(())
     }
+}
+
+fn reset_volume_if_needed<F: Fetcher>(
+    handle: &VolumeHandle<F>,
+) -> Result<(), Culprit<WorkloadErr>> {
+    let status = handle.status().or_into_ctx()?;
+    if status != VolumeStatus::Ok {
+        precept::expect_reachable!("volume needs reset", { "vid": handle.vid() });
+        let span = tracing::info_span!("volume_reset", ?status, result = field::Empty).entered();
+        handle.reset_to_remote().or_into_ctx()?;
+        span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
+    }
+    Ok(())
 }
 
 fn load_tracker<F: Fetcher>(
@@ -161,20 +176,19 @@ fn workload_writer<F: Fetcher, R: Rng>(
         .open_volume(vid, VolumeConfig::new(SyncDirection::Both))
         .or_into_ctx()?;
 
+    let status = handle.status().or_into_ctx()?;
+    expect_sometimes!(status != VolumeStatus::Ok, "volume is not ok when workload starts", { "vid": vid });
+
+    // check to see if the volume needs recovering from a previous crash
+    reset_volume_if_needed(&handle).or_into_ctx()?;
+
     // pull the volume explicitly to ensure we are up to date
     tracing::info!("pulling volume {:?}", vid);
     handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
 
     while env.ticker.tick() {
         // check the volume status to see if we need to reset
-        let status = handle.status().or_into_ctx()?;
-        if status != VolumeStatus::Ok {
-            let span =
-                tracing::info_span!("volume_reset", ?status, result = field::Empty).entered();
-            handle.reset_to_remote().or_into_ctx()?;
-            span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
-            drop(span);
-        }
+        reset_volume_if_needed(&handle).or_into_ctx()?;
 
         // open a reader
         let reader = handle.reader().or_into_ctx()?;
@@ -262,6 +276,10 @@ fn workload_reader<F: Fetcher, R: Rng>(
         .runtime
         .open_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
         .or_into_ctx()?;
+
+    // check to see if the volume needs recovering from a previous crash
+    // this can happen if this reader used to be a writer
+    reset_volume_if_needed(&handle).or_into_ctx()?;
 
     // pull the volume explicitly to ensure we are up to date
     tracing::info!("pulling volume {:?}", vid);

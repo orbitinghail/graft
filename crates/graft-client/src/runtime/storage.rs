@@ -137,14 +137,17 @@ pub struct Storage {
 
 impl Storage {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        tracing::debug!("opening runtime storage at {}", path.as_ref().display());
         Self::open_config(fjall::Config::new(path))
     }
 
     pub fn open_temporary() -> Result<Self> {
-        Self::open_config(fjall::Config::new(tempfile::tempdir()?.into_path()).temporary(true))
+        let path = tempfile::tempdir()?.into_path();
+        tracing::debug!("opening temporary runtime storage at {}", path.display());
+        Self::open_config(fjall::Config::new(path).temporary(true))
     }
 
-    pub fn open_config(config: fjall::Config) -> Result<Self> {
+    fn open_config(config: fjall::Config) -> Result<Self> {
         let keyspace = config.open()?;
         let volumes = keyspace.open_partition("volumes", Default::default())?;
         let pages = keyspace.open_partition(
@@ -397,11 +400,6 @@ impl Storage {
 
         // ensure that we can accept this remote commit
         if state.needs_recovery() {
-            precept::expect_reachable!(
-                "volume needs recovery while receiving remote commit",
-                { "vid": vid, "state": state }
-            );
-
             return Err(Culprit::new_with_note(
                 StorageErr::VolumeNeedsRecovery,
                 format!("Volume {vid} needs recovery"),
@@ -496,10 +494,6 @@ impl Storage {
 
         // fail if the volume needs recovery
         if state.needs_recovery() {
-            precept::expect_reachable!(
-                "volume needs recovery while preparing to sync to remote",
-                { "vid": vid, "state": state }
-            );
             return Err(Culprit::new_with_note(
                 StorageErr::VolumeNeedsRecovery,
                 format!("Volume {vid} needs recovery"),

@@ -300,7 +300,7 @@ fn print_snapshot(snapshot: Option<Snapshot>) {
 }
 
 fn main() -> Result<()> {
-    tracing_init(TracingConsumer::Tool);
+    tracing_init(TracingConsumer::Tool, None);
 
     let mut args = Cli::parse();
     let client_id = args.client_id.unwrap_or_else(|| "default".to_string());

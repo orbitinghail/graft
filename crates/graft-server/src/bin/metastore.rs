@@ -45,7 +45,7 @@ impl Default for MetastoreConfig {
 #[tokio::main]
 async fn main() {
     precept::init();
-    tracing_init(TracingConsumer::Server);
+    tracing_init(TracingConsumer::Server, None);
     tracing::info!("starting metastore");
 
     precept::setup_complete!();

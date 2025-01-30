@@ -14,7 +14,7 @@ use graft_tracing::{tracing_init, TracingConsumer};
 
 #[test]
 fn test_client_sync_sanity() {
-    tracing_init(TracingConsumer::Test);
+    tracing_init(TracingConsumer::Test, None);
 
     let (backend, clients) = start_graft_backend();
 

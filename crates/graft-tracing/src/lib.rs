@@ -1,7 +1,4 @@
-use std::{
-    sync::{LazyLock, Once},
-    time::Instant,
-};
+use std::{sync::Once, time::Instant};
 use tracing_subscriber::{fmt::time::SystemTime, util::SubscriberInitExt};
 
 use tracing::level_filters::LevelFilter;
@@ -12,9 +9,6 @@ use tracing_subscriber::{
     },
     EnvFilter,
 };
-
-pub static PROCESS_ID: LazyLock<String> =
-    LazyLock::new(|| bs58::encode(rand::random::<u64>().to_le_bytes()).into_string());
 
 pub fn running_in_antithesis() -> bool {
     std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok()
@@ -27,7 +21,10 @@ pub enum TracingConsumer {
     Tool,
 }
 
-pub fn tracing_init(consumer: TracingConsumer) {
+pub fn tracing_init(consumer: TracingConsumer, process_id: Option<String>) -> String {
+    let process_id = process_id
+        .unwrap_or_else(|| bs58::encode(rand::random::<u64>().to_le_bytes()).into_string());
+
     let antithesis = running_in_antithesis();
     let testing = consumer == TracingConsumer::Test;
     let color = !antithesis && !std::env::var("NO_COLOR").is_ok_and(|s| !s.is_empty());
@@ -43,12 +40,10 @@ pub fn tracing_init(consumer: TracingConsumer) {
             .add_directive("graft_core=trace".parse().unwrap())
             .add_directive("graft_server=trace".parse().unwrap())
             .add_directive("graft_test=trace".parse().unwrap())
-            .add_directive("fjall=trace".parse().unwrap())
-            .add_directive("lsm_tree=trace".parse().unwrap());
     }
 
     let prefix = if antithesis || testing {
-        Some(PROCESS_ID.as_str())
+        Some(process_id.clone())
     } else {
         None
     };
@@ -72,7 +67,9 @@ pub fn tracing_init(consumer: TracingConsumer) {
             .finish()
             .try_init()
             .expect("failed to setup tracing subscriber");
-    })
+    });
+
+    process_id
 }
 
 enum TimeFormat {
@@ -82,12 +79,12 @@ enum TimeFormat {
 }
 
 struct TimeAndPrefix {
-    prefix: Option<&'static str>,
+    prefix: Option<String>,
     time: TimeFormat,
 }
 
 impl TimeAndPrefix {
-    fn new(prefix: Option<&'static str>, time: TimeFormat) -> Self {
+    fn new(prefix: Option<String>, time: TimeFormat) -> Self {
         Self { prefix, time }
     }
 
@@ -108,7 +105,7 @@ impl TimeAndPrefix {
 
 impl FormatTime for TimeAndPrefix {
     fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
-        match (self.prefix, &self.time) {
+        match (&self.prefix, &self.time) {
             (None, _) => self.write_time(w),
             (Some(prefix), TimeFormat::None) => write!(w, "{}", prefix),
             (Some(prefix), _) => {

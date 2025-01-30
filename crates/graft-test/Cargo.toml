@@ -13,6 +13,7 @@ precept = { path = "../precept", features = ["antithesis"] }
 
 culprit = { workspace = true }
 crossbeam = { workspace = true }
+file-lock = { workspace = true }
 url = { workspace = true }
 ureq = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

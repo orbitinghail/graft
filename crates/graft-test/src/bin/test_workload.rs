@@ -1,8 +1,9 @@
-use std::time::Duration;
+use std::{env::temp_dir, time::Duration};
 
 use clap::Parser;
 use config::Config;
 use culprit::{Culprit, ResultExt};
+use file_lock::{FileLock, FileOptions};
 use graft_client::{
     runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Storage},
     ClientBuilder, ClientPair, MetastoreClient, PagestoreClient,
@@ -11,7 +12,7 @@ use graft_test::{
     workload::{Workload, WorkloadErr},
     Ticker,
 };
-use graft_tracing::{running_in_antithesis, tracing_init, TracingConsumer, PROCESS_ID};
+use graft_tracing::{running_in_antithesis, tracing_init, TracingConsumer};
 use rand::Rng;
 use url::Url;
 
@@ -23,11 +24,48 @@ struct Args {
     workload: String,
 }
 
-fn main() -> Result<(), Culprit<WorkloadErr>> {
-    let worker_id = PROCESS_ID.as_str();
+fn get_or_init_worker() -> (String, FileLock) {
+    let locks = temp_dir().join("worker_locks");
+    std::fs::create_dir_all(&locks)
+        .expect(&format!("failed to create workers directory: {locks:?}"));
+
+    for entry in
+        std::fs::read_dir(&locks).expect(&format!("failed to read workers directory: {locks:?}"))
+    {
+        let entry = entry.expect("failed to read entry");
+        let path = entry.path();
+        assert!(path.is_file(), "locks dir should only contain files");
+
+        let opts = FileOptions::new().read(true).write(true);
+        if let Ok(lock) = FileLock::lock(&path, /*is_blocking*/ false, opts) {
+            let worker_id = path.file_name().unwrap();
+            assert!(worker_id.is_ascii(), "worker id is not ascii");
+            let worker_id = worker_id.to_string_lossy().to_string();
+            return (worker_id, lock);
+        }
+    }
+
+    // we were unable to reuse an existing worker, create a new one
+    let worker_id = bs58::encode(rand::random::<u64>().to_le_bytes()).into_string();
+    let lock = locks.join(&worker_id);
+    let opts = FileOptions::new().create(true).read(true).write(true);
+    let lock = FileLock::lock(lock, /*is_blocking*/ false, opts)
+        .expect("failed to create new worker lock");
+    (worker_id, lock)
+}
+
+fn main() {
+    if let Err(err) = main_inner() {
+        tracing::error!(?err, "workload failed");
+        std::process::exit(1);
+    }
+}
+
+fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
     precept::init();
     let mut rng = precept::random::rng();
-    tracing_init(TracingConsumer::Test);
+    let (worker_id, _worker_lock) = get_or_init_worker();
+    tracing_init(TracingConsumer::Test, Some(worker_id.clone()));
     let args = Args::parse();
 
     let workload: Workload = Config::builder()
@@ -52,7 +90,8 @@ fn main() -> Result<(), Culprit<WorkloadErr>> {
             .or_into_ctx()?;
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
-    let storage = Storage::open_temporary().unwrap();
+    let storage_path = temp_dir().join("storage").join(&worker_id);
+    let storage = Storage::open(storage_path).or_into_ctx()?;
     let runtime = Runtime::new(NetFetcher::new(clients.clone()), storage);
     runtime
         .start_sync_task(clients, Duration::from_secs(1), 8)
