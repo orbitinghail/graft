@@ -76,7 +76,7 @@ pub enum StorageErr {
     ConcurrentWrite,
 
     #[error("Volume needs recovery")]
-    VolumeNeedsRecovery,
+    VolumeIsSyncing,
 
     #[error(
         "The local Volume state is ahead of the remote state, refusing to accept remote changes"
@@ -400,10 +400,10 @@ impl Storage {
         let watermarks = state.watermarks();
 
         // ensure that we can accept this remote commit
-        if state.needs_recovery() {
+        if state.is_syncing() {
             return Err(Culprit::new_with_note(
-                StorageErr::VolumeNeedsRecovery,
-                format!("Volume {vid} needs recovery"),
+                StorageErr::VolumeIsSyncing,
+                format!("Volume {vid} is syncing, refusing to accept remote changes"),
             ));
         }
         if state.has_pending_commits() {
@@ -493,14 +493,6 @@ impl Storage {
         // retrieve the current volume state
         let state = self.volume_state(vid)?;
 
-        // fail if the volume needs recovery
-        if state.needs_recovery() {
-            return Err(Culprit::new_with_note(
-                StorageErr::VolumeNeedsRecovery,
-                format!("Volume {vid} needs recovery"),
-            ));
-        }
-
         // ensure that we only run this job when we actually have commits to sync
         precept::expect_always_or_unreachable!(
             state.has_pending_commits(),
@@ -517,19 +509,32 @@ impl Storage {
         let snapshot = state.snapshot().expect("volume snapshot missing").clone();
         let local_lsn = snapshot.local();
 
-        // update pending_sync to the local LSN
-        self.volumes.insert(
-            VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
-            state.watermarks().clone().with_pending_sync(local_lsn),
-        )?;
+        // calculate the end of the sync range
+        let end_lsn = if state.is_syncing() {
+            // if we are resuming a previously interrupted sync, use the
+            // pending_sync watermark
+            let pending_sync = state
+                .watermarks()
+                .pending_sync()
+                .expect("pending_sync must be set when volume is syncing");
+            tracing::trace!(?vid, ?pending_sync, "resuming previously interrupted sync");
+            precept::expect_reachable!("resuming previously interrupted sync", state);
+            pending_sync
+        } else {
+            // update pending_sync to the local LSN
+            self.volumes.insert(
+                VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
+                state.watermarks().clone().with_pending_sync(local_lsn),
+            )?;
+            local_lsn
+        };
 
         // calculate the LSN range of commits to sync
-        let start = state
+        let start_lsn = state
             .watermarks()
             .last_sync()
             .map_or(LSN::FIRST, |s| s.next().expect("LSN overflow"));
-        let end = local_lsn;
-        let lsns = start..=end;
+        let lsns = start_lsn..=end_lsn;
 
         // create a commit iterator
         let commit_start = CommitKey::new(vid.clone(), *lsns.start());

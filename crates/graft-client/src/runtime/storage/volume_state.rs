@@ -357,7 +357,7 @@ impl VolumeState {
         last_sync < local
     }
 
-    pub fn needs_recovery(&self) -> bool {
+    pub fn is_syncing(&self) -> bool {
         let last_sync = self.watermarks().last_sync();
         let pending_sync = self.watermarks().pending_sync();
         debug_assert!(
