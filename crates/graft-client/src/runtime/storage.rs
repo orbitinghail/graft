@@ -109,6 +109,7 @@ pub struct Storage {
     /// Keyed by VolumeStateKey.
     ///
     /// {vid}/VolumeStateTag::Config -> VolumeConfig
+    /// {vid}/VolumeStateTag::Status -> VolumeStatus
     /// {vid}/VolumeStateTag::Snapshot -> Snapshot
     /// {vid}/VolumeStateTag::Watermarks -> Watermarks
     volumes: fjall::Partition,
@@ -421,10 +422,10 @@ impl Storage {
         }
 
         // compute the next local lsn
-        let local_lsn = snapshot.map_or(LSN::FIRST, |s| s.local().next().expect("lsn overflow"));
+        let commit_lsn = snapshot.map_or(LSN::FIRST, |s| s.local().next().expect("lsn overflow"));
 
         // persist the new volume snapshot
-        let new_snapshot = Snapshot::new(local_lsn, Some(remote_lsn), remote_pages);
+        let new_snapshot = Snapshot::new(commit_lsn, Some(remote_lsn), remote_pages);
         batch.insert(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
@@ -438,12 +439,12 @@ impl Storage {
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
             watermarks
                 .clone()
-                .with_last_sync(local_lsn)
-                .with_pending_sync(local_lsn),
+                .with_last_sync(commit_lsn)
+                .with_pending_sync(commit_lsn),
         );
 
         // mark changed pages
-        let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, local_lsn);
+        let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, commit_lsn);
         let pending = Bytes::from(PageValue::Pending);
         for offset in changed.iter() {
             key = key.with_offset(offset.into());
