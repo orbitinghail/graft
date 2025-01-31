@@ -276,6 +276,16 @@ impl Watermarks {
         Self { pending_sync: self.last_sync, ..self }
     }
 
+    pub fn is_syncing(&self) -> bool {
+        let last_sync = self.last_sync();
+        let pending_sync = self.pending_sync();
+        debug_assert!(
+            last_sync <= pending_sync,
+            "invariant violation: last_sync should never be larger than pending_sync"
+        );
+        last_sync < pending_sync
+    }
+
     #[inline]
     pub fn checkpoint(&self) -> Option<LSN> {
         self.checkpoint.into()
@@ -347,6 +357,10 @@ impl VolumeState {
         self.watermarks.as_ref().unwrap_or(&Watermarks::DEFAULT)
     }
 
+    pub fn is_syncing(&self) -> bool {
+        self.watermarks().is_syncing()
+    }
+
     pub fn has_pending_commits(&self) -> bool {
         let last_sync = self.watermarks().last_sync();
         let local = self.snapshot().map(|s| s.local());
@@ -355,16 +369,6 @@ impl VolumeState {
             "invariant violation: last_sync should never be larger than local"
         );
         last_sync < local
-    }
-
-    pub fn is_syncing(&self) -> bool {
-        let last_sync = self.watermarks().last_sync();
-        let pending_sync = self.watermarks().pending_sync();
-        debug_assert!(
-            last_sync <= pending_sync,
-            "invariant violation: last_sync should never be larger than pending_sync"
-        );
-        last_sync < pending_sync
     }
 
     pub(crate) fn accumulate(

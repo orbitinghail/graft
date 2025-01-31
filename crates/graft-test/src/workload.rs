@@ -179,6 +179,12 @@ fn workload_writer<F: Fetcher, R: Rng>(
     // check to see if the volume needs recovering from a previous crash
     reset_volume_if_needed(&handle).or_into_ctx()?;
 
+    // check to see if we need to complete an interrupted push
+    if handle.is_syncing().or_into_ctx()? {
+        tracing::info!("completing interrupted push for volume {:?}", vid);
+        handle.sync_with_remote(SyncDirection::Push).or_into_ctx()?;
+    }
+
     // pull the volume explicitly to ensure we are up to date
     tracing::info!("pulling volume {:?}", vid);
     handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
@@ -277,6 +283,12 @@ fn workload_reader<F: Fetcher, R: Rng>(
     // check to see if the volume needs recovering from a previous crash
     // this can happen if this reader used to be a writer
     reset_volume_if_needed(&handle).or_into_ctx()?;
+
+    // check to see if we need to complete an interrupted push
+    if handle.is_syncing().or_into_ctx()? {
+        tracing::info!("completing interrupted push for volume {:?}", vid);
+        handle.sync_with_remote(SyncDirection::Push).or_into_ctx()?;
+    }
 
     // pull the volume explicitly to ensure we are up to date
     tracing::info!("pulling volume {:?}", vid);

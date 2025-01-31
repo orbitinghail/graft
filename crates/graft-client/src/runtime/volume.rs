@@ -46,6 +46,16 @@ impl<F: Fetcher> VolumeHandle<F> {
             .or_into_ctx()?)
     }
 
+    /// Check if the Volume is syncing
+    pub fn is_syncing(&self) -> Result<bool, ClientErr> {
+        Ok(self
+            .shared
+            .storage()
+            .watermarks(&self.vid)
+            .or_into_ctx()?
+            .is_syncing())
+    }
+
     /// Retrieve the latest snapshot for the volume
     pub fn snapshot(&self) -> Result<Option<Snapshot>, ClientErr> {
         Ok(self.shared.storage().snapshot(&self.vid).or_into_ctx()?)

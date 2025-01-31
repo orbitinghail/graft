@@ -306,7 +306,7 @@ impl<F: Fetcher> SyncTask<F> {
                         state.vid().clone(),
                         self.shared.cid().clone(),
                     )))
-                } else if can_pull && sync.matches(SyncDirection::Pull) {
+                } else if can_pull && sync.matches(SyncDirection::Pull) && !state.is_syncing() {
                     Ok(Some(Job::pull(state.vid().clone())))
                 } else {
                     Ok(None)

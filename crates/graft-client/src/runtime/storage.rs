@@ -1,11 +1,4 @@
-use std::{
-    collections::HashSet,
-    fmt::Debug,
-    io,
-    ops::{RangeBounds, RangeInclusive},
-    path::Path,
-    sync::Arc,
-};
+use std::{collections::HashSet, fmt::Debug, io, ops::RangeInclusive, path::Path, sync::Arc};
 
 use bytes::Bytes;
 use changeset::ChangeSet;
@@ -220,6 +213,15 @@ impl Storage {
             Ok(Some(Snapshot::from_bytes(&snapshot)?))
         } else {
             Ok(None)
+        }
+    }
+
+    pub fn watermarks(&self, vid: &VolumeId) -> Result<Watermarks> {
+        let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks);
+        if let Some(watermarks) = self.volumes.get(key)? {
+            Ok(Watermarks::from_bytes(&watermarks)?)
+        } else {
+            Ok(Watermarks::DEFAULT)
         }
     }
 
@@ -589,7 +591,7 @@ impl Storage {
         vid: &VolumeId,
         sync_start_snapshot: Snapshot,
         remote_snapshot: graft_proto::Snapshot,
-        synced_lsns: impl RangeBounds<LSN>,
+        synced_lsns: RangeInclusive<LSN>,
     ) -> Result<()> {
         // acquire the commit lock and start a new batch
         let _permit = self.commit_lock.lock();
@@ -617,8 +619,8 @@ impl Storage {
         );
         assert_eq!(
             state.watermarks().pending_sync(),
-            Some(sync_start_snapshot.local()),
-            "the pending_sync watermark must be equal to the local LSN at the start of the sync"
+            Some(synced_lsns.try_end().expect("lsn range is RangeInclusive")),
+            "the pending_sync watermark doesn't match the synced LSN range"
         );
 
         // persist the updated remote LSN to the snapshot
