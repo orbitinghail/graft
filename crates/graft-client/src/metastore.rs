@@ -10,42 +10,33 @@ use graft_proto::{
 };
 use splinter::SplinterRef;
 use std::ops::RangeBounds;
-use ureq::Agent;
 use url::Url;
 
-use crate::builder;
-use crate::error;
-use crate::net::prost_request;
+use crate::NetClient;
+use crate::{error, net::EndpointBuilder};
 
 #[derive(Debug, Clone)]
 pub struct MetastoreClient {
-    /// The metastore root URL (without any trailing path)
-    endpoint: Url,
-    agent: Agent,
-}
-
-impl TryFrom<builder::ClientBuilder> for MetastoreClient {
-    type Error = Culprit<builder::ClientBuildErr>;
-
-    fn try_from(builder: builder::ClientBuilder) -> Result<Self, Self::Error> {
-        let endpoint = builder.endpoint().join("metastore/v1/")?;
-        let agent = builder.agent();
-        Ok(Self { endpoint, agent })
-    }
+    endpoint: EndpointBuilder,
+    client: NetClient,
 }
 
 impl MetastoreClient {
+    pub fn new(root: Url, client: NetClient) -> Self {
+        Self { endpoint: root.into(), client }
+    }
+
     pub fn snapshot(
         &self,
         vid: &VolumeId,
         lsn: Option<LSN>,
     ) -> Result<Option<Snapshot>, Culprit<error::ClientErr>> {
-        let url = self.endpoint.join("snapshot").unwrap();
+        let uri = self.endpoint.build("/metastore/v1/snapshot")?;
         let req = SnapshotRequest {
             vid: vid.copy_to_bytes(),
             lsn: lsn.map(Into::into),
         };
-        match prost_request::<_, SnapshotResponse>(&self.agent, url, req) {
+        match self.client.send::<_, SnapshotResponse>(uri, req) {
             Ok(resp) => Ok(resp.snapshot),
             Err(err) if err.ctx().is_snapshot_missing() => Ok(None),
             Err(err) => Err(err),
@@ -57,12 +48,12 @@ impl MetastoreClient {
         vid: &VolumeId,
         range: R,
     ) -> Result<Option<(Snapshot, LsnRange, SplinterRef<Bytes>)>, Culprit<error::ClientErr>> {
-        let url = self.endpoint.join("pull_offsets").unwrap();
+        let uri = self.endpoint.build("/metastore/v1/pull_offsets")?;
         let req = PullOffsetsRequest {
             vid: vid.copy_to_bytes(),
             range: Some(LsnRange::from_range(range)),
         };
-        match prost_request::<_, PullOffsetsResponse>(&self.agent, url, req) {
+        match self.client.send::<_, PullOffsetsResponse>(uri, req) {
             Ok(resp) => {
                 let snapshot = resp.snapshot.expect("snapshot is missing");
                 let range = resp.range.expect("range is missing");
@@ -82,12 +73,14 @@ impl MetastoreClient {
     where
         R: RangeBounds<LSN>,
     {
-        let url = self.endpoint.join("pull_commits").unwrap();
+        let uri = self.endpoint.build("/metastore/v1/pull_commits")?;
         let req = PullCommitsRequest {
             vid: vid.copy_to_bytes(),
             range: Some(LsnRange::from_range(range)),
         };
-        prost_request::<_, PullCommitsResponse>(&self.agent, url, req).map(|resp| resp.commits)
+        self.client
+            .send::<_, PullCommitsResponse>(uri, req)
+            .map(|resp| resp.commits)
     }
 
     pub fn commit(
@@ -98,7 +91,7 @@ impl MetastoreClient {
         page_count: PageCount,
         segments: Vec<SegmentInfo>,
     ) -> Result<Snapshot, Culprit<error::ClientErr>> {
-        let url = self.endpoint.join("commit").unwrap();
+        let uri = self.endpoint.build("/metastore/v1/commit")?;
         let req = CommitRequest {
             vid: vid.copy_to_bytes(),
             cid: cid.copy_to_bytes(),
@@ -106,7 +99,8 @@ impl MetastoreClient {
             page_count: page_count.into(),
             segments,
         };
-        prost_request::<_, CommitResponse>(&self.agent, url, req)
+        self.client
+            .send::<_, CommitResponse>(uri, req)
             .map(|r| r.snapshot.expect("missing snapshot after commit"))
     }
 }

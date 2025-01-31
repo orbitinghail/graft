@@ -11,7 +11,7 @@ pub enum ClientErr {
     GraftErr(#[from] GraftErr),
 
     #[error("http request failed: {0}")]
-    HttpErr(ureq::ErrorKind),
+    HttpErr(#[from] ureq::Error),
 
     #[error("failed to decode protobuf message")]
     ProtobufDecodeErr,
@@ -26,21 +26,15 @@ pub enum ClientErr {
     IoErr(std::io::ErrorKind),
 }
 
+impl From<http::Error> for ClientErr {
+    fn from(err: http::Error) -> Self {
+        Self::HttpErr(err.into())
+    }
+}
+
 impl From<std::io::Error> for ClientErr {
     fn from(err: std::io::Error) -> Self {
         Self::IoErr(err.kind())
-    }
-}
-
-impl From<ureq::Error> for ClientErr {
-    fn from(err: ureq::Error) -> Self {
-        Self::HttpErr(err.kind())
-    }
-}
-
-impl From<ureq::Transport> for ClientErr {
-    fn from(err: ureq::Transport) -> Self {
-        Self::HttpErr(err.kind())
     }
 }
 

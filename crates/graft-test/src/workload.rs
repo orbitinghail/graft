@@ -18,7 +18,7 @@ use graft_client::{
         volume::VolumeHandle,
         volume_reader::VolumeReader,
     },
-    ClientBuildErr, ClientErr,
+    ClientErr,
 };
 use graft_core::{gid::ClientId, page::Page, page_offset::PageOffset, VolumeId};
 use graft_server::supervisor;
@@ -27,7 +27,6 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::field;
-use ureq::ErrorKind;
 
 #[derive(Debug, Error)]
 pub enum WorkloadErr {
@@ -36,9 +35,6 @@ pub enum WorkloadErr {
 
     #[error("client error: {0}")]
     ClientErr(#[from] ClientErr),
-
-    #[error("error building graft client: {0}")]
-    ClientBuildErr(#[from] ClientBuildErr),
 
     #[error("sync task startup error: {0}")]
     SyncTaskStartupErr(#[from] StartupErr),
@@ -68,10 +64,11 @@ impl From<ConfigError> for WorkloadErr {
 impl WorkloadErr {
     fn should_retry(&self) -> bool {
         match self {
-            WorkloadErr::ClientErr(ClientErr::HttpErr(kind)) => match kind {
-                ErrorKind::Dns => true,
-                ErrorKind::ConnectionFailed => true,
-                ErrorKind::TooManyRedirects => true,
+            WorkloadErr::ClientErr(ClientErr::HttpErr(err)) => match err {
+                ureq::Error::ConnectionFailed => true,
+                ureq::Error::TooManyRedirects => true,
+                ureq::Error::HostNotFound => true,
+                ureq::Error::Timeout(_) => true,
                 _ => false,
             },
             WorkloadErr::ClientErr(ClientErr::StorageErr(StorageErr::ConcurrentWrite)) => true,

@@ -23,6 +23,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tryiter = { workspace = true }
 ureq = { workspace = true }
+http = {workspace = true}
 url = { workspace = true }
 zerocopy = { workspace = true }
 

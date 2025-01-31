@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use config::Config;
 use futures::{select, FutureExt};
-use graft_client::ClientBuilder;
+use graft_client::{MetastoreClient, NetClient};
 use graft_core::byte_unit::ByteUnit;
 use graft_server::{
     api::{
@@ -108,9 +108,8 @@ async fn main() {
     let (store_tx, store_rx) = mpsc::channel(8);
     let commit_bus = Bus::new(128);
 
-    let metastore = ClientBuilder::new(config.metastore)
-        .build()
-        .expect("failed to build metastore client");
+    let client = NetClient::new();
+    let metastore = MetastoreClient::new(config.metastore, client);
 
     supervisor.spawn(SegmentWriterTask::new(
         registry.segment_writer(),

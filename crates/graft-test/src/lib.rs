@@ -8,7 +8,7 @@ use std::{
 
 use bytes::{Buf, BufMut, BytesMut};
 use culprit::{Culprit, ResultExt};
-use graft_client::{ClientBuilder, ClientPair, MetastoreClient, PagestoreClient};
+use graft_client::{ClientPair, MetastoreClient, NetClient, PagestoreClient};
 use graft_core::{
     page::{Page, PAGESIZE},
     page_offset::PageOffset,
@@ -59,9 +59,15 @@ pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
         .build()
         .expect("failed to construct tokio runtime");
 
+    let net_client = NetClient::new();
+
     let mut supervisor = Supervisor::default();
-    let metastore = runtime.block_on(run_metastore(&mut supervisor));
-    let pagestore = runtime.block_on(run_pagestore(metastore.clone(), &mut supervisor));
+    let metastore = runtime.block_on(run_metastore(net_client.clone(), &mut supervisor));
+    let pagestore = runtime.block_on(run_pagestore(
+        net_client.clone(),
+        metastore.clone(),
+        &mut supervisor,
+    ));
 
     let builder = std::thread::Builder::new().name("graft-backend".to_string());
 
@@ -95,7 +101,7 @@ impl GraftBackend {
     }
 }
 
-pub async fn run_metastore(supervisor: &mut Supervisor) -> MetastoreClient {
+pub async fn run_metastore(net_client: NetClient, supervisor: &mut Supervisor) -> MetastoreClient {
     let obj_store = ObjectStoreConfig::Memory.build().unwrap();
     let vol_store = Arc::new(VolumeStore::new(obj_store));
     let catalog = VolumeCatalog::open_temporary().unwrap();
@@ -106,10 +112,11 @@ pub async fn run_metastore(supervisor: &mut Supervisor) -> MetastoreClient {
     let port = listener.local_addr().unwrap().port();
     let endpoint = Url::parse(&format!("http://localhost:{port}")).unwrap();
     supervisor.spawn(ApiServerTask::new("metastore-api", listener, router));
-    ClientBuilder::new(endpoint).build().unwrap()
+    MetastoreClient::new(endpoint, net_client)
 }
 
 pub async fn run_pagestore(
+    net_client: NetClient,
     metastore: MetastoreClient,
     supervisor: &mut Supervisor,
 ) -> PagestoreClient {
@@ -155,7 +162,7 @@ pub async fn run_pagestore(
     let endpoint = Url::parse(&format!("http://localhost:{port}")).unwrap();
     supervisor.spawn(ApiServerTask::new("pagestore-api", listener, router));
 
-    ClientBuilder::new(endpoint).build().unwrap()
+    PagestoreClient::new(endpoint, net_client)
 }
 
 #[derive(Debug, Clone, Copy)]

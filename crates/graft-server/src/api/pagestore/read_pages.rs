@@ -98,7 +98,7 @@ mod tests {
     use axum::handler::Handler;
     use axum_test::TestServer;
     use bytes::Bytes;
-    use graft_client::ClientBuilder;
+    use graft_client::{MetastoreClient, NetClient};
     use graft_core::{
         gid::{ClientId, SegmentId},
         page::Page,
@@ -145,14 +145,15 @@ mod tests {
         let (page_tx, _) = mpsc::channel(128);
         let commit_bus = Bus::new(128);
 
+        let client = NetClient::new();
+        let metastore_uri = "http://localhost:3000".parse().unwrap();
+
         let state = Arc::new(PagestoreApiState::new(
             page_tx,
             commit_bus,
             catalog.clone(),
             loader,
-            ClientBuilder::new("http://localhost:3000".try_into().unwrap())
-                .build()
-                .unwrap(),
+            MetastoreClient::new(metastore_uri, client),
             VolumeCatalogUpdater::new(10),
             10,
         ));

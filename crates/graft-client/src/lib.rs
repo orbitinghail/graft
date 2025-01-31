@@ -1,4 +1,3 @@
-mod builder;
 mod error;
 mod metastore;
 mod net;
@@ -16,9 +15,9 @@ pub mod runtime {
     pub mod volume_writer;
 }
 
-pub use builder::{ClientBuildErr, ClientBuilder};
 pub use error::ClientErr;
 pub use metastore::MetastoreClient;
+pub use net::NetClient;
 pub use pagestore::PagestoreClient;
 pub use pair::ClientPair;
 

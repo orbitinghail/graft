@@ -27,6 +27,7 @@ tracing = { workspace = true }
 object_store = { workspace = true, features = ["aws"] }
 bytes = { workspace = true }
 memmap2 = { workspace = true }
+http = { workspace = true }
 rlimit = { workspace = true }
 nix = { workspace = true }
 hashbrown = { workspace = true }

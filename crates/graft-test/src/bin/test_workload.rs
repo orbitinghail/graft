@@ -6,7 +6,7 @@ use culprit::{Culprit, ResultExt};
 use file_lock::{FileLock, FileOptions};
 use graft_client::{
     runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Storage},
-    ClientBuilder, ClientPair, MetastoreClient, PagestoreClient,
+    ClientPair, MetastoreClient, NetClient, PagestoreClient,
 };
 use graft_core::gid::ClientId;
 use graft_test::{
@@ -15,7 +15,6 @@ use graft_test::{
 };
 use graft_tracing::{running_in_antithesis, tracing_init, TracingConsumer};
 use rand::Rng;
-use url::Url;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -85,14 +84,11 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
         "STARTING TEST WORKLOAD"
     );
 
-    let metastore_client: MetastoreClient =
-        ClientBuilder::new(Url::parse("http://metastore:3001").unwrap())
-            .build()
-            .or_into_ctx()?;
-    let pagestore_client: PagestoreClient =
-        ClientBuilder::new(Url::parse("http://pagestore:3000").unwrap())
-            .build()
-            .or_into_ctx()?;
+    let client = NetClient::new();
+    let metastore_client =
+        MetastoreClient::new("http://metastore:3001".parse().unwrap(), client.clone());
+    let pagestore_client =
+        PagestoreClient::new("http://pagestore:3000".parse().unwrap(), client.clone());
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
     let storage_path = temp_dir().join("storage").join(cid.pretty());

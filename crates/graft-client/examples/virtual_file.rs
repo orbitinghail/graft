@@ -6,7 +6,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use clap::{Parser, Subcommand};
 use culprit::{Culprit, ResultExt};
 use fjall::Config;
-use graft_client::{ClientBuildErr, ClientBuilder, MetastoreClient, PagestoreClient};
+use graft_client::{MetastoreClient, NetClient, PagestoreClient};
 use graft_core::gid::{ClientId, GidParseErr};
 use graft_core::lsn::LSN;
 use graft_core::{
@@ -38,12 +38,6 @@ enum CliErr {
     #[error("invalid page size")]
     PageSize(#[from] PageSizeErr),
 
-    #[error("failed to build graft client")]
-    ClientBuild(#[from] ClientBuildErr),
-
-    #[error("url parse error")]
-    UrlParse,
-
     #[error("io error")]
     Io(io::ErrorKind),
 
@@ -60,12 +54,6 @@ impl From<fjall::Error> for CliErr {
 impl From<prost::DecodeError> for CliErr {
     fn from(_: prost::DecodeError) -> Self {
         Self::Prost
-    }
-}
-
-impl From<url::ParseError> for CliErr {
-    fn from(_: url::ParseError) -> Self {
-        Self::UrlParse
     }
 }
 
@@ -317,16 +305,18 @@ fn main() -> Result<()> {
     let keyspace = fjall::Keyspace::open(config)?;
 
     if args.localhost {
-        args.metastore = Url::parse("http://127.0.0.1:3001")?;
-        args.pagestore = Url::parse("http://127.0.0.1:3000")?;
+        args.metastore = "http://127.0.0.1:3001".parse().unwrap();
+        args.pagestore = "http://127.0.0.1:3000".parse().unwrap();
     }
+
+    let client = NetClient::new();
 
     let ctx = Context {
         cid,
         volumes: keyspace.open_partition("volumes", Default::default())?,
         pages: keyspace.open_partition("pages", Default::default())?,
-        metastore: ClientBuilder::new(args.metastore).build().or_into_ctx()?,
-        pagestore: ClientBuilder::new(args.pagestore).build().or_into_ctx()?,
+        metastore: MetastoreClient::new(args.metastore, client.clone()),
+        pagestore: PagestoreClient::new(args.pagestore, client.clone()),
     };
 
     let Some(vid) = args.vid else {
