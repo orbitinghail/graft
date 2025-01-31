@@ -152,7 +152,7 @@ impl Storage {
             "commits",
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
-        Ok(Storage {
+        let storage = Storage {
             keyspace,
             volumes,
             pages,
@@ -160,7 +160,24 @@ impl Storage {
             commit_lock: Default::default(),
             local_changeset: Default::default(),
             remote_changeset: Default::default(),
-        })
+        };
+        storage.check_for_interrupted_push()?;
+        Ok(storage)
+    }
+
+    fn check_for_interrupted_push(&self) -> Result<()> {
+        let iter = self.volumes.snapshot().iter().err_into();
+        let mut iter = VolumeQueryIter::new(iter);
+        while let Some(state) = iter.try_next()? {
+            if state.is_syncing() {
+                tracing::warn!(
+                    "detected interrupted push for volume {vid:?}",
+                    vid = state.vid(),
+                );
+                self.set_volume_status(state.vid(), VolumeStatus::InterruptedPush)?;
+            }
+        }
+        Ok(())
     }
 
     /// Access the local commit changeset. This ChangeSet is updated whenever a
@@ -213,15 +230,6 @@ impl Storage {
             Ok(Some(Snapshot::from_bytes(&snapshot)?))
         } else {
             Ok(None)
-        }
-    }
-
-    pub fn watermarks(&self, vid: &VolumeId) -> Result<Watermarks> {
-        let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks);
-        if let Some(watermarks) = self.volumes.get(key)? {
-            Ok(Watermarks::from_bytes(&watermarks)?)
-        } else {
-            Ok(Watermarks::DEFAULT)
         }
     }
 
@@ -636,6 +644,14 @@ impl Storage {
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
             state.watermarks().clone().commit_pending_sync(),
         );
+
+        // if the status is interrupted push, clear the status
+        if state.status() == VolumeStatus::InterruptedPush {
+            batch.remove(
+                &self.volumes,
+                VolumeStateKey::new(vid.clone(), VolumeStateTag::Status),
+            );
+        }
 
         // remove all commits in the synced range
         let mut key = CommitKey::new(vid.clone(), LSN::FIRST);

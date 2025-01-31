@@ -166,6 +166,9 @@ pub enum VolumeStatus {
 
     /// The local and remote volume state have diverged
     Conflict = 2,
+
+    /// The volume was interrupted in the middle of a push operation
+    InterruptedPush = 3,
 }
 
 impl VolumeStatus {
@@ -193,6 +196,7 @@ impl Display for VolumeStatus {
             VolumeStatus::Ok => write!(f, "ok"),
             VolumeStatus::RejectedCommit => write!(f, "rejected commit"),
             VolumeStatus::Conflict => write!(f, "conflict"),
+            VolumeStatus::InterruptedPush => write!(f, "interrupted push"),
         }
     }
 }

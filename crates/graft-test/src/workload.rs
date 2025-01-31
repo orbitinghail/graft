@@ -125,16 +125,44 @@ impl Workload {
     }
 }
 
-fn reset_volume_if_needed<F: Fetcher>(
+fn recover_and_sync_volume<F: Fetcher>(
     handle: &VolumeHandle<F>,
 ) -> Result<(), Culprit<WorkloadErr>> {
+    let vid = handle.vid();
     let status = handle.status().or_into_ctx()?;
-    if status != VolumeStatus::Ok {
-        precept::expect_reachable!("volume needs reset", { "vid": handle.vid() });
-        let span = tracing::info_span!("volume_reset", ?status, result = field::Empty).entered();
-        handle.reset_to_remote().or_into_ctx()?;
-        span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
+    let span = tracing::info_span!(
+        "verify_and_pull_volume",
+        ?status,
+        ?vid,
+        result = field::Empty
+    )
+    .entered();
+
+    match status {
+        VolumeStatus::Ok => {
+            // retrieve the latest remote snapshot
+            handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
+        }
+        VolumeStatus::RejectedCommit | VolumeStatus::Conflict => {
+            precept::expect_reachable!("volume needs reset", {
+                "vid": handle.vid(), "status": status
+            });
+            // reset the volume to the latest remote snapshot
+            handle.reset_to_remote().or_into_ctx()?;
+        }
+        VolumeStatus::InterruptedPush => {
+            precept::expect_reachable!("volume has an interrupted push", {
+                "vid": handle.vid(), "status": status
+            });
+            // finish the interrupted push
+            handle.sync_with_remote(SyncDirection::Push).or_into_ctx()?;
+            // then retrieve the latest remote snapshot
+            handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
+        }
     }
+
+    span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
+
     Ok(())
 }
 
@@ -176,22 +204,23 @@ fn workload_writer<F: Fetcher, R: Rng>(
     let status = handle.status().or_into_ctx()?;
     expect_sometimes!(status != VolumeStatus::Ok, "volume is not ok when workload starts", { "vid": vid });
 
-    // check to see if the volume needs recovering from a previous crash
-    reset_volume_if_needed(&handle).or_into_ctx()?;
-
-    // check to see if we need to complete an interrupted push
-    if handle.is_syncing().or_into_ctx()? {
-        tracing::info!("completing interrupted push for volume {:?}", vid);
-        handle.sync_with_remote(SyncDirection::Push).or_into_ctx()?;
-    }
-
-    // pull the volume explicitly to ensure we are up to date
-    tracing::info!("pulling volume {:?}", vid);
-    handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
+    // ensure the volume is recovered and synced with the server
+    recover_and_sync_volume(&handle).or_into_ctx()?;
 
     while env.ticker.tick() {
         // check the volume status to see if we need to reset
-        reset_volume_if_needed(&handle).or_into_ctx()?;
+        let status = handle.status().or_into_ctx()?;
+        if status != VolumeStatus::Ok {
+            let span = tracing::info_span!("reset_volume", ?status, vid=?handle.vid(), result=field::Empty).entered();
+            precept::expect_always!(
+                status != VolumeStatus::InterruptedPush,
+                "volume needs reset after workload start",
+                { "vid": handle.vid(), "status": status }
+            );
+            // reset the volume to the latest remote snapshot
+            handle.reset_to_remote().or_into_ctx()?;
+            span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
+        }
 
         // open a reader
         let reader = handle.reader().or_into_ctx()?;
@@ -280,19 +309,8 @@ fn workload_reader<F: Fetcher, R: Rng>(
         .open_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
         .or_into_ctx()?;
 
-    // check to see if the volume needs recovering from a previous crash
-    // this can happen if this reader used to be a writer
-    reset_volume_if_needed(&handle).or_into_ctx()?;
-
-    // check to see if we need to complete an interrupted push
-    if handle.is_syncing().or_into_ctx()? {
-        tracing::info!("completing interrupted push for volume {:?}", vid);
-        handle.sync_with_remote(SyncDirection::Push).or_into_ctx()?;
-    }
-
-    // pull the volume explicitly to ensure we are up to date
-    tracing::info!("pulling volume {:?}", vid);
-    handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
+    // ensure the volume is recovered and synced with the server
+    recover_and_sync_volume(&handle).or_into_ctx()?;
 
     let subscription = handle.subscribe_to_remote_changes();
 
