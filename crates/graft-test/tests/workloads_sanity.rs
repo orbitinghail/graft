@@ -11,7 +11,6 @@ use graft_test::{
     workload::{Workload, WorkloadErr},
     Ticker,
 };
-use rand::thread_rng;
 
 struct WorkloadRunner<F> {
     runtime: Runtime<F>,
@@ -36,7 +35,7 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
         let r2 = runtime.clone();
         let workload = thread::Builder::new()
             .name("writer".into())
-            .spawn(move || workload.run(cid, r2, thread_rng(), ticker))
+            .spawn(move || workload.run(cid, r2, rand::rng(), ticker))
             .unwrap();
         WorkloadRunner { runtime, workload }
     };
@@ -52,7 +51,7 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
         let r2 = runtime.clone();
         let workload = thread::Builder::new()
             .name("reader".into())
-            .spawn(move || workload.run(cid, r2, thread_rng(), ticker))
+            .spawn(move || workload.run(cid, r2, rand::rng(), ticker))
             .unwrap();
         WorkloadRunner { runtime, workload }
     };

@@ -1,9 +1,5 @@
 use bytes::BytesMut;
-use rand::{
-    distributions::{Standard, Uniform},
-    prelude::Distribution,
-    Rng,
-};
+use rand::{distr::StandardUniform, prelude::Distribution, Rng};
 
 use crate::{
     page::{Page, PAGESIZE},
@@ -16,7 +12,7 @@ impl Page {
     }
 }
 
-impl Distribution<Page> for Standard {
+impl Distribution<Page> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Page {
         let mut data = BytesMut::zeroed(PAGESIZE.as_usize());
         rng.fill(data.as_mut());
@@ -25,11 +21,8 @@ impl Distribution<Page> for Standard {
 }
 
 impl PageOffset {
-    pub fn test_random<R: Rng + ?Sized>(rng: &mut R, max: u32) -> Self {
-        assert!(
-            max <= u32::from(PageOffset::MAX),
-            "page offset out of bounds"
-        );
-        Self::new(Uniform::new(0, max).sample(rng))
+    /// generates a random page offset in the range [0, max] (inclusive)
+    pub fn test_random<R: Rng + ?Sized, O: Into<PageOffset>>(rng: &mut R, max: O) -> Self {
+        rng.random_range(0..max.into().as_u32()).into()
     }
 }

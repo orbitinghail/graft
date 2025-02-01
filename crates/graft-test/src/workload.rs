@@ -229,7 +229,7 @@ fn workload_writer<F: Fetcher, R: Rng>(
         // randomly pick a page offset and a page value.
         // select the next offset to ensure we don't pick the 0th page
         let offset = PageOffset::test_random(&mut env.rng, 16).next();
-        let new_page: Page = env.rng.gen();
+        let new_page: Page = env.rng.random();
         let new_hash = PageHash::new(&new_page);
 
         let span = tracing::info_span!(

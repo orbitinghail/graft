@@ -46,9 +46,4 @@ impl RngCore for DispatchRng {
             remainder.copy_from_slice(&random_bytes[..remainder.len()]);
         }
     }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
 }

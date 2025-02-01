@@ -106,7 +106,7 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
 
     let (ticker, shutdown_timeout) = if running_in_antithesis() {
         (
-            Ticker::new(rng.gen_range(100..5000)),
+            Ticker::new(rng.random_range(100..5000)),
             Duration::from_secs(3600),
         )
     } else {
