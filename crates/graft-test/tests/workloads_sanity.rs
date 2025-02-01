@@ -7,7 +7,7 @@ use culprit::{Culprit, ResultExt};
 use graft_client::runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Storage};
 use graft_core::{gid::ClientId, VolumeId};
 use graft_test::{
-    start_graft_backend,
+    init_precept, start_graft_backend,
     workload::{Workload, WorkloadErr},
     Ticker,
 };
@@ -22,6 +22,7 @@ struct WorkloadRunner<F> {
 #[test]
 fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
     tracing_init(TracingConsumer::Test, None);
+    init_precept();
 
     let (backend, clients) = start_graft_backend();
 

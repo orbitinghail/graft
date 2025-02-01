@@ -18,6 +18,7 @@ use graft_server::{
     },
 };
 use graft_tracing::{tracing_init, TracingConsumer};
+use precept::dispatch::antithesis::AntithesisDispatch;
 use serde::Deserialize;
 use tokio::{net::TcpListener, select, signal::ctrl_c};
 
@@ -44,7 +45,10 @@ impl Default for MetastoreConfig {
 
 #[tokio::main]
 async fn main() {
-    precept::init();
+    let dispatcher =
+        Box::new(AntithesisDispatch::try_load().expect("failed to setup antithesis dispatch"));
+    precept::init(Box::leak(dispatcher)).expect("failed to setup precept");
+
     tracing_init(TracingConsumer::Server, None);
     tracing::info!("starting metastore");
 

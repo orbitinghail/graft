@@ -4,10 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-antithesis_sdk = { workspace = true, optional = true}
-serde_json = { workspace = true, optional= true }
+serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 rand = { workspace = true }
+linkme = { workspace = true }
+serde_json = { workspace = true }
+libloading = { workspace = true, optional = true}
 
 [features]
-antithesis = ["antithesis_sdk", "serde_json"]
+antithesis = ["libloading"]

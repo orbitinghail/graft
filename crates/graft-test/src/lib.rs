@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
-    sync::Arc,
+    sync::{Arc, Once},
     thread::JoinHandle,
     time::Duration,
 };
@@ -29,6 +29,7 @@ use graft_server::{
     supervisor::{ShutdownErr, Supervisor},
     volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
+use precept::dispatch::trace::TraceDispatch;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
@@ -41,6 +42,14 @@ use tokio::{
 use url::Url;
 
 pub mod workload;
+
+pub fn init_precept() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        static DISPATCH: TraceDispatch = TraceDispatch;
+        precept::init(&DISPATCH).expect("failed to setup precept");
+    });
+}
 
 pub struct GraftBackend {
     shutdown_tx: oneshot::Sender<Duration>,

@@ -8,7 +8,6 @@ lto = true
 codegen-units = 1
 
 [workspace.dependencies]
-antithesis_sdk = "0.2"
 anyhow = "1.0"
 assert_matches = "1.5"
 axum = "0.8"
@@ -22,6 +21,7 @@ config = { version = "0.15", features = ["toml"] }
 criterion = "0.5"
 crossbeam = "0.8"
 culprit = "0.3"
+linkme = "0.3"
 either = "1.13"
 event-listener = "5.4"
 file-lock = "2.1"
@@ -31,6 +31,7 @@ futures = "0.3"
 hashbrown = "0.15"
 http = "1.2"
 itertools = "0.14"
+libloading = "0.8"
 log = "0.4"
 lsm-tree = "2.5"
 measured = "0.0.22"
