@@ -11,7 +11,7 @@ codegen-units = 1
 anyhow = "1.0"
 assert_matches = "1.5"
 axum = "0.8"
-axum-test = "17.2.0"
+axum-test = "17.2"
 bindgen = { version = "0.71", default-features = false }
 blake3 = "1.5"
 bs58 = "0.5"
