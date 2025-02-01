@@ -21,7 +21,9 @@ pub enum AntithesisDispatch {
 impl AntithesisDispatch {
     pub fn try_load() -> Result<Self, Error> {
         if let Ok(handler) = LibVoidstarHandler::try_load() {
-            return Ok(Self::Voidstar(handler));
+            let dispatcher = Self::Voidstar(handler);
+            dispatcher.emit_json(sdk_info());
+            return Ok(dispatcher);
         }
         Ok(Self::File(FileHandler::try_load()?))
     }
@@ -45,12 +47,12 @@ impl Dispatch for AntithesisDispatch {
     fn emit(&self, event: Event) {
         match event {
             Event::RegisterEntry(entry) => {
-                let info = AssertionInfo::new(entry, false, json!(null));
+                let info = AssertionInfo::new(entry, false, false, json!(null));
                 let value = json!({ "antithesis_assert": info });
                 self.emit_json(value)
             }
             Event::EmitEntry { entry, condition, details } => {
-                let info = AssertionInfo::new(entry, condition, details);
+                let info = AssertionInfo::new(entry, true, condition, details);
                 let value = json!({ "antithesis_assert": info });
                 self.emit_json(value)
             }
@@ -95,36 +97,36 @@ struct AssertionInfo<'a> {
     assert_type: AssertType,
     display_type: &'a str,
     condition: bool,
+    id: &'a str,
     message: &'a str,
     location: AssertionLocation<'a>,
     hit: bool,
     must_hit: bool,
-    id: &'a str,
     details: serde_json::Value,
 }
 
 impl<'a> AssertionInfo<'a> {
-    fn new(entry: &'a CatalogEntry, condition: bool, details: serde_json::Value) -> Self {
+    fn new(
+        entry: &'a CatalogEntry,
+        hit: bool,
+        condition: bool,
+        details: serde_json::Value,
+    ) -> Self {
         let location = entry.location();
 
         let (must_hit, assert_type, display_type) = match entry.expectation() {
             Expectation::Always => (true, AssertType::Always, "Always"),
             Expectation::AlwaysOrUnreachable => (false, AssertType::Always, "AlwaysOrUnreachable"),
             Expectation::Sometimes => (true, AssertType::Sometimes, "Sometimes"),
-            Expectation::Reachable => {
-                debug_assert!(condition, "reachable condition must be true");
-                (true, AssertType::Reachability, "Reachable")
-            }
-            Expectation::Unreachable => {
-                debug_assert!(!condition, "unreachable condition must be false");
-                (false, AssertType::Reachability, "Unreachable")
-            }
+            Expectation::Reachable => (true, AssertType::Reachability, "Reachable"),
+            Expectation::Unreachable => (false, AssertType::Reachability, "Unreachable"),
         };
 
         Self {
             assert_type,
             display_type,
             condition,
+            id: entry.property(),
             message: entry.property(),
             location: AssertionLocation {
                 class: entry.module(),
@@ -133,9 +135,8 @@ impl<'a> AssertionInfo<'a> {
                 begin_line: location.line(),
                 begin_column: location.column(),
             },
-            hit: true,
+            hit,
             must_hit,
-            id: entry.property(),
             details,
         }
     }
@@ -218,4 +219,17 @@ impl FileHandler {
     fn random(&self) -> u64 {
         rand::random()
     }
+}
+
+fn sdk_info() -> serde_json::Value {
+    json!({
+        "antithesis_sdk": {
+            "language": {
+                "name": "Rust",
+                "version": rustc_version_runtime::version().to_string(),
+            },
+            "sdk_version": env!("CARGO_PKG_VERSION"),
+            "protocol_version": "1.1.0",
+        }
+    })
 }

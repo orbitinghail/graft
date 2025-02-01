@@ -7,6 +7,8 @@ services:
     networks:
       basic-net:
         ipv4_address: 10.20.20.20
+    environment:
+      - RUST_BACKTRACE=1
 
   metastore:
     container_name: metastore
@@ -23,6 +25,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=minio-secret
       - AWS_REGION=us-east-1
       - AWS_ENDPOINT=http://minio:9000
+      - RUST_BACKTRACE=1
 
   pagestore:
     container_name: pagestore
@@ -40,6 +43,7 @@ services:
       - AWS_REGION=us-east-1
       - AWS_ENDPOINT=http://minio:9000
       - PAGESTORE_METASTORE=http://metastore:3001
+      - RUST_BACKTRACE=1
 
   minio:
     container_name: minio

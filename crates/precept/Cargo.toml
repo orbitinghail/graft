@@ -10,6 +10,7 @@ rand = { workspace = true }
 linkme = { workspace = true }
 serde_json = { workspace = true }
 libloading = { workspace = true, optional = true}
+rustc_version_runtime = { workspace = true }
 
 [features]
 antithesis = ["libloading"]
