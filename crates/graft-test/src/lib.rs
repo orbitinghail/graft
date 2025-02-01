@@ -29,6 +29,7 @@ use graft_server::{
     supervisor::{ShutdownErr, Supervisor},
     volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
+use graft_tracing::{init_tracing, TracingConsumer};
 use precept::dispatch::trace::TraceDispatch;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -41,13 +42,16 @@ use tokio::{
 };
 use url::Url;
 
+pub use graft_test_macro::test;
+
 pub mod workload;
 
-pub fn init_precept() {
+// this function is automatically run before each test by the macro graft_test_macro::test
+pub fn setup_test() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        static DISPATCH: TraceDispatch = TraceDispatch;
-        precept::init(&DISPATCH).expect("failed to setup precept");
+        init_tracing(TracingConsumer::Test, None);
+        precept::init(&TraceDispatch).expect("failed to setup precept");
     });
 }
 

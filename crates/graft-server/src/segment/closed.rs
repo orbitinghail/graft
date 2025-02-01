@@ -207,7 +207,7 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    #[graft_test::test]
     fn test_segment_validation() {
         // test a massive segment
         let buf = vec![0; SEGMENT_MAX_SIZE.as_usize() + 1];
@@ -303,7 +303,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_segment_max_pages() {
         let size_at_max = closed_segment_size(SEGMENT_MAX_VOLUMES, SEGMENT_MAX_PAGES);
         println!("size_at_max: {:?}", size_at_max);

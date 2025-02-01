@@ -9,14 +9,10 @@ use graft_client::runtime::{
     },
 };
 use graft_core::{gid::ClientId, page::Page, page_offset::PageOffset, VolumeId};
-use graft_test::{init_precept, start_graft_backend};
-use graft_tracing::{tracing_init, TracingConsumer};
+use graft_test::start_graft_backend;
 
-#[test]
+#[graft_test::test]
 fn test_client_sync_sanity() {
-    tracing_init(TracingConsumer::Test, None);
-    init_precept();
-
     let (backend, clients) = start_graft_backend();
 
     let storage = Storage::open_temporary().unwrap();

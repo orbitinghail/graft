@@ -17,7 +17,7 @@ use graft_server::{
         updater::VolumeCatalogUpdater,
     },
 };
-use graft_tracing::{tracing_init, TracingConsumer};
+use graft_tracing::{init_tracing, TracingConsumer};
 use precept::dispatch::antithesis::AntithesisDispatch;
 use serde::Deserialize;
 use tokio::{net::TcpListener, select, signal::ctrl_c};
@@ -49,7 +49,7 @@ async fn main() {
         Box::new(AntithesisDispatch::try_load().expect("failed to setup antithesis dispatch"));
     precept::init(Box::leak(dispatcher)).expect("failed to setup precept");
 
-    tracing_init(TracingConsumer::Server, None);
+    init_tracing(TracingConsumer::Server, None);
     tracing::info!("starting metastore");
 
     precept::setup_complete!();

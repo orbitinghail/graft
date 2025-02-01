@@ -25,7 +25,7 @@ use graft_server::{
         updater::VolumeCatalogUpdater,
     },
 };
-use graft_tracing::{tracing_init, TracingConsumer};
+use graft_tracing::{init_tracing, TracingConsumer};
 use precept::dispatch::antithesis::AntithesisDispatch;
 use rlimit::Resource;
 use serde::Deserialize;
@@ -75,7 +75,7 @@ async fn main() {
         Box::new(AntithesisDispatch::try_load().expect("failed to setup antithesis dispatch"));
     precept::init(Box::leak(dispatcher)).expect("failed to setup precept");
 
-    tracing_init(TracingConsumer::Server, None);
+    init_tracing(TracingConsumer::Server, None);
     tracing::info!("starting pagestore");
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");

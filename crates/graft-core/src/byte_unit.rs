@@ -340,7 +340,7 @@ impl_primitive!(isize);
 mod tests {
     use super::*;
 
-    #[test]
+    #[graft_test::test]
     fn test_sanity() {
         assert_eq!(0, ByteUnit::ZERO);
         assert_eq!(ByteUnit::ZERO, 0);
@@ -349,7 +349,7 @@ mod tests {
         assert!(ByteUnit::KB > 0);
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_display() {
         assert_eq!(format!("{}", ByteUnit::ZERO), "0 B");
         assert_eq!(format!("{}", ByteUnit::MAX), "16 EB");
@@ -373,14 +373,14 @@ mod tests {
         );
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_const() {
         const X: ByteUnit = ByteUnit::from_kb(4);
         let arr: [u8; X.as_usize()] = [0; X.as_usize()];
         assert_eq!(arr.len(), 4 * 1024);
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_parse() {
         let cases = [
             ByteUnit::new(0),

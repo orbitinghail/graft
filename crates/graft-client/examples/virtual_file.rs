@@ -15,7 +15,7 @@ use graft_core::{
     VolumeId,
 };
 use graft_proto::{common::v1::Snapshot, pagestore::v1::PageAtOffset};
-use graft_tracing::{tracing_init, TracingConsumer};
+use graft_tracing::{init_tracing, TracingConsumer};
 use prost::Message;
 use splinter::Splinter;
 use thiserror::Error;
@@ -295,7 +295,7 @@ fn print_snapshot(snapshot: Option<Snapshot>) {
 }
 
 fn main() -> Result<()> {
-    tracing_init(TracingConsumer::Tool, None);
+    init_tracing(TracingConsumer::Tool, None);
 
     let mut args = Cli::parse();
     let default_cid = ClientId::from_str("QiAa1boZemVHi3G8puxCvR")?;

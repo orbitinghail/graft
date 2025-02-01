@@ -6,14 +6,15 @@ use std::{
     },
 };
 
-use linkme::distributed_slice;
-
 use crate::dispatch::{self, dispatcher, Event};
 
 /// Catalog of all antithesis assertions provided
-#[distributed_slice]
-#[doc(hidden)]
+#[cfg(not(feature = "disabled"))]
+#[linkme::distributed_slice]
 pub static PRECEPT_CATALOG: [CatalogEntry];
+
+#[cfg(feature = "disabled")]
+pub static PRECEPT_CATALOG: [&CatalogEntry; 0] = [];
 
 pub fn init_catalog() {
     let dispatch = dispatcher();

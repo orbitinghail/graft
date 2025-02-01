@@ -172,7 +172,7 @@ impl SegmentIndexBuilder {
 mod tests {
     use super::*;
 
-    #[test]
+    #[graft_test::test]
     fn test_segment_index_sanity() {
         let mut builder = SegmentIndexBuilder::default();
 

@@ -100,7 +100,6 @@ mod tests {
     use object_store::memory::InMemory;
     use prost::Message;
     use splinter::Splinter;
-    use tracing_test::traced_test;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
@@ -114,8 +113,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(start_paused = true)]
-    #[traced_test]
+    #[graft_test::test]
     async fn test_pull_commits_sanity() {
         let store = Arc::new(InMemory::default());
         let store = Arc::new(VolumeStore::new(store));

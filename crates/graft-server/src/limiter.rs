@@ -57,7 +57,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(start_paused = true)]
+    #[graft_test::test]
     async fn test_limiter() {
         let hasher = FixedState::with_seed(12345);
         let limiter = Arc::new(Limiter::<usize, _>::new_with_hasher(10, hasher));

@@ -221,7 +221,7 @@ mod tests {
         bytes
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_size() {
         let g = SegmentId {
             prefix: Default::default(),
@@ -240,7 +240,7 @@ mod tests {
         assert_eq!(g.pretty().len(), 22);
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_round_trip() {
         let id = SegmentId::random();
 
@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(id, parsed);
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_invalid_parse() {
         // wrong lengths
         let cases = [

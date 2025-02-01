@@ -82,7 +82,7 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    #[graft_test::test]
     fn test_read_write_sanity() {
         let cid = ClientId::random();
         let storage = Storage::open_temporary().unwrap();
@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(snapshot.pages(), 2);
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_concurrent_commit_err() {
         // open two writers, commit the first, then commit the second
 

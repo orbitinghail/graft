@@ -1,13 +1,14 @@
 use std::{future::Future, time::Duration};
 
-pub async fn assert_would_timeout<F, O>(f: F)
+pub async fn assert_would_timeout<F, O>(fut: F)
 where
     F: Future<Output = O>,
 {
-    // pause time, causing Tokio to trigger the timeout once it can make no additional progress on the future.
-    tokio::time::pause();
+    // we wait for the future to complete with an effectively unbounded timeout
+    // this function expects that the tokio runtime is paused which will ensure
+    // that tokio auto-advances once it has no work to do, hence exiting this sleep
     tokio::select! {
         _ = tokio::time::sleep(Duration::MAX) => {}
-        _ = f => panic!("expected timeout"),
+        _ = fut => panic!("expected timeout"),
     }
 }

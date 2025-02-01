@@ -7,11 +7,10 @@ use culprit::{Culprit, ResultExt};
 use graft_client::runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Storage};
 use graft_core::{gid::ClientId, VolumeId};
 use graft_test::{
-    init_precept, start_graft_backend,
+    start_graft_backend,
     workload::{Workload, WorkloadErr},
     Ticker,
 };
-use graft_tracing::{tracing_init, TracingConsumer};
 use rand::thread_rng;
 
 struct WorkloadRunner<F> {
@@ -19,11 +18,8 @@ struct WorkloadRunner<F> {
     workload: JoinHandle<Result<(), Culprit<WorkloadErr>>>,
 }
 
-#[test]
+#[graft_test::test]
 fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
-    tracing_init(TracingConsumer::Test, None);
-    init_precept();
-
     let (backend, clients) = start_graft_backend();
 
     let vid = VolumeId::random();

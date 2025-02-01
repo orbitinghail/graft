@@ -791,7 +791,7 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    #[graft_test::test]
     fn test_query_volumes() {
         let storage = Storage::open_temporary().unwrap();
 

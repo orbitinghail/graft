@@ -208,7 +208,7 @@ mod tests {
         Ok(v)
     }
 
-    #[tokio::test]
+    #[graft_test::test]
     async fn resource_pool_sanity() {
         let pool = ResourcePool::new(2);
         let handle1 = ResourceHandle::default();
@@ -241,7 +241,7 @@ mod tests {
         assert_would_timeout(pool.get(&handle1, || async { must_ok(1) })).await
     }
 
-    #[tokio::test]
+    #[graft_test::test]
     async fn resource_pool_concurrency() {
         let pool = Arc::new(ResourcePool::new(2));
 

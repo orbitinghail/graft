@@ -11,8 +11,8 @@ ARG INSTRUMENTED
 ENV LD_LIBRARY_PATH=${INSTRUMENTED:+"/usr/lib/libvoidstar.so"}
 ENV RUSTFLAGS=${INSTRUMENTED:+"-Ccodegen-units=1 -Cpasses=sancov-module -Cllvm-args=-sanitizer-coverage-level=3 -Cllvm-args=-sanitizer-coverage-trace-pc-guard -Clink-args=-Wl,--build-id -L/usr/lib/libvoidstar.so -lvoidstar"}
 ENV RUSTFLAGS=${RUSTFLAGS:-"-Ctarget-cpu=native -Clink-arg=-fuse-ld=mold"}
-ENV PROFILE=${INSTRUMENTED:+"--profile dev"}
-ENV PROFILE=${PROFILE:-"--release"}
+ENV BUILDFLAGS=${INSTRUMENTED:+"--profile dev --bins"}
+ENV BUILDFLAGS=${BUILDFLAGS:-"--release --features precept/disabled --bin metastore --bin pagestore"}
 ENV TARGET_DIR=${INSTRUMENTED:+"target/debug"}
 ENV TARGET_DIR=${TARGET_DIR:-"target/release"}
 
@@ -28,11 +28,11 @@ WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    cargo chef cook --bins ${PROFILE} --recipe-path recipe.json
+    cargo chef cook ${BUILDFLAGS} --recipe-path recipe.json
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    cargo build --bins ${PROFILE}
+    cargo build ${BUILDFLAGS}
 RUN mv ${TARGET_DIR} /artifacts
 
 FROM gcr.io/distroless/cc:debug AS runtime

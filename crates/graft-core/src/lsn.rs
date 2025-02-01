@@ -319,7 +319,7 @@ impl From<Option<LSN>> for MaybeLSN {
 mod tests {
     use super::*;
 
-    #[test]
+    #[graft_test::test]
     fn test_lsn_next() {
         let lsn = LSN::FIRST;
         assert_eq!(lsn.saturating_next(), 2);

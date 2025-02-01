@@ -123,7 +123,7 @@ mod tests {
     use crate::segment::closed::{ClosedSegment, SEGMENT_MAX_PAGES};
     use assert_matches::assert_matches;
 
-    #[test]
+    #[graft_test::test]
     fn test_segment_sanity() {
         let mut open_segment = OpenSegment::default();
 
@@ -178,7 +178,7 @@ mod tests {
         assert!(!offsets.contains(&VolumeId::random(), PageOffset::new(0)));
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_zero_length_segment() {
         let open_segment = OpenSegment::default();
         let expected_size = open_segment.serialized_size();
@@ -198,7 +198,7 @@ mod tests {
         assert!(closed_segment.is_empty());
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_full_segment() {
         let mut open_segment = OpenSegment::default();
 
@@ -235,7 +235,7 @@ mod tests {
         assert_eq!(closed_segment.pages(), SEGMENT_MAX_PAGES);
     }
 
-    #[test]
+    #[graft_test::test]
     fn test_overfull_segment() {
         let mut open_segment = OpenSegment::default();
 

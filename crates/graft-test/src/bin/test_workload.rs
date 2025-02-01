@@ -13,7 +13,7 @@ use graft_test::{
     workload::{Workload, WorkloadErr},
     Ticker,
 };
-use graft_tracing::{running_in_antithesis, tracing_init, TracingConsumer};
+use graft_tracing::{init_tracing, running_in_antithesis, TracingConsumer};
 use precept::dispatch::antithesis::AntithesisDispatch;
 use rand::Rng;
 
@@ -72,7 +72,7 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
 
     let mut rng = precept::random::rng();
     let (cid, _worker_lock) = get_or_init_cid();
-    tracing_init(TracingConsumer::Test, Some(cid.short()));
+    init_tracing(TracingConsumer::Test, Some(cid.short()));
     let args = Args::parse();
 
     let workload: Workload = Config::builder()

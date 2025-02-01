@@ -48,7 +48,7 @@ mod tests {
     use super::*;
     use std::fs;
 
-    #[tokio::test]
+    #[graft_test::test]
     async fn test_write_file_atomic() {
         let tempdir = tempfile::tempdir().unwrap();
         let path = tempdir.path().join("test");

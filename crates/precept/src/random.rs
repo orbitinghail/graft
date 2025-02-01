@@ -1,46 +1,26 @@
 use rand::RngCore;
 
-use crate::dispatch::get_random;
-
-#[cfg(feature = "antithesis")]
-pub fn rng() -> impl RngCore {
-    DispatchRng
-}
-
-#[cfg(not(feature = "antithesis"))]
+#[cfg(feature = "disabled")]
 pub fn rng() -> impl RngCore {
     rand::thread_rng()
 }
 
-/// A random number generator that generates random numbers using
-/// dispatch::get_random.
-///
-/// This implements the `RngCore` trait from the `rand` crate, allowing it to be used
-/// with any code that expects a random number generator from that ecosystem.
-///
-/// # Example
-///
-/// ```
-/// use precept::random::DispatchRng;
-/// use rand::{Rng, RngCore};
-///
-/// let mut rng = DispatchRng;
-/// let random_u32: u32 = rng.gen();
-/// let random_u64: u64 = rng.gen();
-/// let random_char: char = rng.gen();
-///
-/// let mut bytes = [0u8; 16];
-/// rng.fill_bytes(&mut bytes);
-/// ```
-pub struct DispatchRng;
+#[cfg(not(feature = "disabled"))]
+pub fn rng() -> impl RngCore {
+    DispatchRng
+}
 
+#[cfg(not(feature = "disabled"))]
+struct DispatchRng;
+
+#[cfg(not(feature = "disabled"))]
 impl RngCore for DispatchRng {
     fn next_u32(&mut self) -> u32 {
-        get_random() as u32
+        crate::dispatch::get_random() as u32
     }
 
     fn next_u64(&mut self) -> u64 {
-        get_random()
+        crate::dispatch::get_random()
     }
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {

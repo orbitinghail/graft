@@ -11,6 +11,7 @@ use graft_client::{
         fetcher::Fetcher,
         runtime::Runtime,
         storage::{
+            snapshot::Snapshot,
             volume_state::{SyncDirection, VolumeConfig, VolumeStatus},
             StorageErr,
         },
@@ -314,7 +315,7 @@ fn workload_reader<F: Fetcher, R: Rng>(
 
     let subscription = handle.subscribe_to_remote_changes();
 
-    let mut last_snapshot = None;
+    let mut last_snapshot: Option<Snapshot> = None;
     let mut seen_nonempty = false;
 
     while env.ticker.tick() {

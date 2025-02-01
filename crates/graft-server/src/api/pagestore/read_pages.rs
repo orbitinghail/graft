@@ -109,7 +109,6 @@ mod tests {
     use object_store::{memory::InMemory, path::Path, ObjectStore, PutPayload};
     use prost::Message;
     use tokio::sync::mpsc;
-    use tracing_test::traced_test;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
@@ -134,8 +133,7 @@ mod tests {
         segment.serialize(sid.clone())
     }
 
-    #[tokio::test(start_paused = true)]
-    #[traced_test]
+    #[graft_test::test]
     async fn test_read_pages_sanity() {
         let store = Arc::new(InMemory::default());
         let cache = Arc::new(MemCache::default());

@@ -1,3 +1,5 @@
+// This file must be kept in sync with macros.rs
+
 #[doc(hidden)]
 #[macro_export]
 macro_rules! define_entry {

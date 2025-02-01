@@ -9,7 +9,7 @@ graft-proto = { path = "../graft-proto" }
 graft-client = { path = "../graft-client" }
 graft-tracing = { path = "../graft-tracing" }
 splinter = { path = "../splinter" }
-precept = { path = "../precept" }
+precept = { path = "../precept", features = ["antithesis"]}
 
 culprit = { workspace = true }
 tryiter = { workspace = true }
@@ -51,6 +51,5 @@ measured = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
-
+graft-test = { path = "../graft-test" }
 axum-test = { workspace = true }
-tracing-test = { workspace = true }

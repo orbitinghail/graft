@@ -96,7 +96,7 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    #[graft_test::test]
     fn test_bytes_vec() {
         let mut bytes_vec = BytesVec { bufs: vec![] };
         let bytes = Bytes::from_static(b"hello");

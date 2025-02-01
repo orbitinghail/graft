@@ -30,7 +30,5 @@ zerocopy = { workspace = true }
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
 graft-tracing = { path = "../graft-tracing" }
+graft-test = { path = "../graft-test" }
 clap = { workspace = true, features = ["derive"] }
-
-[features]
-antithesis = ["precept/antithesis"]

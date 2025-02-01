@@ -22,7 +22,7 @@ pub enum TracingConsumer {
 }
 
 /// Initialize tracing. If no process_id is specified one will be randomly generated.
-pub fn tracing_init(consumer: TracingConsumer, process_id: Option<String>) {
+pub fn init_tracing(consumer: TracingConsumer, process_id: Option<String>) {
     let process_id = process_id
         .unwrap_or_else(|| bs58::encode(rand::random::<u64>().to_le_bytes()).into_string());
 

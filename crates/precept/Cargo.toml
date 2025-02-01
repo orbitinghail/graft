@@ -9,8 +9,13 @@ tracing = { workspace = true }
 rand = { workspace = true }
 linkme = { workspace = true }
 serde_json = { workspace = true }
-libloading = { workspace = true, optional = true}
 rustc_version_runtime = { workspace = true }
 
+libloading = { workspace = true, optional = true}
+
 [features]
+# disable all runtime overhead of this crate
+disabled = []
+
+# enable the antithesis dispatcher
 antithesis = ["libloading"]

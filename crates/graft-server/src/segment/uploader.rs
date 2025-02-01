@@ -143,8 +143,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "current_thread")]
-
+    #[graft_test::test]
     async fn test_uploader_sanity() {
         let (input_tx, input_rx) = mpsc::channel(1);
         let commit_bus = Bus::new(1);

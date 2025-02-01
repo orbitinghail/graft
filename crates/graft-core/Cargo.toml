@@ -18,6 +18,9 @@ thiserror = { workspace = true }
 zerocopy = { workspace = true }
 assert_matches = { workspace = true }
 
+[dev-dependencies]
+graft-test = { path = "../graft-test" }
+
 [features]
 default = []
 testutil = []
