@@ -180,6 +180,8 @@ impl PushJob {
             Vec::new()
         };
 
+        precept::maybe_fault!(0.05, "PushJob: before metastore commit");
+
         // commit the segments to the metastore
         let remote_snapshot = clients.metastore().commit(
             &self.vid,
@@ -188,6 +190,8 @@ impl PushJob {
             page_count,
             segments,
         )?;
+
+        precept::maybe_fault!(0.05, "PushJob: after metastore commit");
 
         // complete the sync
         storage

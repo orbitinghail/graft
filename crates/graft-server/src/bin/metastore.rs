@@ -46,8 +46,8 @@ impl Default for MetastoreConfig {
 #[tokio::main]
 async fn main() {
     let dispatcher =
-        Box::new(AntithesisDispatch::try_load().expect("failed to setup antithesis dispatch"));
-    precept::init(Box::leak(dispatcher)).expect("failed to setup precept");
+        Box::new(AntithesisDispatch::try_load().expect("failed to setup antithesis dispatcher"));
+    precept::init_boxed(dispatcher).expect("failed to setup precept");
 
     init_tracing(TracingConsumer::Server, None);
     tracing::info!("starting metastore");

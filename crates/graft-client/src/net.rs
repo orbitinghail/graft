@@ -61,6 +61,7 @@ impl NetClient {
                 .max_idle_age(Duration::from_secs(300))
                 .timeout_connect(Some(Duration::from_secs(60)))
                 .timeout_recv_response(Some(Duration::from_secs(60)))
+                .timeout_global(Some(Duration::from_secs(300)))
                 .build()
                 .new_agent(),
         }

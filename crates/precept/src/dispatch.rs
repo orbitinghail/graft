@@ -5,7 +5,7 @@ use noop::NoopDispatch;
 use crate::catalog::CatalogEntry;
 
 pub mod noop;
-pub mod trace;
+pub mod test;
 
 #[cfg(feature = "antithesis")]
 pub mod antithesis;
@@ -23,6 +23,10 @@ pub enum Event {
     Custom {
         name: &'static str,
         value: serde_json::Value,
+    },
+    Fault {
+        name: &'static str,
+        details: serde_json::Value,
     },
 }
 

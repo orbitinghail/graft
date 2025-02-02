@@ -32,3 +32,15 @@ pub fn init(dispatcher: &'static dyn Dispatch) -> Result<(), SetDispatchError> {
 pub fn init(_dispatcher: &'static dyn Dispatch) -> Result<(), SetDispatchError> {
     Ok(())
 }
+
+#[cfg(not(feature = "disabled"))]
+pub fn init_boxed(dispatcher: Box<dyn Dispatch>) -> Result<(), SetDispatchError> {
+    dispatch::set_dispatcher(Box::leak(dispatcher))?;
+    catalog::init_catalog();
+    Ok(())
+}
+
+#[cfg(feature = "disabled")]
+pub fn init_boxed(_dispatcher: Box<dyn Dispatch>) -> Result<(), SetDispatchError> {
+    Ok(())
+}

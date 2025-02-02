@@ -30,7 +30,7 @@ use graft_server::{
     volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
 use graft_tracing::{init_tracing, TracingConsumer};
-use precept::dispatch::trace::TraceDispatch;
+use precept::dispatch::test::TestDispatch;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
@@ -51,7 +51,7 @@ pub fn setup_test() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         init_tracing(TracingConsumer::Test, None);
-        precept::init(&TraceDispatch).expect("failed to setup precept");
+        precept::init(&TestDispatch).expect("failed to setup precept");
     });
 }
 

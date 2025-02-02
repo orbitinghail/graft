@@ -1,7 +1,7 @@
 #[doc(hidden)]
 #[macro_export]
 macro_rules! define_entry {
-    ($expectation:path, $property:literal) => {{
+    ($expectation:path, $property:expr) => {{
         use $crate::catalog::CatalogEntry;
         $crate::function_name!(FN_NAME);
         #[$crate::deps::linkme::distributed_slice($crate::catalog::PRECEPT_CATALOG)]
@@ -33,12 +33,12 @@ macro_rules! emit_entry {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! define_and_emit_entry {
-    ($expectation:path, $property:literal, $condition:expr) => {{
+    ($expectation:path, $property:expr, $condition:expr) => {{
         let entry = $crate::define_entry!($expectation, $property);
         $crate::emit_entry!(entry, $condition)
     }};
 
-    ($expectation:path, $property:literal, $condition:expr, $($details:tt)+) => {{
+    ($expectation:path, $property:expr, $condition:expr, $($details:tt)+) => {{
         let entry = $crate::define_entry!($expectation, $property);
         $crate::emit_entry!(entry, $condition, $($details)+)
     }};
@@ -46,11 +46,11 @@ macro_rules! define_and_emit_entry {
 
 #[macro_export]
 macro_rules! emit_event {
-    ($name:literal, $($details:tt)+) => {
+    ($name:expr, $($details:tt)+) => {
         $crate::dispatch::emit(
             $crate::dispatch::Event::Custom{
                 name: $name,
-                details: $crate::deps::serde_json::json!($($details)+),
+                value: $crate::deps::serde_json::json!($($details)+),
             }
         );
     };
@@ -73,7 +73,7 @@ macro_rules! setup_complete {
 
 #[macro_export]
 macro_rules! expect_always {
-    ($condition:expr, $property:literal$(, $($details:tt)+)?) => {
+    ($condition:expr, $property:expr$(, $($details:tt)+)?) => {
         $crate::define_and_emit_entry!(
             $crate::catalog::Expectation::Always,
             $property,
@@ -84,7 +84,7 @@ macro_rules! expect_always {
 
 #[macro_export]
 macro_rules! expect_always_or_unreachable {
-    ($condition:expr, $property:literal$(, $($details:tt)+)?) => {
+    ($condition:expr, $property:expr$(, $($details:tt)+)?) => {
         $crate::define_and_emit_entry!(
             $crate::catalog::Expectation::AlwaysOrUnreachable,
             $property,
@@ -95,7 +95,7 @@ macro_rules! expect_always_or_unreachable {
 
 #[macro_export]
 macro_rules! expect_sometimes {
-    ($condition:expr, $property:literal$(, $($details:tt)+)?) => {
+    ($condition:expr, $property:expr$(, $($details:tt)+)?) => {
         $crate::define_and_emit_entry!(
             $crate::catalog::Expectation::Sometimes,
             $property,
@@ -106,7 +106,7 @@ macro_rules! expect_sometimes {
 
 #[macro_export]
 macro_rules! expect_reachable {
-    ($property:literal$(, $($details:tt)+)?) => {
+    ($property:expr$(, $($details:tt)+)?) => {
         $crate::define_and_emit_entry!(
             $crate::catalog::Expectation::Reachable,
             $property,
@@ -117,13 +117,39 @@ macro_rules! expect_reachable {
 
 #[macro_export]
 macro_rules! expect_unreachable {
-    ($property:literal$(, $($details:tt)+)?) => {
+    ($property:expr$(, $($details:tt)+)?) => {
         $crate::define_and_emit_entry!(
             $crate::catalog::Expectation::Unreachable,
             $property,
             false $(, $($details)+)?
         );
     };
+}
+
+/// emit a fault with a probability p to the dispatcher
+/// p should be in the range [0.0, 1.0]
+#[macro_export]
+macro_rules! maybe_fault {
+    ($p:expr, $name:expr) => {
+        $crate::maybe_fault!($p, $name, null);
+    };
+
+    ($p:expr, $name:expr, $($details:tt)+) => {{
+        static THRESHOLD: u64 = (u64::MAX as f64 * $p) as u64;
+        let should_fault = $crate::dispatch::get_random() < THRESHOLD;
+        if should_fault {
+            $crate::expect_reachable!(
+                concat!("fault is reachable: ", $name),
+                $($details)+
+            );
+            $crate::dispatch::emit(
+                $crate::dispatch::Event::Fault{
+                    name: $name,
+                    details: $crate::deps::serde_json::json!($($details)+),
+                }
+            );
+        }
+    }};
 }
 
 #[cfg(test)]
@@ -164,5 +190,24 @@ mod tests {
 
         expect_unreachable!("this should always fail");
         expect_unreachable!("this should always fail", { "key": 123 });
+    }
+
+    #[test]
+    fn test_setup_complete() {
+        setup_complete!();
+        setup_complete!({ "key": 123 });
+    }
+
+    #[test]
+    fn test_event() {
+        emit_event!("test_event", { "key": 123 });
+    }
+
+    #[test]
+    fn test_fault() {
+        maybe_fault!(0.0, "this should never fault");
+        maybe_fault!(1.0, "this should always fault");
+        maybe_fault!(0.5, "this should sometimes fault");
+        maybe_fault!(0.5, "this should sometimes fault", { "key": 123 });
     }
 }

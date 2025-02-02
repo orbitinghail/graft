@@ -4,9 +4,9 @@ use crate::catalog::Expectation;
 
 use super::{Dispatch, Event};
 
-pub struct TraceDispatch;
+pub struct TestDispatch;
 
-impl Dispatch for TraceDispatch {
+impl Dispatch for TestDispatch {
     fn emit(&self, event: Event) {
         match event {
             Event::RegisterEntry(entry) => {
@@ -52,6 +52,9 @@ impl Dispatch for TraceDispatch {
                     value = serde_json::to_string(&value).unwrap(),
                     "custom event"
                 )
+            }
+            Event::Fault { .. } => {
+                // faults are not enabled in the test dispatcher
             }
         }
     }

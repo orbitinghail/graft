@@ -34,7 +34,13 @@ impl From<http::Error> for ClientErr {
 
 impl From<std::io::Error> for ClientErr {
     fn from(err: std::io::Error) -> Self {
-        Self::IoErr(err.kind())
+        // attempt to convert the io error to a ureq error
+        match ureq::Error::from(err) {
+            // if we get an io error back then we normalize it
+            ureq::Error::Io(ioerr) => Self::IoErr(ioerr.kind()),
+            // otherwise we use the ureq Error
+            other => Self::HttpErr(other),
+        }
     }
 }
 

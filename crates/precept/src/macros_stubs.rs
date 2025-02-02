@@ -52,3 +52,8 @@ macro_rules! expect_reachable {
 macro_rules! expect_unreachable {
     ($($ignore:tt)*) => {};
 }
+
+#[macro_export]
+macro_rules! maybe_fault {
+    ($($ignore:tt)*) => {};
+}

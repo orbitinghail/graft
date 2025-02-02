@@ -66,14 +66,26 @@ impl WorkloadErr {
     fn should_retry(&self) -> bool {
         match self {
             WorkloadErr::ClientErr(ClientErr::HttpErr(err)) => match err {
-                ureq::Error::ConnectionFailed => true,
-                ureq::Error::TooManyRedirects => true,
-                ureq::Error::HostNotFound => true,
-                ureq::Error::Timeout(_) => true,
+                ureq::Error::ConnectionFailed
+                | ureq::Error::TooManyRedirects
+                | ureq::Error::HostNotFound
+                | ureq::Error::Timeout(_) => true,
                 _ => false,
             },
-            WorkloadErr::ClientErr(ClientErr::StorageErr(StorageErr::ConcurrentWrite)) => true,
-            WorkloadErr::ClientErr(ClientErr::StorageErr(StorageErr::RemoteConflict)) => true,
+            WorkloadErr::ClientErr(ClientErr::IoErr(err)) => match err {
+                std::io::ErrorKind::TimedOut
+                | std::io::ErrorKind::NotConnected
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::ConnectionRefused
+                | std::io::ErrorKind::NetworkDown
+                | std::io::ErrorKind::NetworkUnreachable => true,
+                _ => false,
+            },
+            WorkloadErr::ClientErr(ClientErr::StorageErr(err)) => match err {
+                StorageErr::ConcurrentWrite | StorageErr::RemoteConflict => true,
+                _ => false,
+            },
             _ => false,
         }
     }
