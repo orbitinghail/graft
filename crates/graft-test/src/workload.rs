@@ -64,15 +64,8 @@ impl From<ConfigError> for WorkloadErr {
 
 impl WorkloadErr {
     fn should_retry(&self) -> bool {
-        match self {
-            WorkloadErr::ClientErr(ClientErr::HttpErr(err)) => match err {
-                ureq::Error::ConnectionFailed
-                | ureq::Error::TooManyRedirects
-                | ureq::Error::HostNotFound
-                | ureq::Error::Timeout(_) => true,
-                _ => false,
-            },
-            WorkloadErr::ClientErr(ClientErr::IoErr(err)) => match err {
+        fn should_retry_io(err: std::io::ErrorKind) -> bool {
+            match err {
                 std::io::ErrorKind::TimedOut
                 | std::io::ErrorKind::NotConnected
                 | std::io::ErrorKind::ConnectionReset
@@ -81,7 +74,19 @@ impl WorkloadErr {
                 | std::io::ErrorKind::NetworkDown
                 | std::io::ErrorKind::NetworkUnreachable => true,
                 _ => false,
+            }
+        }
+
+        match self {
+            WorkloadErr::ClientErr(ClientErr::HttpErr(err)) => match err {
+                ureq::Error::ConnectionFailed
+                | ureq::Error::HostNotFound
+                | ureq::Error::Timeout(_) => true,
+                ureq::Error::Decompress(_, ioerr) => should_retry_io(ioerr.kind()),
+                ureq::Error::Io(ioerr) => should_retry_io(ioerr.kind()),
+                _ => false,
             },
+            WorkloadErr::ClientErr(ClientErr::IoErr(err)) => should_retry_io(*err),
             WorkloadErr::ClientErr(ClientErr::StorageErr(err)) => match err {
                 StorageErr::ConcurrentWrite | StorageErr::RemoteConflict => true,
                 _ => false,
