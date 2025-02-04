@@ -27,7 +27,9 @@ pub async fn handler<C>(
     let vid: VolumeId = req.vid.try_into()?;
     let expected_pages = req.pages.len();
 
-    // acquire a permit to write to the volume
+    // acquire a permit to write to the volume.
+    // This permit is critical as it ensures that no other write_pages handler
+    // can concurrently write pages into this volume.
     let _permit = state.volume_write_limiter().acquire(&vid).await;
 
     // subscribe to the broadcast channel

@@ -172,10 +172,8 @@ fn recover_and_sync_volume<F: Fetcher>(
             precept::expect_reachable!("volume has an interrupted push", {
                 "vid": handle.vid(), "status": status
             });
-            // finish the interrupted push
-            handle.sync_with_remote(SyncDirection::Push).or_into_ctx()?;
-            // then retrieve the latest remote snapshot
-            handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
+            // finish the sync to the remote and then update
+            handle.sync_with_remote(SyncDirection::Both).or_into_ctx()?;
         }
     }
 

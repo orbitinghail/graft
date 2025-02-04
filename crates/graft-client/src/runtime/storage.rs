@@ -28,8 +28,6 @@ use volume_state::{
 };
 use zerocopy::IntoBytes;
 
-use crate::ClientErr;
-
 pub mod changeset;
 pub(crate) mod commit;
 pub(crate) mod memtable;
@@ -166,6 +164,9 @@ impl Storage {
     }
 
     fn check_for_interrupted_push(&self) -> Result<()> {
+        let _permit = self.commit_lock.lock();
+        let mut batch = self.keyspace.batch();
+
         let iter = self.volumes.snapshot().iter().err_into();
         let mut iter = VolumeQueryIter::new(iter);
         while let Some(state) = iter.try_next()? {
@@ -174,10 +175,10 @@ impl Storage {
                     "detected interrupted push for volume {vid:?}",
                     vid = state.vid(),
                 );
-                self.set_volume_status(state.vid(), VolumeStatus::InterruptedPush)?;
+                self.set_volume_status(&mut batch, state.vid(), VolumeStatus::InterruptedPush);
             }
         }
-        Ok(())
+        Ok(batch.commit()?)
     }
 
     /// Access the local commit changeset. This ChangeSet is updated whenever a
@@ -199,9 +200,9 @@ impl Storage {
         Ok(self.volumes.insert(key, config)?)
     }
 
-    fn set_volume_status(&self, vid: &VolumeId, status: VolumeStatus) -> Result<()> {
+    fn set_volume_status(&self, batch: &mut fjall::Batch, vid: &VolumeId, status: VolumeStatus) {
         let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Status);
-        Ok(self.volumes.insert(key, status)?)
+        batch.insert(&self.volumes, key, status)
     }
 
     pub fn get_volume_status(&self, vid: &VolumeId) -> Result<VolumeStatus> {
@@ -423,7 +424,7 @@ impl Storage {
             );
 
             // mark the volume as having a remote conflict
-            self.set_volume_status(vid, VolumeStatus::Conflict)?;
+            self.set_volume_status(&mut batch, vid, VolumeStatus::Conflict);
 
             return Err(Culprit::new_with_note(
                 StorageErr::RemoteConflict,
@@ -569,11 +570,11 @@ impl Storage {
         Ok((snapshot, lsns, commits))
     }
 
-    /// Rollback a failed push operation by setting Watermarks::pending_sync to
-    /// Watermarks::last_sync
-    pub fn rollback_sync_to_remote(&self, vid: &VolumeId, err: &ClientErr) -> Result<()> {
+    /// Update storage after a rejected sync
+    pub fn rejected_sync_to_remote(&self, vid: &VolumeId) -> Result<()> {
         // acquire the commit lock
         let _permit = self.commit_lock.lock();
+        let mut batch = self.keyspace.batch();
 
         // rollback the pending_sync watermark
         let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks);
@@ -581,15 +582,12 @@ impl Storage {
             Some(watermarks) => Watermarks::from_bytes(&watermarks)?,
             None => Watermarks::default(),
         };
-        self.volumes
-            .insert(key, watermarks.rollback_pending_sync())?;
+        batch.insert(&self.volumes, key, watermarks.rollback_pending_sync());
 
-        // if the server rejected the commit, update the volume status
-        if err.is_commit_rejected() {
-            self.set_volume_status(vid, VolumeStatus::RejectedCommit)?;
-        }
+        // update the volume status
+        self.set_volume_status(&mut batch, vid, VolumeStatus::RejectedCommit);
 
-        Ok(())
+        Ok(batch.commit()?)
     }
 
     /// Complete a push operation by updating the volume snapshot, updating

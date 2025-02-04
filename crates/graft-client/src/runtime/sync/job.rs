@@ -100,29 +100,11 @@ pub struct PushJob {
 
 impl PushJob {
     fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
-        if let Err(err) = self.run_inner(storage, clients) {
-            if let Err(inner) = storage.rollback_sync_to_remote(&self.vid, err.ctx()) {
-                tracing::error!("failed to rollback sync to remote: {inner:?}");
-                Err(err.with_note(format!("rollback failed after push job failed: {}", inner)))
-            } else if err.ctx().is_commit_rejected() {
-                // rejected commits are not job failures, the
-                // rollback_sync_to_remote function updates the volume status to
-                // RejectedCommit
-                Ok(())
-            } else {
-                Err(err)
-            }
-        } else {
-            Ok(())
-        }
-    }
-
-    fn run_inner(&self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         // prepare the sync
         let (snapshot, lsns, mut commits) =
             storage.prepare_sync_to_remote(&self.vid).or_into_ctx()?;
 
-        let _span = tracing::debug_span!("PushJob", vid=?self.vid, ?snapshot).entered();
+        let _span = tracing::debug_span!("PushJob", vid=?self.vid, ?snapshot, ?lsns).entered();
 
         // setup temporary storage for pages
         // TODO: we will eventually stream pages directly to the remote
@@ -175,23 +157,39 @@ impl PushJob {
 
         // write the pages to the pagestore if there are any pages
         let segments = if !pages.is_empty() {
-            clients.pagestore().write_pages(&self.vid, pages)?
+            clients
+                .pagestore()
+                .write_pages(&self.vid, pages)
+                .or_into_ctx()?
         } else {
             Vec::new()
         };
 
-        precept::maybe_fault!(0.05, "PushJob: before metastore commit");
+        precept::maybe_fault!(0.1, "PushJob: before metastore commit");
 
         // commit the segments to the metastore
-        let remote_snapshot = clients.metastore().commit(
+        let remote_snapshot = match clients.metastore().commit(
             &self.vid,
             &self.cid,
             snapshot.remote(),
             page_count,
             segments,
-        )?;
+        ) {
+            Ok(remote_snapshot) => remote_snapshot,
+            Err(err) => {
+                // if the commit was rejected, notify storage
+                if err.ctx().is_commit_rejected() {
+                    if let Err(reject_err) = storage.rejected_sync_to_remote(&self.vid) {
+                        return Err(
+                            err.with_note(format!("rejected sync to remote failed: {reject_err}"))
+                        );
+                    }
+                }
+                return Err(err);
+            }
+        };
 
-        precept::maybe_fault!(0.05, "PushJob: after metastore commit");
+        precept::maybe_fault!(0.1, "PushJob: after metastore commit");
 
         // complete the sync
         storage

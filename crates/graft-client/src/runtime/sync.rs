@@ -242,17 +242,18 @@ impl<F: Fetcher> SyncTask<F> {
     }
 
     /// Synchronously sync a volume with the remote
+    /// If dir is SyncDirection::Both, this function will push before it pulls
     fn sync_volume(&mut self, vid: VolumeId, dir: SyncDirection) -> Result<(), ClientErr> {
-        if dir.matches(SyncDirection::Pull) {
-            Job::pull(vid.clone())
-                .run(self.shared.storage(), &self.clients)
-                .or_into_culprit("error while pulling volume")?;
-        }
-
         if dir.matches(SyncDirection::Push) {
-            Job::push(vid, self.shared.cid().clone())
+            Job::push(vid.clone(), self.shared.cid().clone())
                 .run(self.shared.storage(), &self.clients)
                 .or_into_culprit("error while pushing volume")?;
+        }
+
+        if dir.matches(SyncDirection::Pull) {
+            Job::pull(vid)
+                .run(self.shared.storage(), &self.clients)
+                .or_into_culprit("error while pulling volume")?;
         }
 
         Ok(())
