@@ -31,6 +31,14 @@ impl Fetcher for NetFetcher {
         local_lsn: LSN,
         offset: PageOffset,
     ) -> Result<Page, ClientErr> {
+        let _span = tracing::trace_span!(
+            "fetching page from pagestore",
+            ?vid,
+            ?remote_lsn,
+            ?local_lsn,
+            ?offset,
+        )
+        .entered();
         let offsets = Splinter::from_iter([offset]).serialize_to_bytes();
         let pages = self
             .clients

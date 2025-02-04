@@ -168,13 +168,13 @@ impl VolumeCatalogUpdater {
         client: &MetastoreClient,
         catalog: &VolumeCatalog,
         vid: &VolumeId,
-        min_lsn: Option<LSN>,
+        min_lsn: LSN,
     ) -> Result<(), Culprit<UpdateErr>> {
         // read the latest lsn for the volume in the catalog
-        let initial_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
+        let catalog_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
 
         // if catalog lsn >= min_lsn, then no update is needed
-        if initial_lsn.is_some_and(|l1| min_lsn.is_some_and(|l2| l1 >= l2)) {
+        if catalog_lsn >= Some(min_lsn) {
             return Ok(());
         }
 
@@ -182,21 +182,9 @@ impl VolumeCatalogUpdater {
         let _permit = self.limiter.acquire(vid).await;
 
         // check the catalog again in case another task has updated the volume
+        // while we were waiting for a permit
         let catalog_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
-
-        // check to see if we can exit early
-        if match (catalog_lsn, min_lsn) {
-            (None, None) => false,
-            (None, Some(_)) => false,
-            // another task may have updated the volume concurrently; since we
-            // don't have a minimum lsn to acquire we can just use the other
-            // task's update
-            (Some(catalog_lsn), None) => initial_lsn != Some(catalog_lsn),
-            // another task may have updated the volume concurrently; since we
-            // have a minimum lsn to acquire we can only use the other task's
-            // update if it meets the minimum lsn requirement
-            (Some(catalog_lsn), Some(min_lsn)) => catalog_lsn >= min_lsn,
-        } {
+        if catalog_lsn >= Some(min_lsn) {
             return Ok(());
         }
 
@@ -205,7 +193,7 @@ impl VolumeCatalogUpdater {
 
         tracing::trace!(
             ?min_lsn,
-            ?initial_lsn,
+            ?catalog_lsn,
             ?start_lsn,
             "updating catalog for volume {vid:?} from metastore"
         );
@@ -224,7 +212,7 @@ impl VolumeCatalogUpdater {
         let mut batch = catalog.batch_insert();
         for commit in commits {
             let snapshot = commit.snapshot.expect("missing snapshot");
-            let meta: CommitMeta = snapshot.try_into().expect("invalid LSN");
+            let meta: CommitMeta = snapshot.try_into().expect("invalid snapshot");
 
             batch
                 .insert_snapshot(vid.clone(), meta, commit.segments)

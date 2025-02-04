@@ -188,10 +188,16 @@ fn load_tracker<F: Fetcher>(
     reader: &VolumeReader<F>,
     cid: &ClientId,
 ) -> Result<PageTracker, Culprit<WorkloadErr>> {
+    let span = tracing::info_span!("load_tracker", snapshot=?reader.snapshot(), hash=field::Empty)
+        .entered();
+
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
     let first_page = reader.read(0.into()).or_into_ctx()?;
     let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
+
+    // record the hash of the page tracker for debugging
+    span.record("hash", PageHash::new(&first_page).to_string());
 
     // ensure the page tracker is only empty when we expect it to be
     expect_always_or_unreachable!(
@@ -253,7 +259,8 @@ fn workload_writer<F: Fetcher, R: Rng>(
             "write_page",
             offset=offset.to_string(),
             snapshot=?reader.snapshot(),
-            ?new_hash
+            ?new_hash,
+            tracker_hash=field::Empty
         )
         .entered();
 
@@ -290,12 +297,16 @@ fn workload_writer<F: Fetcher, R: Rng>(
             );
         }
 
-        let mut writer = reader.upgrade();
+        // serialize the page tracker with the updated page and output it's hash for debugging
+        let tracker_page = page_tracker.serialize_into_page().or_into_ctx()?;
+        span.record("tracker_hash", PageHash::new(&tracker_page).to_string());
 
         // write out the updated page tracker and the new page
-        writer.write(0.into(), page_tracker.serialize_into_page().or_into_ctx()?);
+        let mut writer = reader.upgrade();
+        writer.write(0.into(), tracker_page);
         writer.write(offset, new_page);
 
+        // commit the changes
         let pre_commit_remote = writer.snapshot().and_then(|s| s.remote());
         let reader = writer.commit().or_into_ctx()?;
         let post_commit_remote = reader.snapshot().and_then(|s| s.remote());
