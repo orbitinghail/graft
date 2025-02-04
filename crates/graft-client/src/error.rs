@@ -38,6 +38,8 @@ impl From<std::io::Error> for ClientErr {
         match ureq::Error::from(err) {
             // if we get an io error back then we normalize it
             ureq::Error::Io(ioerr) => Self::IoErr(ioerr.kind()),
+            // if we get a decompression error, unpack the wrapped io error
+            ureq::Error::Decompress(_, ioerr) => ioerr.into(),
             // otherwise we use the ureq Error
             other => Self::HttpErr(other),
         }
