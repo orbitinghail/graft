@@ -9,15 +9,8 @@ pub struct TestDispatch;
 impl Dispatch for TestDispatch {
     fn emit(&self, event: Event) {
         match event {
-            Event::RegisterEntry(entry) => {
-                tracing::info!(
-                    location = ?entry.location(),
-                    module = ?entry.module(),
-                    function = ?entry.function(),
-                    "registering expectation {:?}: {}",
-                    entry.expectation(),
-                    entry.property()
-                )
+            Event::RegisterEntry(_) => {
+                // nothing to do
             }
             Event::EmitEntry { entry, condition, details } => {
                 let passed = match (entry.expectation(), condition) {

@@ -17,6 +17,7 @@ use zerocopy::{
 use crate::{byte_unit::ByteUnit, zerocopy_err::ZerocopyErr};
 
 const GID_SIZE: ByteUnit = ByteUnit::new(16);
+const SHORT_LEN: usize = 12;
 
 mod prefix;
 mod time;
@@ -63,9 +64,10 @@ impl<P: Prefix> Gid<P> {
         bs58::encode(self.as_bytes()).into_string()
     }
 
-    /// returns only the random portion of the Gid encoded to bs58
+    /// returns the SHORT_LEN suffix of self.pretty
     pub fn short(&self) -> String {
-        bs58::encode(&self.random).into_string()
+        let pretty = self.pretty();
+        pretty[pretty.len() - SHORT_LEN..].to_owned()
     }
 
     pub fn as_time(&self) -> SystemTime {
@@ -219,6 +221,23 @@ mod tests {
         bytes[0] = prefix;
         bytes[1..7].copy_from_slice(GidTimestamp::from(ts).as_bytes());
         bytes
+    }
+
+    #[graft_test::test]
+    fn test_pretty_short() {
+        // short is always substr of pretty
+        for _ in 0..100 {
+            let id = SegmentId::random();
+            let pretty = id.pretty();
+            let short = id.short();
+            println!("{pretty} {short}");
+            assert!(
+                pretty.contains(&short),
+                "pretty: {}, short: {}",
+                pretty,
+                short
+            );
+        }
     }
 
     #[graft_test::test]
