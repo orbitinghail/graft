@@ -15,7 +15,7 @@ axum-test = "17.2"
 bindgen = { version = "0.71", default-features = false }
 blake3 = "1.5"
 bs58 = "0.5"
-bytes = "1.9"
+bytes = "1.10"
 clap = "4.5"
 config = { version = "0.15", features = ["toml"] }
 criterion = "0.5"

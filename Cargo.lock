@@ -436,6 +436,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3e368af43e418a04d52505cf3dbc23dda4e3407ae2fa99fd0e4f308ce546acc"
 
 [[package]]
+name = "byteview"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df559a101a77b0b6f034ca9e5747dfd267a0b54ee29d6c227768deda0b153a99"
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -443,9 +449,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.11"
+version = "1.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4730490333d58093109dc02c23174c3f4d490998c3fed3cc8e82d57afedb9cf"
+checksum = "755717a7de9ec452bf7f3f1a3099085deabd7f2962b861dae91ecd7a365903d2"
 dependencies = [
  "jobserver",
  "libc",
@@ -568,6 +574,12 @@ name = "colorchoice"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
+
+[[package]]
+name = "compare"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea0095f6103c2a8b44acd6fd15960c801dafebf02e21940360833e0673f48ba7"
 
 [[package]]
 name = "config"
@@ -1140,7 +1152,7 @@ dependencies = [
  "tryiter",
  "ureq",
  "url",
- "zerocopy 0.8.15",
+ "zerocopy 0.8.16",
 ]
 
 [[package]]
@@ -1159,7 +1171,7 @@ dependencies = [
  "splinter",
  "static_assertions",
  "thiserror",
- "zerocopy 0.8.15",
+ "zerocopy 0.8.16",
 ]
 
 [[package]]
@@ -1172,7 +1184,7 @@ dependencies = [
  "prost",
  "prost-types",
  "splinter",
- "zerocopy 0.8.15",
+ "zerocopy 0.8.16",
 ]
 
 [[package]]
@@ -1217,7 +1229,7 @@ dependencies = [
  "tracing",
  "tryiter",
  "url",
- "zerocopy 0.8.15",
+ "zerocopy 0.8.16",
 ]
 
 [[package]]
@@ -1650,6 +1662,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "interval-heap"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11274e5e8e89b8607cfedc2910b6626e998779b48a019151c7604d0adcb86ac6"
+dependencies = [
+ "compare",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1928,12 +1949,6 @@ dependencies = [
  "mime",
  "unicase",
 ]
-
-[[package]]
-name = "min-max-heap"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2687e6cf9c00f48e9284cf9fd15f2ef341d03cc7743abf9df4c5f07fdee50b18"
 
 [[package]]
 name = "minimal-lexical"
@@ -2404,7 +2419,7 @@ checksum = "3779b94aeb87e8bd4e834cee3650289ee9e0d5677f976ecdb6d219e5f4f6cd94"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.0",
- "zerocopy 0.8.15",
+ "zerocopy 0.8.16",
 ]
 
 [[package]]
@@ -2443,7 +2458,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b08f3c9802962f7e1b25113931d94f43ed9725bebc59db9d0c3e9a23b67e15ff"
 dependencies = [
  "getrandom 0.3.1",
- "zerocopy 0.8.15",
+ "zerocopy 0.8.16",
 ]
 
 [[package]]
@@ -3000,7 +3015,7 @@ dependencies = [
  "itertools 0.14.0",
  "roaring",
  "thiserror",
- "zerocopy 0.8.15",
+ "zerocopy 0.8.16",
 ]
 
 [[package]]
@@ -3246,9 +3261,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.8.19"
+version = "0.8.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1ed1f98e3fdc28d6d910e6737ae6ab1a93bf1985935a1193e68f93eeb68d24e"
+checksum = "cd87a5cdd6ffab733b2f74bc4fd7ee5fff6634124999ac278c35fc78c6120148"
 dependencies = [
  "serde",
  "serde_spanned",
@@ -3515,14 +3530,15 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "value-log"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f90495556d09c3026f7f3897f8a7db59c8c701082e32dcf58c2319062ae1eb0"
+checksum = "addf12a5bb88dbd4a006b59c2da6d5091c6e4440ab9e8e9e6cc4b2357b43a842"
 dependencies = [
  "byteorder",
  "bytes",
+ "byteview",
+ "interval-heap",
  "log",
- "min-max-heap",
  "path-absolutize",
  "quick_cache",
  "rustc-hash 2.1.0",
@@ -3936,11 +3952,11 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.15"
+version = "0.8.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1e101d4bc320b6f9abb68846837b70e25e380ca2f467ab494bf29fcc435fcc3"
+checksum = "7b8c07a70861ce02bad1607b5753ecb2501f67847b9f9ada7c160fff0ec6300c"
 dependencies = [
- "zerocopy-derive 0.8.15",
+ "zerocopy-derive 0.8.16",
 ]
 
 [[package]]
@@ -3956,9 +3972,9 @@ dependencies = [
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.15"
+version = "0.8.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03a73df1008145cd135b3c780d275c57c3e6ba8324a41bd5e0008fe167c3bc7c"
+checksum = "5226bc9a9a9836e7428936cde76bb6b22feea1a8bfdbc0d241136e4d13417e25"
 dependencies = [
  "proc-macro2",
  "quote",
