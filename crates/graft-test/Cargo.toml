@@ -7,6 +7,7 @@ edition = "2021"
 graft-client = { path = "../graft-client"}
 graft-server = { path = "../graft-server" }
 graft-core = { path = "../graft-core", features = ["testutil"] }
+graft-proto = { path = "../graft-proto" }
 graft-tracing = { path = "../graft-tracing" }
 graft-test-macro = { path = "../graft-test-macro" }
 splinter = { path = "../splinter" }

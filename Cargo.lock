@@ -1247,6 +1247,7 @@ dependencies = [
  "futures",
  "graft-client",
  "graft-core",
+ "graft-proto",
  "graft-server",
  "graft-test-macro",
  "graft-tracing",

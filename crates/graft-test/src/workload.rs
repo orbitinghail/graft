@@ -22,6 +22,7 @@ use graft_client::{
     ClientErr,
 };
 use graft_core::{gid::ClientId, page::Page, page_offset::PageOffset, VolumeId};
+use graft_proto::GraftErrCode;
 use graft_server::supervisor;
 use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
 use rand::Rng;
@@ -78,6 +79,11 @@ impl WorkloadErr {
         }
 
         match self {
+            WorkloadErr::ClientErr(ClientErr::GraftErr(err)) => match err.code() {
+                GraftErrCode::CommitRejected => true,
+                GraftErrCode::SnapshotMissing => true,
+                _ => false,
+            },
             WorkloadErr::ClientErr(ClientErr::HttpErr(err)) => match err {
                 ureq::Error::ConnectionFailed
                 | ureq::Error::HostNotFound

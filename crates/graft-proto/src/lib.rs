@@ -18,7 +18,7 @@ use graft_core::{
 use pagestore::v1::PageAtOffset;
 use prost_types::TimestampError;
 
-pub use graft::common::v1::Snapshot;
+pub use graft::common::v1::{GraftErrCode, Snapshot};
 pub use graft::*;
 use splinter::{DecodeErr, SplinterRef};
 
