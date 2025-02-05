@@ -6,13 +6,14 @@ import "google/protobuf/timestamp.proto";
 enum GraftErrCode {
   GRAFT_ERR_CODE_UNSPECIFIED = 0;
 
-  // general cases
+  // Client error codes
   GRAFT_ERR_CODE_CLIENT = 1;
-  GRAFT_ERR_CODE_SERVER = 2;
+  GRAFT_ERR_CODE_SNAPSHOT_MISSING = 2;
+  GRAFT_ERR_CODE_COMMIT_REJECTED = 3;
 
-  // special cases
-  GRAFT_ERR_CODE_SNAPSHOT_MISSING = 3;
-  GRAFT_ERR_CODE_COMMIT_REJECTED = 4;
+  // Server error codes
+  GRAFT_ERR_CODE_SERVER = 100;
+  GRAFT_ERR_CODE_SERVICE_UNAVAILABLE = 101;
 }
 
 message GraftErr {

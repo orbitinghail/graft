@@ -121,6 +121,10 @@ impl IntoResponse for ApiErr {
             OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             SnapshotMissing => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
             RejectedCommit => (StatusCode::CONFLICT, GraftErrCode::CommitRejected),
+            ClientErr(graft_client::ClientErr::HttpErr(_)) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                GraftErrCode::ServiceUnavailable,
+            ),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, GraftErrCode::Server),
         };
         let message = self.0.ctx().to_string();

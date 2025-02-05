@@ -82,6 +82,7 @@ impl WorkloadErr {
             WorkloadErr::ClientErr(ClientErr::GraftErr(err)) => match err.code() {
                 GraftErrCode::CommitRejected => true,
                 GraftErrCode::SnapshotMissing => true,
+                GraftErrCode::ServiceUnavailable => true,
                 _ => false,
             },
             WorkloadErr::ClientErr(ClientErr::HttpErr(err)) => match err {

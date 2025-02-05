@@ -4,7 +4,7 @@ use graft_core::byte_unit::ByteUnit;
 use graft_proto::common::v1::GraftErr;
 use http::{
     uri::{Builder, PathAndQuery},
-    HeaderName, HeaderValue, Uri,
+    HeaderName, HeaderValue, StatusCode, Uri,
 };
 use std::{any::type_name, sync::Arc, time::Duration};
 use tracing::field;
@@ -129,7 +129,7 @@ impl NetClient {
                 Culprit::from_err(err).with_note(note)
             })?;
             precept::expect_always_or_unreachable!(
-                !(500..600).contains(&status.as_u16()),
+                !(500..600).contains(&status.as_u16()) || status == StatusCode::SERVICE_UNAVAILABLE,
                 "client requests should not return 5xx errors",
                 {
                     "status": status.as_u16(),
