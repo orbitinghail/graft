@@ -73,5 +73,5 @@ antithesis-run: antithesis-prep
         --image='{{PAGESTORE_ANTITHESIS_TAG}}' \
         --image='{{TEST_WORKLOAD_ANTITHESIS_TAG}}' \
         --image='{{MINIO_ANTITHESIS_TAG}}' \
-        --duration=300 \
+        --duration=120 \
         --email='carl@f0a.org'
