@@ -1,3 +1,9 @@
+//! Implements a silly key-value store on top of graft.
+//! It is silly because it stores a single key per page, and organizes the pages
+//! into a sorted linked list.
+//! It is useful, however, to quickly sanity test Graft's functionality and get
+//! a feeling for how it behaves in different scenarios.
+
 use std::{
     env::temp_dir,
     fmt::Debug,
@@ -32,6 +38,7 @@ use graft_core::{
 };
 use graft_tracing::{init_tracing, TracingConsumer};
 use thiserror::Error;
+use tryiter::TryIteratorExt;
 use url::Url;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -95,16 +102,23 @@ enum Command {
 
     /// Push all local changes to the server
     Push,
+
     /// Pull changes from the server
     Pull {
         /// Overwrite any local changes
         #[arg(short, long)]
         reset: bool,
     },
+
     /// List all of the keys and values
     List,
+
     /// Set a key to a value
     Set { key: String, value: String },
+
+    /// Remove a key from the list
+    Del { key: String },
+
     /// Get the value of a key
     Get { key: String },
 }
@@ -189,8 +203,8 @@ impl ListHeader {
 
     /// allocates a node by either reusing a previously freed node or
     /// creating a new one;
-    fn allocate<F: Fetcher>(&mut self, writer: &VolumeWriter<F>) -> Result<NodeView> {
-        let last_offset = writer.snapshot().and_then(|s| s.pages().last_offset());
+    fn allocate(&mut self, reader: &impl VolumeRead) -> Result<NodeView> {
+        let last_offset = reader.snapshot().and_then(|s| s.pages().last_offset());
         let unused_offset = last_offset.map_or(PageOffset::new(1), |o| o.next());
 
         if self.free == 0 {
@@ -198,7 +212,7 @@ impl ListHeader {
             return Ok(NodeView::new(unused_offset));
         } else {
             // pop the first node from the free list
-            let node = NodeView::load(writer, self.free)?;
+            let node = NodeView::load(reader, self.free)?;
             self.free = node.next;
             return Ok(node.zero());
         }
@@ -296,72 +310,61 @@ impl<'a, R: VolumeRead> Iterator for ListIter<'a, R> {
     }
 }
 
-fn list_get(reader: &impl VolumeRead, key: &str) -> Result<Option<NodeView>> {
+/// find the last node in the list matching the predicate
+/// terminates as soon as the predicate returns false
+fn list_find_last<V: VolumeRead, P: FnMut(&str) -> bool>(
+    reader: &V,
+    mut pred: P,
+) -> Result<Option<NodeView>> {
     let mut iter = ListIter::new(reader)?;
-    while let Some(node) = iter.try_next().or_into_ctx()? {
-        if node.key() == key {
-            return Ok(Some(node));
-        } else if node.key() > key {
-            break;
+    let mut last_valid = None;
+    while let Some(cursor) = iter.try_next().or_into_ctx()? {
+        if !pred(cursor.key()) {
+            return Ok(last_valid);
         }
+        last_valid = Some(cursor);
     }
-    Ok(None)
+    Ok(last_valid)
+}
+
+fn list_get(reader: &impl VolumeRead, key: &str) -> Result<Option<NodeView>> {
+    let iter = ListIter::new(reader)?;
+    iter.try_filter(|n| Ok(n.key() == key))
+        .try_next()
+        .or_into_ctx()
 }
 
 fn list_set<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str, value: &str) -> Result<()> {
     let mut header = HeaderView::load(writer, 0)?;
 
-    // find the insert or update position, while keeping track of the last node
-    let mut cursor = header.head(writer)?;
-    while let Some(current) = &cursor {
-        if let Some(next) = current.next(writer)? {
-            if key < next.key() {
-                break;
-            }
-            cursor = Some(next);
-        } else {
-            break;
-        }
-    }
-
-    match cursor {
-        // cursor missing, list is empty
+    // either find the node to update, or find the insertion point
+    let candidate = list_find_last(writer, |candidate| candidate <= key)?;
+    match candidate {
+        // candidate missing, insert new node at head of list
         None => {
-            let mut node = header.allocate(writer)?;
-            node.update(key, value);
-            header.head = node.offset;
-            writer.write(node.offset, node.into());
+            let mut new_node = header.allocate(writer)?;
+            new_node.update(key, value);
+            new_node.next = header.head;
+            header.head = new_node.offset;
+            writer.write(new_node.offset, new_node.into());
             writer.write(0, header.into());
         }
 
-        // node at cursor is the search key
-        Some(mut node) if node.key() == key => {
-            node.update(key, value);
-            writer.write(node.offset, node.into());
+        // candidate matches search key, update node in place
+        Some(mut candidate) if candidate.key() == key => {
+            candidate.update(key, value);
+            writer.write(candidate.offset, candidate.into());
         }
 
-        // node at cursor is after the search key
-        // -> this means cursor is the first node in the list
-        Some(node) if node.key() > key => {
-            assert_eq!(header.head, node.offset, "cursor must be at the list head");
-
-            let mut next = header.allocate(writer)?;
-            next.update(key, value);
-            next.next = node.offset;
-            header.head = next.offset;
-            writer.write(node.offset, node.into());
-            writer.write(next.offset, next.into());
-            writer.write(0, header.into());
-        }
-
-        // insert key after cursor
-        Some(mut node) => {
-            let mut next = header.allocate(writer)?;
-            next.update(key, value);
-            next.next = node.next;
-            node.next = next.offset;
-            writer.write(node.offset, node.into());
-            writer.write(next.offset, next.into());
+        // candidate is the last node in the list with key < search key
+        // insert node after candidate
+        Some(mut candidate) => {
+            let mut new_node = header.allocate(writer)?;
+            new_node.update(key, value);
+            new_node.next = candidate.next;
+            candidate.next = new_node.offset;
+            writer.write(candidate.offset, candidate.into());
+            writer.write(new_node.offset, new_node.into());
             writer.write(0, header.into());
         }
     }
@@ -369,10 +372,38 @@ fn list_set<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str, value: &str) ->
     Ok(())
 }
 
-// fn list_remove<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str) -> Result<bool> {
-//     let mut header = HeaderView::load(writer, 0)?;
-//     todo!("implement remove")
-// }
+fn list_remove<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str) -> Result<bool> {
+    let mut header = HeaderView::load(writer, 0)?;
+
+    // find the node immediately before the node to remove (if it exists)
+    if let Some(mut prev) = list_find_last(writer, |candidate| candidate < key)? {
+        // check if the next node is the one we want to remove
+        if let Some(mut next) = prev.next(writer)? {
+            if next.key() == key {
+                prev.next = next.next;
+                next.next = header.free;
+                header.free = next.offset;
+                writer.write(next.offset, next.into());
+                writer.write(prev.offset, prev.into());
+                writer.write(0, header.into());
+                return Ok(true);
+            }
+        }
+    } else {
+        // check if the head node is the one we want to remove
+        if let Some(mut head) = header.head(writer)? {
+            if head.key() == key {
+                header.head = head.next;
+                head.next = header.free;
+                header.free = head.offset;
+                writer.write(head.offset, head.into());
+                writer.write(0, header.into());
+                return Ok(true);
+            }
+        }
+    }
+    return Ok(false);
+}
 
 fn main() -> Result<()> {
     init_tracing(TracingConsumer::Tool, None);
@@ -431,6 +462,14 @@ fn main() -> Result<()> {
             let mut writer = handle.writer().or_into_ctx()?;
             list_set(&mut writer, &key, &value).or_into_ctx()?;
             writer.commit().or_into_ctx()?;
+        }
+        Command::Del { key } => {
+            let mut writer = handle.writer().or_into_ctx()?;
+            if list_remove(&mut writer, &key).or_into_ctx()? {
+                writer.commit().or_into_ctx()?;
+            } else {
+                println!("key not found");
+            }
         }
         Command::Get { key } => {
             let reader = handle.reader().or_into_ctx()?;
