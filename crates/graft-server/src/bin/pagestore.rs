@@ -26,7 +26,7 @@ use graft_server::{
     },
 };
 use graft_tracing::{init_tracing, TracingConsumer};
-use precept::dispatch::antithesis::AntithesisDispatch;
+use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rlimit::Resource;
 use serde::Deserialize;
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
@@ -72,7 +72,7 @@ impl Default for PagestoreConfig {
 #[tokio::main]
 async fn main() {
     let dispatcher =
-        Box::new(AntithesisDispatch::try_load().expect("failed to setup antithesis dispatch"));
+        AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
     precept::init(Box::leak(dispatcher)).expect("failed to setup precept");
 
     init_tracing(TracingConsumer::Server, None);

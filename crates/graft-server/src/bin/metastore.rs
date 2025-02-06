@@ -18,7 +18,7 @@ use graft_server::{
     },
 };
 use graft_tracing::{init_tracing, TracingConsumer};
-use precept::dispatch::antithesis::AntithesisDispatch;
+use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use serde::Deserialize;
 use tokio::{net::TcpListener, select, signal::ctrl_c};
 
@@ -46,7 +46,7 @@ impl Default for MetastoreConfig {
 #[tokio::main]
 async fn main() {
     let dispatcher =
-        Box::new(AntithesisDispatch::try_load().expect("failed to setup antithesis dispatcher"));
+        AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
     precept::init_boxed(dispatcher).expect("failed to setup precept");
 
     init_tracing(TracingConsumer::Server, None);

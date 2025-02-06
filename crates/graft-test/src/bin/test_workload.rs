@@ -14,7 +14,7 @@ use graft_test::{
     Ticker,
 };
 use graft_tracing::{init_tracing, running_in_antithesis, TracingConsumer};
-use precept::dispatch::antithesis::AntithesisDispatch;
+use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rand::Rng;
 
 #[derive(Parser)]
@@ -67,7 +67,7 @@ fn main() {
 
 fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
     let dispatcher =
-        Box::new(AntithesisDispatch::try_load().expect("failed to setup antithesis dispatch"));
+        AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
     precept::init(Box::leak(dispatcher)).expect("failed to setup precept");
 
     let mut rng = precept::random::rng();

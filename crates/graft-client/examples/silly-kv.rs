@@ -8,7 +8,7 @@ use std::{
     env::temp_dir,
     fmt::Debug,
     marker::PhantomData,
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Range},
     str::FromStr,
     time::Duration,
 };
@@ -25,6 +25,7 @@ use graft_client::{
             Storage, StorageErr,
         },
         sync::StartupErr,
+        volume::VolumeHandle,
         volume_reader::VolumeRead,
         volume_writer::{VolumeWrite, VolumeWriter},
     },
@@ -37,10 +38,11 @@ use graft_core::{
     ClientId, VolumeId,
 };
 use graft_tracing::{init_tracing, TracingConsumer};
+use rand::Rng;
 use thiserror::Error;
 use tryiter::TryIteratorExt;
 use url::Url;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{little_endian::U32, FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 type Result<T> = culprit::Result<T, CliErr>;
 
@@ -74,21 +76,20 @@ struct Cli {
     #[arg(short, long)]
     vid: Option<VolumeId>,
 
-    /// Specify a client id to differentiate between multiple clients
-    /// Uses a default ClientId if not specified
-    #[arg(short, long)]
-    cid: Option<ClientId>,
+    /// Specify a client name to differentiate between multiple clients
+    #[arg(short, long, default_value = "default")]
+    client_name: String,
 
-    /// Use localhost for the metastore and pagestore URLs
-    #[arg(short, long)]
-    localhost: bool,
+    /// Connect to graft running on fly.dev
+    #[arg(long)]
+    fly: bool,
 
     /// The metastore root URL (without any trailing path)
-    #[arg(short, long, default_value = "https://graft-metastore.fly.dev")]
+    #[arg(long, default_value = "http://127.0.0.1:3001")]
     metastore: Url,
 
     /// The pagestore root URL (without any trailing path)
-    #[arg(short, long, default_value = "https://graft-pagestore.fly.dev")]
+    #[arg(long, default_value = "http://127.0.0.1:3000")]
     pagestore: Url,
 
     #[command(subcommand)]
@@ -99,6 +100,17 @@ struct Cli {
 enum Command {
     /// Reset local storage
     Reset,
+
+    /// Print out info regarding the current Graft and linked-list state
+    Status,
+
+    /// Run a simulator that executes a random stream of kv operations for a
+    /// configurable number of ticks
+    Sim {
+        /// The number of ticks to run the simulator for
+        #[arg(short, long, default_value = "10")]
+        ticks: u32,
+    },
 
     /// Push all local changes to the server
     Push,
@@ -155,13 +167,13 @@ impl<T> PageView<T> {
     }
 }
 
-impl<T: Debug + FromBytes + Immutable + KnownLayout> Debug for PageView<T> {
+impl<T: Debug + FromBytes + Immutable + KnownLayout + Unaligned> Debug for PageView<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.deref().fmt(f)
     }
 }
 
-impl<T: FromBytes + Immutable + KnownLayout> Deref for PageView<T> {
+impl<T: FromBytes + Immutable + KnownLayout + Unaligned> Deref for PageView<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -169,7 +181,7 @@ impl<T: FromBytes + Immutable + KnownLayout> Deref for PageView<T> {
     }
 }
 
-impl<T: IntoBytes + FromBytes + Immutable + KnownLayout> DerefMut for PageView<T> {
+impl<T: IntoBytes + FromBytes + Immutable + KnownLayout + Unaligned> DerefMut for PageView<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         T::mut_from_bytes(&mut self.page).unwrap()
     }
@@ -183,10 +195,11 @@ impl<T> Into<Page> for PageView<T> {
     }
 }
 
-#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout, Unaligned)]
+#[repr(C)]
 struct ListHeader {
-    head: PageOffset,
-    free: PageOffset,
+    head: U32,
+    free: U32,
     _padding: [u8; PAGESIZE.as_usize() - 8],
 }
 
@@ -228,19 +241,20 @@ impl std::fmt::Debug for ListHeader {
     }
 }
 
-#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout, Unaligned)]
+#[repr(C)]
 struct ListNode {
-    next: PageOffset,
-    key_len: u32,
-    value_len: u32,
+    next: U32,
+    key_len: U32,
+    value_len: U32,
     buf: [u8; PAGESIZE.as_usize() - 12],
 }
 static_assertions::assert_eq_size!(ListNode, [u8; PAGESIZE.as_usize()]);
 
 impl ListNode {
     fn update(&mut self, key: &str, value: &str) {
-        self.key_len = key.len() as u32;
-        self.value_len = value.len() as u32;
+        self.key_len = (key.len() as u32).into();
+        self.value_len = (value.len() as u32).into();
         assert!(
             self.key_len + self.value_len < PAGESIZE.as_u32() - 12,
             "key and value too large"
@@ -250,13 +264,13 @@ impl ListNode {
     }
 
     fn key(&self) -> &str {
-        let end = self.key_len as usize;
+        let end = self.key_len.get() as usize;
         std::str::from_utf8(&self.buf[..end]).unwrap()
     }
 
     fn value(&self) -> &str {
-        let start = self.key_len as usize;
-        let end = start + self.value_len as usize;
+        let start = self.key_len.get() as usize;
+        let end = start + self.value_len.get() as usize;
         std::str::from_utf8(&self.buf[start..end]).unwrap()
     }
 
@@ -345,7 +359,7 @@ fn list_set<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str, value: &str) ->
             let mut new_node = header.allocate(writer)?;
             new_node.update(key, value);
             new_node.next = header.head;
-            header.head = new_node.offset;
+            header.head = new_node.offset.into();
             writer.write(new_node.offset, new_node.into());
             writer.write(0, header.into());
         }
@@ -362,7 +376,7 @@ fn list_set<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str, value: &str) ->
             let mut new_node = header.allocate(writer)?;
             new_node.update(key, value);
             new_node.next = candidate.next;
-            candidate.next = new_node.offset;
+            candidate.next = new_node.offset.into();
             writer.write(candidate.offset, candidate.into());
             writer.write(new_node.offset, new_node.into());
             writer.write(0, header.into());
@@ -382,7 +396,7 @@ fn list_remove<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str) -> Result<bo
             if next.key() == key {
                 prev.next = next.next;
                 next.next = header.free;
-                header.free = next.offset;
+                header.free = next.offset.into();
                 writer.write(next.offset, next.into());
                 writer.write(prev.offset, prev.into());
                 writer.write(0, header.into());
@@ -395,7 +409,7 @@ fn list_remove<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str) -> Result<bo
             if head.key() == key {
                 header.head = head.next;
                 head.next = header.free;
-                header.free = head.offset;
+                header.free = head.offset.into();
                 writer.write(head.offset, head.into());
                 writer.write(0, header.into());
                 return Ok(true);
@@ -405,19 +419,62 @@ fn list_remove<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str) -> Result<bo
     return Ok(false);
 }
 
+struct Simulator<F: Fetcher> {
+    handle: VolumeHandle<F>,
+    ticks: u32,
+}
+
+impl<F: Fetcher> Simulator<F> {
+    fn new(handle: VolumeHandle<F>, ticks: u32) -> Self {
+        Self { handle, ticks }
+    }
+
+    fn run(&mut self) -> Result<()> {
+        let mut rng = rand::rng();
+
+        const KEYS: Range<u8> = 0..32;
+        fn gen_key(rng: &mut impl rand::RngCore) -> String {
+            let key = rng.random_range(KEYS);
+            format!("{:0>2}", key)
+        }
+
+        for _ in 0..self.ticks {
+            if rng.random_bool(0.5) {
+                // set a key at random
+                let key = gen_key(&mut rng);
+                let val = rng.random::<u8>().to_string();
+                let mut writer = self.handle.writer().or_into_ctx()?;
+                list_set(&mut writer, &key, &val).or_into_ctx()?;
+                writer.commit().or_into_ctx()?;
+                println!("set {} = {}", key, val);
+            } else {
+                // del a key at random
+                let key = gen_key(&mut rng);
+                let mut writer = self.handle.writer().or_into_ctx()?;
+                if list_remove(&mut writer, &key).or_into_ctx()? {
+                    println!("del {}", key);
+                    writer.commit().or_into_ctx()?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 fn main() -> Result<()> {
     init_tracing(TracingConsumer::Tool, None);
 
-    let default_vid = VolumeId::from_str("GontkHa6QVLMYfkyt16wUP")?;
-    let default_cid = ClientId::from_str("QiAa1boZemVHi3G8puxCvR")?;
+    let default_vid = VolumeId::from_str("GontkHa6QVLMYfkyk16wUP")?;
 
     let mut args = Cli::parse();
     let vid = args.vid.unwrap_or(default_vid);
-    let cid = args.cid.unwrap_or(default_cid);
+    let cid = ClientId::derive(args.client_name.as_bytes());
+    tracing::info!("client: {cid}, volume: {vid}");
 
-    if args.localhost {
-        args.metastore = "http://127.0.0.1:3001".parse()?;
-        args.pagestore = "http://127.0.0.1:3000".parse()?;
+    if args.fly {
+        args.metastore = "https://graft-metastore.fly.dev".parse()?;
+        args.pagestore = "https://graft-pagestore.fly.dev".parse()?;
     }
 
     let client = NetClient::new();
@@ -425,7 +482,7 @@ fn main() -> Result<()> {
     let pagestore_client = PagestoreClient::new(args.pagestore, client.clone());
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
-    let storage_path = temp_dir().join("graft-kv").join(cid.pretty());
+    let storage_path = temp_dir().join("silly-kv").join(cid.pretty());
     let storage = Storage::open(&storage_path).or_into_ctx()?;
     let runtime = Runtime::new(cid, NetFetcher::new(clients.clone()), storage);
     runtime
@@ -433,7 +490,7 @@ fn main() -> Result<()> {
         .or_into_ctx()?;
 
     let handle = runtime
-        .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
+        .open_volume(&vid, VolumeConfig::new(SyncDirection::Disabled))
         .or_into_ctx()?;
 
     match args.command {
@@ -441,13 +498,44 @@ fn main() -> Result<()> {
             drop(runtime);
             std::fs::remove_dir_all(storage_path).or_into_ctx()?;
         }
+        Command::Status => {
+            let reader = handle.reader().or_into_ctx()?;
+            if let Some(snapshot) = reader.snapshot() {
+                println!("Current snapshot: {snapshot}")
+            } else {
+                println!("No snapshot")
+            }
+            let header = HeaderView::load(&reader, 0).or_into_ctx()?;
+            println!("List header: {header:?}");
+        }
 
-        Command::Push => handle.sync_with_remote(SyncDirection::Push).or_into_ctx()?,
+        Command::Sim { ticks } => {
+            let mut sim = Simulator::new(handle, ticks);
+            sim.run().or_into_ctx()?;
+        }
+
+        Command::Push => {
+            let pre_push = handle.snapshot().or_into_ctx()?;
+            handle.sync_with_remote(SyncDirection::Push).or_into_ctx()?;
+            let post_push = handle.snapshot().or_into_ctx()?;
+            if pre_push != post_push {
+                println!("{pre_push:?} -> {post_push:?}");
+            } else {
+                println!("no changes to push");
+            }
+        }
         Command::Pull { reset } => {
+            let pre_pull = handle.snapshot().or_into_ctx()?;
             if reset {
                 handle.reset_to_remote().or_into_ctx()?
             } else {
                 handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
+            }
+            let post_pull = handle.snapshot().or_into_ctx()?;
+            if pre_pull != post_pull {
+                println!("pulled {}", post_pull.unwrap());
+            } else {
+                println!("no changes to pull");
             }
         }
         Command::List => {

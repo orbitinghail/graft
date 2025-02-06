@@ -1,12 +1,11 @@
-Next: Client Runtime
-
-- prefetcher
-  - do we need an index tracking which offsets we have for the latest snapshot? if not, how does the prefetcher avoid re-fetching offsets we already have? or more generally, how can we avoid refetching efficiently?
-- update virtual file module to use the new runtime code
+Next: SQLite extension
 
 Then:
 
-- SQLite extension
+- prefetcher
+
+  - do we need an index tracking which offsets we have for the latest snapshot? if not, how does the prefetcher avoid re-fetching offsets we already have? or more generally, how can we avoid refetching efficiently?
+
 - consider switching pagestore to websockets or http streaming bodies
 - garbage collection
 - authentication (api keys)

@@ -245,9 +245,12 @@ impl<F: Fetcher> SyncTask<F> {
     /// If dir is SyncDirection::Both, this function will push before it pulls
     fn sync_volume(&mut self, vid: VolumeId, dir: SyncDirection) -> Result<(), ClientErr> {
         if dir.matches(SyncDirection::Push) {
-            Job::push(vid.clone(), self.shared.cid().clone())
-                .run(self.shared.storage(), &self.clients)
-                .or_into_culprit("error while pushing volume")?;
+            let state = self.shared.storage().volume_state(&vid).or_into_ctx()?;
+            if state.has_pending_commits() {
+                Job::push(vid.clone(), self.shared.cid().clone())
+                    .run(self.shared.storage(), &self.clients)
+                    .or_into_culprit("error while pushing volume")?;
+            }
         }
 
         if dir.matches(SyncDirection::Pull) {

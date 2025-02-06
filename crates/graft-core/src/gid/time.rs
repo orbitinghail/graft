@@ -10,6 +10,8 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 pub struct GidTimestamp([u8; 6]);
 
 impl GidTimestamp {
+    pub const ZERO: Self = Self([0; 6]);
+
     pub fn now() -> Self {
         SystemTime::now().into()
     }

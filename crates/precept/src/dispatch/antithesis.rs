@@ -2,8 +2,8 @@ use std::{
     env,
     ffi::c_char,
     fs::File,
-    io::{Error, Write},
-    path::Path,
+    io::{Error, ErrorKind, Write},
+    path::{Path, PathBuf},
     process,
 };
 
@@ -20,13 +20,20 @@ pub enum AntithesisDispatch {
 }
 
 impl AntithesisDispatch {
-    pub fn try_load() -> Result<Self, Error> {
+    pub fn try_load() -> Option<Self> {
         if let Ok(handler) = LibVoidstarHandler::try_load() {
             let dispatcher = Self::Voidstar(handler);
             dispatcher.emit_json(sdk_info());
-            return Ok(dispatcher);
+            return Some(dispatcher);
         }
-        Ok(Self::File(FileHandler::try_load()?))
+        if let Ok(handler) = FileHandler::try_load() {
+            return Some(Self::File(handler));
+        }
+        None
+    }
+
+    pub fn try_load_boxed() -> Option<Box<dyn Dispatch>> {
+        Self::try_load().map(|d| Box::new(d) as Box<dyn Dispatch>)
     }
 
     fn emit_json(&self, value: serde_json::Value) {
@@ -206,23 +213,34 @@ pub struct FileHandler {
 
 impl FileHandler {
     fn try_load() -> Result<Self, Error> {
+        const ENV_LOCAL_OUTPUT: &str = "ANTITHESIS_SDK_LOCAL_OUTPUT";
         const ENV_OUTPUT_DIR: &str = "ANTITHESIS_OUTPUT_DIR";
-        const LOCAL_OUTPUT: &str = "ANTITHESIS_SDK_LOCAL_OUTPUT";
 
-        let filename = env::var(ENV_OUTPUT_DIR)
-            .map(|dir| Path::new(&dir).join("sdk.jsonl"))
-            .unwrap_or_else(|_| Path::new(LOCAL_OUTPUT).to_path_buf());
+        let local_output: Option<PathBuf> = env::var(ENV_LOCAL_OUTPUT).ok().map(|s| s.into());
+        let sdk_output: Option<PathBuf> = env::var(ENV_OUTPUT_DIR)
+            .ok()
+            .map(|s| Path::new(&s).join("sdk.jsonl"));
 
-        Ok(Self { file: File::create(&filename)? })
+        if let Some(filename) = local_output.or(sdk_output) {
+            return Ok(Self { file: File::create(&filename)? });
+        }
+        Err(Error::new(
+            ErrorKind::NotFound,
+            format!(
+                "No output file specified. Set either {} or {}",
+                ENV_LOCAL_OUTPUT, ENV_OUTPUT_DIR
+            ),
+        ))
     }
 
     fn output_json(&self, value: &str) -> Result<(), Error> {
         debug_assert!(
-            !value.contains("/n"),
-            "output must be a valid jsonl message"
+            !value.contains("\n"),
+            "output must be a valid jsonl message; got `{value}`",
         );
         let mut writer = &self.file;
         writer.write_all(value.as_bytes())?;
+        writer.write_all(b"\n")?;
         writer.flush()?;
         Ok(())
     }

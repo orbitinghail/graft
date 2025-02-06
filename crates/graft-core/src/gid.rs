@@ -79,6 +79,20 @@ impl<P: Prefix> Gid<P> {
     }
 }
 
+impl ClientId {
+    /// derive a ClientId from source bytes deterministically
+    pub fn derive(source: &[u8]) -> ClientId {
+        let hash = blake3::hash(source);
+        let mut random = [0; 9];
+        random.copy_from_slice(&hash.as_bytes()[..9]);
+        ClientId {
+            prefix: Default::default(),
+            ts: GidTimestamp::ZERO,
+            random,
+        }
+    }
+}
+
 impl<P: Prefix> Display for Gid<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.pretty())
