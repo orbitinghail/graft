@@ -7,6 +7,8 @@ use graft_client::runtime::{
         volume_state::{SyncDirection, VolumeConfig},
         Storage,
     },
+    volume_reader::VolumeRead,
+    volume_writer::VolumeWrite,
 };
 use graft_core::{gid::ClientId, page::Page, page_offset::PageOffset, VolumeId};
 use graft_test::start_graft_backend;

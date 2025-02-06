@@ -17,7 +17,8 @@ use graft_client::{
         },
         sync::{ShutdownErr, StartupErr},
         volume::VolumeHandle,
-        volume_reader::VolumeReader,
+        volume_reader::{VolumeRead, VolumeReader},
+        volume_writer::VolumeWrite,
     },
     ClientErr,
 };
@@ -198,7 +199,7 @@ fn load_tracker<F: Fetcher>(
 
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
-    let first_page = reader.read(0.into()).or_into_ctx()?;
+    let first_page = reader.read(0).or_into_ctx()?;
     let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
     // record the hash of the page tracker for debugging
@@ -308,7 +309,7 @@ fn workload_writer<F: Fetcher, R: Rng>(
 
         // write out the updated page tracker and the new page
         let mut writer = reader.upgrade();
-        writer.write(0.into(), tracker_page);
+        writer.write(0, tracker_page);
         writer.write(offset, new_page);
 
         // commit the changes

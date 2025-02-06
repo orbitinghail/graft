@@ -15,6 +15,16 @@ use super::{
     volume_writer::VolumeWriter,
 };
 
+pub trait VolumeRead {
+    fn vid(&self) -> &VolumeId;
+
+    /// Retrieve the Volume snapshot backing this reader
+    fn snapshot(&self) -> Option<&Snapshot>;
+
+    /// Read a page from the snapshot
+    fn read(&self, offset: impl Into<PageOffset>) -> Result<Page, ClientErr>;
+}
+
 #[derive(Clone, Debug)]
 pub struct VolumeReader<F> {
     vid: VolumeId,
@@ -27,19 +37,30 @@ impl<F: Fetcher> VolumeReader<F> {
         Self { vid, snapshot, shared }
     }
 
+    /// Upgrade this reader into a writer
+    pub fn upgrade(self) -> VolumeWriter<F> {
+        self.into()
+    }
+
+    /// decompose this reader into snapshot and storage
+    pub(crate) fn into_parts(self) -> (VolumeId, Option<Snapshot>, Shared<F>) {
+        (self.vid, self.snapshot, self.shared)
+    }
+}
+
+impl<F: Fetcher> VolumeRead for VolumeReader<F> {
     #[inline]
-    pub fn vid(&self) -> &VolumeId {
+    fn vid(&self) -> &VolumeId {
         &self.vid
     }
 
-    /// Access this reader's snapshot
     #[inline]
-    pub fn snapshot(&self) -> Option<&Snapshot> {
+    fn snapshot(&self) -> Option<&Snapshot> {
         self.snapshot.as_ref()
     }
 
-    /// Read a page from the snapshot
-    pub fn read(&self, offset: PageOffset) -> Result<Page, ClientErr> {
+    fn read(&self, offset: impl Into<PageOffset>) -> Result<Page, ClientErr> {
+        let offset = offset.into();
         if let Some(snapshot) = self.snapshot() {
             match self
                 .shared
@@ -69,15 +90,5 @@ impl<F: Fetcher> VolumeReader<F> {
         } else {
             Ok(EMPTY_PAGE)
         }
-    }
-
-    /// Upgrade this reader into a writer
-    pub fn upgrade(self) -> VolumeWriter<F> {
-        self.into()
-    }
-
-    /// decompose this reader into snapshot and storage
-    pub(crate) fn into_parts(self) -> (VolumeId, Option<Snapshot>, Shared<F>) {
-        (self.vid, self.snapshot, self.shared)
     }
 }

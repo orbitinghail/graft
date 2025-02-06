@@ -1,6 +1,6 @@
 use std::{fmt::Debug, ops::Deref};
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use culprit::Culprit;
 use thiserror::Error;
 
@@ -49,6 +49,20 @@ impl From<&[u8; PAGESIZE.as_usize()]> for Page {
 impl From<Page> for Bytes {
     fn from(value: Page) -> Self {
         value.0
+    }
+}
+
+impl From<Page> for BytesMut {
+    fn from(value: Page) -> Self {
+        value.0.into()
+    }
+}
+
+impl TryFrom<BytesMut> for Page {
+    type Error = Culprit<PageSizeErr>;
+
+    fn try_from(value: BytesMut) -> Result<Self, Self::Error> {
+        value.freeze().try_into()
     }
 }
 

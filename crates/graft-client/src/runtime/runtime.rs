@@ -78,6 +78,8 @@ mod tests {
     use crate::runtime::{
         fetcher::MockFetcher,
         storage::{volume_state::SyncDirection, StorageErr},
+        volume_reader::VolumeRead,
+        volume_writer::VolumeWrite,
     };
 
     use super::*;
@@ -99,16 +101,16 @@ mod tests {
         // open a reader and verify that no pages are returned
         let reader = handle.reader().unwrap();
         assert_eq!(reader.snapshot(), None);
-        assert_eq!(reader.read(0.into()).unwrap(), EMPTY_PAGE);
+        assert_eq!(reader.read(0).unwrap(), EMPTY_PAGE);
 
         // open a writer and write a page, verify RYOW, then commit
         let mut writer = handle.writer().unwrap();
-        writer.write(0.into(), page.clone());
-        assert_eq!(writer.read(0.into()).unwrap(), page);
+        writer.write(0, page.clone());
+        assert_eq!(writer.read(0).unwrap(), page);
         let reader = writer.commit().unwrap();
 
         // verify the new reader can read the page
-        assert_eq!(reader.read(0.into()).unwrap(), page);
+        assert_eq!(reader.read(0).unwrap(), page);
 
         // verify the snapshot
         let snapshot = reader.snapshot().unwrap();
@@ -117,14 +119,14 @@ mod tests {
 
         // open a new writer, verify it can read the page; write another page
         let mut writer = handle.writer().unwrap();
-        assert_eq!(writer.read(0.into()).unwrap(), page);
-        writer.write(1.into(), page2.clone());
-        assert_eq!(writer.read(1.into()).unwrap(), page2);
+        assert_eq!(writer.read(0).unwrap(), page);
+        writer.write(1, page2.clone());
+        assert_eq!(writer.read(1).unwrap(), page2);
         let reader = writer.commit().unwrap();
 
         // verify the new reader can read both pages
-        assert_eq!(reader.read(0.into()).unwrap(), page);
-        assert_eq!(reader.read(1.into()).unwrap(), page2);
+        assert_eq!(reader.read(0).unwrap(), page);
+        assert_eq!(reader.read(1).unwrap(), page2);
 
         // verify the snapshot
         let snapshot = reader.snapshot().unwrap();
@@ -133,12 +135,12 @@ mod tests {
 
         // upgrade to a writer and overwrite the first page
         let mut writer = reader.upgrade();
-        writer.write(0.into(), page2.clone());
-        assert_eq!(writer.read(0.into()).unwrap(), page2);
+        writer.write(0, page2.clone());
+        assert_eq!(writer.read(0).unwrap(), page2);
         let reader = writer.commit().unwrap();
 
         // verify the new reader can read the updated page
-        assert_eq!(reader.read(0.into()).unwrap(), page2);
+        assert_eq!(reader.read(0).unwrap(), page2);
 
         // verify the snapshot
         let snapshot = reader.snapshot().unwrap();
@@ -162,13 +164,13 @@ mod tests {
             .unwrap();
 
         let mut writer1 = handle.writer().unwrap();
-        writer1.write(0.into(), page.clone());
+        writer1.write(0, page.clone());
 
         let mut writer2 = handle.writer().unwrap();
-        writer2.write(0.into(), page.clone());
+        writer2.write(0, page.clone());
 
         let reader1 = writer1.commit().unwrap();
-        assert_eq!(reader1.read(0.into()).unwrap(), page);
+        assert_eq!(reader1.read(0).unwrap(), page);
 
         // take a snapshot of the volume before committing txn2
         let pre_commit = handle.snapshot().unwrap();

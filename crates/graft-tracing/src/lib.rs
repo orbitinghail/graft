@@ -30,8 +30,14 @@ pub fn init_tracing(consumer: TracingConsumer, process_id: Option<String>) {
     let testing = consumer == TracingConsumer::Test;
     let color = !antithesis && !std::env::var("NO_COLOR").is_ok_and(|s| !s.is_empty());
 
+    let default_level = if consumer == TracingConsumer::Tool {
+        LevelFilter::WARN
+    } else {
+        LevelFilter::INFO
+    };
+
     let mut filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
+        .with_default_directive(default_level.into())
         .from_env()
         .unwrap();
 

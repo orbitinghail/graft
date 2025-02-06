@@ -11,7 +11,7 @@ use crate::{runtime::storage::Storage, ClientErr, ClientPair};
 
 use super::Fetcher;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NetFetcher {
     clients: ClientPair,
 }
