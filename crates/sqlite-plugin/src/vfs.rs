@@ -28,6 +28,7 @@ pub const DEFAULT_DEVICE_CHARACTERISTICS: i32 =
     // information is written to disk in the same order as calls to xWrite()
     vars::SQLITE_IOCAP_SEQUENTIAL;
 
+/// A SQLite3 extended error code
 pub type SqliteErr = i32;
 
 pub type VfsResult<T> = Result<T, SqliteErr>;
@@ -118,6 +119,11 @@ pub trait VfsHandle {
 pub trait Vfs {
     type Handle: VfsHandle;
 
+    /// Register the provided logger with this Vfs.
+    /// This function is guaranteed to only be called once per
+    /// register_{static,dynamic} call.
+    fn register_logger(&mut self, logger: SqliteLogger);
+
     /// construct a canonical version of the given path
     fn canonical_path(&mut self, path: &str) -> VfsResult<String> {
         Ok(path.into())
@@ -207,7 +213,6 @@ impl SqliteApi {
 
 pub struct RegisterOpts {
     pub make_default: bool,
-    pub init_logger: bool,
 }
 
 #[cfg(feature = "static")]
@@ -234,13 +239,9 @@ pub unsafe fn register_dynamic<T: Vfs>(
 fn register_inner<T: Vfs>(
     sqlite_api: SqliteApi,
     name: &str,
-    vfs: T,
+    mut vfs: T,
     opts: RegisterOpts,
 ) -> VfsResult<()> {
-    if opts.init_logger {
-        SqliteLogger::init(sqlite_api.log, log::Level::Error);
-    }
-
     let io_methods = ffi::sqlite3_io_methods {
         iVersion: 3,
         xClose: Some(x_close::<T>),
@@ -262,6 +263,8 @@ fn register_inner<T: Vfs>(
         xFetch: None,
         xUnfetch: None,
     };
+
+    vfs.register_logger(SqliteLogger::new(sqlite_api.log));
 
     let p_name = ManuallyDrop::new(CString::new(name).map_err(|_| vars::SQLITE_INTERNAL)?).as_ptr();
     let base_vfs = unsafe { (sqlite_api.find)(null_mut()) };
@@ -688,7 +691,6 @@ mod tests {
         struct H {}
         impl Hooks for H {
             fn open(&mut self, path: &Option<String>, opts: &OpenOpts) {
-                println!("open: path={:?} opts={:?}", path, opts);
                 let path = path.clone().unwrap();
                 if path == "main.db" {
                     assert!(!opts.delete_on_close());
@@ -708,41 +710,11 @@ mod tests {
                     panic!("unexpected path: {:?}", path);
                 }
             }
-
-            fn truncate(&mut self, handle: MockHandle, size: usize) {
-                println!("truncate: handle={} size={}", handle, size);
-            }
-
-            fn write(&mut self, handle: MockHandle, offset: usize, buf: &[u8]) {
-                println!(
-                    "write: handle={} offset={} buf.len={}",
-                    handle,
-                    offset,
-                    buf.len()
-                );
-            }
-
-            fn read(&mut self, handle: MockHandle, offset: usize, buf: &[u8]) {
-                println!(
-                    "read: handle={} offset={} buf={}",
-                    handle,
-                    offset,
-                    buf.len()
-                );
-            }
         }
 
-        let vfs = MockVfs {
-            next_id: 0,
-            files: Default::default(),
-            hooks: Box::new(H {}),
-        };
-        register_static(
-            "mock",
-            vfs,
-            RegisterOpts { make_default: true, init_logger: true },
-        )
-        .map_err(|_| "failed to register vfs")?;
+        let vfs = MockVfs::new(Box::new(H {}));
+        register_static("mock", vfs, RegisterOpts { make_default: true })
+            .map_err(|_| "failed to register vfs")?;
 
         // create a sqlite connection using the mock vfs
         let conn = Connection::open_with_flags_and_vfs(

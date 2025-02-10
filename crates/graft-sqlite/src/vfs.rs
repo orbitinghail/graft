@@ -3,6 +3,7 @@
 
 use sqlite_plugin::{
     flags::{AccessFlags, OpenOpts},
+    logger::SqliteLogger,
     vfs::{Vfs, VfsHandle, VfsResult},
 };
 
@@ -28,6 +29,10 @@ impl GraftVfs {
 
 impl Vfs for GraftVfs {
     type Handle = FileHandle;
+
+    fn register_logger(&mut self, logger: SqliteLogger) {
+        todo!()
+    }
 
     fn open(&mut self, path: Option<String>, opts: OpenOpts) -> VfsResult<Self::Handle> {
         todo!()

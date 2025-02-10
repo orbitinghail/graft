@@ -6,11 +6,9 @@ edition = "2021"
 [lib]
 crate-type = ["rlib"]
 
-[dependencies]
-log = { workspace = true }
-
 [dev-dependencies]
 rusqlite = { workspace = true, features = ["blob", "trace"] }
+log = { workspace = true }
 
 [build-dependencies]
 bindgen = { workspace = true }

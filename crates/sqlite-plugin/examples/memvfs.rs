@@ -1,9 +1,10 @@
 // cargo build --example memvfs --features dynamic
 
-use std::{cell::RefCell, ffi::c_void, os::raw::c_char, rc::Rc};
+use std::{cell::RefCell, ffi::c_void, os::raw::c_char, rc::Rc, sync::Mutex};
 
 use sqlite_plugin::{
     flags::{AccessFlags, OpenOpts},
+    logger::{SqliteLogLevel, SqliteLogger},
     sqlite3_api_routines, vars,
     vfs::{register_dynamic, Pragma, RegisterOpts, Vfs, VfsHandle, VfsResult},
 };
@@ -38,6 +39,33 @@ struct MemVfs {
 
 impl Vfs for MemVfs {
     type Handle = File;
+
+    fn register_logger(&mut self, logger: SqliteLogger) {
+        struct LogCompat {
+            logger: Mutex<SqliteLogger>,
+        }
+
+        impl log::Log for LogCompat {
+            fn enabled(&self, _metadata: &log::Metadata) -> bool {
+                true
+            }
+
+            fn log(&self, record: &log::Record) {
+                let level = match record.level() {
+                    log::Level::Error => SqliteLogLevel::Error,
+                    log::Level::Warn => SqliteLogLevel::Warn,
+                    _ => SqliteLogLevel::Notice,
+                };
+                let msg = format!("{}", record.args());
+                self.logger.lock().unwrap().log(level, msg.as_bytes());
+            }
+
+            fn flush(&self) {}
+        }
+
+        let log = LogCompat { logger: Mutex::new(logger) };
+        log::set_boxed_logger(Box::new(log)).expect("failed to setup global logger");
+    }
 
     fn open(&mut self, path: Option<String>, opts: OpenOpts) -> VfsResult<Self::Handle> {
         log::debug!("open: path={:?}, opts={:?}", path, opts);
@@ -187,12 +215,7 @@ pub unsafe extern "C" fn sqlite3_memvfs_init(
     p_api: *mut sqlite3_api_routines,
 ) -> std::os::raw::c_int {
     let vfs = MemVfs { files: Vec::new() };
-    if let Err(err) = register_dynamic(
-        p_api,
-        "mem",
-        vfs,
-        RegisterOpts { init_logger: true, make_default: true },
-    ) {
+    if let Err(err) = register_dynamic(p_api, "mem", vfs, RegisterOpts { make_default: true }) {
         return err;
     }
 

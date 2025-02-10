@@ -3,12 +3,16 @@
 // tests use std
 extern crate std;
 
-use core::fmt::Display;
+use core::fmt::{self, Display};
 use std::boxed::Box;
 use std::collections::HashMap;
+use std::println;
 use std::{string::String, vec::Vec};
 
+use alloc::format;
+
 use crate::flags::{self, AccessFlags, OpenOpts};
+use crate::logger::{SqliteLogLevel, SqliteLogger};
 use crate::vars;
 use crate::vfs::{
     Pragma, Vfs, VfsHandle, VfsResult, DEFAULT_DEVICE_CHARACTERISTICS, DEFAULT_SECTOR_SIZE,
@@ -22,55 +26,22 @@ pub struct File {
 
 #[allow(unused_variables)]
 pub trait Hooks {
-    fn canonical_path(&mut self, path: &str) {
-        log::info!("canonical_path: path={:?}", path);
-    }
-    fn open(&mut self, path: &Option<String>, opts: &OpenOpts) {
-        log::info!("open: path={:?} opts={:?}", path, opts);
-    }
-    fn delete(&mut self, path: &str) {
-        log::info!("delete: path={:?}", path);
-    }
-    fn access(&mut self, path: &str, flags: AccessFlags) {
-        log::info!("access: path={:?}", path);
-    }
-    fn file_size(&mut self, handle: MockHandle) {
-        log::info!("file_size: handle={:?}", handle);
-    }
-    fn truncate(&mut self, handle: MockHandle, size: usize) {
-        log::info!("truncate: handle={:?} size={:?}", handle, size);
-    }
-    fn write(&mut self, handle: MockHandle, offset: usize, buf: &[u8]) {
-        log::info!(
-            "write: handle={:?} offset={:?} buf.len={}",
-            handle,
-            offset,
-            buf.len()
-        );
-    }
-    fn read(&mut self, handle: MockHandle, offset: usize, buf: &[u8]) {
-        log::info!(
-            "read: handle={:?} offset={:?} buf.len={}",
-            handle,
-            offset,
-            buf.len()
-        );
-    }
-    fn sync(&mut self, handle: MockHandle) {
-        log::info!("sync: handle={:?}", handle);
-    }
-    fn close(&mut self, handle: MockHandle) {
-        log::info!("close: handle={:?}", handle);
-    }
+    fn canonical_path(&mut self, path: &str) {}
+    fn open(&mut self, path: &Option<String>, opts: &OpenOpts) {}
+    fn delete(&mut self, path: &str) {}
+    fn access(&mut self, path: &str, flags: AccessFlags) {}
+    fn file_size(&mut self, handle: MockHandle) {}
+    fn truncate(&mut self, handle: MockHandle, size: usize) {}
+    fn write(&mut self, handle: MockHandle, offset: usize, buf: &[u8]) {}
+    fn read(&mut self, handle: MockHandle, offset: usize, buf: &[u8]) {}
+    fn sync(&mut self, handle: MockHandle) {}
+    fn close(&mut self, handle: MockHandle) {}
     fn pragma(&mut self, handle: MockHandle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
-        log::info!("pragma: handle={:?} pragma={:?}", handle, pragma);
         Err(vars::SQLITE_NOTFOUND)
     }
-    fn sector_size(&mut self) {
-        log::info!("sector_size");
-    }
+    fn sector_size(&mut self) {}
     fn device_characteristics(&mut self) {
-        log::info!("device_characteristics");
+        println!("device_characteristics");
     }
 }
 
@@ -111,19 +82,47 @@ pub struct MockVfs {
     pub next_id: usize,
     pub files: HashMap<MockHandle, File>,
     pub hooks: Box<dyn Hooks>,
+    pub log: Option<SqliteLogger>,
+}
+
+impl MockVfs {
+    pub fn new(hooks: Box<dyn Hooks>) -> Self {
+        Self {
+            next_id: 0,
+            files: HashMap::new(),
+            hooks,
+            log: None,
+        }
+    }
+
+    fn log<'a>(&mut self, f: fmt::Arguments<'a>) {
+        if let Some(log) = self.log.as_mut() {
+            let buf = format!("{}", f);
+            log.log(SqliteLogLevel::Notice, buf.as_bytes());
+        } else {
+            panic!("MockVfs is missing registered log handler")
+        }
+    }
 }
 
 impl Vfs for MockVfs {
     // a simple usize that represents a file handle.
     type Handle = MockHandle;
 
+    fn register_logger(&mut self, logger: SqliteLogger) {
+        self.log = Some(logger);
+    }
+
     fn canonical_path(&mut self, path: &str) -> VfsResult<String> {
+        self.log(format_args!("canonical_path: path={:?}", path));
         self.hooks.canonical_path(path);
         Ok(path.into())
     }
 
     fn open(&mut self, path: Option<String>, opts: flags::OpenOpts) -> VfsResult<Self::Handle> {
+        self.log(format_args!("open: path={:?} opts={:?}", path, opts));
         self.hooks.open(&path, &opts);
+
         let id = self.next_id;
         self.next_id += 1;
         let file_handle = MockHandle::new(id, opts.mode().is_readonly());
@@ -148,17 +147,20 @@ impl Vfs for MockVfs {
     }
 
     fn delete(&mut self, path: &str) -> VfsResult<()> {
+        self.log(format_args!("delete: path={:?}", path));
         self.hooks.delete(path);
         self.files.retain(|_, file| file.name != path);
         Ok(())
     }
 
     fn access(&mut self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
+        self.log(format_args!("access: path={:?} flags={:?}", path, flags));
         self.hooks.access(path, flags);
         Ok(self.files.values().any(|file| file.name == path))
     }
 
     fn file_size(&mut self, meta: &mut Self::Handle) -> VfsResult<usize> {
+        self.log(format_args!("file_size: handle={:?}", meta));
         self.hooks.file_size(*meta);
         Ok(self
             .files
@@ -168,6 +170,7 @@ impl Vfs for MockVfs {
     }
 
     fn truncate(&mut self, meta: &mut Self::Handle, size: usize) -> VfsResult<()> {
+        self.log(format_args!("truncate: handle={:?} size={:?}", meta, size));
         self.hooks.truncate(*meta, size);
         if let Some(file) = self.files.get_mut(meta) {
             if size > file.data.len() {
@@ -180,6 +183,12 @@ impl Vfs for MockVfs {
     }
 
     fn write(&mut self, meta: &mut Self::Handle, offset: usize, buf: &[u8]) -> VfsResult<usize> {
+        self.log(format_args!(
+            "write: handle={:?} offset={:?} buf.len={}",
+            meta,
+            offset,
+            buf.len()
+        ));
         self.hooks.write(*meta, offset, buf);
         if let Some(file) = self.files.get_mut(meta) {
             if offset + buf.len() > file.data.len() {
@@ -193,6 +202,12 @@ impl Vfs for MockVfs {
     }
 
     fn read(&mut self, meta: &mut Self::Handle, offset: usize, buf: &mut [u8]) -> VfsResult<usize> {
+        self.log(format_args!(
+            "read: handle={:?} offset={:?} buf.len={}",
+            meta,
+            offset,
+            buf.len()
+        ));
         self.hooks.read(*meta, offset, buf);
         if let Some(file) = self.files.get(meta) {
             if offset > file.data.len() {
@@ -207,11 +222,13 @@ impl Vfs for MockVfs {
     }
 
     fn sync(&mut self, meta: &mut Self::Handle) -> VfsResult<()> {
+        self.log(format_args!("sync: handle={:?}", meta));
         self.hooks.sync(*meta);
         Ok(())
     }
 
     fn close(&mut self, meta: &mut Self::Handle) -> VfsResult<()> {
+        self.log(format_args!("close: handle={:?}", meta));
         self.hooks.close(*meta);
         if let Some(file) = self.files.get(meta) {
             if file.delete_on_close {
@@ -222,15 +239,21 @@ impl Vfs for MockVfs {
     }
 
     fn pragma(&mut self, meta: &mut Self::Handle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
+        self.log(format_args!(
+            "pragma: handle={:?} pragma={:?}",
+            meta, pragma
+        ));
         self.hooks.pragma(*meta, pragma)
     }
 
     fn sector_size(&mut self) -> i32 {
+        self.log(format_args!("sector_size"));
         self.hooks.sector_size();
         DEFAULT_SECTOR_SIZE
     }
 
     fn device_characteristics(&mut self) -> i32 {
+        self.log(format_args!("device_characteristics"));
         self.hooks.device_characteristics();
         DEFAULT_DEVICE_CHARACTERISTICS
     }

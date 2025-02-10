@@ -20,12 +20,7 @@ pub unsafe extern "C" fn sqlite3_graft_init(
 ) -> std::os::raw::c_int {
     let vfs = GraftVfs::new();
 
-    if let Err(err) = register_dynamic(
-        p_api,
-        "graft",
-        vfs,
-        RegisterOpts { init_logger: true, make_default: false },
-    ) {
+    if let Err(err) = register_dynamic(p_api, "graft", vfs, RegisterOpts { make_default: false }) {
         return err;
     }
     SQLITE_OK_LOAD_PERMANENTLY
