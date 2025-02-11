@@ -14,6 +14,9 @@ graft-proto = { path = "../graft-proto" }
 graft-tracing = { path = "../graft-tracing" }
 
 tracing = { workspace = true }
+culprit = { workspace = true }
+thiserror = { workspace = true }
+enum_dispatch = { workspace = true }
 
 [dev-dependencies]
 rusqlite = { workspace = true }

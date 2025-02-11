@@ -1238,12 +1238,15 @@ dependencies = [
 name = "graft-sqlite"
 version = "0.1.0"
 dependencies = [
+ "culprit",
+ "enum_dispatch",
  "graft-client",
  "graft-core",
  "graft-proto",
  "graft-tracing",
  "rusqlite",
  "sqlite-plugin",
+ "thiserror",
  "tracing",
 ]
 

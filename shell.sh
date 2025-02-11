@@ -3,7 +3,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_PATH="${SCRIPT_DIR}/target/debug"
 
-VID="VLPpUG7cEfgULi8kSdU3p5w"
+VID="GontkHa6QVLMYnkyk16wUP"
 
 GDB=${GDB:-0}
 LOG=${LOG:-error}

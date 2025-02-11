@@ -16,7 +16,7 @@ use super::{
     volume_writer::VolumeWriter,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VolumeHandle<F> {
     vid: VolumeId,
     shared: Shared<F>,

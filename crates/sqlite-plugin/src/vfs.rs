@@ -55,7 +55,7 @@ pub struct Pragma<'a> {
     pub arg: Option<&'a str>,
 }
 
-fn fallible(mut cb: impl FnMut() -> Result<i32, i32>) -> i32 {
+fn fallible(mut cb: impl FnMut() -> Result<i32, SqliteErr>) -> i32 {
     cb().unwrap_or_else(|err| err)
 }
 
@@ -116,6 +116,7 @@ pub trait VfsHandle {
     fn in_memory(&self) -> bool;
 }
 
+#[allow(unused_variables)]
 pub trait Vfs {
     type Handle: VfsHandle;
 
@@ -137,32 +138,28 @@ pub trait Vfs {
     // file operations
     fn file_size(&mut self, handle: &mut Self::Handle) -> VfsResult<usize>;
     fn truncate(&mut self, handle: &mut Self::Handle, size: usize) -> VfsResult<()>;
-    fn write(&mut self, handle: &mut Self::Handle, offset: usize, buf: &[u8]) -> VfsResult<usize>;
+    fn write(&mut self, handle: &mut Self::Handle, offset: usize, data: &[u8]) -> VfsResult<usize>;
     fn read(
         &mut self,
         handle: &mut Self::Handle,
         offset: usize,
-        buf: &mut [u8],
+        data: &mut [u8],
     ) -> VfsResult<usize>;
 
-    #[allow(unused_variables)]
     fn lock(&mut self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
         Ok(())
     }
 
-    #[allow(unused_variables)]
     fn unlock(&mut self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
         Ok(())
     }
 
-    #[allow(unused_variables)]
     fn sync(&mut self, handle: &mut Self::Handle) -> VfsResult<()> {
         Ok(())
     }
 
     fn close(&mut self, handle: &mut Self::Handle) -> VfsResult<()>;
 
-    #[allow(unused_variables)]
     fn pragma(
         &mut self,
         handle: &mut Self::Handle,
