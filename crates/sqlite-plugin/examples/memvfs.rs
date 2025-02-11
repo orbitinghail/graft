@@ -67,7 +67,7 @@ impl Vfs for MemVfs {
         log::set_boxed_logger(Box::new(log)).expect("failed to setup global logger");
     }
 
-    fn open(&mut self, path: Option<String>, opts: OpenOpts) -> VfsResult<Self::Handle> {
+    fn open(&mut self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle> {
         log::debug!("open: path={:?}, opts={:?}", path, opts);
         let mode = opts.mode();
         if mode.is_readonly() {
@@ -87,7 +87,7 @@ impl Vfs for MemVfs {
             }
 
             let file = File {
-                name: Some(path),
+                name: Some(path.to_owned()),
                 data: Rc::new(RefCell::new(Vec::new())),
                 delete_on_close: opts.delete_on_close(),
                 opts,

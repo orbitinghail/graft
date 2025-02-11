@@ -11,8 +11,9 @@ crate-type = ["cdylib"]
 graft-core = { path = "../graft-core" }
 graft-client = { path = "../graft-client" }
 graft-proto = { path = "../graft-proto" }
+graft-tracing = { path = "../graft-tracing" }
 
-log = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 rusqlite = { workspace = true }

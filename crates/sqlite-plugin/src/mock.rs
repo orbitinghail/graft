@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::println;
 use std::{string::String, vec::Vec};
 
+use alloc::borrow::{Cow, ToOwned};
 use alloc::format;
 
 use crate::flags::{self, AccessFlags, OpenOpts};
@@ -27,7 +28,7 @@ pub struct File {
 #[allow(unused_variables)]
 pub trait Hooks {
     fn canonical_path(&mut self, path: &str) {}
-    fn open(&mut self, path: &Option<String>, opts: &OpenOpts) {}
+    fn open(&mut self, path: &Option<&str>, opts: &OpenOpts) {}
     fn delete(&mut self, path: &str) {}
     fn access(&mut self, path: &str, flags: AccessFlags) {}
     fn file_size(&mut self, handle: MockHandle) {}
@@ -113,13 +114,13 @@ impl Vfs for MockVfs {
         self.log = Some(logger);
     }
 
-    fn canonical_path(&mut self, path: &str) -> VfsResult<String> {
+    fn canonical_path<'a>(&mut self, path: Cow<'a, str>) -> VfsResult<Cow<'a, str>> {
         self.log(format_args!("canonical_path: path={:?}", path));
-        self.hooks.canonical_path(path);
+        self.hooks.canonical_path(&path);
         Ok(path.into())
     }
 
-    fn open(&mut self, path: Option<String>, opts: flags::OpenOpts) -> VfsResult<Self::Handle> {
+    fn open(&mut self, path: Option<&str>, opts: flags::OpenOpts) -> VfsResult<Self::Handle> {
         self.log(format_args!("open: path={:?} opts={:?}", path, opts));
         self.hooks.open(&path, &opts);
 
@@ -137,7 +138,7 @@ impl Vfs for MockVfs {
             self.files.insert(
                 file_handle,
                 File {
-                    name: path,
+                    name: path.to_owned(),
                     data: Vec::new(),
                     delete_on_close: opts.delete_on_close(),
                 },

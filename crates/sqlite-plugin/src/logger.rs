@@ -22,6 +22,7 @@ impl SqliteLogLevel {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct SqliteLogger {
     log: Sqlite3Log,
 }

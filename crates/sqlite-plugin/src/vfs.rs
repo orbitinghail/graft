@@ -125,12 +125,12 @@ pub trait Vfs {
     fn register_logger(&mut self, logger: SqliteLogger);
 
     /// construct a canonical version of the given path
-    fn canonical_path(&mut self, path: &str) -> VfsResult<String> {
-        Ok(path.into())
+    fn canonical_path<'a>(&mut self, path: Cow<'a, str>) -> VfsResult<Cow<'a, str>> {
+        Ok(path)
     }
 
     // file system operations
-    fn open(&mut self, path: Option<String>, opts: OpenOpts) -> VfsResult<Self::Handle>;
+    fn open(&mut self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle>;
     fn delete(&mut self, path: &str) -> VfsResult<()>;
     fn access(&mut self, path: &str, flags: AccessFlags) -> VfsResult<bool>;
 
@@ -323,9 +323,9 @@ unsafe extern "C" fn x_open<T: Vfs>(
 ) -> c_int {
     fallible(|| {
         let opts = flags.into();
-        let name = lossy_cstr(z_name).ok().map(|s| s.into_owned());
+        let name = lossy_cstr(z_name).ok();
         let vfs = unwrap_vfs!(p_vfs)?;
-        let handle = vfs.open(name, opts)?;
+        let handle = vfs.open(name.as_ref().map(|s| s.as_ref()), opts)?;
 
         let out_file = unwrap_file!(p_file)?;
         let appdata = unwrap_appdata!(p_vfs)?;
@@ -387,7 +387,7 @@ unsafe extern "C" fn x_full_pathname<T: Vfs>(
     fallible(|| {
         let name = lossy_cstr(z_name)?;
         let vfs = unwrap_vfs!(p_vfs)?;
-        let full_name = vfs.canonical_path(&name)?;
+        let full_name = vfs.canonical_path(name)?;
         let n_out = n_out.try_into().map_err(|_| vars::SQLITE_INTERNAL)?;
         let out = slice::from_raw_parts_mut(z_out as *mut u8, n_out);
         let from = &full_name.as_bytes()[..full_name.len().min(n_out - 1)];
@@ -690,8 +690,8 @@ mod tests {
 
         struct H {}
         impl Hooks for H {
-            fn open(&mut self, path: &Option<String>, opts: &OpenOpts) {
-                let path = path.clone().unwrap();
+            fn open(&mut self, path: &Option<&str>, opts: &OpenOpts) {
+                let path = path.unwrap();
                 if path == "main.db" {
                     assert!(!opts.delete_on_close());
                     assert_eq!(opts.kind(), OpenKind::MainDb);
@@ -707,7 +707,7 @@ mod tests {
                         OpenMode::ReadWrite { create: CreateMode::Create }
                     );
                 } else {
-                    panic!("unexpected path: {:?}", path);
+                    panic!("unexpected path: {}", path);
                 }
             }
         }

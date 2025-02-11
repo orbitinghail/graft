@@ -1241,9 +1241,10 @@ dependencies = [
  "graft-client",
  "graft-core",
  "graft-proto",
- "log",
+ "graft-tracing",
  "rusqlite",
  "sqlite-plugin",
+ "tracing",
 ]
 
 [[package]]

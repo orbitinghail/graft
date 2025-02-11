@@ -9,7 +9,6 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut, Range},
-    str::FromStr,
     time::Duration,
 };
 
@@ -73,8 +72,8 @@ enum CliErr {
 struct Cli {
     /// The volume id to operate on
     /// Uses a default VolumeId if not specified
-    #[arg(short, long)]
-    vid: Option<VolumeId>,
+    #[arg(short, long, default_value = "GontkHa6QVLMYfkyk16wUP")]
+    vid: VolumeId,
 
     /// Specify a client name to differentiate between multiple clients
     #[arg(short, long, default_value = "default")]
@@ -465,10 +464,8 @@ impl<F: Fetcher> Simulator<F> {
 fn main() -> Result<()> {
     init_tracing(TracingConsumer::Tool, None);
 
-    let default_vid = VolumeId::from_str("GontkHa6QVLMYfkyk16wUP")?;
-
     let mut args = Cli::parse();
-    let vid = args.vid.unwrap_or(default_vid);
+    let vid = args.vid;
     let cid = ClientId::derive(args.client_name.as_bytes());
     tracing::info!("client: {cid}, volume: {vid}");
 

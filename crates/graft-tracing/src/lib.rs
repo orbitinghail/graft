@@ -1,5 +1,8 @@
 use std::{sync::Once, time::Instant};
-use tracing_subscriber::{fmt::time::SystemTime, util::SubscriberInitExt};
+use tracing_subscriber::{
+    fmt::{time::SystemTime, MakeWriter},
+    util::SubscriberInitExt,
+};
 
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
@@ -21,56 +24,64 @@ pub enum TracingConsumer {
     Tool,
 }
 
-/// Initialize tracing. If no process_id is specified one will be randomly generated.
 pub fn init_tracing(consumer: TracingConsumer, process_id: Option<String>) {
-    let process_id = process_id
-        .unwrap_or_else(|| bs58::encode(rand::random::<u64>().to_le_bytes()).into_string());
+    init_tracing_with_writer(consumer, process_id, std::io::stdout);
+}
 
-    let antithesis = running_in_antithesis();
-    let testing = consumer == TracingConsumer::Test;
-    let color = !antithesis && !std::env::var("NO_COLOR").is_ok_and(|s| !s.is_empty());
-
-    let default_level = if consumer == TracingConsumer::Tool {
-        LevelFilter::WARN
-    } else {
-        LevelFilter::INFO
-    };
-
-    let mut filter = EnvFilter::builder()
-        .with_default_directive(default_level.into())
-        .from_env()
-        .unwrap();
-
-    if antithesis || testing {
-        filter = filter
-            .add_directive("graft_client=trace".parse().unwrap())
-            .add_directive("graft_core=trace".parse().unwrap())
-            .add_directive("graft_server=trace".parse().unwrap())
-            .add_directive("graft_test=trace".parse().unwrap())
-    }
-
-    let prefix = if antithesis || testing {
-        Some(process_id.clone())
-    } else {
-        None
-    };
-
-    let time = if antithesis {
-        TimeFormat::None
-    } else if consumer == TracingConsumer::Server {
-        TimeFormat::Long(SystemTime)
-    } else {
-        TimeFormat::Offset { start: Instant::now() }
-    };
-
+/// Initialize tracing. If no process_id is specified one will be randomly generated.
+pub fn init_tracing_with_writer<W>(consumer: TracingConsumer, process_id: Option<String>, writer: W)
+where
+    W: for<'writer> MakeWriter<'writer> + 'static + Send + Sync,
+{
     static INIT: Once = Once::new();
     INIT.call_once(move || {
+        let process_id = process_id
+            .unwrap_or_else(|| bs58::encode(rand::random::<u64>().to_le_bytes()).into_string());
+
+        let antithesis = running_in_antithesis();
+        let testing = consumer == TracingConsumer::Test;
+        let color = !antithesis && !std::env::var("NO_COLOR").is_ok_and(|s| !s.is_empty());
+
+        let default_level = if consumer == TracingConsumer::Tool {
+            LevelFilter::WARN
+        } else {
+            LevelFilter::INFO
+        };
+
+        let mut filter = EnvFilter::builder()
+            .with_default_directive(default_level.into())
+            .from_env()
+            .unwrap();
+
+        if antithesis || testing {
+            filter = filter
+                .add_directive("graft_client=trace".parse().unwrap())
+                .add_directive("graft_core=trace".parse().unwrap())
+                .add_directive("graft_server=trace".parse().unwrap())
+                .add_directive("graft_test=trace".parse().unwrap())
+        }
+
+        let prefix = if antithesis || testing {
+            Some(process_id.clone())
+        } else {
+            None
+        };
+
+        let time = if antithesis {
+            TimeFormat::None
+        } else if consumer == TracingConsumer::Server {
+            TimeFormat::Long(SystemTime)
+        } else {
+            TimeFormat::Offset { start: Instant::now() }
+        };
+
         tracing_subscriber::fmt()
             .with_env_filter(filter)
             .with_thread_names(true)
             .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
             .with_ansi(color)
             .with_timer(TimeAndPrefix::new(prefix, time))
+            .with_writer(writer)
             .finish()
             .try_init()
             .expect("failed to setup tracing subscriber");
