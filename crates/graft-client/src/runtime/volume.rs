@@ -61,8 +61,8 @@ impl<F: Fetcher> VolumeHandle<F> {
     }
 
     /// Open a VolumeReader at the provided snapshot
-    pub fn reader_at(&self, snapshot: Snapshot) -> VolumeReader<F> {
-        VolumeReader::new(self.vid.clone(), Some(snapshot), self.shared.clone())
+    pub fn reader_at(&self, snapshot: Option<Snapshot>) -> VolumeReader<F> {
+        VolumeReader::new(self.vid.clone(), snapshot, self.shared.clone())
     }
 
     /// Open a VolumeWriter at the latest snapshot
@@ -71,7 +71,7 @@ impl<F: Fetcher> VolumeHandle<F> {
     }
 
     /// Open a VolumeWriter at the provided snapshot
-    pub fn writer_at(&self, snapshot: Snapshot) -> VolumeWriter<F> {
+    pub fn writer_at(&self, snapshot: Option<Snapshot>) -> VolumeWriter<F> {
         VolumeWriter::from(self.reader_at(snapshot))
     }
 

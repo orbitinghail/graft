@@ -4,7 +4,7 @@ use std::{ffi::c_void, os::raw::c_char, sync::Arc};
 
 use parking_lot::Mutex;
 use sqlite_plugin::{
-    flags::{AccessFlags, OpenOpts},
+    flags::{AccessFlags, LockLevel, OpenOpts},
     logger::{SqliteLogLevel, SqliteLogger},
     sqlite3_api_routines, vars,
     vfs::{register_dynamic, Pragma, RegisterOpts, Vfs, VfsHandle, VfsResult},
@@ -41,7 +41,7 @@ struct MemVfs {
 impl Vfs for MemVfs {
     type Handle = File;
 
-    fn register_logger(&mut self, logger: SqliteLogger) {
+    fn register_logger(&self, logger: SqliteLogger) {
         struct LogCompat {
             logger: Mutex<SqliteLogger>,
         }
@@ -68,7 +68,7 @@ impl Vfs for MemVfs {
         log::set_boxed_logger(Box::new(log)).expect("failed to setup global logger");
     }
 
-    fn open(&mut self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle> {
+    fn open(&self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle> {
         log::debug!("open: path={:?}, opts={:?}", path, opts);
         let mode = opts.mode();
         if mode.is_readonly() {
@@ -108,7 +108,7 @@ impl Vfs for MemVfs {
         }
     }
 
-    fn delete(&mut self, path: &str) -> VfsResult<()> {
+    fn delete(&self, path: &str) -> VfsResult<()> {
         log::debug!("delete: path={}", path);
         let mut found = false;
         self.files.lock().retain(|file| {
@@ -125,17 +125,17 @@ impl Vfs for MemVfs {
         Ok(())
     }
 
-    fn access(&mut self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
+    fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         log::debug!("access: path={}, flags={:?}", path, flags);
         Ok(self.files.lock().iter().any(|f| f.is_named(path)))
     }
 
-    fn file_size(&mut self, handle: &mut Self::Handle) -> VfsResult<usize> {
+    fn file_size(&self, handle: &mut Self::Handle) -> VfsResult<usize> {
         log::debug!("file_size: file={:?}", handle.name);
         Ok(handle.data.lock().len())
     }
 
-    fn truncate(&mut self, handle: &mut Self::Handle, size: usize) -> VfsResult<()> {
+    fn truncate(&self, handle: &mut Self::Handle, size: usize) -> VfsResult<()> {
         log::debug!("truncate: file={:?}, size={}", handle.name, size);
         let mut data = handle.data.lock();
         if size > data.len() {
@@ -146,7 +146,17 @@ impl Vfs for MemVfs {
         Ok(())
     }
 
-    fn write(&mut self, handle: &mut Self::Handle, offset: usize, buf: &[u8]) -> VfsResult<usize> {
+    fn lock(&self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
+        log::debug!("lock: file={:?}, level={:?}", handle.name, level);
+        Ok(())
+    }
+
+    fn unlock(&self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
+        log::debug!("unlock: file={:?}, level={:?}", handle.name, level);
+        Ok(())
+    }
+
+    fn write(&self, handle: &mut Self::Handle, offset: usize, buf: &[u8]) -> VfsResult<usize> {
         log::debug!(
             "write: file={:?}, offset={}, len={}",
             handle.name,
@@ -161,12 +171,7 @@ impl Vfs for MemVfs {
         Ok(buf.len())
     }
 
-    fn read(
-        &mut self,
-        handle: &mut Self::Handle,
-        offset: usize,
-        buf: &mut [u8],
-    ) -> VfsResult<usize> {
+    fn read(&self, handle: &mut Self::Handle, offset: usize, buf: &mut [u8]) -> VfsResult<usize> {
         log::debug!(
             "read: file={:?}, offset={}, len={}",
             handle.name,
@@ -182,12 +187,12 @@ impl Vfs for MemVfs {
         Ok(len)
     }
 
-    fn sync(&mut self, handle: &mut Self::Handle) -> VfsResult<()> {
+    fn sync(&self, handle: &mut Self::Handle) -> VfsResult<()> {
         log::debug!("sync: file={:?}", handle.name);
         Ok(())
     }
 
-    fn close(&mut self, handle: Self::Handle) -> VfsResult<()> {
+    fn close(&self, handle: Self::Handle) -> VfsResult<()> {
         log::debug!("close: file={:?}", handle.name);
         if handle.delete_on_close {
             if let Some(ref name) = handle.name {
@@ -197,11 +202,7 @@ impl Vfs for MemVfs {
         Ok(())
     }
 
-    fn pragma(
-        &mut self,
-        handle: &mut Self::Handle,
-        pragma: Pragma<'_>,
-    ) -> VfsResult<Option<String>> {
+    fn pragma(&self, handle: &mut Self::Handle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
         log::debug!("pragma: file={:?}, pragma={:?}", handle.name, pragma);
         Err(vars::SQLITE_NOTFOUND)
     }

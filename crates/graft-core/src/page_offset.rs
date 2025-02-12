@@ -39,7 +39,7 @@ impl PageOffset {
 
     #[inline]
     pub fn new(offset: u32) -> Self {
-        debug_assert!(Self::MAX >= offset, "page offset out of bounds");
+        assert!(Self::MAX >= offset, "page offset out of bounds");
         Self(offset)
     }
 
@@ -69,6 +69,15 @@ impl Display for PageOffset {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl TryFrom<usize> for PageOffset {
+    type Error = <usize as TryInto<u32>>::Error;
+
+    #[inline]
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        value.try_into().map(Self::new)
     }
 }
 

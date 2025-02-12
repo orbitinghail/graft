@@ -1,5 +1,5 @@
 use culprit::{Result, ResultExt};
-use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{page::Page, page_count::PageCount, page_offset::PageOffset, VolumeId};
 
 use crate::ClientErr;
 
@@ -23,6 +23,17 @@ pub trait VolumeWrite {
 pub struct VolumeWriter<F> {
     reader: VolumeReader<F>,
     memtable: Memtable,
+}
+
+impl<F: Fetcher> VolumeWriter<F> {
+    pub fn pages(&self) -> PageCount {
+        let memtable_size = self
+            .memtable
+            .max_offset()
+            .map_or(PageCount::ZERO, |o| o.pages());
+        let snapshot_size = self.snapshot().map_or(PageCount::ZERO, |s| s.pages());
+        memtable_size.max(snapshot_size)
+    }
 }
 
 impl<F> From<VolumeReader<F>> for VolumeWriter<F> {
@@ -62,6 +73,11 @@ impl<F: Fetcher> VolumeWrite for VolumeWriter<F> {
 
     fn commit(self) -> Result<VolumeReader<F>, ClientErr> {
         let (vid, snapshot, shared) = self.reader.into_parts();
+        if self.memtable.is_empty() {
+            // nothing to commit
+            return Ok(VolumeReader::new(vid, snapshot, shared));
+        }
+
         let snapshot = shared
             .storage()
             .commit(&vid, snapshot, self.memtable)

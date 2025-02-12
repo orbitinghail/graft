@@ -16,37 +16,56 @@ vfs.mxPathname = 512
 .vfsname
 
 CREATE TABLE t1(a, b);
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Unlocked
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) lock: file=Some("main.db"), level=Reserved
+(27) lock: file=Some("main.db"), level=Exclusive
 (27) write: file=Some("main.db"), offset=0, len=4096
 (27) write: file=Some("main.db"), offset=4096, len=4096
 (27) sync: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Shared
+(27) unlock: file=Some("main.db"), level=Unlocked
 INSERT INTO t1 VALUES(1, 2);
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) lock: file=Some("main.db"), level=Reserved
+(27) lock: file=Some("main.db"), level=Exclusive
 (27) write: file=Some("main.db"), offset=0, len=4096
 (27) write: file=Some("main.db"), offset=4096, len=4096
 (27) sync: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Shared
+(27) unlock: file=Some("main.db"), level=Unlocked
 INSERT INTO t1 VALUES(3, 4);
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) lock: file=Some("main.db"), level=Reserved
+(27) lock: file=Some("main.db"), level=Exclusive
 (27) write: file=Some("main.db"), offset=0, len=4096
 (27) write: file=Some("main.db"), offset=4096, len=4096
 (27) sync: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Shared
+(27) unlock: file=Some("main.db"), level=Unlocked
 SELECT * FROM t1;
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Unlocked
 +---+---+
 | a | b |
 +---+---+
@@ -57,10 +76,12 @@ pragma hello_vfs=1234;
 (27) pragma: file=Some("main.db"), pragma=Pragma { name: "hello_vfs", arg: Some("1234") }
 
 select * from dbstat;
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Unlocked
 +---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
 |     name      | path | pageno | pagetype | ncell | payload | unused | mx_payload | pgoffset | pgsize |
 +---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
@@ -69,49 +90,71 @@ select * from dbstat;
 +---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
 
 vacuum;
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) lock: file=Some("main.db"), level=Reserved
+(27) lock: file=Some("main.db"), level=Exclusive
 (27) write: file=Some("main.db"), offset=0, len=4096
 (27) write: file=Some("main.db"), offset=4096, len=4096
 (27) sync: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Shared
+(27) unlock: file=Some("main.db"), level=Unlocked
 drop table t1;
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Unlocked
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) lock: file=Some("main.db"), level=Reserved
+(27) lock: file=Some("main.db"), level=Exclusive
 (27) write: file=Some("main.db"), offset=0, len=4096
 (27) write: file=Some("main.db"), offset=4096, len=4096
 (27) sync: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Shared
+(27) unlock: file=Some("main.db"), level=Unlocked
 vacuum;
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) lock: file=Some("main.db"), level=Reserved
+(27) lock: file=Some("main.db"), level=Exclusive
 (27) write: file=Some("main.db"), offset=0, len=4096
 (27) sync: file=Some("main.db")
 (27) file_size: file=Some("main.db")
 (27) truncate: file=Some("main.db"), size=4096
+(27) unlock: file=Some("main.db"), level=Shared
+(27) unlock: file=Some("main.db"), level=Unlocked
 
 select * from dbstat;
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Unlocked
+(27) lock: file=Some("main.db"), level=Shared
 (27) access: path=main.db-journal, flags=Exists
 (27) read: file=Some("main.db"), offset=24, len=16
 (27) access: path=main.db-wal, flags=Exists
 (27) file_size: file=Some("main.db")
+(27) unlock: file=Some("main.db"), level=Unlocked
 +---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
 |     name      | path | pageno | pagetype | ncell | payload | unused | mx_payload | pgoffset | pgsize |
 +---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
 | sqlite_schema | /    | 1      | leaf     | 0     | 0       | 3988   | 0          | 0        | 4096   |
 +---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
+(27) unlock: file=Some("main.db"), level=Unlocked
 (27) close: file=Some("main.db")
 
 SQLite Exit Code = 0

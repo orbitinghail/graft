@@ -82,31 +82,25 @@ impl VfsHandle for MockHandle {
 // MockVfs implements a very simple in-memory VFS for testing purposes.
 // See the memvfs example for a more complete implementation.
 pub struct MockVfs {
-    next_id: usize,
     shared: Arc<Mutex<Shared>>,
-    log: Option<SqliteLogger>,
 }
 
 struct Shared {
+    next_id: usize,
     files: HashMap<MockHandle, File>,
     hooks: Box<dyn Hooks + Send>,
+    log: Option<SqliteLogger>,
 }
 
 impl MockVfs {
     pub fn new(hooks: Box<dyn Hooks + Send>) -> Self {
         Self {
-            next_id: 0,
-            shared: Arc::new(Mutex::new(Shared { files: HashMap::new(), hooks })),
-            log: None,
-        }
-    }
-
-    fn log<'a>(&mut self, f: fmt::Arguments<'a>) {
-        if let Some(log) = self.log.as_mut() {
-            let buf = format!("{}", f);
-            log.log(SqliteLogLevel::Notice, buf.as_bytes());
-        } else {
-            panic!("MockVfs is missing registered log handler")
+            shared: Arc::new(Mutex::new(Shared {
+                next_id: 0,
+                files: HashMap::new(),
+                hooks,
+                log: None,
+            })),
         }
     }
 
@@ -115,37 +109,55 @@ impl MockVfs {
     }
 }
 
+impl Shared {
+    fn log<'a>(&self, f: fmt::Arguments<'a>) {
+        if let Some(log) = &self.log {
+            let buf = format!("{}", f);
+            log.log(SqliteLogLevel::Notice, buf.as_bytes());
+        } else {
+            panic!("MockVfs is missing registered log handler")
+        }
+    }
+
+    fn next_id(&mut self) -> usize {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+}
+
 impl Vfs for MockVfs {
     // a simple usize that represents a file handle.
     type Handle = MockHandle;
 
-    fn register_logger(&mut self, logger: SqliteLogger) {
-        self.log = Some(logger);
+    fn register_logger(&self, logger: SqliteLogger) {
+        let mut shared = self.shared();
+        shared.log = Some(logger);
     }
 
-    fn canonical_path<'a>(&mut self, path: Cow<'a, str>) -> VfsResult<Cow<'a, str>> {
-        self.log(format_args!("canonical_path: path={:?}", path));
-        self.shared().hooks.canonical_path(&path);
+    fn canonical_path<'a>(&self, path: Cow<'a, str>) -> VfsResult<Cow<'a, str>> {
+        let mut shared = self.shared();
+        shared.log(format_args!("canonical_path: path={:?}", path));
+        shared.hooks.canonical_path(&path);
         Ok(path.into())
     }
 
-    fn open(&mut self, path: Option<&str>, opts: flags::OpenOpts) -> VfsResult<Self::Handle> {
-        self.log(format_args!("open: path={:?} opts={:?}", path, opts));
-        self.shared().hooks.open(&path, &opts);
+    fn open(&self, path: Option<&str>, opts: flags::OpenOpts) -> VfsResult<Self::Handle> {
+        let mut shared = self.shared();
+        shared.log(format_args!("open: path={:?} opts={:?}", path, opts));
+        shared.hooks.open(&path, &opts);
 
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = shared.next_id();
         let file_handle = MockHandle::new(id, opts.mode().is_readonly());
 
         if let Some(path) = path {
-            let files = &mut self.shared().files;
             // if file is already open return existing handle
-            for (handle, file) in files.iter() {
+            for (handle, file) in shared.files.iter() {
                 if file.name == path {
                     return Ok(*handle);
                 }
             }
-            files.insert(
+            shared.files.insert(
                 file_handle,
                 File {
                     name: path.to_owned(),
@@ -157,24 +169,24 @@ impl Vfs for MockVfs {
         Ok(file_handle)
     }
 
-    fn delete(&mut self, path: &str) -> VfsResult<()> {
-        self.log(format_args!("delete: path={:?}", path));
+    fn delete(&self, path: &str) -> VfsResult<()> {
         let mut shared = self.shared();
+        shared.log(format_args!("delete: path={:?}", path));
         shared.hooks.delete(path);
         shared.files.retain(|_, file| file.name != path);
         Ok(())
     }
 
-    fn access(&mut self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
-        self.log(format_args!("access: path={:?} flags={:?}", path, flags));
+    fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         let mut shared = self.shared();
+        shared.log(format_args!("access: path={:?} flags={:?}", path, flags));
         shared.hooks.access(path, flags);
         Ok(shared.files.values().any(|file| file.name == path))
     }
 
-    fn file_size(&mut self, meta: &mut Self::Handle) -> VfsResult<usize> {
-        self.log(format_args!("file_size: handle={:?}", meta));
+    fn file_size(&self, meta: &mut Self::Handle) -> VfsResult<usize> {
         let mut shared = self.shared();
+        shared.log(format_args!("file_size: handle={:?}", meta));
         shared.hooks.file_size(*meta);
         Ok(shared
             .files
@@ -183,9 +195,9 @@ impl Vfs for MockVfs {
             .unwrap_or(0))
     }
 
-    fn truncate(&mut self, meta: &mut Self::Handle, size: usize) -> VfsResult<()> {
-        self.log(format_args!("truncate: handle={:?} size={:?}", meta, size));
+    fn truncate(&self, meta: &mut Self::Handle, size: usize) -> VfsResult<()> {
         let mut shared = self.shared();
+        shared.log(format_args!("truncate: handle={:?} size={:?}", meta, size));
         shared.hooks.truncate(*meta, size);
         if let Some(file) = shared.files.get_mut(meta) {
             if size > file.data.len() {
@@ -197,14 +209,14 @@ impl Vfs for MockVfs {
         Ok(())
     }
 
-    fn write(&mut self, meta: &mut Self::Handle, offset: usize, buf: &[u8]) -> VfsResult<usize> {
-        self.log(format_args!(
+    fn write(&self, meta: &mut Self::Handle, offset: usize, buf: &[u8]) -> VfsResult<usize> {
+        let mut shared = self.shared();
+        shared.log(format_args!(
             "write: handle={:?} offset={:?} buf.len={}",
             meta,
             offset,
             buf.len()
         ));
-        let mut shared = self.shared();
         shared.hooks.write(*meta, offset, buf);
         if let Some(file) = shared.files.get_mut(meta) {
             if offset + buf.len() > file.data.len() {
@@ -217,14 +229,14 @@ impl Vfs for MockVfs {
         }
     }
 
-    fn read(&mut self, meta: &mut Self::Handle, offset: usize, buf: &mut [u8]) -> VfsResult<usize> {
-        self.log(format_args!(
+    fn read(&self, meta: &mut Self::Handle, offset: usize, buf: &mut [u8]) -> VfsResult<usize> {
+        let mut shared = self.shared();
+        shared.log(format_args!(
             "read: handle={:?} offset={:?} buf.len={}",
             meta,
             offset,
             buf.len()
         ));
-        let mut shared = self.shared();
         shared.hooks.read(*meta, offset, buf);
         if let Some(file) = shared.files.get(meta) {
             if offset > file.data.len() {
@@ -238,15 +250,16 @@ impl Vfs for MockVfs {
         }
     }
 
-    fn sync(&mut self, meta: &mut Self::Handle) -> VfsResult<()> {
-        self.log(format_args!("sync: handle={:?}", meta));
-        self.shared().hooks.sync(*meta);
+    fn sync(&self, meta: &mut Self::Handle) -> VfsResult<()> {
+        let mut shared = self.shared();
+        shared.log(format_args!("sync: handle={:?}", meta));
+        shared.hooks.sync(*meta);
         Ok(())
     }
 
-    fn close(&mut self, meta: Self::Handle) -> VfsResult<()> {
-        self.log(format_args!("close: handle={:?}", meta));
+    fn close(&self, meta: Self::Handle) -> VfsResult<()> {
         let mut shared = self.shared();
+        shared.log(format_args!("close: handle={:?}", meta));
         shared.hooks.close(meta);
         if let Some(file) = shared.files.get(&meta) {
             if file.delete_on_close {
@@ -256,23 +269,26 @@ impl Vfs for MockVfs {
         Ok(())
     }
 
-    fn pragma(&mut self, meta: &mut Self::Handle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
-        self.log(format_args!(
+    fn pragma(&self, meta: &mut Self::Handle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
+        let mut shared = self.shared();
+        shared.log(format_args!(
             "pragma: handle={:?} pragma={:?}",
             meta, pragma
         ));
-        self.shared().hooks.pragma(*meta, pragma)
+        shared.hooks.pragma(*meta, pragma)
     }
 
-    fn sector_size(&mut self) -> i32 {
-        self.log(format_args!("sector_size"));
-        self.shared().hooks.sector_size();
+    fn sector_size(&self) -> i32 {
+        let mut shared = self.shared();
+        shared.log(format_args!("sector_size"));
+        shared.hooks.sector_size();
         DEFAULT_SECTOR_SIZE
     }
 
-    fn device_characteristics(&mut self) -> i32 {
-        self.log(format_args!("device_characteristics"));
-        self.shared().hooks.device_characteristics();
+    fn device_characteristics(&self) -> i32 {
+        let mut shared = self.shared();
+        shared.log(format_args!("device_characteristics"));
+        shared.hooks.device_characteristics();
         DEFAULT_DEVICE_CHARACTERISTICS
     }
 }

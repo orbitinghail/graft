@@ -75,7 +75,7 @@ fn test_client_sync_sanity() {
         assert_eq!(snapshot.local(), i);
         assert_eq!(snapshot.pages(), 1);
 
-        let reader = handle2.reader_at(snapshot);
+        let reader = handle2.reader_at(Some(snapshot));
         let received = reader.read(offset).unwrap();
         assert_eq!(received, page, "received page does not match written page");
     }

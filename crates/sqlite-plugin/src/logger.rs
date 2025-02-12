@@ -36,7 +36,7 @@ impl SqliteLogger {
     /// This function will write each line separately to SQLite3.
     /// Note that SQLite3 silently truncates log lines larger than roughly
     /// 230 bytes by default.
-    pub fn log(&mut self, level: SqliteLogLevel, buf: &[u8]) {
+    pub fn log(&self, level: SqliteLogLevel, buf: &[u8]) {
         let code = level.into_err_code();
         for line in buf.split(|b| *b == b'\n') {
             let z_format = CString::new(line).unwrap();

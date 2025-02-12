@@ -131,7 +131,7 @@ impl SyncTaskHandle {
             // wait for the thread to complete or the timeout to elapse
             match rx.recv_deadline(deadline) {
                 Ok(Ok(())) => {
-                    tracing::debug!("sync task shutdown completed");
+                    tracing::trace!("sync task shutdown completed");
                     Ok(())
                 }
                 Ok(Err(err)) => {
@@ -193,7 +193,7 @@ impl<F: Fetcher> SyncTask<F> {
                 recv(self.control) -> control => {
                     match control.ok() {
                         None| Some(SyncControl::Shutdown) => {
-                            tracing::debug!("sync task shutting down");
+                            tracing::trace!("sync task shutting down");
                             break
                         }
                         Some(control) => self.handle_control(control)?,

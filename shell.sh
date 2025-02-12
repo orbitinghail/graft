@@ -6,7 +6,7 @@ LIB_PATH="${SCRIPT_DIR}/target/debug"
 VID="GontkHa6QVLMYnkyk16wUP"
 
 GDB=${GDB:-0}
-LOG=${LOG:-error}
+export RUST_LOG=${RUST_LOG:-warn}
 
 # make sure sqlite can find the vfs
 export LD_LIBRARY_PATH=${LIB_PATH}:$LD_LIBRARY_PATH
@@ -22,7 +22,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --trace)
-            LOG="trace"
+            RUST_LOG="trace"
             shift
             ;;
         --gdb)
@@ -43,7 +43,6 @@ ARGS=(
     -cmd '.log stderr'
     -cmd '.load libgraft'
     -cmd ".open 'file:${VID}?vfs=graft'"
-    -cmd ".pragma graft_log=${LOG}"
 )
 
 if [ "${GDB}" == 1 ]; then

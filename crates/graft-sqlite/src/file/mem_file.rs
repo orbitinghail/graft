@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use culprit::Result;
 use sqlite_plugin::flags::LockLevel;
 
@@ -5,9 +7,17 @@ use crate::vfs::ErrCtx;
 
 use super::VfsFile;
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct MemFile {
     data: Vec<u8>,
+}
+
+impl Debug for MemFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemFile")
+            .field("len", &self.data.len())
+            .finish()
+    }
 }
 
 impl VfsFile for MemFile {

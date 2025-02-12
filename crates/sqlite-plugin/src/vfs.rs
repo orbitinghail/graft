@@ -84,14 +84,14 @@ macro_rules! unwrap_appdata {
         (*$p_vfs)
             .pAppData
             .cast::<AppData<T>>()
-            .as_mut()
+            .as_ref()
             .ok_or(vars::SQLITE_INTERNAL)
     };
 }
 
 macro_rules! unwrap_vfs {
     ($p_vfs:expr) => {
-        unwrap_appdata!($p_vfs).map(|app_data| &mut app_data.vfs)
+        unwrap_appdata!($p_vfs).map(|app_data| &app_data.vfs)
     };
 }
 
@@ -123,57 +123,48 @@ pub trait Vfs: Send + Sync {
     /// Register the provided logger with this Vfs.
     /// This function is guaranteed to only be called once per
     /// register_{static,dynamic} call.
-    fn register_logger(&mut self, logger: SqliteLogger);
+    fn register_logger(&self, logger: SqliteLogger);
 
     /// construct a canonical version of the given path
-    fn canonical_path<'a>(&mut self, path: Cow<'a, str>) -> VfsResult<Cow<'a, str>> {
+    fn canonical_path<'a>(&self, path: Cow<'a, str>) -> VfsResult<Cow<'a, str>> {
         Ok(path)
     }
 
     // file system operations
-    fn open(&mut self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle>;
-    fn delete(&mut self, path: &str) -> VfsResult<()>;
-    fn access(&mut self, path: &str, flags: AccessFlags) -> VfsResult<bool>;
+    fn open(&self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle>;
+    fn delete(&self, path: &str) -> VfsResult<()>;
+    fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool>;
 
     // file operations
-    fn file_size(&mut self, handle: &mut Self::Handle) -> VfsResult<usize>;
-    fn truncate(&mut self, handle: &mut Self::Handle, size: usize) -> VfsResult<()>;
-    fn write(&mut self, handle: &mut Self::Handle, offset: usize, data: &[u8]) -> VfsResult<usize>;
-    fn read(
-        &mut self,
-        handle: &mut Self::Handle,
-        offset: usize,
-        data: &mut [u8],
-    ) -> VfsResult<usize>;
+    fn file_size(&self, handle: &mut Self::Handle) -> VfsResult<usize>;
+    fn truncate(&self, handle: &mut Self::Handle, size: usize) -> VfsResult<()>;
+    fn write(&self, handle: &mut Self::Handle, offset: usize, data: &[u8]) -> VfsResult<usize>;
+    fn read(&self, handle: &mut Self::Handle, offset: usize, data: &mut [u8]) -> VfsResult<usize>;
 
-    fn lock(&mut self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
+    fn lock(&self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
         Ok(())
     }
 
-    fn unlock(&mut self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
+    fn unlock(&self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
         Ok(())
     }
 
-    fn sync(&mut self, handle: &mut Self::Handle) -> VfsResult<()> {
+    fn sync(&self, handle: &mut Self::Handle) -> VfsResult<()> {
         Ok(())
     }
 
-    fn close(&mut self, handle: Self::Handle) -> VfsResult<()>;
+    fn close(&self, handle: Self::Handle) -> VfsResult<()>;
 
-    fn pragma(
-        &mut self,
-        handle: &mut Self::Handle,
-        pragma: Pragma<'_>,
-    ) -> VfsResult<Option<String>> {
+    fn pragma(&self, handle: &mut Self::Handle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
         Err(vars::SQLITE_NOTFOUND)
     }
 
     // system queries
-    fn sector_size(&mut self) -> i32 {
+    fn sector_size(&self) -> i32 {
         DEFAULT_SECTOR_SIZE
     }
 
-    fn device_characteristics(&mut self) -> i32 {
+    fn device_characteristics(&self) -> i32 {
         DEFAULT_DEVICE_CHARACTERISTICS
     }
 }
@@ -236,7 +227,7 @@ pub unsafe fn register_dynamic<T: Vfs>(
 fn register_inner<T: Vfs>(
     sqlite_api: SqliteApi,
     name: &str,
-    mut vfs: T,
+    vfs: T,
     opts: RegisterOpts,
 ) -> VfsResult<()> {
     let io_methods = ffi::sqlite3_io_methods {

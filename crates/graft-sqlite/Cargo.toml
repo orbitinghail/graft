@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 enum_dispatch = { workspace = true }
 parking_lot = { workspace = true }
 tryiter = { workspace = true }
+bytes = { workspace = true }
 
 [dev-dependencies]
 rusqlite = { workspace = true }

@@ -33,7 +33,7 @@ impl GraftPragma {
     pub fn eval<F: Fetcher>(
         self,
         _runtime: &Runtime<F>,
-        file: &mut VolFile,
+        file: &mut VolFile<F>,
     ) -> culprit::Result<Option<String>, ErrCtx> {
         match self {
             GraftPragma::Status => {

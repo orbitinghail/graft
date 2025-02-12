@@ -8,6 +8,14 @@ pub struct Memtable {
 }
 
 impl Memtable {
+    pub fn max_offset(&self) -> Option<PageOffset> {
+        self.pages.keys().next_back().copied()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pages.is_empty()
+    }
+
     pub fn insert(&mut self, offset: PageOffset, page: Page) {
         self.pages.insert(offset, page);
     }

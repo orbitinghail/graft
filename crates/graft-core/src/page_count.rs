@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::{page_offset::PageOffset, page_range::PageRange};
+use crate::{byte_unit::ByteUnit, page::PAGESIZE, page_offset::PageOffset, page_range::PageRange};
 
 #[derive(
     Debug,
@@ -53,12 +53,19 @@ impl PageCount {
         self.0 = self.0.checked_add(1).expect("page count overflow");
     }
 
+    #[inline]
     pub fn as_usize(&self) -> usize {
         self.0 as usize
     }
 
+    #[inline]
     pub fn contains(&self, offset: PageOffset) -> bool {
         offset.as_u32() < self.0
+    }
+
+    #[inline]
+    pub fn size(&self) -> ByteUnit {
+        PAGESIZE * self.0
     }
 }
 

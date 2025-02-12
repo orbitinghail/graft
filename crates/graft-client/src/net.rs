@@ -72,7 +72,7 @@ impl NetClient {
         uri: Uri,
         req: Req,
     ) -> Result<Resp, Culprit<ClientErr>> {
-        let span = tracing::debug_span!(
+        let span = tracing::trace_span!(
             "graft_client::net::request",
             path = uri.path(),
             status = field::Empty

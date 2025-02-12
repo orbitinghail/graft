@@ -1,4 +1,5 @@
-use std::{sync::Once, time::Instant};
+use parking_lot::Once;
+use std::time::Instant;
 use tracing_subscriber::{
     fmt::{time::SystemTime, MakeWriter},
     util::SubscriberInitExt,

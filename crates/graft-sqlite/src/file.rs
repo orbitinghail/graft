@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use culprit::Result;
 use enum_dispatch::enum_dispatch;
+use graft_client::runtime::fetcher::Fetcher;
 use mem_file::MemFile;
 use sqlite_plugin::{flags::LockLevel, vfs::VfsHandle};
 use vol_file::VolFile;
@@ -28,12 +29,12 @@ pub trait VfsFile: Debug {
 
 #[enum_dispatch(VfsFile)]
 #[derive(Debug)]
-pub enum FileHandle {
+pub enum FileHandle<F: Fetcher + Debug> {
     MemFile,
-    VolFile,
+    VolFile(VolFile<F>),
 }
 
-impl VfsHandle for FileHandle {
+impl<F: Fetcher + Debug> VfsHandle for FileHandle<F> {
     fn readonly(&self) -> bool {
         VfsFile::readonly(self)
     }

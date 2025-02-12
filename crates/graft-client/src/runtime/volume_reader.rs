@@ -25,11 +25,21 @@ pub trait VolumeRead {
     fn read(&self, offset: impl Into<PageOffset>) -> Result<Page, ClientErr>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct VolumeReader<F> {
     vid: VolumeId,
     snapshot: Option<Snapshot>,
     shared: Shared<F>,
+}
+
+impl<F> Clone for VolumeReader<F> {
+    fn clone(&self) -> Self {
+        Self {
+            vid: self.vid.clone(),
+            snapshot: self.snapshot.clone(),
+            shared: self.shared.clone(),
+        }
+    }
 }
 
 impl<F: Fetcher> VolumeReader<F> {
