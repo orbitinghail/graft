@@ -6,7 +6,7 @@ use crate::vfs::ErrCtx;
 
 use super::VfsFile;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct VolFile {
     handle: VolumeHandle<NetFetcher>,
     opts: OpenOpts,
@@ -28,11 +28,11 @@ impl VolFile {
 
 impl VfsFile for VolFile {
     fn readonly(&self) -> bool {
-        todo!()
+        false
     }
 
     fn in_memory(&self) -> bool {
-        todo!()
+        false
     }
 
     fn lock(&mut self, level: LockLevel) -> Result<(), ErrCtx> {

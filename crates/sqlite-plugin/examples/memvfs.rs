@@ -1,7 +1,8 @@
 // cargo build --example memvfs --features dynamic
 
-use std::{cell::RefCell, ffi::c_void, os::raw::c_char, rc::Rc, sync::Mutex};
+use std::{ffi::c_void, os::raw::c_char, sync::Arc};
 
+use parking_lot::Mutex;
 use sqlite_plugin::{
     flags::{AccessFlags, OpenOpts},
     logger::{SqliteLogLevel, SqliteLogger},
@@ -12,7 +13,7 @@ use sqlite_plugin::{
 #[derive(Debug, Clone)]
 struct File {
     name: Option<String>,
-    data: Rc<RefCell<Vec<u8>>>,
+    data: Arc<Mutex<Vec<u8>>>,
     delete_on_close: bool,
     opts: OpenOpts,
 }
@@ -34,7 +35,7 @@ impl VfsHandle for File {
 }
 
 struct MemVfs {
-    files: Vec<File>,
+    files: Arc<Mutex<Vec<File>>>,
 }
 
 impl Vfs for MemVfs {
@@ -57,7 +58,7 @@ impl Vfs for MemVfs {
                     _ => SqliteLogLevel::Notice,
                 };
                 let msg = format!("{}", record.args());
-                self.logger.lock().unwrap().log(level, msg.as_bytes());
+                self.logger.lock().log(level, msg.as_bytes());
             }
 
             fn flush(&self) {}
@@ -77,7 +78,9 @@ impl Vfs for MemVfs {
         }
 
         if let Some(path) = path {
-            for file in &self.files {
+            let mut files = self.files.lock();
+
+            for file in files.iter() {
                 if file.is_named(&path) {
                     if mode.must_create() {
                         return Err(vars::SQLITE_CANTOPEN);
@@ -88,16 +91,16 @@ impl Vfs for MemVfs {
 
             let file = File {
                 name: Some(path.to_owned()),
-                data: Rc::new(RefCell::new(Vec::new())),
+                data: Default::default(),
                 delete_on_close: opts.delete_on_close(),
                 opts,
             };
-            self.files.push(file.clone());
+            files.push(file.clone());
             Ok(file)
         } else {
             let file = File {
                 name: None,
-                data: Rc::new(RefCell::new(Vec::new())),
+                data: Default::default(),
                 delete_on_close: opts.delete_on_close(),
                 opts,
             };
@@ -108,7 +111,7 @@ impl Vfs for MemVfs {
     fn delete(&mut self, path: &str) -> VfsResult<()> {
         log::debug!("delete: path={}", path);
         let mut found = false;
-        self.files.retain(|file| {
+        self.files.lock().retain(|file| {
             if file.is_named(path) {
                 found = true;
                 false
@@ -124,17 +127,17 @@ impl Vfs for MemVfs {
 
     fn access(&mut self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         log::debug!("access: path={}, flags={:?}", path, flags);
-        Ok(self.files.iter().any(|f| f.is_named(path)))
+        Ok(self.files.lock().iter().any(|f| f.is_named(path)))
     }
 
     fn file_size(&mut self, handle: &mut Self::Handle) -> VfsResult<usize> {
         log::debug!("file_size: file={:?}", handle.name);
-        Ok(handle.data.borrow().len())
+        Ok(handle.data.lock().len())
     }
 
     fn truncate(&mut self, handle: &mut Self::Handle, size: usize) -> VfsResult<()> {
         log::debug!("truncate: file={:?}, size={}", handle.name, size);
-        let mut data = handle.data.borrow_mut();
+        let mut data = handle.data.lock();
         if size > data.len() {
             data.resize(size, 0);
         } else {
@@ -150,7 +153,7 @@ impl Vfs for MemVfs {
             offset,
             buf.len()
         );
-        let mut data = handle.data.borrow_mut();
+        let mut data = handle.data.lock();
         if offset + buf.len() > data.len() {
             data.resize(offset + buf.len(), 0);
         }
@@ -170,7 +173,7 @@ impl Vfs for MemVfs {
             offset,
             buf.len()
         );
-        let data = handle.data.borrow();
+        let data = handle.data.lock();
         if offset > data.len() {
             return Ok(0);
         }
@@ -184,7 +187,7 @@ impl Vfs for MemVfs {
         Ok(())
     }
 
-    fn close(&mut self, handle: &mut Self::Handle) -> VfsResult<()> {
+    fn close(&mut self, handle: Self::Handle) -> VfsResult<()> {
         log::debug!("close: file={:?}", handle.name);
         if handle.delete_on_close {
             if let Some(ref name) = handle.name {
@@ -214,7 +217,7 @@ pub unsafe extern "C" fn sqlite3_memvfs_init(
     _pz_err_msg: *mut *mut c_char,
     p_api: *mut sqlite3_api_routines,
 ) -> std::os::raw::c_int {
-    let vfs = MemVfs { files: Vec::new() };
+    let vfs = MemVfs { files: Default::default() };
     if let Err(err) = register_dynamic(p_api, "mem", vfs, RegisterOpts { make_default: true }) {
         return err;
     }

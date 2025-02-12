@@ -129,6 +129,10 @@ impl VolumeConfig {
     pub fn sync(&self) -> SyncDirection {
         self.sync
     }
+
+    pub fn with_sync(self, sync: SyncDirection) -> Self {
+        Self { sync, ..self }
+    }
 }
 
 impl AsRef<[u8]> for VolumeConfig {

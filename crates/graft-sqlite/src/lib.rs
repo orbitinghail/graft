@@ -13,6 +13,7 @@ use sqlite_plugin::{
 use vfs::GraftVfs;
 
 mod file;
+mod pragma;
 mod vfs;
 
 /// Register the VFS with SQLite.

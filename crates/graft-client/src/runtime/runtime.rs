@@ -1,5 +1,6 @@
-use culprit::{Result, ResultExt};
+use culprit::{Culprit, Result, ResultExt};
 use std::time::Duration;
+use tryiter::{TryIterator, TryIteratorExt};
 
 use graft_core::{gid::ClientId, VolumeId};
 
@@ -8,7 +9,10 @@ use crate::{ClientErr, ClientPair};
 use super::{
     fetcher::Fetcher,
     shared::Shared,
-    storage::{volume_state::VolumeConfig, Storage},
+    storage::{
+        volume_state::{VolumeConfig, VolumeState},
+        Storage,
+    },
     sync::{ShutdownErr, StartupErr, SyncTaskHandle},
     volume::VolumeHandle,
 };
@@ -53,6 +57,13 @@ impl<F: Fetcher> Runtime<F> {
         self.sync.shutdown_timeout(timeout)
     }
 
+    pub fn iter_volumes(&self) -> impl TryIterator<Ok = VolumeState, Err = Culprit<ClientErr>> {
+        self.shared
+            .storage()
+            .iter_volumes()
+            .map_err(|e| e.map_ctx(|c| ClientErr::StorageErr(c)))
+    }
+
     pub fn open_volume(
         &self,
         vid: &VolumeId,
@@ -68,6 +79,17 @@ impl<F: Fetcher> Runtime<F> {
             self.shared.clone(),
             self.sync.control(),
         ))
+    }
+
+    pub fn update_volume_config<U>(&self, vid: &VolumeId, f: U) -> Result<(), ClientErr>
+    where
+        U: FnMut(VolumeConfig) -> VolumeConfig,
+    {
+        self.shared
+            .storage()
+            .update_volume_config(&vid, f)
+            .or_into_ctx()?;
+        Ok(())
     }
 }
 

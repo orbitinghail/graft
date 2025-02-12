@@ -5,7 +5,7 @@ use crate::vfs::ErrCtx;
 
 use super::VfsFile;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug)]
 pub struct MemFile {
     data: Vec<u8>,
 }

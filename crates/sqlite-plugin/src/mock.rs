@@ -11,6 +11,8 @@ use std::{string::String, vec::Vec};
 
 use alloc::borrow::{Cow, ToOwned};
 use alloc::format;
+use alloc::sync::Arc;
+use parking_lot::{Mutex, MutexGuard};
 
 use crate::flags::{self, AccessFlags, OpenOpts};
 use crate::logger::{SqliteLogLevel, SqliteLogger};
@@ -80,18 +82,21 @@ impl VfsHandle for MockHandle {
 // MockVfs implements a very simple in-memory VFS for testing purposes.
 // See the memvfs example for a more complete implementation.
 pub struct MockVfs {
-    pub next_id: usize,
-    pub files: HashMap<MockHandle, File>,
-    pub hooks: Box<dyn Hooks>,
-    pub log: Option<SqliteLogger>,
+    next_id: usize,
+    shared: Arc<Mutex<Shared>>,
+    log: Option<SqliteLogger>,
+}
+
+struct Shared {
+    files: HashMap<MockHandle, File>,
+    hooks: Box<dyn Hooks + Send>,
 }
 
 impl MockVfs {
-    pub fn new(hooks: Box<dyn Hooks>) -> Self {
+    pub fn new(hooks: Box<dyn Hooks + Send>) -> Self {
         Self {
             next_id: 0,
-            files: HashMap::new(),
-            hooks,
+            shared: Arc::new(Mutex::new(Shared { files: HashMap::new(), hooks })),
             log: None,
         }
     }
@@ -103,6 +108,10 @@ impl MockVfs {
         } else {
             panic!("MockVfs is missing registered log handler")
         }
+    }
+
+    fn shared(&self) -> MutexGuard<'_, Shared> {
+        self.shared.lock()
     }
 }
 
@@ -116,26 +125,27 @@ impl Vfs for MockVfs {
 
     fn canonical_path<'a>(&mut self, path: Cow<'a, str>) -> VfsResult<Cow<'a, str>> {
         self.log(format_args!("canonical_path: path={:?}", path));
-        self.hooks.canonical_path(&path);
+        self.shared().hooks.canonical_path(&path);
         Ok(path.into())
     }
 
     fn open(&mut self, path: Option<&str>, opts: flags::OpenOpts) -> VfsResult<Self::Handle> {
         self.log(format_args!("open: path={:?} opts={:?}", path, opts));
-        self.hooks.open(&path, &opts);
+        self.shared().hooks.open(&path, &opts);
 
         let id = self.next_id;
         self.next_id += 1;
         let file_handle = MockHandle::new(id, opts.mode().is_readonly());
 
         if let Some(path) = path {
+            let files = &mut self.shared().files;
             // if file is already open return existing handle
-            for (handle, file) in &self.files {
+            for (handle, file) in files.iter() {
                 if file.name == path {
                     return Ok(*handle);
                 }
             }
-            self.files.insert(
+            files.insert(
                 file_handle,
                 File {
                     name: path.to_owned(),
@@ -149,21 +159,24 @@ impl Vfs for MockVfs {
 
     fn delete(&mut self, path: &str) -> VfsResult<()> {
         self.log(format_args!("delete: path={:?}", path));
-        self.hooks.delete(path);
-        self.files.retain(|_, file| file.name != path);
+        let mut shared = self.shared();
+        shared.hooks.delete(path);
+        shared.files.retain(|_, file| file.name != path);
         Ok(())
     }
 
     fn access(&mut self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         self.log(format_args!("access: path={:?} flags={:?}", path, flags));
-        self.hooks.access(path, flags);
-        Ok(self.files.values().any(|file| file.name == path))
+        let mut shared = self.shared();
+        shared.hooks.access(path, flags);
+        Ok(shared.files.values().any(|file| file.name == path))
     }
 
     fn file_size(&mut self, meta: &mut Self::Handle) -> VfsResult<usize> {
         self.log(format_args!("file_size: handle={:?}", meta));
-        self.hooks.file_size(*meta);
-        Ok(self
+        let mut shared = self.shared();
+        shared.hooks.file_size(*meta);
+        Ok(shared
             .files
             .get(meta)
             .map(|file| file.data.len())
@@ -172,8 +185,9 @@ impl Vfs for MockVfs {
 
     fn truncate(&mut self, meta: &mut Self::Handle, size: usize) -> VfsResult<()> {
         self.log(format_args!("truncate: handle={:?} size={:?}", meta, size));
-        self.hooks.truncate(*meta, size);
-        if let Some(file) = self.files.get_mut(meta) {
+        let mut shared = self.shared();
+        shared.hooks.truncate(*meta, size);
+        if let Some(file) = shared.files.get_mut(meta) {
             if size > file.data.len() {
                 file.data.resize(size, 0);
             } else {
@@ -190,8 +204,9 @@ impl Vfs for MockVfs {
             offset,
             buf.len()
         ));
-        self.hooks.write(*meta, offset, buf);
-        if let Some(file) = self.files.get_mut(meta) {
+        let mut shared = self.shared();
+        shared.hooks.write(*meta, offset, buf);
+        if let Some(file) = shared.files.get_mut(meta) {
             if offset + buf.len() > file.data.len() {
                 file.data.resize(offset + buf.len(), 0);
             }
@@ -209,8 +224,9 @@ impl Vfs for MockVfs {
             offset,
             buf.len()
         ));
-        self.hooks.read(*meta, offset, buf);
-        if let Some(file) = self.files.get(meta) {
+        let mut shared = self.shared();
+        shared.hooks.read(*meta, offset, buf);
+        if let Some(file) = shared.files.get(meta) {
             if offset > file.data.len() {
                 return Ok(0);
             }
@@ -224,16 +240,17 @@ impl Vfs for MockVfs {
 
     fn sync(&mut self, meta: &mut Self::Handle) -> VfsResult<()> {
         self.log(format_args!("sync: handle={:?}", meta));
-        self.hooks.sync(*meta);
+        self.shared().hooks.sync(*meta);
         Ok(())
     }
 
-    fn close(&mut self, meta: &mut Self::Handle) -> VfsResult<()> {
+    fn close(&mut self, meta: Self::Handle) -> VfsResult<()> {
         self.log(format_args!("close: handle={:?}", meta));
-        self.hooks.close(*meta);
-        if let Some(file) = self.files.get(meta) {
+        let mut shared = self.shared();
+        shared.hooks.close(meta);
+        if let Some(file) = shared.files.get(&meta) {
             if file.delete_on_close {
-                self.files.remove(meta);
+                shared.files.remove(&meta);
             }
         }
         Ok(())
@@ -244,18 +261,18 @@ impl Vfs for MockVfs {
             "pragma: handle={:?} pragma={:?}",
             meta, pragma
         ));
-        self.hooks.pragma(*meta, pragma)
+        self.shared().hooks.pragma(*meta, pragma)
     }
 
     fn sector_size(&mut self) -> i32 {
         self.log(format_args!("sector_size"));
-        self.hooks.sector_size();
+        self.shared().hooks.sector_size();
         DEFAULT_SECTOR_SIZE
     }
 
     fn device_characteristics(&mut self) -> i32 {
         self.log(format_args!("device_characteristics"));
-        self.hooks.device_characteristics();
+        self.shared().hooks.device_characteristics();
         DEFAULT_DEVICE_CHARACTERISTICS
     }
 }

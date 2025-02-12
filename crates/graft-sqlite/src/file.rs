@@ -2,17 +2,17 @@ use std::fmt::Debug;
 
 use culprit::Result;
 use enum_dispatch::enum_dispatch;
-use mem::MemFile;
+use mem_file::MemFile;
 use sqlite_plugin::{flags::LockLevel, vfs::VfsHandle};
-use volume::VolFile;
+use vol_file::VolFile;
 
 use crate::vfs::ErrCtx;
 
-pub mod mem;
-pub mod volume;
+pub mod mem_file;
+pub mod vol_file;
 
 #[enum_dispatch]
-pub trait VfsFile: Debug + Clone {
+pub trait VfsFile: Debug {
     fn readonly(&self) -> bool;
     fn in_memory(&self) -> bool;
 
@@ -27,7 +27,7 @@ pub trait VfsFile: Debug + Clone {
 }
 
 #[enum_dispatch(VfsFile)]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum FileHandle {
     MemFile,
     VolFile,

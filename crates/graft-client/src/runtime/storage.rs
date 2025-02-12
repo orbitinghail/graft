@@ -193,11 +193,26 @@ impl Storage {
         &self.remote_changeset
     }
 
-    /// Add a new volume to the storage. This function will overwrite any
-    /// existing configuration for the volume.
+    /// Set the specified Volume's config
     pub fn set_volume_config(&self, vid: &VolumeId, config: VolumeConfig) -> Result<()> {
         let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Config);
         Ok(self.volumes.insert(key, config)?)
+    }
+
+    /// Update a Volume's config
+    pub fn update_volume_config<F>(&self, vid: &VolumeId, mut f: F) -> Result<()>
+    where
+        F: FnMut(VolumeConfig) -> VolumeConfig,
+    {
+        let _permit = self.commit_lock.lock();
+        let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Config);
+        let config = self
+            .volumes
+            .get(&key)?
+            .map(|c| VolumeConfig::from_bytes(&c))
+            .transpose()?
+            .unwrap_or_default();
+        Ok(self.volumes.insert(key, f(config))?)
     }
 
     fn set_volume_status(&self, batch: &mut fjall::Batch, vid: &VolumeId, status: VolumeStatus) {
@@ -232,6 +247,11 @@ impl Storage {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn iter_volumes(&self) -> impl TryIterator<Ok = VolumeState, Err = Culprit<StorageErr>> {
+        let iter = self.volumes.snapshot().iter().err_into();
+        VolumeQueryIter::new(iter)
     }
 
     pub fn query_volumes(

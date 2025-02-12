@@ -1244,10 +1244,12 @@ dependencies = [
  "graft-core",
  "graft-proto",
  "graft-tracing",
+ "parking_lot",
  "rusqlite",
  "sqlite-plugin",
  "thiserror",
  "tracing",
+ "tryiter",
 ]
 
 [[package]]
@@ -3030,6 +3032,7 @@ version = "0.1.0"
 dependencies = [
  "bindgen",
  "log",
+ "parking_lot",
  "rusqlite",
 ]
 

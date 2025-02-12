@@ -111,13 +111,13 @@ macro_rules! unwrap_file {
     };
 }
 
-pub trait VfsHandle {
+pub trait VfsHandle: Send {
     fn readonly(&self) -> bool;
     fn in_memory(&self) -> bool;
 }
 
 #[allow(unused_variables)]
-pub trait Vfs {
+pub trait Vfs: Send + Sync {
     type Handle: VfsHandle;
 
     /// Register the provided logger with this Vfs.
@@ -158,7 +158,7 @@ pub trait Vfs {
         Ok(())
     }
 
-    fn close(&mut self, handle: &mut Self::Handle) -> VfsResult<()>;
+    fn close(&mut self, handle: Self::Handle) -> VfsResult<()>;
 
     fn pragma(
         &mut self,
@@ -403,8 +403,8 @@ unsafe extern "C" fn x_close<T: Vfs>(p_file: *mut ffi::sqlite3_file) -> c_int {
         let file = unwrap_file!(p_file)?;
         let vfs = unwrap_vfs!(file.vfs)?;
         let handle = mem::replace(&mut file.handle, MaybeUninit::uninit());
-        let mut handle = handle.assume_init();
-        vfs.close(&mut handle)?;
+        let handle = handle.assume_init();
+        vfs.close(handle)?;
         Ok(vars::SQLITE_OK)
     })
 }

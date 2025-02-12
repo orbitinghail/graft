@@ -1,9 +1,9 @@
 // TODO: remove this once the vfs is implemented
 #![allow(unused)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use culprit::ResultExt;
+use culprit::{Culprit, ResultExt};
 use graft_client::{
     runtime::{
         fetcher::NetFetcher,
@@ -17,12 +17,16 @@ use graft_tracing::TracingConsumer;
 use sqlite_plugin::{
     flags::{AccessFlags, LockLevel, OpenKind, OpenOpts},
     logger::{SqliteLogLevel, SqliteLogger},
-    vars::{self, SQLITE_INTERNAL, SQLITE_NOTFOUND},
+    vars::{self, SQLITE_CANTOPEN, SQLITE_INTERNAL, SQLITE_NOTFOUND},
     vfs::{Pragma, Vfs, VfsHandle, VfsResult},
 };
 use thiserror::Error;
+use tryiter::TryIteratorExt;
 
-use crate::file::{mem::MemFile, volume::VolFile, FileHandle, VfsFile};
+use crate::{
+    file::{mem_file::MemFile, vol_file::VolFile, FileHandle, VfsFile},
+    pragma::{GraftPragma, PragmaParseErr},
+};
 
 #[derive(Debug, Error)]
 pub enum ErrCtx {
@@ -31,31 +35,47 @@ pub enum ErrCtx {
 
     #[error("Failed to parse VolumeId: {0}")]
     GidParseErr(#[from] GidParseErr),
+
+    #[error("Unknown Pragma")]
+    UnknownPragma,
+
+    #[error("Cant open Volume")]
+    CantOpen,
 }
 
 impl ErrCtx {
-    fn wrap<T>(mut cb: impl FnMut() -> culprit::Result<T, ErrCtx>) -> VfsResult<T> {
+    #[inline]
+    fn wrap<T>(mut cb: impl FnOnce() -> culprit::Result<T, ErrCtx>) -> VfsResult<T> {
         match cb() {
             Ok(t) => Ok(t),
             Err(err) => {
-                tracing::error!("{}", err);
-                let code = match err {
+                let code = match err.ctx() {
+                    ErrCtx::UnknownPragma => SQLITE_NOTFOUND,
+                    ErrCtx::CantOpen => SQLITE_CANTOPEN,
                     _ => SQLITE_INTERNAL,
                 };
+                if code == SQLITE_INTERNAL {
+                    tracing::error!("{}", err);
+                }
                 Err(code)
             }
         }
     }
 }
 
+impl<T> From<ErrCtx> for culprit::Result<T, ErrCtx> {
+    fn from(err: ErrCtx) -> culprit::Result<T, ErrCtx> {
+        Err(Culprit::new(err))
+    }
+}
+
 pub struct GraftVfs {
     runtime: Runtime<NetFetcher>,
-    files: HashMap<VolumeId, VolFile>,
 }
 
 impl GraftVfs {
     pub fn new(runtime: Runtime<NetFetcher>) -> Self {
-        Self { runtime, files: HashMap::new() }
+        Self { runtime }
     }
 }
 
@@ -84,14 +104,36 @@ impl Vfs for GraftVfs {
         handle: &mut Self::Handle,
         pragma: Pragma<'_>,
     ) -> VfsResult<Option<String>> {
-        Err(SQLITE_NOTFOUND)
+        ErrCtx::wrap(move || {
+            tracing::trace!("pragma: file={handle:?}, pragma={pragma:?}");
+
+            if let FileHandle::VolFile(file) = handle {
+                return match GraftPragma::try_from(pragma) {
+                    Ok(pragma) => pragma.eval(&self.runtime, file),
+                    Err(PragmaParseErr::Invalid(pragma)) => {
+                        Ok(Some(format!("invalid pragma: {}", pragma.name)))
+                    }
+                    Err(PragmaParseErr::Unknown(pragma)) => {
+                        Err(Culprit::new(ErrCtx::UnknownPragma))
+                    }
+                };
+            }
+
+            Err(Culprit::new(ErrCtx::UnknownPragma))
+        })
     }
 
     fn access(&mut self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
-        ErrCtx::wrap(|| {
+        ErrCtx::wrap(move || {
             tracing::trace!("access: path={path:?}; flags={flags:?}");
-            if let Some(vid) = path.parse().ok() {
-                Ok(self.files.contains_key(&vid))
+            if let Some(vid) = path.parse::<VolumeId>().ok() {
+                Ok(self
+                    .runtime
+                    .iter_volumes()
+                    .try_filter(|v| Ok(v.vid() == &vid))
+                    .try_next()
+                    .or_into_ctx()?
+                    .is_some())
             } else {
                 Ok(false)
             }
@@ -99,33 +141,38 @@ impl Vfs for GraftVfs {
     }
 
     fn open(&mut self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle> {
-        ErrCtx::wrap(|| {
-            // we only open a Graft for main database files that have a valid path
-            // if opts.kind() == OpenKind::MainDb {
-            //     if let Some(path) = path {
-            //         let vid: VolumeId = path.parse()?;
-            //         let handle = self
-            //             .runtime
-            //             .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
-            //             .or_into_ctx()?;
-            //         return Ok(VolFile::new(handle, opts).into());
-            //     }
-            // }
+        ErrCtx::wrap(move || {
+            tracing::trace!("open: path={path:?}, opts={opts:?}");
+            // we only open a Volume for main database files named after a Volume ID
+            if opts.kind() == OpenKind::MainDb {
+                if let Some(path) = path {
+                    let vid: VolumeId = path.parse()?;
+
+                    let handle = self
+                        .runtime
+                        .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
+                        .or_into_ctx()?;
+                    return Ok(VolFile::new(handle, opts).into());
+                }
+            }
 
             // all other files use in-memory storage
             Ok(MemFile::default().into())
         })
     }
 
-    fn close(&mut self, handle: &mut Self::Handle) -> VfsResult<()> {
+    fn close(&mut self, handle: Self::Handle) -> VfsResult<()> {
         ErrCtx::wrap(move || {
             tracing::trace!("close: file={handle:?}");
-            match handle {
+            match &handle {
                 FileHandle::MemFile(_) => Ok(()),
                 FileHandle::VolFile(vol_file) => {
-                    self.files.remove(vol_file.handle().vid());
                     if vol_file.opts().delete_on_close() {
-                        // TODO: what happens when we delete a volume?
+                        self.runtime
+                            .update_volume_config(vol_file.handle().vid(), |conf| {
+                                conf.with_sync(SyncDirection::Disabled)
+                            })
+                            .or_into_ctx()?;
                     }
                     Ok(())
                 }
@@ -135,9 +182,11 @@ impl Vfs for GraftVfs {
 
     fn delete(&mut self, path: &str) -> VfsResult<()> {
         ErrCtx::wrap(|| {
+            tracing::trace!("delete: path={path:?}");
             if let Some(vid) = path.parse().ok() {
-                self.files.remove(&vid);
-                // TODO: what happens when we delete a volume?
+                self.runtime
+                    .update_volume_config(&vid, |conf| conf.with_sync(SyncDirection::Disabled))
+                    .or_into_ctx()?;
             }
             Ok(())
         })

@@ -1,5 +1,14 @@
 Next: SQLite extension
 
+Implementing VolFile notes:
+
+- Lock manager that leases locks out to VolFiles
+  -> rather than RAII we can just return the lock when closing the VolFile
+  -> the manager can delete the lock once no relevant VolFiles are open
+- VolFile State, unique per VolFile
+  -> State: Idle, Shared(Reader), Reserved(Writer)
+  -> used to track lock state
+
 Then:
 
 - prefetcher
