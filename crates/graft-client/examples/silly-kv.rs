@@ -483,7 +483,7 @@ fn main() -> Result<()> {
     let storage = Storage::open(&storage_path).or_into_ctx()?;
     let runtime = Runtime::new(cid, NetFetcher::new(clients.clone()), storage);
     runtime
-        .start_sync_task(clients, Duration::from_secs(1), 8)
+        .start_sync_task(clients, Duration::from_secs(1), 8, true)
         .or_into_ctx()?;
 
     let handle = runtime

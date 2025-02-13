@@ -44,12 +44,14 @@ impl<F: Fetcher> Runtime<F> {
         clients: ClientPair,
         refresh_interval: Duration,
         control_channel_size: usize,
+        autosync: bool,
     ) -> Result<(), StartupErr> {
         self.sync.spawn(
             self.shared.clone(),
             clients,
             refresh_interval,
             control_channel_size,
+            autosync,
         )
     }
 

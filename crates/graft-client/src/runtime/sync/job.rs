@@ -65,7 +65,11 @@ impl PullJob {
             tracing::trace_span!("PullJob", vid = ?self.vid, snapshot = ?state.snapshot(), ?lsns)
                 .entered();
 
-        if let Some((snapshot, _, changed)) = clients.metastore().pull_offsets(&self.vid, lsns)? {
+        if let Some((snapshot, _, changed)) = clients
+            .metastore()
+            .pull_offsets(&self.vid, lsns)
+            .or_into_ctx()?
+        {
             let snapshot_lsn = snapshot.lsn().expect("invalid LSN");
 
             assert!(

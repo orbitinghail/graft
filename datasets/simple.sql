@@ -1,0 +1,7 @@
+BEGIN TRANSACTION;
+CREATE TABLE t (data text);
+INSERT INTO t VALUES('hello world');
+INSERT INTO t VALUES('hi bob');
+INSERT INTO t VALUES('testing');
+COMMIT;
+

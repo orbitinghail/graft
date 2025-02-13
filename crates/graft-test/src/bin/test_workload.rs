@@ -99,7 +99,7 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
     let storage = Storage::open(storage_path).or_into_ctx()?;
     let runtime = Runtime::new(cid.clone(), NetFetcher::new(clients.clone()), storage);
     runtime
-        .start_sync_task(clients, Duration::from_secs(1), 8)
+        .start_sync_task(clients, Duration::from_secs(1), 8, true)
         .or_into_ctx()?;
 
     precept::setup_complete!({ "workload": workload });

@@ -24,7 +24,7 @@ fn test_client_sync_sanity() {
         storage,
     );
     runtime
-        .start_sync_task(clients.clone(), Duration::from_secs(1), 8)
+        .start_sync_task(clients.clone(), Duration::from_secs(1), 8, true)
         .unwrap();
 
     // create a second client to sync to
@@ -35,7 +35,7 @@ fn test_client_sync_sanity() {
         storage2,
     );
     runtime2
-        .start_sync_task(clients, Duration::from_millis(100), 8)
+        .start_sync_task(clients, Duration::from_millis(100), 8, true)
         .unwrap();
 
     // register the volume with both clients, pushing from client 1 to client 2

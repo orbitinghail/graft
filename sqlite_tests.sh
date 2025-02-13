@@ -18,7 +18,16 @@ export LD_LIBRARY_PATH=${LIB_PATH}:${EXAMPLES_LIB_PATH}${LD_LIBRARY_PATH:+:$LD_L
 export DYLD_LIBRARY_PATH=${LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
 
 cargo build
+if [ $? -ne 0 ]; then
+    echo "Cargo build failed"
+    exit 1
+fi
+
 cargo build --examples --features dynamic
+if [ $? -ne 0 ]; then
+    echo "Cargo build failed"
+    exit 1
+fi
 
 # select tests from *.sql files in GIT_ROOT, filtered by the first argument (substring)
 declare TESTS=$(find "${GIT_ROOT}" -name "test_*.sql" | grep "${FILTER}")
@@ -37,12 +46,19 @@ for TEST in ${TESTS}; do
     echo "Running test: ${TEST}"
     EXPECTED="${TEST}.expected"
 
+    export GRAFT_DIR="$(mktemp -d)"
+    export GRAFT_AUTOSYNC=0;
+
     # We add the exit code to the output since SQLite returns the number of
     # errors encountered while executing, and some of the tests want to trigger
     # errors on purpose (thus we can't just fail on non-zero exit code).
     OUTPUT=$(sqlite3 -cmd '.log stderr' -header -table -echo 2>&1 <"${TEST}")
     EXIT_CODE=$?
     OUTPUT=$(printf "%s\n\n%s\n" "${OUTPUT}" "SQLite Exit Code = ${EXIT_CODE}")
+
+    if [ -n "${GRAFT_DIR}" ] && [ -z "${SKIP_CLEANUP:-}" ]; then
+        rm -rf "${GRAFT_DIR}"
+    fi
 
     # if UPDATE_EXPECTED is set in the env, then write out expected files
     if [ -n "${UPDATE_EXPECTED:-}" ]; then

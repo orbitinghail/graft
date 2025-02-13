@@ -1,5 +1,12 @@
 Next: SQLite extension
 
+Stack:
+
+- autosync
+- migrate sql snapshot tests to rust
+- sql sanity tests
+- sqlite antithesis workload
+
 Then:
 
 - prefetcher

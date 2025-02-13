@@ -22,8 +22,11 @@ use super::{
     storage::{
         changeset::SetSubscriber,
         volume_state::{SyncDirection, VolumeStatus},
+        StorageErr,
     },
 };
+
+mod job;
 
 #[derive(Debug, Error)]
 pub enum StartupErr {
@@ -45,19 +48,54 @@ pub enum ShutdownErr {
 
 #[derive(Debug)]
 pub enum SyncControl {
+    GetAutosync {
+        complete: Sender<bool>,
+    },
+
+    SetAutosync {
+        autosync: bool,
+        complete: Sender<()>,
+    },
+
     Sync {
         vid: VolumeId,
         direction: SyncDirection,
         complete: Sender<Result<(), ClientErr>>,
     },
+
     ResetToRemote {
         vid: VolumeId,
         complete: Sender<Result<(), ClientErr>>,
     },
+
     Shutdown,
 }
 
-mod job;
+#[derive(Debug, Clone)]
+pub struct SyncController {
+    control: Option<Sender<SyncControl>>,
+}
+
+impl SyncController {
+    fn connected(&self) -> bool {
+        self.control.is_some()
+    }
+
+    fn send(&self, msg: SyncControl) {
+        self.control
+            .as_ref()
+            .expect("sync control channel missing")
+            .send(msg)
+            .expect("sync control channel closed");
+    }
+
+    // TODO:
+    // - create methods for each of the synccontrol instances
+    // - update volume handle to use SyncController
+    // - add autosync methods to runtime
+    // - expose autosync via pragma and env var
+    // - disable autosync in sqlite_tests
+}
 
 #[derive(Clone, Default)]
 pub struct SyncTaskHandle {
@@ -83,6 +121,7 @@ impl SyncTaskHandle {
         clients: ClientPair,
         refresh_interval: Duration,
         control_channel_size: usize,
+        autosync: bool,
     ) -> Result<(), StartupErr> {
         let mut inner = self.inner.write();
         if inner.is_some() {
@@ -98,6 +137,7 @@ impl SyncTaskHandle {
             refresh_interval,
             commits,
             control: control_rx,
+            autosync,
         };
 
         let handle = thread::Builder::new()
@@ -159,6 +199,21 @@ impl SyncTaskHandle {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum SyncTaskErr {
+    #[error("client error: {0}")]
+    Client(#[from] ClientErr),
+
+    #[error("completion channel disconnected")]
+    CompletionChannelDisconnected,
+}
+
+impl From<StorageErr> for SyncTaskErr {
+    fn from(err: StorageErr) -> Self {
+        Self::Client(err.into())
+    }
+}
+
 /// A SyncTask is a background task which continuously syncs volumes to and from
 /// a Graft service.
 pub struct SyncTask<F> {
@@ -167,6 +222,10 @@ pub struct SyncTask<F> {
     refresh_interval: Duration,
     commits: SetSubscriber<VolumeId>,
     control: Receiver<SyncControl>,
+
+    /// when autosync is true, volumes will be automatically pushed and pulled
+    /// to the server when they change or every `refresh_interval`.
+    autosync: bool,
 }
 
 impl<F: Fetcher> SyncTask<F> {
@@ -187,7 +246,7 @@ impl<F: Fetcher> SyncTask<F> {
         }
     }
 
-    fn run_inner(&mut self) -> Result<(), ClientErr> {
+    fn run_inner(&mut self) -> Result<(), SyncTaskErr> {
         loop {
             select_biased! {
                 recv(self.control) -> control => {
@@ -216,29 +275,38 @@ impl<F: Fetcher> SyncTask<F> {
         Ok(())
     }
 
-    fn handle_control(&mut self, msg: SyncControl) -> Result<(), ClientErr> {
-        let (complete, result) = match msg {
+    fn handle_control(&mut self, msg: SyncControl) -> Result<(), SyncTaskErr> {
+        macro_rules! reply {
+            ($complete:ident, $result:expr) => {
+                match $complete.try_send($result) {
+                    Ok(()) => Ok(()),
+                    Err(TrySendError::Full(_)) => {
+                        unreachable!("SyncControl completion channel should never be full")
+                    }
+                    Err(TrySendError::Disconnected(err)) => Err(Culprit::new_with_note(
+                        SyncTaskErr::CompletionChannelDisconnected,
+                        format!("SyncControl completion channel disconnected: {err:?}"),
+                    )),
+                }
+            };
+        }
+
+        match msg {
+            SyncControl::GetAutosync { complete } => reply!(complete, self.autosync),
+            SyncControl::SetAutosync { autosync, complete } => {
+                self.autosync = autosync;
+                reply!(complete, ())
+            }
             SyncControl::Sync { vid, direction, complete } => {
-                (complete, self.sync_volume(vid, direction))
+                reply!(complete, self.sync_volume(vid, direction))
             }
             SyncControl::ResetToRemote { vid, complete } => {
-                (complete, self.reset_volume_to_remote(vid))
+                reply!(complete, self.reset_volume_to_remote(vid))
             }
             SyncControl::Shutdown => {
                 unreachable!("shutdown message is handled in sync task select loop")
             }
-        };
-        // we try to send the error to the client first and then fallback to
-        // reporting the error in the sync thread if the channel is disconnected
-        if let Err(err) = complete.try_send(result) {
-            match err {
-                TrySendError::Full(err) => {
-                    panic!("SyncControl completion channel should never be full! {err:?}",)
-                }
-                TrySendError::Disconnected(err) => return err,
-            }
         }
-        Ok(())
     }
 
     /// Synchronously sync a volume with the remote
@@ -270,18 +338,28 @@ impl<F: Fetcher> SyncTask<F> {
             .or_into_culprit("error while resetting volume to the remote")
     }
 
-    fn handle_tick(&mut self) -> Result<(), ClientErr> {
+    fn handle_tick(&mut self) -> Result<(), SyncTaskErr> {
+        if !self.autosync {
+            return Ok(());
+        }
+
         let mut jobs = self.jobs(SyncDirection::Both, None);
         while let Some(job) = jobs.try_next()? {
-            job.run(self.shared.storage(), &self.clients)?;
+            job.run(self.shared.storage(), &self.clients)
+                .or_into_ctx()?;
         }
         Ok(())
     }
 
-    fn handle_commit(&mut self, vids: HashSet<VolumeId>) -> Result<(), ClientErr> {
+    fn handle_commit(&mut self, vids: HashSet<VolumeId>) -> Result<(), SyncTaskErr> {
+        if !self.autosync {
+            return Ok(());
+        }
+
         let mut jobs = self.jobs(SyncDirection::Push, Some(vids));
         while let Some(job) = jobs.try_next()? {
-            job.run(self.shared.storage(), &self.clients)?;
+            job.run(self.shared.storage(), &self.clients)
+                .or_into_ctx()?;
         }
         Ok(())
     }
@@ -290,11 +368,11 @@ impl<F: Fetcher> SyncTask<F> {
         &self,
         sync: SyncDirection,
         vids: Option<HashSet<VolumeId>>,
-    ) -> impl TryIterator<Ok = Job, Err = Culprit<ClientErr>> + '_ {
+    ) -> impl TryIterator<Ok = Job, Err = Culprit<SyncTaskErr>> + '_ {
         self.shared
             .storage()
             .query_volumes(sync, vids)
-            .map_err(|err| err.map_ctx(ClientErr::from))
+            .map_err(|err| err.map_ctx(SyncTaskErr::from))
             .try_filter_map(move |state| {
                 if state.status() != VolumeStatus::Ok {
                     // volume must be healthy

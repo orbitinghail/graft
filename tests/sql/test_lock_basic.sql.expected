@@ -1,0 +1,128 @@
+.load libgraft
+
+-- initialize two connections to the same database
+.connection 0
+.open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+
+.connection 1
+.open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+
+-- load the sample dataset
+.read datasets/simple.sql
+BEGIN TRANSACTION;
+CREATE TABLE t (data text);
+INSERT INTO t VALUES('hello world');
+INSERT INTO t VALUES('hi bob');
+INSERT INTO t VALUES('testing');
+COMMIT;
+
+
+-- scenario: lock a table in one connection, then try to lock it in the other
+.connection 0
+begin immediate;
+.connection 1
+begin immediate;
+Runtime error near line 17: database is locked (5)
+
+-- reset
+.connection 0
+rollback;
+.connection 1
+rollback;
+(1) statement aborts at 1: [rollback;] cannot rollback - no transaction is active
+Runtime error near line 23: cannot rollback - no transaction is active
+
+-- scenario: verify that upgrading is refused if a read snapshot is outdated
+.connection 0
+begin;
+-- take a read lock
+select count(*) from t;
++----------+
+| count(*) |
++----------+
+| 3        |
++----------+
+
+.connection 1
+-- update the table, this autocommits
+insert into t values(1);
+
+.connection 0
+-- try to upgrade the lock via performing a write; this should fail
+insert into t values(2);
+Runtime error near line 37: database is locked (5)
+
+-- reset
+.connection 0
+rollback;
+.connection 1
+rollback;
+(1) statement aborts at 1: [rollback;] cannot rollback - no transaction is active
+Runtime error near line 43: cannot rollback - no transaction is active
+
+-- scenario: verify that we can commit a write tx while another tx holds a read lock
+
+-- take a write lock
+.connection 0
+begin immediate;
+
+-- take a read lock
+.connection 1
+begin;
+select count(*) from t;
++----------+
+| count(*) |
++----------+
+| 4        |
++----------+
+
+-- upgrade our write lock to Pending
+.connection 0
+insert into t values('committed while read lock is held');
+
+-- try to commit; this should work because the read lock is not blocking
+commit;
+
+-- back on the read conn, verify that we still don't see the new row
+.connection 1
+select * from t;
++-------------+
+|    data     |
++-------------+
+| hello world |
+| hi bob      |
+| testing     |
+| 1           |
++-------------+
+
+-- commit the read tx
+commit;
+
+-- verify that we now see the new row
+select * from t;
++-----------------------------------+
+|               data                |
++-----------------------------------+
+| hello world                       |
+| hi bob                            |
+| testing                           |
+| 1                                 |
+| committed while read lock is held |
++-----------------------------------+
+
+-- check metadata
+pragma graft_status;
++-----------------------------------+
+| Current snapshot: Snapshot[3/_;2] |
++-----------------------------------+
+| Current snapshot: Snapshot[3/_;2] |
++-----------------------------------+
+.connection 0
+pragma graft_status;
++-----------------------------------+
+| Current snapshot: Snapshot[3/_;2] |
++-----------------------------------+
+| Current snapshot: Snapshot[3/_;2] |
++-----------------------------------+
+
+SQLite Exit Code = 1

@@ -29,7 +29,7 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
         let storage = Storage::open_temporary().or_into_ctx()?;
         let runtime = Runtime::new(cid.clone(), NetFetcher::new(clients.clone()), storage);
         runtime
-            .start_sync_task(clients.clone(), Duration::from_millis(10), 8)
+            .start_sync_task(clients.clone(), Duration::from_millis(10), 8, true)
             .or_into_ctx()?;
         let workload = Workload::Writer { vid: vid.clone(), interval_ms: 10 };
         let r2 = runtime.clone();
@@ -45,7 +45,7 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
         let storage = Storage::open_temporary().or_into_ctx()?;
         let runtime = Runtime::new(cid.clone(), NetFetcher::new(clients.clone()), storage);
         runtime
-            .start_sync_task(clients.clone(), Duration::from_millis(10), 8)
+            .start_sync_task(clients.clone(), Duration::from_millis(10), 8, true)
             .or_into_ctx()?;
         let workload = Workload::Reader { vid: vid.clone(), interval_ms: 10 };
         let r2 = runtime.clone();

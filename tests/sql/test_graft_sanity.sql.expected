@@ -1,0 +1,63 @@
+-- Load the graft vfs and open a new connection using it
+.load libgraft
+.open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+
+.databases
+main: GontkHa6QVLHYnkyk16wUP r/w
+.vfsinfo
+vfs.zName      = "graft"
+vfs.iVersion   = 3
+vfs.szOsFile   = 152
+vfs.mxPathname = 512
+.vfsname
+
+CREATE TABLE t1(a, b);
+INSERT INTO t1 VALUES(1, 2);
+INSERT INTO t1 VALUES(3, 4);
+SELECT * FROM t1;
++---+---+
+| a | b |
++---+---+
+| 1 | 2 |
+| 3 | 4 |
++---+---+
+
+BEGIN;
+SELECT * FROM t1;
++---+---+
+| a | b |
++---+---+
+| 1 | 2 |
+| 3 | 4 |
++---+---+
+INSERT INTO t1 VALUES(3, 4);
+SELECT * FROM t1;
++---+---+
+| a | b |
++---+---+
+| 1 | 2 |
+| 3 | 4 |
+| 3 | 4 |
++---+---+
+COMMIT;
+
+pragma graft_status;
++-----------------------------------+
+| Current snapshot: Snapshot[4/_;2] |
++-----------------------------------+
+| Current snapshot: Snapshot[4/_;2] |
++-----------------------------------+
+
+-- vacuum;
+-- drop table t1;
+-- vacuum;
+
+select * from dbstat;
++---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
+|     name      | path | pageno | pagetype | ncell | payload | unused | mx_payload | pgoffset | pgsize |
++---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
+| sqlite_schema | /    | 1      | leaf     | 1     | 37      | 3947   | 37         | 0        | 4096   |
+| t1            | /    | 2      | leaf     | 3     | 14      | 4062   | 5          | 4096     | 4096   |
++---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
+
+SQLite Exit Code = 0
