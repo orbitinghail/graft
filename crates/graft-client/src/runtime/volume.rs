@@ -1,4 +1,3 @@
-use crossbeam::channel::{bounded, Sender};
 use culprit::{Result, ResultExt};
 use graft_core::VolumeId;
 
@@ -11,7 +10,7 @@ use super::{
         snapshot::Snapshot,
         volume_state::{SyncDirection, VolumeStatus},
     },
-    sync::SyncControl,
+    sync::control::SyncRpc,
     volume_reader::VolumeReader,
     volume_writer::VolumeWriter,
 };
@@ -20,16 +19,12 @@ use super::{
 pub struct VolumeHandle<F> {
     vid: VolumeId,
     shared: Shared<F>,
-    sync_control: Option<Sender<SyncControl>>,
+    sync_rpc: SyncRpc,
 }
 
 impl<F: Fetcher> VolumeHandle<F> {
-    pub(crate) fn new(
-        vid: VolumeId,
-        shared: Shared<F>,
-        sync_control: Option<Sender<SyncControl>>,
-    ) -> Self {
-        Self { vid, shared, sync_control }
+    pub(crate) fn new(vid: VolumeId, shared: Shared<F>, sync_rpc: SyncRpc) -> Self {
+        Self { vid, shared, sync_rpc }
     }
 
     #[inline]
@@ -94,30 +89,16 @@ impl<F: Fetcher> VolumeHandle<F> {
     /// Sync this volume with the remote. This function blocks until the sync
     /// has completed, returning any error that occurs.
     pub fn sync_with_remote(&self, direction: SyncDirection) -> Result<(), ClientErr> {
-        let (tx, rx) = bounded(1);
-        self.control(SyncControl::Sync {
-            vid: self.vid.clone(),
-            direction,
-            complete: tx,
-        });
-        rx.recv()
-            .expect("sync control response channel disconnected")
+        self.sync_rpc
+            .sync(self.vid.clone(), direction)
+            .or_into_ctx()
     }
 
     /// Reset this volume to the remote. This will cause all pending commits to
     /// be rolled back and the volume status to be cleared.
     pub fn reset_to_remote(&self) -> Result<(), ClientErr> {
-        let (tx, rx) = bounded(1);
-        self.control(SyncControl::ResetToRemote { vid: self.vid.clone(), complete: tx });
-        rx.recv()
-            .expect("sync control response channel disconnected")
-    }
-
-    fn control(&self, msg: SyncControl) {
-        self.sync_control
-            .as_ref()
-            .expect("sync control channel missing")
-            .send(msg)
-            .expect("sync control channel closed");
+        self.sync_rpc
+            .reset_to_remote(self.vid.clone())
+            .or_into_ctx()
     }
 }

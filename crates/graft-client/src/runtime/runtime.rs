@@ -59,6 +59,14 @@ impl<F: Fetcher> Runtime<F> {
         self.sync.shutdown_timeout(timeout)
     }
 
+    pub fn get_autosync(&self) -> bool {
+        self.sync.rpc().get_autosync()
+    }
+
+    pub fn set_autosync(&self, autosync: bool) {
+        self.sync.rpc().set_autosync(autosync)
+    }
+
     pub fn iter_volumes(&self) -> impl TryIterator<Ok = VolumeState, Err = Culprit<ClientErr>> {
         self.shared
             .storage()
@@ -79,7 +87,7 @@ impl<F: Fetcher> Runtime<F> {
         Ok(VolumeHandle::new(
             vid.clone(),
             self.shared.clone(),
-            self.sync.control(),
+            self.sync.rpc(),
         ))
     }
 

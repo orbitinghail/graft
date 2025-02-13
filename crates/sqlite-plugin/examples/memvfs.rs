@@ -7,7 +7,7 @@ use sqlite_plugin::{
     flags::{AccessFlags, LockLevel, OpenOpts},
     logger::{SqliteLogLevel, SqliteLogger},
     sqlite3_api_routines, vars,
-    vfs::{register_dynamic, Pragma, RegisterOpts, Vfs, VfsHandle, VfsResult},
+    vfs::{register_dynamic, Pragma, PragmaErr, RegisterOpts, Vfs, VfsHandle, VfsResult},
 };
 
 #[derive(Debug, Clone)]
@@ -202,9 +202,13 @@ impl Vfs for MemVfs {
         Ok(())
     }
 
-    fn pragma(&self, handle: &mut Self::Handle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
+    fn pragma(
+        &self,
+        handle: &mut Self::Handle,
+        pragma: Pragma<'_>,
+    ) -> Result<Option<String>, PragmaErr> {
         log::debug!("pragma: file={:?}, pragma={:?}", handle.name, pragma);
-        Err(vars::SQLITE_NOTFOUND)
+        Err(PragmaErr::NotFound)
     }
 }
 

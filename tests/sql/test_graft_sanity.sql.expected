@@ -10,6 +10,14 @@ vfs.iVersion   = 3
 vfs.szOsFile   = 152
 vfs.mxPathname = 512
 .vfsname
+pragma graft_status;
++------------------------+
+|      Graft Status      |
++------------------------+
+| Graft Status           |
+| Current snapshot: None |
+| Autosync: false        |
++------------------------+
 
 CREATE TABLE t1(a, b);
 INSERT INTO t1 VALUES(1, 2);
@@ -43,9 +51,11 @@ COMMIT;
 
 pragma graft_status;
 +-----------------------------------+
-| Current snapshot: Snapshot[4/_;2] |
+|           Graft Status            |
 +-----------------------------------+
+| Graft Status                      |
 | Current snapshot: Snapshot[4/_;2] |
+| Autosync: false                   |
 +-----------------------------------+
 
 -- vacuum;

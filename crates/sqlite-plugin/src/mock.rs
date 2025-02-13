@@ -18,7 +18,8 @@ use crate::flags::{self, AccessFlags, OpenOpts};
 use crate::logger::{SqliteLogLevel, SqliteLogger};
 use crate::vars;
 use crate::vfs::{
-    Pragma, Vfs, VfsHandle, VfsResult, DEFAULT_DEVICE_CHARACTERISTICS, DEFAULT_SECTOR_SIZE,
+    Pragma, PragmaErr, Vfs, VfsHandle, VfsResult, DEFAULT_DEVICE_CHARACTERISTICS,
+    DEFAULT_SECTOR_SIZE,
 };
 
 pub struct File {
@@ -39,8 +40,12 @@ pub trait Hooks {
     fn read(&mut self, handle: MockHandle, offset: usize, buf: &[u8]) {}
     fn sync(&mut self, handle: MockHandle) {}
     fn close(&mut self, handle: MockHandle) {}
-    fn pragma(&mut self, handle: MockHandle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
-        Err(vars::SQLITE_NOTFOUND)
+    fn pragma(
+        &mut self,
+        handle: MockHandle,
+        pragma: Pragma<'_>,
+    ) -> Result<Option<String>, PragmaErr> {
+        Err(PragmaErr::NotFound)
     }
     fn sector_size(&mut self) {}
     fn device_characteristics(&mut self) {
@@ -269,7 +274,11 @@ impl Vfs for MockVfs {
         Ok(())
     }
 
-    fn pragma(&self, meta: &mut Self::Handle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
+    fn pragma(
+        &self,
+        meta: &mut Self::Handle,
+        pragma: Pragma<'_>,
+    ) -> Result<Option<String>, PragmaErr> {
         let mut shared = self.shared();
         shared.log(format_args!(
             "pragma: handle={:?} pragma={:?}",

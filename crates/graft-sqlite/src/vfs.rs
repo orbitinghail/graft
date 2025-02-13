@@ -26,14 +26,14 @@ use sqlite_plugin::{
         self, SQLITE_BUSY, SQLITE_BUSY_SNAPSHOT, SQLITE_CANTOPEN, SQLITE_INTERNAL, SQLITE_NOTFOUND,
         SQLITE_READONLY,
     },
-    vfs::{Pragma, Vfs, VfsHandle, VfsResult},
+    vfs::{Pragma, PragmaErr, Vfs, VfsHandle, VfsResult},
 };
 use thiserror::Error;
 use tryiter::TryIteratorExt;
 
 use crate::{
     file::{mem_file::MemFile, vol_file::VolFile, FileHandle, VfsFile},
-    pragma::{GraftPragma, PragmaParseErr},
+    pragma::GraftPragma,
 };
 
 #[derive(Debug, Error)]
@@ -127,23 +127,17 @@ impl<F: Fetcher + Debug> Vfs for GraftVfs<F> {
         graft_tracing::init_tracing_with_writer(TracingConsumer::Tool, None, make_writer);
     }
 
-    fn pragma(&self, handle: &mut Self::Handle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
+    fn pragma(
+        &self,
+        handle: &mut Self::Handle,
+        pragma: Pragma<'_>,
+    ) -> Result<Option<String>, PragmaErr> {
         tracing::debug!("pragma: file={handle:?}, pragma={pragma:?}");
-        ErrCtx::wrap(move || {
-            if let FileHandle::VolFile(file) = handle {
-                return match GraftPragma::try_from(pragma) {
-                    Ok(pragma) => pragma.eval(&self.runtime, file),
-                    Err(PragmaParseErr::Invalid(pragma)) => {
-                        Ok(Some(format!("invalid pragma: {}", pragma.name)))
-                    }
-                    Err(PragmaParseErr::Unknown(pragma)) => {
-                        Err(Culprit::new(ErrCtx::UnknownPragma))
-                    }
-                };
-            }
-
-            Err(Culprit::new(ErrCtx::UnknownPragma))
-        })
+        if let FileHandle::VolFile(file) = handle {
+            GraftPragma::try_from(&pragma)?.eval(&self.runtime, file)
+        } else {
+            Err(PragmaErr::NotFound)
+        }
     }
 
     fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {

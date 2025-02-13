@@ -4,7 +4,9 @@ use crate::{ffi, vars};
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::ffi::CString;
+use alloc::format;
 use alloc::string::String;
+use core::fmt::Display;
 use core::mem::{self, size_of, ManuallyDrop, MaybeUninit};
 use core::slice;
 use core::{
@@ -53,6 +55,27 @@ struct AppData<Vfs> {
 pub struct Pragma<'a> {
     pub name: &'a str,
     pub arg: Option<&'a str>,
+}
+
+#[derive(Debug)]
+pub enum PragmaErr {
+    NotFound,
+    Fail(String),
+}
+
+impl PragmaErr {
+    pub fn required_arg(p: &Pragma<'_>) -> Self {
+        PragmaErr::Fail(format!(
+            "argument required (e.g. `pragma {} = ...`)",
+            p.name
+        ))
+    }
+}
+
+impl<T: Display> From<T> for PragmaErr {
+    fn from(value: T) -> Self {
+        PragmaErr::Fail(format!("{}", value))
+    }
 }
 
 fn fallible(mut cb: impl FnMut() -> Result<i32, SqliteErr>) -> i32 {
@@ -155,8 +178,12 @@ pub trait Vfs: Send + Sync {
 
     fn close(&self, handle: Self::Handle) -> VfsResult<()>;
 
-    fn pragma(&self, handle: &mut Self::Handle, pragma: Pragma<'_>) -> VfsResult<Option<String>> {
-        Err(vars::SQLITE_NOTFOUND)
+    fn pragma(
+        &self,
+        handle: &mut Self::Handle,
+        pragma: Pragma<'_>,
+    ) -> Result<Option<String>, PragmaErr> {
+        Err(PragmaErr::NotFound)
     }
 
     // system queries
@@ -526,14 +553,20 @@ unsafe extern "C" fn x_file_control<T: Vfs>(
                 .map(|p| CStr::from_ptr(p).to_string_lossy());
             let pragma = Pragma { name: &name, arg: arg.as_deref() };
 
-            if let Some(result) = vfs.pragma(file.handle.assume_init_mut(), pragma)? {
-                // now we need to write the result back to the first element of the args array.
+            let (result, msg) = match vfs.pragma(file.handle.assume_init_mut(), pragma) {
+                Ok(msg) => (Ok(vars::SQLITE_OK), msg),
+                Err(PragmaErr::NotFound) => (Err(vars::SQLITE_NOTFOUND), None),
+                Err(PragmaErr::Fail(msg)) => (Err(vars::SQLITE_ERROR), Some(msg)),
+            };
+
+            if let Some(msg) = msg {
+                // write the msg back to the first element of the args array.
                 // SQLite is responsible for eventually freeing the result
                 let appdata = unwrap_appdata!(file.vfs)?;
-                *args = sqlite3_mprintf(&appdata.sqlite_api, &result)?;
+                *args = sqlite3_mprintf(&appdata.sqlite_api, &msg)?;
             }
 
-            Ok(vars::SQLITE_OK)
+            result
         });
     }
     vars::SQLITE_NOTFOUND

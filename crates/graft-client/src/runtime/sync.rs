@@ -6,6 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use control::{SyncControl, SyncRpc};
 use crossbeam::channel::{bounded, select_biased, Receiver, Sender, TrySendError};
 use culprit::{Culprit, Result, ResultExt};
 use graft_core::VolumeId;
@@ -26,6 +27,7 @@ use super::{
     },
 };
 
+pub mod control;
 mod job;
 
 #[derive(Debug, Error)]
@@ -46,57 +48,6 @@ pub enum ShutdownErr {
     TaskNotRunning,
 }
 
-#[derive(Debug)]
-pub enum SyncControl {
-    GetAutosync {
-        complete: Sender<bool>,
-    },
-
-    SetAutosync {
-        autosync: bool,
-        complete: Sender<()>,
-    },
-
-    Sync {
-        vid: VolumeId,
-        direction: SyncDirection,
-        complete: Sender<Result<(), ClientErr>>,
-    },
-
-    ResetToRemote {
-        vid: VolumeId,
-        complete: Sender<Result<(), ClientErr>>,
-    },
-
-    Shutdown,
-}
-
-#[derive(Debug, Clone)]
-pub struct SyncController {
-    control: Option<Sender<SyncControl>>,
-}
-
-impl SyncController {
-    fn connected(&self) -> bool {
-        self.control.is_some()
-    }
-
-    fn send(&self, msg: SyncControl) {
-        self.control
-            .as_ref()
-            .expect("sync control channel missing")
-            .send(msg)
-            .expect("sync control channel closed");
-    }
-
-    // TODO:
-    // - create methods for each of the synccontrol instances
-    // - update volume handle to use SyncController
-    // - add autosync methods to runtime
-    // - expose autosync via pragma and env var
-    // - disable autosync in sqlite_tests
-}
-
 #[derive(Clone, Default)]
 pub struct SyncTaskHandle {
     inner: Arc<RwLock<Option<SyncTaskHandleInner>>>,
@@ -108,11 +59,13 @@ struct SyncTaskHandleInner {
 }
 
 impl SyncTaskHandle {
-    pub fn control(&self) -> Option<Sender<SyncControl>> {
-        self.inner
+    pub fn rpc(&self) -> SyncRpc {
+        let control = self
+            .inner
             .read()
             .as_ref()
-            .map(|inner| inner.control.clone())
+            .map(|inner| inner.control.clone());
+        SyncRpc::new(control)
     }
 
     pub fn spawn<F: Fetcher>(

@@ -113,16 +113,20 @@ select * from t;
 -- check metadata
 pragma graft_status;
 +-----------------------------------+
-| Current snapshot: Snapshot[3/_;2] |
+|           Graft Status            |
 +-----------------------------------+
+| Graft Status                      |
 | Current snapshot: Snapshot[3/_;2] |
+| Autosync: false                   |
 +-----------------------------------+
 .connection 0
 pragma graft_status;
 +-----------------------------------+
-| Current snapshot: Snapshot[3/_;2] |
+|           Graft Status            |
 +-----------------------------------+
+| Graft Status                      |
 | Current snapshot: Snapshot[3/_;2] |
+| Autosync: false                   |
 +-----------------------------------+
 
 SQLite Exit Code = 1

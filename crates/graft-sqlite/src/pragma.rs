@@ -1,47 +1,58 @@
-use culprit::ResultExt;
 use graft_client::runtime::{fetcher::Fetcher, runtime::Runtime};
-use sqlite_plugin::vfs::Pragma;
+use sqlite_plugin::vfs::{Pragma, PragmaErr};
+use std::fmt::Write;
 
-use crate::{file::vol_file::VolFile, vfs::ErrCtx};
+use crate::file::vol_file::VolFile;
 
 pub enum GraftPragma {
     Status,
+    SetAutosync(bool),
 }
 
-pub enum PragmaParseErr<'a> {
-    Invalid(Pragma<'a>),
-    Unknown(Pragma<'a>),
-}
+impl TryFrom<&Pragma<'_>> for GraftPragma {
+    type Error = PragmaErr;
 
-impl<'a> TryFrom<Pragma<'a>> for GraftPragma {
-    type Error = PragmaParseErr<'a>;
-
-    fn try_from(p: Pragma<'a>) -> Result<Self, Self::Error> {
+    fn try_from(p: &Pragma<'_>) -> Result<Self, Self::Error> {
         if let Some((prefix, suffix)) = p.name.split_once("_") {
             if prefix == "graft" {
                 return match suffix {
                     "status" => Ok(GraftPragma::Status),
-                    _ => Err(PragmaParseErr::Invalid(p)),
+                    "sync" => {
+                        let arg = p.arg.ok_or(PragmaErr::required_arg(p))?;
+                        let autosync = arg.parse()?;
+                        Ok(GraftPragma::SetAutosync(autosync))
+                    }
+                    _ => Err(PragmaErr::Fail(format!(
+                        "invalid graft pragma `{}`",
+                        p.name
+                    ))),
                 };
             }
         }
-        Err(PragmaParseErr::Unknown(p))
+        Err(PragmaErr::NotFound)
     }
 }
 
 impl GraftPragma {
     pub fn eval<F: Fetcher>(
         self,
-        _runtime: &Runtime<F>,
+        runtime: &Runtime<F>,
         file: &mut VolFile<F>,
-    ) -> culprit::Result<Option<String>, ErrCtx> {
+    ) -> Result<Option<String>, PragmaErr> {
         match self {
             GraftPragma::Status => {
-                if let Some(snapshot) = file.handle().snapshot().or_into_ctx()? {
-                    Ok(Some(format!("Current snapshot: {snapshot}")))
+                let mut out = "Graft Status\n".to_string();
+                if let Some(snapshot) = file.handle().snapshot()? {
+                    writeln!(&mut out, "Current snapshot: {snapshot}")?;
                 } else {
-                    Ok(Some(format!("No snapshot")))
+                    writeln!(&mut out, "Current snapshot: None")?;
                 }
+                writeln!(&mut out, "Autosync: {}", runtime.get_autosync())?;
+                Ok(Some(out))
+            }
+            GraftPragma::SetAutosync(autosync) => {
+                runtime.set_autosync(autosync);
+                Ok(None)
             }
         }
     }
