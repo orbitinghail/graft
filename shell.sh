@@ -25,13 +25,21 @@ while [[ $# -gt 0 ]]; do
             RUST_LOG="trace"
             shift
             ;;
+        --temp)
+            export GRAFT_DIR="$(mktemp -d)"
+            shift
+            ;;
+        -p*)
+            export GRAFT_DIR="/tmp/graft-shell/${1:2}"
+            shift
+            ;;
         --gdb)
             GDB=1
             shift
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [-vVID] [--trace] [--gdb]"
+            echo "Usage: $0 [-vVID] [--trace] [--temp] [-pPROFILE] [--gdb]"
             exit 1
             ;;
     esac
