@@ -384,9 +384,9 @@ mod tests {
 
         struct Report {
             name: &'static str,
-            ty: &'static str,
-            size: usize,
-            expected: usize,
+            //        (actual, expected)
+            splinter: (usize, usize),
+            roaring: (usize, usize),
         }
 
         let mut reports = vec![];
@@ -398,17 +398,13 @@ mod tests {
             let data = mksplinter(set.clone()).serialize_to_bytes();
             reports.push(Report {
                 name,
-                ty: "Splinter",
-                size: data.len(),
-                expected: expected_splinter,
-            });
-            reports.push(Report {
-                name,
-                ty: "Roaring",
-                size: roaring_size(set),
-                expected: expected_roaring,
+                splinter: (data.len(), expected_splinter),
+                roaring: (roaring_size(set), expected_roaring),
             });
         };
+
+        // empty splinter
+        run_test("empty", vec![], 8, 8);
 
         // 1 element in set
         let set = (0..=0).collect::<Vec<_>>();
@@ -468,17 +464,32 @@ mod tests {
 
         println!(
             "{:20} {:12} {:>6} {:>10} {:>10} {:>10}",
-            "distribution", "bitmap", "size", "expected", "diff", "result"
+            "test", "bitmap", "size", "expected", "relative", "ok"
         );
         for report in reports {
             println!(
                 "{:20} {:12} {:6} {:10} {:>10} {:>10}",
                 report.name,
-                report.ty,
-                report.size,
-                report.expected,
-                report.size as isize - report.expected as isize,
-                if report.size == report.expected {
+                "Splinter",
+                report.splinter.0,
+                report.splinter.1,
+                "1.00",
+                if report.splinter.0 == report.splinter.1 {
+                    "ok"
+                } else {
+                    fail_test = true;
+                    "FAIL"
+                }
+            );
+            let diff = report.roaring.0 as f64 / report.splinter.0 as f64;
+            println!(
+                "{:20} {:12} {:6} {:10} {:>10.2} {:>10}",
+                "",
+                "Roaring",
+                report.roaring.0,
+                report.roaring.1,
+                diff,
+                if report.roaring.0 == report.roaring.1 {
                     "ok"
                 } else {
                     fail_test = true;

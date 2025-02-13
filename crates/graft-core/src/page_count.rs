@@ -83,6 +83,15 @@ impl From<u32> for PageCount {
     }
 }
 
+impl TryFrom<usize> for PageCount {
+    type Error = <usize as TryInto<u32>>::Error;
+
+    #[inline]
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        value.try_into().map(Self::new)
+    }
+}
+
 impl From<PageCount> for u32 {
     #[inline]
     fn from(count: PageCount) -> u32 {

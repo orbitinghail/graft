@@ -319,13 +319,20 @@ impl Storage {
         &self,
         vid: &VolumeId,
         snapshot: Option<Snapshot>,
+        pages: impl Into<PageCount>,
         memtable: Memtable,
     ) -> Result<Snapshot> {
-        let span =
-            tracing::debug_span!("volume_commit", ?vid, ?snapshot, result = field::Empty).entered();
+        let pages = pages.into();
+        let span = tracing::debug_span!(
+            "volume_commit",
+            ?vid,
+            ?snapshot,
+            ?pages,
+            result = field::Empty
+        )
+        .entered();
 
         let mut batch = self.keyspace.batch();
-        let mut pages = snapshot.as_ref().map_or(PageCount::ZERO, |s| s.pages());
         let read_lsn = snapshot.as_ref().map(|s| s.local());
         let commit_lsn = read_lsn
             .map(|lsn| lsn.next().expect("lsn overflow"))
@@ -338,7 +345,6 @@ impl Storage {
         let mut page_key = PageKey::new(vid.clone(), PageOffset::ZERO, commit_lsn);
         for (offset, page) in memtable {
             page_key = page_key.with_offset(offset);
-            pages = pages.max(offset.pages());
             offsets.insert(offset.into());
             batch.insert(&self.pages, page_key.as_bytes(), PageValue::from(page));
         }
@@ -823,16 +829,16 @@ mod tests {
         storage
             .set_volume_config(&vids[0], VolumeConfig::new(SyncDirection::Pull))
             .unwrap();
-        let snapshot = storage.commit(&vids[0], None, memtable.clone()).unwrap();
+        let snapshot = storage.commit(&vids[0], None, 1, memtable.clone()).unwrap();
         storage
-            .commit(&vids[0], Some(snapshot), memtable.clone())
+            .commit(&vids[0], Some(snapshot), 1, memtable.clone())
             .unwrap();
 
         // second volume has one commit, and is configured to push
         storage
             .set_volume_config(&vids[1], VolumeConfig::new(SyncDirection::Push))
             .unwrap();
-        storage.commit(&vids[1], None, memtable.clone()).unwrap();
+        storage.commit(&vids[1], None, 1, memtable.clone()).unwrap();
 
         // ensure that we can query back out the snapshots
         let sync = SyncDirection::Both;

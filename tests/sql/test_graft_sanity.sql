@@ -20,8 +20,8 @@ COMMIT;
 
 pragma graft_status;
 
--- vacuum;
--- drop table t1;
--- vacuum;
+vacuum;
+drop table t1;
+vacuum;
 
 select * from dbstat;

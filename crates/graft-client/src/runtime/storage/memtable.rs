@@ -8,8 +8,12 @@ pub struct Memtable {
 }
 
 impl Memtable {
-    pub fn max_offset(&self) -> Option<PageOffset> {
-        self.pages.keys().next_back().copied()
+    pub fn truncate(&mut self, max_offset: Option<PageOffset>) {
+        if let Some(max_offset) = max_offset {
+            self.pages.retain(|k, _| k <= &max_offset);
+        } else {
+            self.pages.clear();
+        }
     }
 
     pub fn is_empty(&self) -> bool {

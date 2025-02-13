@@ -286,8 +286,26 @@ impl<F: Fetcher + Debug> VfsFile for VolFile<F> {
         Ok(data.len())
     }
 
-    fn truncate(&mut self, _size: usize) -> Result<(), ErrCtx> {
-        todo!("implement VolFile::truncate")
+    fn truncate(&mut self, size: usize) -> Result<(), ErrCtx> {
+        let VolFileState::Reserved { writer, .. } = &mut self.state else {
+            return Err(Culprit::new_with_note(
+                ErrCtx::InvalidVolumeState,
+                "must hold reserved lock to truncate",
+            ));
+        };
+
+        assert_eq!(
+            size % PAGESIZE.as_usize(),
+            0,
+            "size must be an even multiple of {PAGESIZE}"
+        );
+
+        let pages: PageCount = (size / PAGESIZE.as_usize())
+            .try_into()
+            .expect("size too large");
+
+        writer.truncate(pages);
+        Ok(())
     }
 
     fn write(&mut self, offset: usize, data: &[u8]) -> Result<usize, ErrCtx> {
