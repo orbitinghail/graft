@@ -2,7 +2,6 @@ Next: SQLite extension
 
 Stack:
 
-- migrate sql snapshot tests to rust
 - sqlite antithesis workload
 
 Then:

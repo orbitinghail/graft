@@ -1288,6 +1288,8 @@ dependencies = [
 name = "graft-test-macro"
 version = "0.1.0"
 dependencies = [
+ "glob",
+ "proc-macro2",
  "quote",
  "syn",
 ]

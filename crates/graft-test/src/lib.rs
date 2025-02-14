@@ -42,6 +42,7 @@ use tokio::{
 };
 use url::Url;
 
+pub use graft_test_macro::datatest;
 pub use graft_test_macro::test;
 
 pub mod workload;
