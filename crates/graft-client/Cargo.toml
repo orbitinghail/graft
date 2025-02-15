@@ -12,8 +12,8 @@ precept = { path = "../precept" }
 bytes = { workspace = true }
 culprit = { workspace = true }
 crossbeam = { workspace = true }
-fjall = { workspace = true, features = ["bytes"] }
-lsm-tree = { workspace = true, features = ["bytes"] }
+fjall = { workspace = true }
+lsm-tree = { workspace = true }
 parking_lot = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
