@@ -5,11 +5,11 @@ use crate::ClientErr;
 
 use super::storage::Storage;
 
-mod mock;
-mod net;
+mod mock_fetcher;
+mod net_fetcher;
 
-pub use mock::MockFetcher;
-pub use net::NetFetcher;
+pub use mock_fetcher::MockFetcher;
+pub use net_fetcher::NetFetcher;
 
 pub trait Fetcher: Send + Sync + 'static {
     /// Fetch a specific page, update storage, and return it.
