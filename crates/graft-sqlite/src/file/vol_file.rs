@@ -3,8 +3,7 @@ use std::{fmt::Debug, mem, sync::Arc};
 use bytes::BytesMut;
 use culprit::{Culprit, Result, ResultExt};
 use graft_client::runtime::{
-    fetcher::Fetcher,
-    volume::VolumeHandle,
+    volume_handle::VolumeHandle,
     volume_reader::{VolumeRead, VolumeReader},
     volume_writer::{VolumeWrite, VolumeWriter},
 };
@@ -21,20 +20,20 @@ use crate::vfs::ErrCtx;
 use super::VfsFile;
 
 #[derive(Debug)]
-enum VolFileState<F> {
+enum VolFileState {
     Idle,
     Shared {
-        reader: VolumeReader<F>,
+        reader: VolumeReader,
         performed_read: bool,
     },
     Reserved {
-        writer: VolumeWriter<F>,
+        writer: VolumeWriter,
         performed_read: bool,
     },
     Committing,
 }
 
-impl<F> VolFileState<F> {
+impl VolFileState {
     fn name(&self) -> &'static str {
         match self {
             VolFileState::Idle => "Idle",
@@ -45,22 +44,22 @@ impl<F> VolFileState<F> {
     }
 }
 
-pub struct VolFile<F> {
-    handle: VolumeHandle<F>,
+pub struct VolFile {
+    handle: VolumeHandle,
     opts: OpenOpts,
 
     reserved: Arc<Mutex<()>>,
-    state: VolFileState<F>,
+    state: VolFileState,
 }
 
-impl<F: Fetcher> Debug for VolFile<F> {
+impl Debug for VolFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.handle.vid().pretty())
     }
 }
 
-impl<F> VolFile<F> {
-    pub fn new(handle: VolumeHandle<F>, opts: OpenOpts, reserved: Arc<Mutex<()>>) -> Self {
+impl VolFile {
+    pub fn new(handle: VolumeHandle, opts: OpenOpts, reserved: Arc<Mutex<()>>) -> Self {
         Self {
             handle,
             opts,
@@ -69,7 +68,7 @@ impl<F> VolFile<F> {
         }
     }
 
-    pub fn handle(&self) -> &VolumeHandle<F> {
+    pub fn handle(&self) -> &VolumeHandle {
         &self.handle
     }
 
@@ -77,12 +76,12 @@ impl<F> VolFile<F> {
         self.opts
     }
 
-    pub fn close(self) -> VolumeHandle<F> {
+    pub fn close(self) -> VolumeHandle {
         self.handle
     }
 }
 
-impl<F: Fetcher + Debug> VfsFile for VolFile<F> {
+impl VfsFile for VolFile {
     fn readonly(&self) -> bool {
         false
     }

@@ -17,14 +17,14 @@ use clap::{Parser, Subcommand};
 use culprit::ResultExt;
 use graft_client::{
     runtime::{
-        fetcher::{Fetcher, NetFetcher},
+        fetcher::NetFetcher,
         runtime::Runtime,
         storage::{
             volume_state::{SyncDirection, VolumeConfig},
             Storage, StorageErr,
         },
         sync::StartupErr,
-        volume::VolumeHandle,
+        volume_handle::VolumeHandle,
         volume_reader::VolumeRead,
         volume_writer::{VolumeWrite, VolumeWriter},
     },
@@ -347,7 +347,7 @@ fn list_get(reader: &impl VolumeRead, key: &str) -> Result<Option<NodeView>> {
         .or_into_ctx()
 }
 
-fn list_set<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str, value: &str) -> Result<()> {
+fn list_set(writer: &mut VolumeWriter, key: &str, value: &str) -> Result<()> {
     let mut header = HeaderView::load(writer, 0)?;
 
     // either find the node to update, or find the insertion point
@@ -385,7 +385,7 @@ fn list_set<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str, value: &str) ->
     Ok(())
 }
 
-fn list_remove<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str) -> Result<bool> {
+fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
     let mut header = HeaderView::load(writer, 0)?;
 
     // find the node immediately before the node to remove (if it exists)
@@ -418,13 +418,13 @@ fn list_remove<F: Fetcher>(writer: &mut VolumeWriter<F>, key: &str) -> Result<bo
     return Ok(false);
 }
 
-struct Simulator<F: Fetcher> {
-    handle: VolumeHandle<F>,
+struct Simulator {
+    handle: VolumeHandle,
     ticks: u32,
 }
 
-impl<F: Fetcher> Simulator<F> {
-    fn new(handle: VolumeHandle<F>, ticks: u32) -> Self {
+impl Simulator {
+    fn new(handle: VolumeHandle, ticks: u32) -> Self {
         Self { handle, ticks }
     }
 

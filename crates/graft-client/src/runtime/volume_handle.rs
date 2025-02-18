@@ -4,7 +4,6 @@ use graft_core::VolumeId;
 use crate::ClientErr;
 
 use super::{
-    fetcher::Fetcher,
     shared::Shared,
     storage::{
         snapshot::Snapshot,
@@ -16,14 +15,14 @@ use super::{
 };
 
 #[derive(Clone, Debug)]
-pub struct VolumeHandle<F> {
+pub struct VolumeHandle {
     vid: VolumeId,
-    shared: Shared<F>,
+    shared: Shared,
     sync_rpc: SyncRpc,
 }
 
-impl<F: Fetcher> VolumeHandle<F> {
-    pub(crate) fn new(vid: VolumeId, shared: Shared<F>, sync_rpc: SyncRpc) -> Self {
+impl VolumeHandle {
+    pub(crate) fn new(vid: VolumeId, shared: Shared, sync_rpc: SyncRpc) -> Self {
         Self { vid, shared, sync_rpc }
     }
 
@@ -47,7 +46,7 @@ impl<F: Fetcher> VolumeHandle<F> {
     }
 
     /// Open a VolumeReader at the latest snapshot
-    pub fn reader(&self) -> Result<VolumeReader<F>, ClientErr> {
+    pub fn reader(&self) -> Result<VolumeReader, ClientErr> {
         Ok(VolumeReader::new(
             self.vid.clone(),
             self.snapshot()?,
@@ -56,17 +55,17 @@ impl<F: Fetcher> VolumeHandle<F> {
     }
 
     /// Open a VolumeReader at the provided snapshot
-    pub fn reader_at(&self, snapshot: Option<Snapshot>) -> VolumeReader<F> {
+    pub fn reader_at(&self, snapshot: Option<Snapshot>) -> VolumeReader {
         VolumeReader::new(self.vid.clone(), snapshot, self.shared.clone())
     }
 
     /// Open a VolumeWriter at the latest snapshot
-    pub fn writer(&self) -> Result<VolumeWriter<F>, ClientErr> {
+    pub fn writer(&self) -> Result<VolumeWriter, ClientErr> {
         self.reader().map(VolumeWriter::from)
     }
 
     /// Open a VolumeWriter at the provided snapshot
-    pub fn writer_at(&self, snapshot: Option<Snapshot>) -> VolumeWriter<F> {
+    pub fn writer_at(&self, snapshot: Option<Snapshot>) -> VolumeWriter {
         VolumeWriter::from(self.reader_at(snapshot))
     }
 

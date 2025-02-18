@@ -14,25 +14,18 @@ use super::{
         Storage,
     },
     sync::{ShutdownErr, StartupErr, SyncTaskHandle},
-    volume::VolumeHandle,
+    volume_handle::VolumeHandle,
 };
 
-pub struct Runtime<F> {
-    shared: Shared<F>,
+#[derive(Clone)]
+pub struct Runtime {
+    shared: Shared,
     sync: SyncTaskHandle,
 }
 
-impl<F> Clone for Runtime<F> {
-    fn clone(&self) -> Self {
-        Self {
-            shared: self.shared.clone(),
-            sync: self.sync.clone(),
-        }
-    }
-}
-
-impl<F: Fetcher> Runtime<F> {
-    pub fn new(cid: ClientId, fetcher: F, storage: Storage) -> Self {
+impl Runtime {
+    pub fn new(cid: ClientId, fetcher: impl Fetcher, storage: Storage) -> Self {
+        let fetcher = Box::new(fetcher);
         Self {
             shared: Shared::new(cid, fetcher, storage),
             sync: SyncTaskHandle::default(),
@@ -78,7 +71,7 @@ impl<F: Fetcher> Runtime<F> {
         &self,
         vid: &VolumeId,
         config: VolumeConfig,
-    ) -> Result<VolumeHandle<F>, ClientErr> {
+    ) -> Result<VolumeHandle, ClientErr> {
         self.shared
             .storage()
             .set_volume_config(&vid, config)

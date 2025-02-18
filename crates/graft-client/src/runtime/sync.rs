@@ -18,7 +18,6 @@ use tryiter::{TryIterator, TryIteratorExt};
 use crate::{ClientErr, ClientPair};
 
 use super::{
-    fetcher::Fetcher,
     shared::Shared,
     storage::{
         changeset::SetSubscriber,
@@ -68,9 +67,9 @@ impl SyncTaskHandle {
         SyncRpc::new(control)
     }
 
-    pub fn spawn<F: Fetcher>(
+    pub fn spawn(
         &self,
-        shared: Shared<F>,
+        shared: Shared,
         clients: ClientPair,
         refresh_interval: Duration,
         control_channel_size: usize,
@@ -169,8 +168,8 @@ impl From<StorageErr> for SyncTaskErr {
 
 /// A SyncTask is a background task which continuously syncs volumes to and from
 /// a Graft service.
-pub struct SyncTask<F> {
-    shared: Shared<F>,
+pub struct SyncTask {
+    shared: Shared,
     clients: ClientPair,
     refresh_interval: Duration,
     commits: SetSubscriber<VolumeId>,
@@ -181,7 +180,7 @@ pub struct SyncTask<F> {
     autosync: bool,
 }
 
-impl<F: Fetcher> SyncTask<F> {
+impl SyncTask {
     fn run(mut self) {
         loop {
             match self.run_inner() {

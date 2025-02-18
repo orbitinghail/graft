@@ -91,19 +91,19 @@ impl<T> From<ErrCtx> for culprit::Result<T, ErrCtx> {
     }
 }
 
-pub struct GraftVfs<F> {
-    runtime: Runtime<F>,
+pub struct GraftVfs {
+    runtime: Runtime,
     locks: Mutex<HashMap<VolumeId, Arc<Mutex<()>>>>,
 }
 
-impl<F> GraftVfs<F> {
-    pub fn new(runtime: Runtime<F>) -> Self {
+impl GraftVfs {
+    pub fn new(runtime: Runtime) -> Self {
         Self { runtime, locks: Default::default() }
     }
 }
 
-impl<F: Fetcher + Debug> Vfs for GraftVfs<F> {
-    type Handle = FileHandle<F>;
+impl Vfs for GraftVfs {
+    type Handle = FileHandle;
 
     fn register_logger(&self, logger: SqliteLogger) {
         #[derive(Clone)]

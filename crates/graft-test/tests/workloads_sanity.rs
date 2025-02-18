@@ -12,8 +12,8 @@ use graft_test::{
     Ticker,
 };
 
-struct WorkloadRunner<F> {
-    runtime: Runtime<F>,
+struct WorkloadRunner {
+    runtime: Runtime,
     workload: JoinHandle<Result<(), Culprit<WorkloadErr>>>,
 }
 

@@ -9,7 +9,6 @@ use graft_core::{
 use crate::ClientErr;
 
 use super::{
-    fetcher::Fetcher,
     shared::Shared,
     storage::{page::PageValue, snapshot::Snapshot},
     volume_writer::VolumeWriter,
@@ -25,40 +24,30 @@ pub trait VolumeRead {
     fn read(&self, offset: impl Into<PageOffset>) -> Result<Page, ClientErr>;
 }
 
-#[derive(Debug)]
-pub struct VolumeReader<F> {
+#[derive(Debug, Clone)]
+pub struct VolumeReader {
     vid: VolumeId,
     snapshot: Option<Snapshot>,
-    shared: Shared<F>,
+    shared: Shared,
 }
 
-impl<F> Clone for VolumeReader<F> {
-    fn clone(&self) -> Self {
-        Self {
-            vid: self.vid.clone(),
-            snapshot: self.snapshot.clone(),
-            shared: self.shared.clone(),
-        }
-    }
-}
-
-impl<F: Fetcher> VolumeReader<F> {
-    pub(crate) fn new(vid: VolumeId, snapshot: Option<Snapshot>, shared: Shared<F>) -> Self {
+impl VolumeReader {
+    pub(crate) fn new(vid: VolumeId, snapshot: Option<Snapshot>, shared: Shared) -> Self {
         Self { vid, snapshot, shared }
     }
 
     /// Upgrade this reader into a writer
-    pub fn upgrade(self) -> VolumeWriter<F> {
+    pub fn upgrade(self) -> VolumeWriter {
         self.into()
     }
 
     /// decompose this reader into snapshot and storage
-    pub(crate) fn into_parts(self) -> (VolumeId, Option<Snapshot>, Shared<F>) {
+    pub(crate) fn into_parts(self) -> (VolumeId, Option<Snapshot>, Shared) {
         (self.vid, self.snapshot, self.shared)
     }
 }
 
-impl<F: Fetcher> VolumeRead for VolumeReader<F> {
+impl VolumeRead for VolumeReader {
     #[inline]
     fn vid(&self) -> &VolumeId {
         &self.vid

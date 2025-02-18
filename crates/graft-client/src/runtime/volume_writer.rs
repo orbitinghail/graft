@@ -4,7 +4,6 @@ use graft_core::{page::Page, page_count::PageCount, page_offset::PageOffset, Vol
 use crate::ClientErr;
 
 use super::{
-    fetcher::Fetcher,
     storage::{memtable::Memtable, snapshot::Snapshot},
     volume_reader::{VolumeRead, VolumeReader},
 };
@@ -24,20 +23,20 @@ pub trait VolumeWrite {
 }
 
 #[derive(Debug)]
-pub struct VolumeWriter<F> {
+pub struct VolumeWriter {
     pages: PageCount,
-    reader: VolumeReader<F>,
+    reader: VolumeReader,
     memtable: Memtable,
 }
 
-impl<F: Fetcher> VolumeWriter<F> {
+impl VolumeWriter {
     pub fn pages(&self) -> PageCount {
         self.pages
     }
 }
 
-impl<F: Fetcher> From<VolumeReader<F>> for VolumeWriter<F> {
-    fn from(reader: VolumeReader<F>) -> Self {
+impl From<VolumeReader> for VolumeWriter {
+    fn from(reader: VolumeReader) -> Self {
         let pages = reader.snapshot().map_or(PageCount::ZERO, |s| s.pages());
         Self {
             pages,
@@ -47,7 +46,7 @@ impl<F: Fetcher> From<VolumeReader<F>> for VolumeWriter<F> {
     }
 }
 
-impl<F: Fetcher> VolumeRead for VolumeWriter<F> {
+impl VolumeRead for VolumeWriter {
     #[inline]
     fn vid(&self) -> &VolumeId {
         self.reader.vid()
@@ -69,8 +68,8 @@ impl<F: Fetcher> VolumeRead for VolumeWriter<F> {
     }
 }
 
-impl<F: Fetcher> VolumeWrite for VolumeWriter<F> {
-    type CommitOutput = VolumeReader<F>;
+impl VolumeWrite for VolumeWriter {
+    type CommitOutput = VolumeReader;
 
     fn write(&mut self, offset: impl Into<PageOffset>, page: Page) {
         let offset = offset.into();
@@ -83,7 +82,7 @@ impl<F: Fetcher> VolumeWrite for VolumeWriter<F> {
         self.memtable.truncate(self.pages.last_offset())
     }
 
-    fn commit(self) -> Result<VolumeReader<F>, ClientErr> {
+    fn commit(self) -> Result<VolumeReader, ClientErr> {
         let (vid, snapshot, shared) = self.reader.into_parts();
 
         // we have nothing to commit if the page count is equal to the snapshot

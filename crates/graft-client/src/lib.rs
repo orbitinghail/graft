@@ -10,7 +10,7 @@ pub mod runtime {
     mod shared;
     pub mod storage;
     pub mod sync;
-    pub mod volume;
+    pub mod volume_handle;
     pub mod volume_reader;
     pub mod volume_writer;
 }

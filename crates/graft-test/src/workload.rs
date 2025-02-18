@@ -8,7 +8,6 @@ use crossbeam::channel::RecvTimeoutError;
 use culprit::{Culprit, ResultExt};
 use graft_client::{
     runtime::{
-        fetcher::Fetcher,
         runtime::Runtime,
         storage::{
             snapshot::Snapshot,
@@ -16,7 +15,7 @@ use graft_client::{
             StorageErr,
         },
         sync::{ShutdownErr, StartupErr},
-        volume::VolumeHandle,
+        volume_handle::VolumeHandle,
         volume_reader::{VolumeRead, VolumeReader},
         volume_writer::VolumeWrite,
     },
@@ -112,18 +111,18 @@ pub enum Workload {
     Reader { vid: VolumeId, interval_ms: u64 },
 }
 
-struct WorkloadEnv<F: Fetcher, R: Rng> {
+struct WorkloadEnv<R: Rng> {
     cid: ClientId,
-    runtime: Runtime<F>,
+    runtime: Runtime,
     rng: R,
     ticker: Ticker,
 }
 
 impl Workload {
-    pub fn run<F: Fetcher, R: Rng>(
+    pub fn run<R: Rng>(
         self,
         cid: ClientId,
-        runtime: Runtime<F>,
+        runtime: Runtime,
         rng: R,
         ticker: Ticker,
     ) -> Result<(), Culprit<WorkloadErr>> {
@@ -151,9 +150,7 @@ impl Workload {
     }
 }
 
-fn recover_and_sync_volume<F: Fetcher>(
-    handle: &VolumeHandle<F>,
-) -> Result<(), Culprit<WorkloadErr>> {
+fn recover_and_sync_volume(handle: &VolumeHandle) -> Result<(), Culprit<WorkloadErr>> {
     let vid = handle.vid();
     let status = handle.status().or_into_ctx()?;
     let span = tracing::info_span!(
@@ -190,8 +187,8 @@ fn recover_and_sync_volume<F: Fetcher>(
     Ok(())
 }
 
-fn load_tracker<F: Fetcher>(
-    reader: &VolumeReader<F>,
+fn load_tracker(
+    reader: &VolumeReader,
     cid: &ClientId,
 ) -> Result<PageTracker, Culprit<WorkloadErr>> {
     let span = tracing::info_span!("load_tracker", snapshot=?reader.snapshot(), hash=field::Empty)
@@ -221,8 +218,8 @@ fn load_tracker<F: Fetcher>(
 
 /// This workload continuously writes and reads pages to a volume, verifying the
 /// contents of pages are always correct
-fn workload_writer<F: Fetcher, R: Rng>(
-    env: &mut WorkloadEnv<F, R>,
+fn workload_writer<R: Rng>(
+    env: &mut WorkloadEnv<R>,
     vid: &VolumeId,
     interval: Duration,
 ) -> Result<(), Culprit<WorkloadErr>> {
@@ -334,8 +331,8 @@ fn workload_writer<F: Fetcher, R: Rng>(
     Ok(())
 }
 
-fn workload_reader<F: Fetcher, R: Rng>(
-    env: &mut WorkloadEnv<F, R>,
+fn workload_reader<R: Rng>(
+    env: &mut WorkloadEnv<R>,
     vid: &VolumeId,
     interval: Duration,
 ) -> Result<(), Culprit<WorkloadErr>> {

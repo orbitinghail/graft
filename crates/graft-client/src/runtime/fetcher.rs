@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use culprit::Result;
 use graft_core::{lsn::LSN, page::Page, page_offset::PageOffset, VolumeId};
 
@@ -11,7 +13,7 @@ mod net_fetcher;
 pub use mock_fetcher::MockFetcher;
 pub use net_fetcher::NetFetcher;
 
-pub trait Fetcher: Send + Sync + 'static {
+pub trait Fetcher: Debug + Send + Sync + 'static {
     /// Fetch a specific page, update storage, and return it.
     fn fetch_page(
         &self,

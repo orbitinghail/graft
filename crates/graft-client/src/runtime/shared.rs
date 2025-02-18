@@ -2,23 +2,23 @@ use std::sync::Arc;
 
 use graft_core::gid::ClientId;
 
-use super::storage::Storage;
+use super::{fetcher::Fetcher, storage::Storage};
 
-#[derive(Debug)]
-pub struct Shared<F> {
-    inner: Arc<Inner<F>>,
+#[derive(Debug, Clone)]
+pub struct Shared {
+    inner: Arc<Inner>,
 }
 
 #[derive(Debug)]
-struct Inner<F> {
+struct Inner {
     cid: ClientId,
-    fetcher: F,
+    fetcher: Box<dyn Fetcher>,
     storage: Storage,
 }
 
-impl<F> Shared<F> {
+impl Shared {
     #[inline]
-    pub fn new(cid: ClientId, fetcher: F, storage: Storage) -> Self {
+    pub fn new(cid: ClientId, fetcher: Box<dyn Fetcher>, storage: Storage) -> Self {
         Self {
             inner: Arc::new(Inner { cid, fetcher, storage }),
         }
@@ -30,18 +30,12 @@ impl<F> Shared<F> {
     }
 
     #[inline]
-    pub fn fetcher(&self) -> &F {
-        &self.inner.fetcher
+    pub fn fetcher(&self) -> &dyn Fetcher {
+        self.inner.fetcher.as_ref()
     }
 
     #[inline]
     pub fn storage(&self) -> &Storage {
         &self.inner.storage
-    }
-}
-
-impl<F> Clone for Shared<F> {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
     }
 }

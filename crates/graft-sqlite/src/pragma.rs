@@ -1,4 +1,4 @@
-use graft_client::runtime::{fetcher::Fetcher, runtime::Runtime};
+use graft_client::runtime::runtime::Runtime;
 use sqlite_plugin::vfs::{Pragma, PragmaErr};
 use std::fmt::Write;
 
@@ -34,11 +34,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
 }
 
 impl GraftPragma {
-    pub fn eval<F: Fetcher>(
-        self,
-        runtime: &Runtime<F>,
-        file: &mut VolFile<F>,
-    ) -> Result<Option<String>, PragmaErr> {
+    pub fn eval(self, runtime: &Runtime, file: &mut VolFile) -> Result<Option<String>, PragmaErr> {
         match self {
             GraftPragma::Status => {
                 let mut out = "Graft Status\n".to_string();
