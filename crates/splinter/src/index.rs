@@ -18,13 +18,13 @@ where
     Offset: FromBytes + Immutable + Copy + Into<u32> + 'a,
 {
     #[inline]
-    fn size(cardinality: usize) -> usize {
+    fn serialized_size(cardinality: usize) -> usize {
         let block_size = block_size(cardinality);
         block_size + cardinality + (size_of::<Offset>() * cardinality)
     }
 
     pub fn from_suffix(data: &'a [u8], cardinality: usize) -> (&'a [u8], Self) {
-        let index_size = Self::size(cardinality);
+        let index_size = Self::serialized_size(cardinality);
         assert!(data.len() >= index_size, "data too short");
         let (data, index) = data.split_at(data.len() - index_size);
         (data, Self::from_bytes(index, cardinality))

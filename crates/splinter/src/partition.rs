@@ -100,7 +100,8 @@ where
 }
 
 impl<O, V> Relation for Partition<O, V> {
-    type ValRef<'a> = &'a V
+    type ValRef<'a>
+        = &'a V
     where
         Self: 'a;
 
@@ -110,7 +111,6 @@ impl<O, V> Relation for Partition<O, V> {
     }
 
     fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
-        // self.index.segments().zip(self.values.iter())
         self.values.iter().map(|(k, v)| (*k, v))
     }
 
@@ -248,7 +248,8 @@ where
     Offset: FromBytes + Immutable + Copy + Into<u32>,
     V: FromSuffix<'a>,
 {
-    type ValRef<'b> = V
+    type ValRef<'b>
+        = V
     where
         Self: 'b;
 

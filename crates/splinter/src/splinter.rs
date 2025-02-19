@@ -12,7 +12,7 @@ use crate::{
     partition::{Partition, PartitionRef},
     relational::Relation,
     util::{CopyToOwned, FromSuffix, SerializeContainer},
-    DecodeErr,
+    DecodeErr, Segment,
 };
 
 mod cmp;
@@ -23,7 +23,7 @@ mod union;
 
 pub const SPLINTER_MAGIC: [u8; 2] = [0x57, 0x16];
 
-pub const SPLINTER_MAX_VALUE: u32 = (1 << 24) - 1;
+pub const SPLINTER_MAX_VALUE: u32 = u32::MAX;
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
@@ -64,7 +64,7 @@ impl Footer {
 
 #[derive(Default, Clone)]
 pub struct Splinter {
-    partitions: Partition<U32, Partition<U16, Block>>,
+    partitions: Partition<U32, Partition<U32, Partition<U16, Block>>>,
 }
 
 impl Splinter {
@@ -78,11 +78,13 @@ impl Splinter {
     }
 
     pub fn contains(&self, key: u32) -> bool {
-        let (high, mid, low) = segments(key);
+        let (a, b, c, d) = segments(key);
 
-        if let Some(partition) = self.partitions.get(high) {
-            if let Some(block) = partition.get(mid) {
-                return block.contains(low);
+        if let Some(partition) = self.partitions.get(a) {
+            if let Some(partition) = partition.get(b) {
+                if let Some(block) = partition.get(c) {
+                    return block.contains(d);
+                }
             }
         }
 
@@ -94,6 +96,7 @@ impl Splinter {
         self.partitions
             .sorted_iter()
             .flat_map(|(_, p)| p.sorted_iter())
+            .flat_map(|(_, p)| p.sorted_iter())
             .map(|(_, b)| b.cardinality())
             .sum()
     }
@@ -101,20 +104,23 @@ impl Splinter {
     pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.partitions
             .sorted_iter()
-            .flat_map(|(h, p)| p.sorted_iter().map(move |(m, b)| (h, m, b)))
-            .flat_map(|(h, m, b)| b.segments().map(move |l| combine_segments(h, m, l)))
+            .flat_map(|(a, p)| p.sorted_iter().map(move |(b, p)| (a, b, p)))
+            .flat_map(|(a, b, p)| p.sorted_iter().map(move |(c, p)| (a, b, c, p)))
+            .flat_map(|(a, b, c, p)| p.segments().map(move |d| combine_segments(a, b, c, d)))
     }
 
     pub fn insert(&mut self, key: u32) {
-        let (high, mid, low) = segments(key);
-        let partition = self.partitions.get_or_init(high);
-        let block = partition.get_or_init(mid);
-        block.insert(low);
+        let (a, b, c, d) = segments(key);
+        let partition = self.partitions.get_or_init(a);
+        let partition = partition.get_or_init(b);
+        let block = partition.get_or_init(c);
+        block.insert(d);
     }
 
-    fn insert_block(&mut self, high: u8, mid: u8, block: Block) {
-        let partition = self.partitions.get_or_init(high);
-        partition.insert(mid, block);
+    fn insert_block(&mut self, a: u8, b: u8, c: u8, block: Block) {
+        let partition = self.partitions.get_or_init(a);
+        let partition = partition.get_or_init(b);
+        partition.insert(c, block);
     }
 
     pub fn serialize<B: bytes::BufMut>(&self, out: &mut B) -> usize {
@@ -137,10 +143,11 @@ impl Splinter {
 
     /// returns the last key in the set
     pub fn last(&self) -> Option<u32> {
-        let (h, p) = self.partitions.last()?;
-        let (m, b) = p.last()?;
-        let l = b.last()?;
-        Some(combine_segments(h, m, l))
+        let (a, p) = self.partitions.last()?;
+        let (b, p) = p.last()?;
+        let (c, p) = p.last()?;
+        let d = p.last()?;
+        Some(combine_segments(a, b, c, d))
     }
 }
 
@@ -207,18 +214,20 @@ where
 
     pub(crate) fn load_partitions(
         &self,
-    ) -> PartitionRef<'_, U32, PartitionRef<'_, U16, BlockRef<'_>>> {
+    ) -> PartitionRef<'_, U32, PartitionRef<'_, U32, PartitionRef<'_, U16, BlockRef<'_>>>> {
         let data = self.data.as_ref();
         let slice = &data[..data.len() - size_of::<Footer>()];
         PartitionRef::from_suffix(slice, self.partitions)
     }
 
     pub fn contains(&self, key: u32) -> bool {
-        let (high, mid, low) = segments(key);
+        let (a, b, c, d) = segments(key);
 
-        if let Some(partition) = self.load_partitions().get(high) {
-            if let Some(block) = partition.get(mid) {
-                return block.contains(low);
+        if let Some(partition) = self.load_partitions().get(a) {
+            if let Some(partition) = partition.get(b) {
+                if let Some(block) = partition.get(c) {
+                    return block.contains(d);
+                }
             }
         }
 
@@ -227,17 +236,21 @@ where
 
     /// calculates the total number of values stored in the set
     pub fn cardinality(&self) -> usize {
-        self.load_partitions()
-            .sorted_iter()
-            .map(|(_, p)| p.cardinality())
-            .sum()
+        let mut sum = 0;
+        for (_, partition) in self.load_partitions().sorted_iter() {
+            for (_, partition) in partition.sorted_iter() {
+                sum += partition.cardinality();
+            }
+        }
+        sum
     }
 
     pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.load_partitions()
             .into_iter()
-            .flat_map(|(h, p)| p.into_iter().map(move |(m, b)| (h, m, b)))
-            .flat_map(|(h, m, b)| b.into_segments().map(move |l| combine_segments(h, m, l)))
+            .flat_map(|(a, p)| p.into_iter().map(move |(b, p)| (a, b, p)))
+            .flat_map(|(a, b, p)| p.into_iter().map(move |(c, p)| (a, b, c, p)))
+            .flat_map(|(a, b, c, p)| p.into_segments().map(move |d| combine_segments(a, b, c, d)))
     }
 }
 
@@ -265,30 +278,26 @@ impl<T: AsRef<[u8]>> CopyToOwned for SplinterRef<T> {
     }
 }
 
-/// split the key into 3 8-bit segments
-/// requires the key to be < 2^24
+/// split the key into 4 8-bit segments
 #[inline]
-fn segments(key: u32) -> (u8, u8, u8) {
-    assert!(key < 1 << 24, "key out of range: {}", key);
-
-    let high = (key >> 16) as u8;
-    let mid = (key >> 8) as u8;
-    let low = key as u8;
-    (high, mid, low)
+fn segments(key: u32) -> (Segment, Segment, Segment, Segment) {
+    let [a, b, c, d] = key.to_be_bytes();
+    (a, b, c, d)
 }
 
 #[inline]
-fn combine_segments(high: u8, mid: u8, low: u8) -> u32 {
-    (high as u32) << 16 | (mid as u32) << 8 | low as u32
+fn combine_segments(a: Segment, b: Segment, c: Segment, d: Segment) -> u32 {
+    u32::from_be_bytes([a, b, c, d])
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io;
+    use std::{io, ops::RangeInclusive};
 
     use crate::testutil::{mksplinter, mksplinter_ref};
 
     use super::*;
+    use itertools::iproduct;
     use roaring::RoaringBitmap;
 
     #[test]
@@ -384,6 +393,7 @@ mod tests {
 
         struct Report {
             name: &'static str,
+            baseline: usize,
             //        (actual, expected)
             splinter: (usize, usize),
             roaring: (usize, usize),
@@ -398,77 +408,122 @@ mod tests {
             let data = mksplinter(set.clone()).serialize_to_bytes();
             reports.push(Report {
                 name,
+                baseline: set.len() * std::mem::size_of::<u32>(),
                 splinter: (data.len(), expected_splinter),
                 roaring: (roaring_size(set), expected_roaring),
             });
         };
 
+        #[track_caller]
+        fn mkset(
+            high: RangeInclusive<u8>,
+            mid: RangeInclusive<u8>,
+            low: RangeInclusive<u8>,
+            block: RangeInclusive<u8>,
+            expected_len: usize,
+        ) -> Vec<u32> {
+            let out: Vec<u32> = iproduct!(high, mid, low, block)
+                .map(|(a, b, c, d)| u32::from_be_bytes([a, b, c, d]))
+                .collect();
+            assert_eq!(out.len(), expected_len.into());
+            out
+        }
+
         // empty splinter
         run_test("empty", vec![], 8, 8);
 
         // 1 element in set
-        let set = (0..=0).collect::<Vec<_>>();
-        run_test("1 element", set, 19, 18);
+        let set = mkset(0..=0, 0..=0, 0..=0, 0..=0, 1);
+        run_test("1 element", set, 25, 18);
 
         // 1 fully dense block
-        let set = (0..=255).collect::<Vec<_>>();
-        run_test("1 dense block", set, 18, 528);
+        let set = mkset(0..=0, 0..=0, 0..=0, 0..=255, 256);
+        run_test("1 dense block", set, 24, 528);
+
+        // 1 half full block
+        let set = mkset(0..=0, 0..=0, 0..=0, 0..=127, 128);
+        run_test("1 half full block", set, 56, 272);
+
+        // 1 sparse block
+        let set = mkset(0..=0, 0..=0, 0..=0, 0..=15, 16);
+        run_test("1 sparse block", set, 40, 48);
+
+        // 8 half full blocks
+        let set = mkset(0..=0, 0..=0, 0..=7, 0..=127, 1024);
+        run_test("8 half full blocks", set, 308, 2064);
 
         // 8 sparse blocks
-        let set = (0..=1024).step_by(128).collect::<Vec<_>>();
-        run_test("8 sparse blocks", set, 43, 34);
+        let set = mkset(0..=0, 0..=0, 0..=7, 0..=1, 16);
+        run_test("8 sparse blocks", set, 68, 48);
 
-        // 128 sparse blocks
-        let set = (0..=16384).step_by(128).collect::<Vec<_>>();
-        run_test("128 sparse blocks", set, 370, 274);
+        // 64 half full blocks
+        let set = mkset(0..=3, 0..=3, 0..=3, 0..=127, 8192);
+        run_test("64 half full blocks", set, 2432, 16520);
+
+        // 64 sparse blocks
+        let set = mkset(0..=3, 0..=3, 0..=3, 0..=1, 128);
+        run_test("64 sparse blocks", set, 512, 392);
+
+        // 256 half full blocks
+        let set = mkset(0..=3, 0..=7, 0..=7, 0..=127, 32768);
+        run_test("256 half full blocks", set, 9440, 65800);
+
+        // 256 sparse blocks
+        let set = mkset(0..=3, 0..=7, 0..=7, 0..=1, 512);
+        run_test("256 sparse blocks", set, 1760, 1288);
+
+        // 512 half full blocks
+        let set = mkset(0..=7, 0..=7, 0..=7, 0..=127, 65536);
+        run_test("512 half full blocks", set, 18872, 131592);
 
         // 512 sparse blocks
-        let set = (0..=65536).step_by(128).collect::<Vec<_>>();
-        run_test("512 sparse blocks", set, 1305, 1050);
+        let set = mkset(0..=7, 0..=7, 0..=7, 0..=1, 1024);
+        run_test("512 sparse blocks", set, 3512, 2568);
 
         // the rest of the compression tests use 4k elements
         let elements = 4096;
 
         // fully dense splinter
-        let set = (0..elements).collect::<Vec<_>>();
-        run_test("fully dense", set, 78, 8208);
+        let set = mkset(0..=0, 0..=0, 0..=15, 0..=255, elements);
+        run_test("fully dense", set, 84, 8208);
+
+        // 128 elements per block; dense partitions
+        let set = mkset(0..=0, 0..=0, 0..=31, 0..=127, elements);
+        run_test("128/block; dense", set, 1172, 8208);
 
         // 32 elements per block; dense partitions
-        let set = (0..).step_by(8).take(elements as usize).collect::<Vec<_>>();
-        run_test("32/block; dense", set, 4526, 8208);
+        let set = mkset(0..=0, 0..=0, 0..=127, 0..=31, elements);
+        run_test("32/block; dense", set, 4532, 8208);
 
-        // 16 elements per block; dense partitions
-        let set = (0..)
-            .step_by(16)
-            .take(elements as usize)
-            .collect::<Vec<_>>();
-        run_test("16/block; dense", set, 4878, 8208);
+        // 16 element per block; dense low partitions
+        let set = mkset(0..=0, 0..=0, 0..=255, 0..=15, elements);
+        run_test("16/block; dense", set, 4884, 8208);
 
-        // 1 element per block; dense partitions
-        // second worse case scenario
-        let set = (0..)
-            .step_by(256)
-            .take(elements as usize)
-            .collect::<Vec<_>>();
-        run_test("1/block; dense", set, 16488, 8328);
+        // 128 elements per block; sparse mid partitions
+        let set = mkset(0..=0, 0..=31, 0..=0, 0..=127, elements);
+        run_test("128/block; sparse mid", set, 1358, 8456);
 
-        // 1 element per block; sparse partitions
-        // worse case scenario
-        let set = (0..)
-            .step_by(4096)
-            .take(elements as usize)
-            .collect::<Vec<_>>();
-        run_test("1/block; sparse", set, 21768, 10248);
+        // 128 elements per block; sparse high partitions
+        let set = mkset(0..=31, 0..=0, 0..=0, 0..=127, elements);
+        run_test("128/block; sparse high", set, 1544, 8456);
+
+        // 1 element per block; sparse mid partitions
+        let set = mkset(0..=0, 0..=255, 0..=15, 0..=0, elements);
+        run_test("1/block; sparse mid", set, 21774, 10248);
+
+        // 1 element per block; sparse high partitions
+        let set = mkset(0..=255, 0..=15, 0..=0, 0..=0, elements);
+        run_test("1/block; sparse high", set, 46344, 40968);
 
         let mut fail_test = false;
 
         println!(
-            "{:20} {:12} {:>6} {:>10} {:>10} {:>10}",
+            "{:30} {:12} {:>6} {:>10} {:>10} {:>10}",
             "test", "bitmap", "size", "expected", "relative", "ok"
         );
         for report in reports {
             println!(
-                "{:20} {:12} {:6} {:10} {:>10} {:>10}",
+                "{:30} {:12} {:6} {:10} {:>10} {:>10}",
                 report.name,
                 "Splinter",
                 report.splinter.0,
@@ -483,17 +538,34 @@ mod tests {
             );
             let diff = report.roaring.0 as f64 / report.splinter.0 as f64;
             println!(
-                "{:20} {:12} {:6} {:10} {:>10.2} {:>10}",
+                "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
                 "",
                 "Roaring",
                 report.roaring.0,
                 report.roaring.1,
                 diff,
-                if report.roaring.0 == report.roaring.1 {
-                    "ok"
-                } else {
+                if report.roaring.0 != report.roaring.1 {
                     fail_test = true;
                     "FAIL"
+                } else if diff < 1.0 {
+                    "<"
+                } else {
+                    "ok"
+                }
+            );
+            let diff = report.baseline as f64 / report.splinter.0 as f64;
+            println!(
+                "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
+                "",
+                "Baseline",
+                report.baseline,
+                report.baseline,
+                diff,
+                if report.splinter.0 <= report.baseline {
+                    "ok"
+                } else {
+                    // we don't fail the test, just report for informational purposes;
+                    "<"
                 }
             );
         }

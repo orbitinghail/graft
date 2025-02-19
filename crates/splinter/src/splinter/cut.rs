@@ -9,13 +9,21 @@ impl Cut for Splinter {
         let mut out = Splinter::default();
 
         let rhs = &rhs.partitions;
-        self.partitions.retain(|&high, left| {
-            if let Some(right) = rhs.get(high) {
+        self.partitions.retain(|&a, left| {
+            if let Some(right) = rhs.get(a) {
                 // we need to cut right out of left
-                left.retain(|&mid, left| {
-                    if let Some(right) = right.get(mid) {
-                        out.insert_block(high, mid, left.cut(right));
-                        left.has_bits_set()
+                left.retain(|&b, left| {
+                    if let Some(right) = right.get(b) {
+                        // we need to cut right out of left
+                        left.retain(|&c, left| {
+                            if let Some(right) = right.get(c) {
+                                out.insert_block(a, b, c, left.cut(right));
+                                left.has_bits_set()
+                            } else {
+                                true
+                            }
+                        });
+                        !left.is_empty()
                     } else {
                         true
                     }
@@ -37,13 +45,21 @@ impl<T: AsRef<[u8]>> Cut<SplinterRef<T>> for Splinter {
         let mut out = Splinter::default();
 
         let rhs = rhs.load_partitions();
-        self.partitions.retain(|&high, left| {
-            if let Some(right) = rhs.get(high) {
+        self.partitions.retain(|&a, left| {
+            if let Some(right) = rhs.get(a) {
                 // we need to cut right out of left
-                left.retain(|&mid, left| {
-                    if let Some(right) = right.get(mid) {
-                        out.insert_block(high, mid, left.cut(&right));
-                        left.has_bits_set()
+                left.retain(|&b, left| {
+                    if let Some(right) = right.get(b) {
+                        // we need to cut right out of left
+                        left.retain(|&c, left| {
+                            if let Some(right) = right.get(c) {
+                                out.insert_block(a, b, c, left.cut(&right));
+                                left.has_bits_set()
+                            } else {
+                                true
+                            }
+                        });
+                        !left.is_empty()
                     } else {
                         true
                     }

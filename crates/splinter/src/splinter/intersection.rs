@@ -8,9 +8,11 @@ impl Intersection for Splinter {
 
     fn intersection(&self, rhs: &Self) -> Self::Output {
         let mut out = Splinter::default();
-        for (high, left, right) in self.partitions.inner_join(&rhs.partitions) {
-            for (mid, left, right) in left.inner_join(&right) {
-                out.insert_block(high, mid, left.intersection(right));
+        for (a, left, right) in self.partitions.inner_join(&rhs.partitions) {
+            for (b, left, right) in left.inner_join(&right) {
+                for (c, left, right) in left.inner_join(&right) {
+                    out.insert_block(a, b, c, left.intersection(right));
+                }
             }
         }
         out
@@ -24,9 +26,11 @@ impl<T: AsRef<[u8]>> Intersection<SplinterRef<T>> for Splinter {
     fn intersection(&self, rhs: &SplinterRef<T>) -> Self::Output {
         let mut out = Splinter::default();
         let rhs = rhs.load_partitions();
-        for (high, left, right) in self.partitions.inner_join(&rhs) {
-            for (mid, left, right) in left.inner_join(&right) {
-                out.insert_block(high, mid, left.intersection(&right));
+        for (a, left, right) in self.partitions.inner_join(&rhs) {
+            for (b, left, right) in left.inner_join(&right) {
+                for (c, left, right) in left.inner_join(&right) {
+                    out.insert_block(a, b, c, left.intersection(&right));
+                }
             }
         }
         out
@@ -49,9 +53,11 @@ impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> Intersection<SplinterRef<T2>> for Splinte
     fn intersection(&self, rhs: &SplinterRef<T2>) -> Self::Output {
         let mut out = Splinter::default();
         let rhs = rhs.load_partitions();
-        for (high, left, right) in self.load_partitions().inner_join(&rhs) {
-            for (mid, left, right) in left.inner_join(&right) {
-                out.insert_block(high, mid, left.intersection(&right));
+        for (a, left, right) in self.load_partitions().inner_join(&rhs) {
+            for (b, left, right) in left.inner_join(&right) {
+                for (c, left, right) in left.inner_join(&right) {
+                    out.insert_block(a, b, c, left.intersection(&right));
+                }
             }
         }
         out

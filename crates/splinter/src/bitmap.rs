@@ -103,6 +103,7 @@ impl BitmapMutExt for Bitmap {
 }
 
 impl BitmapExt for &Bitmap {
+    #[inline]
     fn as_ref(&self) -> &Bitmap {
         self
     }
@@ -140,13 +141,13 @@ impl<T: BitmapExt> Iterator for BitmapSegmentsIter<T> {
 
 /// Return the byte position of the segment in the bitmap
 #[inline]
-fn bitmap_key(segment: u8) -> usize {
+fn bitmap_key(segment: Segment) -> usize {
     segment as usize / 8
 }
 
 /// Return the bit position of the segment in the byte
 #[inline]
-fn bitmap_bit(segment: u8) -> u8 {
+fn bitmap_bit(segment: Segment) -> u8 {
     segment % 8
 }
 

@@ -20,21 +20,22 @@ index (cardinality, offset_size: u16|u32)
     cardinalities: [u8; cardinality] // 1 based
     offsets: [offset_size; cardinality]
 
-partition (cardinality)
-    map (cardinality, u16, block)
-
 map (cardinality, off_type, val_type)
     values: [val_type(index->cardinalities[i]); cardinality]
     index (cardinality, off_type)
 
 splinter
     header
-    map (footer->partitions, u32, partition)
+    map (footer->partitions, u32,
+      map (cardinality, u32,
+        map (cardinality, u16, block)))
     footer
 
 ```
 
 # Future optimizations
 
+## SIMD/AVX
+
 - implement SIMD/AVX versions of block_contains and block_rank
-  - implement 64-bit versions for non-AVX/SIMD
+- implement 64-bit versions for non-AVX/SIMD
