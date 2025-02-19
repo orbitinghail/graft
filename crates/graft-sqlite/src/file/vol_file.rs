@@ -241,7 +241,7 @@ impl VfsFile for VolFile {
             VolFileState::Reserved { writer, .. } => writer.pages(),
             VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
         };
-        Ok((PAGESIZE * pages.as_usize()).as_usize())
+        Ok((PAGESIZE * pages.to_usize()).as_usize())
     }
 
     fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, ErrCtx> {

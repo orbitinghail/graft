@@ -86,7 +86,7 @@ static_assertions::const_assert_eq!(size_of::<SegmentFooter>(), 32);
 
 pub fn closed_segment_size(volumes: usize, pages: PageCount) -> ByteUnit {
     let index_size = SegmentIndexBuilder::serialized_size(volumes, pages);
-    (PAGESIZE * pages.as_usize()) + index_size + size_of::<SegmentFooter>()
+    (PAGESIZE * pages.to_usize()) + index_size + size_of::<SegmentFooter>()
 }
 
 #[derive(Debug, Error)]
@@ -139,9 +139,9 @@ impl<'a> ClosedSegment<'a> {
         if page_data.len() % PAGESIZE != 0 {
             return Err(Culprit::new(SegmentValidationErr::InvalidPageSize));
         }
-        if page_data.len() / PAGESIZE != index.pages().as_usize() {
+        if page_data.len() / PAGESIZE != index.pages().to_usize() {
             let actual = (page_data.len() / PAGESIZE).as_usize();
-            let expected = index.pages().as_usize();
+            let expected = index.pages().to_usize();
             return Err(Culprit::new_with_note(
                 SegmentValidationErr::InvalidPageCount,
                 format!("segment contains {actual} pages; expected {expected}"),

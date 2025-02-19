@@ -105,7 +105,7 @@ impl SegmentIndexBuilder {
     pub fn new_with_capacity(volumes: usize, pages: PageCount) -> Self {
         Self {
             volume_index: BytesMut::with_capacity(volumes * size_of::<VolumeMeta>()),
-            page_offsets: BytesMut::with_capacity(pages.as_usize() * size_of::<PageOffset>()),
+            page_offsets: BytesMut::with_capacity(pages.to_usize() * size_of::<PageOffset>()),
             current: None,
             pages: 0,
             last_offset: None,
@@ -114,7 +114,7 @@ impl SegmentIndexBuilder {
 
     pub fn serialized_size(num_volumes: usize, num_pages: PageCount) -> ByteUnit {
         let volume_index_size = (num_volumes * size_of::<VolumeMeta>()) as u64;
-        let page_offsets_size = (num_pages.as_usize() * size_of::<PageOffset>()) as u64;
+        let page_offsets_size = (num_pages.to_usize() * size_of::<PageOffset>()) as u64;
         ByteUnit::new(volume_index_size + page_offsets_size)
     }
 
@@ -182,7 +182,7 @@ mod tests {
         // insert 100 offsets for each vid
         for vid in &vids {
             for i in 0..100 {
-                builder.insert(vid, PageOffset::new(i));
+                builder.insert(vid, PageOffset::saturating_from_u32(i));
             }
         }
 
@@ -193,7 +193,7 @@ mod tests {
         // lookup all the offsets
         for (volume_offset, vid) in vids.iter().enumerate() {
             for i in 0..100 {
-                let offset = PageOffset::new(i);
+                let offset = PageOffset::saturating_from_u32(i);
                 let idx = index.lookup(vid, offset).expect("offset not found");
                 assert_eq!(idx, (volume_offset * 100) + i as usize);
             }

@@ -217,7 +217,7 @@ impl ListHeader {
     /// creating a new one;
     fn allocate(&mut self, reader: &impl VolumeRead) -> Result<NodeView> {
         let last_offset = reader.snapshot().and_then(|s| s.pages().last_offset());
-        let unused_offset = last_offset.map_or(PageOffset::new(1), |o| o.next());
+        let unused_offset = last_offset.map_or(PageOffset::new(1), |o| o.saturating_next());
 
         if self.free == 0 {
             // no free nodes, create a new one

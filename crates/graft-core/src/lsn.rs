@@ -282,9 +282,6 @@ impl Iterator for LSNRangeIter {
 #[repr(transparent)]
 /// A MaybeLSN behaves identically to an Option<LSN> and exists for interop with
 /// the zerocopy crate.
-///
-/// This type is a temporary workaround until
-/// https://github.com/google/zerocopy/issues/2255 is resolved
 pub struct MaybeLSN(Option<NonZero<u64>>);
 
 impl MaybeLSN {

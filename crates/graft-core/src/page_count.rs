@@ -1,12 +1,26 @@
-use std::{
-    fmt::Display,
-    ops::{Add, AddAssign, Sub, SubAssign},
+use std::fmt::Display;
+
+use splinter::SPLINTER_MAX_VALUE;
+use thiserror::Error;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
+
+use crate::{
+    byte_unit::ByteUnit,
+    page::PAGESIZE,
+    page_offset::{PageOffset, PageOffsetOverflow},
+    page_range::PageRange,
 };
 
-use serde::{Deserialize, Serialize};
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+#[derive(Error, Debug)]
+#[error("page count out of bounds")]
+pub struct PageCountOverflow;
 
-use crate::{byte_unit::ByteUnit, page::PAGESIZE, page_offset::PageOffset, page_range::PageRange};
+impl From<PageOffsetOverflow> for PageCountOverflow {
+    #[inline]
+    fn from(_: PageOffsetOverflow) -> Self {
+        Self
+    }
+}
 
 #[derive(
     Debug,
@@ -17,54 +31,84 @@ use crate::{byte_unit::ByteUnit, page::PAGESIZE, page_offset::PageOffset, page_r
     Eq,
     PartialOrd,
     Ord,
-    Serialize,
-    Deserialize,
-    FromBytes,
     KnownLayout,
     IntoBytes,
+    FromBytes,
+    Unaligned,
     Immutable,
 )]
 #[repr(transparent)]
 /// The number of pages in a volume.
-pub struct PageCount(u32);
+pub struct PageCount(PageOffset);
 
 impl PageCount {
-    pub const ZERO: Self = Self(0);
+    pub const ZERO: Self = Self(PageOffset::ZERO);
     pub const ONE: Self = Self(1);
-    pub const MAX: Self = Self(u32::MAX);
+    pub const MAX: Self = Self(SPLINTER_MAX_VALUE + 1);
 
     #[inline]
-    pub const fn new(page_count: u32) -> Self {
-        Self(page_count)
+    pub const fn new(count: u32) -> Self {
+        assert!(count <= Self::MAX.0, "page count out of bounds");
+        Self(count)
     }
 
     #[inline]
-    pub fn offsets(&self) -> PageRange {
-        PageRange::new(0, self.0)
+    pub const fn try_from_u32(offset: u32) -> Result<Self, PageCountOverflow> {
+        if offset <= Self::MAX.0 {
+            Ok(Self(offset))
+        } else {
+            Err(PageCountOverflow)
+        }
     }
 
     #[inline]
-    pub fn last_offset(&self) -> Option<PageOffset> {
-        self.0.checked_sub(1).map(PageOffset::new)
+    pub const fn offsets(self) -> PageRange {
+        // PageRange's end is exclusive, so this is correct for all values of Self
+        let end = PageOffset::new(self.0);
+        PageRange::new(PageOffset::ZERO, end)
     }
 
     #[inline]
-    pub fn incr(&mut self) {
-        self.0 = self.0.checked_add(1).expect("page count overflow");
+    pub const fn last_offset(self) -> Option<PageOffset> {
+        let prev = self.0.checked_sub(1);
+        match prev {
+            Some(offset) => Some(PageOffset::new(offset)),
+            None => None,
+        }
     }
 
     #[inline]
-    pub fn as_usize(&self) -> usize {
+    pub const fn saturating_incr(self) -> Self {
+        let next = self.0 + 1;
+        if next > Self::MAX.0 {
+            Self::MAX
+        } else {
+            Self(next)
+        }
+    }
+
+    #[inline]
+    pub const fn saturating_decr(self) -> Self {
+        Self(self.0.saturating_sub(1))
+    }
+
+    #[inline]
+    pub const fn to_usize(self) -> usize {
         self.0 as usize
     }
 
     #[inline]
-    pub fn contains(&self, offset: PageOffset) -> bool {
-        offset.as_u32() < self.0
+    pub const fn to_u32(self) -> u32 {
+        self.0
     }
 
     #[inline]
-    pub fn size(&self) -> ByteUnit {
+    pub const fn contains(self, offset: PageOffset) -> bool {
+        offset.to_u32() < self.0
+    }
+
+    #[inline]
+    pub fn size(self) -> ByteUnit {
         PAGESIZE * self.0
     }
 }
@@ -76,40 +120,36 @@ impl Display for PageCount {
     }
 }
 
-impl From<u32> for PageCount {
+impl TryFrom<u32> for PageCount {
+    type Error = PageCountOverflow;
+
     #[inline]
-    fn from(count: u32) -> Self {
-        Self(count)
+    fn try_from(count: u32) -> Result<Self, Self::Error> {
+        Self::try_from_u32(count)
     }
 }
 
 impl TryFrom<usize> for PageCount {
-    type Error = <usize as TryInto<u32>>::Error;
+    type Error = PageCountOverflow;
 
     #[inline]
     fn try_from(value: usize) -> Result<Self, Self::Error> {
-        value.try_into().map(Self::new)
+        let n: u32 = value.try_into().map_err(|_| PageCountOverflow)?;
+        Self::try_from_u32(n)
     }
 }
 
 impl From<PageCount> for u32 {
     #[inline]
     fn from(count: PageCount) -> u32 {
-        count.0
+        count.to_u32()
     }
 }
 
-impl From<&PageCount> for u32 {
+impl PartialEq<PageCount> for u32 {
     #[inline]
-    fn from(count: &PageCount) -> u32 {
-        count.0
-    }
-}
-
-impl<'a> From<&'a u32> for &'a PageCount {
-    #[inline]
-    fn from(value: &'a u32) -> Self {
-        zerocopy::transmute_ref!(value)
+    fn eq(&self, other: &PageCount) -> bool {
+        *self == other.0
     }
 }
 
@@ -117,6 +157,13 @@ impl PartialEq<u32> for PageCount {
     #[inline]
     fn eq(&self, other: &u32) -> bool {
         self.0 == *other
+    }
+}
+
+impl PartialOrd<PageCount> for u32 {
+    #[inline]
+    fn partial_cmp(&self, other: &PageCount) -> Option<std::cmp::Ordering> {
+        self.partial_cmp(&other.0)
     }
 }
 
@@ -134,37 +181,11 @@ impl<E: zerocopy::ByteOrder> From<PageCount> for zerocopy::U32<E> {
     }
 }
 
-impl<E: zerocopy::ByteOrder> From<zerocopy::U32<E>> for PageCount {
+impl<E: zerocopy::ByteOrder> TryFrom<zerocopy::U32<E>> for PageCount {
+    type Error = PageCountOverflow;
+
     #[inline]
-    fn from(value: zerocopy::U32<E>) -> Self {
-        Self(value.get())
-    }
-}
-
-impl Add for PageCount {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0.checked_add(rhs.0).expect("page count overflow"))
-    }
-}
-
-impl AddAssign for PageCount {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 = self.0.checked_add(rhs.0).expect("page count overflow");
-    }
-}
-
-impl Sub for PageCount {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0.saturating_sub(rhs.0))
-    }
-}
-
-impl SubAssign for PageCount {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.saturating_sub(rhs.0);
+    fn try_from(value: zerocopy::U32<E>) -> Result<Self, Self::Error> {
+        Self::try_from_u32(value.get())
     }
 }

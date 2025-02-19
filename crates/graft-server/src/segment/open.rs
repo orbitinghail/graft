@@ -91,7 +91,7 @@ impl OpenSegment {
         let volumes = self.volumes();
         let pages = self.pages();
         // +2 for the index, +1 for the footer
-        let mut data = BytesVec::with_capacity(pages.as_usize() + 2 + 1);
+        let mut data = BytesVec::with_capacity(pages.to_usize() + 2 + 1);
         let mut index_builder = SegmentIndexBuilder::new_with_capacity(volumes, pages);
         let mut offsets_builder = OffsetsMap::builder();
 
@@ -247,7 +247,7 @@ mod tests {
 
         // fill the segment with one fewer page than the max
         let mut vid_cycle = vids.iter().cycle();
-        for offset in (SEGMENT_MAX_PAGES - PageCount::ONE).offsets() {
+        for offset in SEGMENT_MAX_PAGES.saturating_decr().offsets() {
             open_segment
                 .insert(vid_cycle.next().unwrap().clone(), offset, page.clone())
                 .unwrap();

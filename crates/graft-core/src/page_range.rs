@@ -2,7 +2,7 @@ use std::ops::RangeBounds;
 
 use crate::{page_count::PageCount, page_offset::PageOffset};
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageRange {
     /// Inclusive start of the page range
     start: PageOffset,
@@ -11,26 +11,27 @@ pub struct PageRange {
 }
 
 impl PageRange {
-    pub fn new<T: Into<PageOffset>>(start: T, end: T) -> Self {
-        Self { start: start.into(), end: end.into() }
+    #[inline]
+    pub const fn new(start: PageOffset, end: PageOffset) -> Self {
+        Self { start, end }
     }
 
     #[inline]
     /// Returns the inclusive start of the page range
-    pub fn start(&self) -> PageOffset {
+    pub const fn start(&self) -> PageOffset {
         self.start
     }
 
     #[inline]
     /// Returns the exclusive end of the page range
-    pub fn end(&self) -> PageOffset {
+    pub const fn end(&self) -> PageOffset {
         self.end
     }
 
     #[inline]
     /// Returns the number of pages in the range
-    pub fn len(&self) -> PageCount {
-        PageCount::new(u32::from(self.end) - u32::from(self.start))
+    pub const fn len(&self) -> PageCount {
+        PageCount::new(self.end.to_u32() - self.start.to_u32())
     }
 }
 
@@ -38,14 +39,14 @@ impl Iterator for PageRange {
     type Item = PageOffset;
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len: u32 = self.len().into();
-        (len as usize, Some(len as usize))
+        let len = self.len().to_usize();
+        (len, Some(len))
     }
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.start < self.end {
             let next = self.start;
-            self.start = self.start + PageCount::ONE;
+            self.start = self.start.saturating_next();
             Some(next)
         } else {
             None
@@ -56,7 +57,7 @@ impl Iterator for PageRange {
 impl DoubleEndedIterator for PageRange {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.end > self.start {
-            self.end = self.end - PageCount::ONE;
+            self.end = self.end.saturating_prev();
             Some(self.end)
         } else {
             None

@@ -21,8 +21,16 @@ impl Distribution<Page> for StandardUniform {
 }
 
 impl PageOffset {
+    #[inline]
+    pub const fn new(n: u32) -> Self {
+        assert!(n <= Self::MAX.to_u32(), "page offset out of bounds");
+        Self::saturating_from_u32(n)
+    }
+
     /// generates a random page offset in the range [0, max] (inclusive)
-    pub fn test_random<R: Rng + ?Sized, O: Into<PageOffset>>(rng: &mut R, max: O) -> Self {
-        rng.random_range(0..max.into().as_u32()).into()
+    pub fn test_random<R: Rng + ?Sized>(rng: &mut R, max: u32) -> Self {
+        // ensure max is in PageOffset bounds
+        let max = PageOffset::try_from_u32(max).unwrap().to_u32();
+        PageOffset::saturating_from_u32(rng.random_range(0..max))
     }
 }

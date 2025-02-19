@@ -190,12 +190,8 @@ impl Ticker {
     }
 
     pub fn tick(&mut self) -> bool {
-        if self.remaining == 0 {
-            false
-        } else {
-            self.remaining -= 1;
-            true
-        }
+        self.remaining = self.remaining.saturating_sub(1);
+        self.remaining != 0
     }
 }
 

@@ -254,7 +254,7 @@ fn workload_writer<R: Rng>(
 
         // randomly pick a page offset and a page value.
         // select the next offset to ensure we don't pick the 0th page
-        let offset = PageOffset::test_random(&mut env.rng, 16).next();
+        let offset = PageOffset::test_random(&mut env.rng, 16).saturating_next();
         let new_page: Page = env.rng.random();
         let new_hash = PageHash::new(&new_page);
 

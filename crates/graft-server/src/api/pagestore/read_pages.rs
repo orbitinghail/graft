@@ -103,7 +103,7 @@ mod tests {
         gid::{ClientId, SegmentId},
         page::Page,
         page_count::PageCount,
-        page_offset::PageOffset,
+        page_offset::{self, PageOffset},
     };
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{memory::InMemory, path::Path, ObjectStore, PutPayload};
@@ -172,7 +172,7 @@ mod tests {
         let (segment, offsets1) = mksegment(
             &sid1,
             vec![
-                (vid.clone(), PageOffset::new(0), Page::test_filled(0)),
+                (vid.clone(), page_offset!(0), Page::test_filled(0)),
                 (vid.clone(), PageOffset::new(1), Page::test_filled(1)),
                 (vid.clone(), PageOffset::new(2), Page::test_filled(2)),
             ],

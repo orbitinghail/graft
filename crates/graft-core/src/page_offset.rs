@@ -1,17 +1,19 @@
 use std::{
-    fmt::Display,
-    ops::{Add, Sub},
+    fmt::{Debug, Display},
+    num::ParseIntError,
     str::FromStr,
 };
 
-use serde::{Deserialize, Serialize};
-use splinter::SPLINTER_MAX_VALUE;
-use zerocopy::{ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout};
+use thiserror::Error;
+use zerocopy::{ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 use crate::page_count::PageCount;
 
+#[derive(Error, Debug)]
+#[error("page offset out of bounds")]
+pub struct PageOffsetOverflow;
+
 #[derive(
-    Debug,
     Default,
     Clone,
     Copy,
@@ -20,137 +22,153 @@ use crate::page_count::PageCount;
     PartialOrd,
     Ord,
     ByteHash,
-    Serialize,
-    Deserialize,
-    FromBytes,
     KnownLayout,
     IntoBytes,
+    FromBytes,
+    Unaligned,
     Immutable,
 )]
 #[repr(transparent)]
 /// The position of a page within a volume, measured in terms of page numbers
 /// rather than bytes. The offset represents the index of the page, with the
 /// first page in the volume having an offset of 0.
-pub struct PageOffset(u32);
+pub struct PageOffset(NonZero<u32>);
+
+/// Create a page offset at compile time
+#[macro_export]
+macro_rules! page_offset {
+    ($offset:literal) => {
+        assert!($offset <= 0xFF_FF_FF, "page offset out of bounds");
+        graft_core::page_offset::PageOffset::saturating_from_u32($offset)
+    };
+}
 
 impl PageOffset {
-    pub const ZERO: Self = Self(0);
-    pub const MAX: Self = Self(SPLINTER_MAX_VALUE);
+    pub const ZERO: Self = Self([0; 3]);
+    pub const MAX: Self = Self([0xFF; 3]);
+    const MAX_U32: u32 = 0xFF_FF_FF;
 
     #[inline]
-    pub fn new(offset: u32) -> Self {
-        assert!(Self::MAX >= offset, "page offset out of bounds");
-        Self(offset)
+    pub const fn try_from_u32(n: u32) -> Result<Self, PageOffsetOverflow> {
+        if n <= Self::MAX_U32 {
+            Ok(Self::saturating_from_u32(n))
+        } else {
+            Err(PageOffsetOverflow)
+        }
     }
 
-    pub fn next(&self) -> Self {
-        Self::new(self.0 + 1)
+    #[inline]
+    pub const fn saturating_from_u32(n: u32) -> Self {
+        let [_, b @ ..] = n.to_be_bytes();
+        Self(b)
     }
 
-    pub fn pages(&self) -> PageCount {
-        PageCount::new(self.0.checked_add(1).expect("page count overflow"))
+    #[inline]
+    pub const fn to_u32(self) -> u32 {
+        let Self([a, b, c]) = self;
+        u32::from_be_bytes([0, a, b, c])
     }
 
-    pub fn as_u32(&self) -> u32 {
-        self.0
+    #[inline]
+    pub const fn saturating_next(self) -> Self {
+        Self::saturating_from_u32(self.to_u32() + 1)
+    }
+
+    #[inline]
+    pub const fn saturating_prev(self) -> Self {
+        Self::saturating_from_u32(self.to_u32() - 1)
+    }
+
+    #[inline]
+    pub const fn pages(self) -> PageCount {
+        // PageCount::new(self.0 + 1)
+        todo!()
     }
 }
 
+#[derive(Error, Debug)]
+pub enum ParsePageOffsetErr {
+    #[error(transparent)]
+    Overflow(#[from] PageOffsetOverflow),
+
+    #[error("invalid page offset: {0}")]
+    ParseIntError(#[from] ParseIntError),
+}
+
 impl FromStr for PageOffset {
-    type Err = std::num::ParseIntError;
+    type Err = ParsePageOffsetErr;
 
     #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<u32>().map(Self::new)
+        let n = s.parse::<u32>()?;
+        Ok(Self::try_from_u32(n)?)
     }
 }
 
 impl Display for PageOffset {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        write!(f, "{}", self.to_u32())
+    }
+}
+
+impl Debug for PageOffset {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_u32())
     }
 }
 
 impl TryFrom<usize> for PageOffset {
-    type Error = <usize as TryInto<u32>>::Error;
+    type Error = PageOffsetOverflow;
 
     #[inline]
     fn try_from(value: usize) -> Result<Self, Self::Error> {
-        value.try_into().map(Self::new)
+        let n: u32 = value.try_into().map_err(|_| PageOffsetOverflow)?;
+        Self::try_from_u32(n)
     }
 }
 
-impl From<u32> for PageOffset {
+impl TryFrom<u32> for PageOffset {
+    type Error = PageOffsetOverflow;
+
     #[inline]
-    fn from(offset: u32) -> Self {
-        Self(offset)
+    fn try_from(n: u32) -> Result<Self, Self::Error> {
+        Self::try_from_u32(n)
     }
 }
 
 impl From<PageOffset> for u32 {
     #[inline]
     fn from(offset: PageOffset) -> u32 {
-        offset.0
+        offset.to_u32()
     }
 }
 
-impl From<&PageOffset> for u32 {
+impl PartialEq<PageOffset> for u32 {
     #[inline]
-    fn from(offset: &PageOffset) -> u32 {
-        offset.0
-    }
-}
-
-impl<'a> From<&'a u32> for &'a PageOffset {
-    #[inline]
-    fn from(value: &'a u32) -> Self {
-        zerocopy::transmute_ref!(value)
+    fn eq(&self, other: &PageOffset) -> bool {
+        *self == other.to_u32()
     }
 }
 
 impl PartialEq<u32> for PageOffset {
     #[inline]
     fn eq(&self, other: &u32) -> bool {
-        self.0 == *other
+        self.to_u32() == *other
+    }
+}
+
+impl PartialOrd<PageOffset> for u32 {
+    #[inline]
+    fn partial_cmp(&self, other: &PageOffset) -> Option<std::cmp::Ordering> {
+        self.partial_cmp(&other.to_u32())
     }
 }
 
 impl PartialOrd<u32> for PageOffset {
     #[inline]
     fn partial_cmp(&self, other: &u32) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(other)
-    }
-}
-
-impl<E: zerocopy::ByteOrder> From<PageOffset> for zerocopy::U32<E> {
-    #[inline]
-    fn from(value: PageOffset) -> Self {
-        zerocopy::U32::new(value.0)
-    }
-}
-
-impl<E: zerocopy::ByteOrder> From<zerocopy::U32<E>> for PageOffset {
-    #[inline]
-    fn from(value: zerocopy::U32<E>) -> Self {
-        Self(value.get())
-    }
-}
-
-impl Add<PageCount> for PageOffset {
-    type Output = Self;
-
-    #[inline]
-    fn add(self, rhs: PageCount) -> Self {
-        Self::new(self.0 + u32::from(rhs))
-    }
-}
-
-impl Sub<PageCount> for PageOffset {
-    type Output = Self;
-
-    #[inline]
-    fn sub(self, rhs: PageCount) -> Self {
-        Self::new(self.0 - u32::from(rhs))
+        self.to_u32().partial_cmp(other)
     }
 }
