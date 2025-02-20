@@ -34,6 +34,9 @@ pub async fn handler<C: Cache>(
     if num_offsets > MAX_OFFSETS {
         return Err(ApiErrCtx::TooManyOffsets.into());
     }
+    if offsets.contains(0) {
+        return Err(ApiErrCtx::InvalidOffset(0).into());
+    }
 
     // ensure we've replayed the catalog up to the requested LSN
     state
@@ -80,7 +83,7 @@ pub async fn handler<C: Cache>(
 
         for offset in cut.iter() {
             let page = segment
-                .find_page(vid.clone(), offset.into())
+                .find_page(vid.clone(), offset.try_into()?)
                 .expect("failed to find expected offset in segment; index out of sync");
             result
                 .pages
@@ -103,7 +106,7 @@ mod tests {
         gid::{ClientId, SegmentId},
         page::Page,
         page_count::PageCount,
-        page_offset::{self, PageOffset},
+        pageidx, PageIdx,
     };
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{memory::InMemory, path::Path, ObjectStore, PutPayload};
@@ -122,10 +125,7 @@ mod tests {
 
     use super::*;
 
-    fn mksegment(
-        sid: &SegmentId,
-        pages: Vec<(VolumeId, PageOffset, Page)>,
-    ) -> (BytesVec, OffsetsMap) {
+    fn mksegment(sid: &SegmentId, pages: Vec<(VolumeId, PageIdx, Page)>) -> (BytesVec, OffsetsMap) {
         let mut segment = OpenSegment::default();
         for (vid, off, page) in pages {
             segment.insert(vid, off, page).unwrap();
@@ -172,9 +172,9 @@ mod tests {
         let (segment, offsets1) = mksegment(
             &sid1,
             vec![
-                (vid.clone(), page_offset!(0), Page::test_filled(0)),
-                (vid.clone(), PageOffset::new(1), Page::test_filled(1)),
-                (vid.clone(), PageOffset::new(2), Page::test_filled(2)),
+                (vid.clone(), pageidx!(1), Page::test_filled(1)),
+                (vid.clone(), pageidx!(2), Page::test_filled(2)),
+                (vid.clone(), pageidx!(3), Page::test_filled(3)),
             ],
         );
         store
@@ -190,8 +190,8 @@ mod tests {
         let (segment, offsets2) = mksegment(
             &sid2,
             vec![
-                (vid.clone(), PageOffset::new(3), Page::test_filled(3)),
-                (vid.clone(), PageOffset::new(4), Page::test_filled(4)),
+                (vid.clone(), pageidx!(4), Page::test_filled(4)),
+                (vid.clone(), pageidx!(5), Page::test_filled(5)),
             ],
         );
         cache.put(&sid2, segment).await.unwrap();
@@ -201,7 +201,7 @@ mod tests {
         batch
             .insert_snapshot(
                 vid.clone(),
-                CommitMeta::new(cid, lsn, LSN::FIRST, PageCount::new(4), SystemTime::now()),
+                CommitMeta::new(cid, lsn, LSN::FIRST, PageCount::new(5), SystemTime::now()),
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),
@@ -220,7 +220,7 @@ mod tests {
         let req = ReadPagesRequest {
             vid: vid.copy_to_bytes(),
             lsn: lsn.into(),
-            offsets: (0u32..=4).collect::<Splinter>().serialize_to_bytes(),
+            offsets: (1u32..=5).collect::<Splinter>().serialize_to_bytes(),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         if resp.status_code() != 200 {
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(resp.pages.len(), 5);
         // sort by offset to make the test deterministic
         resp.pages.sort_by_key(|p| p.offset);
-        for (PageAtOffset { offset, data }, expected) in resp.pages.into_iter().zip(0..) {
+        for (PageAtOffset { offset, data }, expected) in resp.pages.into_iter().zip(1..) {
             assert_eq!(offset, expected);
             assert_eq!(
                 data,

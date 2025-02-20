@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use culprit::Result;
-use graft_core::{lsn::LSN, page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{lsn::LSN, page::Page, PageIdx, VolumeId};
 
 use crate::ClientErr;
 
@@ -21,6 +21,6 @@ pub trait Fetcher: Debug + Send + Sync + 'static {
         vid: &VolumeId,
         remote_lsn: LSN,
         local_lsn: LSN,
-        offset: PageOffset,
+        offset: PageIdx,
     ) -> Result<Page, ClientErr>;
 }

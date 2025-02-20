@@ -5,8 +5,7 @@ use std::{collections::BTreeMap, fmt::Debug};
 use bytes::Buf;
 use culprit::Culprit;
 use graft_core::{
-    byte_unit::ByteUnit, page::Page, page_count::PageCount, page_offset::PageOffset, SegmentId,
-    VolumeId,
+    byte_unit::ByteUnit, page::Page, page_count::PageCount, PageIdx, SegmentId, VolumeId,
 };
 use thiserror::Error;
 use zerocopy::IntoBytes;
@@ -25,7 +24,7 @@ pub struct SegmentFullErr;
 
 #[derive(Default)]
 pub struct OpenSegment {
-    index: BTreeMap<VolumeId, BTreeMap<PageOffset, Page>>,
+    index: BTreeMap<VolumeId, BTreeMap<PageIdx, Page>>,
 }
 
 impl Debug for OpenSegment {
@@ -41,16 +40,16 @@ impl Debug for OpenSegment {
 impl OpenSegment {
     /// returns true if the segment can accept another page for the specified volume
     pub fn has_space_for(&self, vid: &VolumeId) -> bool {
-        match self.index.get(vid) {
-            Some(_) => self.pages() < SEGMENT_MAX_PAGES,
-            None => self.volumes() < SEGMENT_MAX_VOLUMES && self.pages() < SEGMENT_MAX_PAGES,
+        match self.index.contains_key(vid) {
+            true => self.pages() < SEGMENT_MAX_PAGES,
+            false => self.volumes() < SEGMENT_MAX_VOLUMES && self.pages() < SEGMENT_MAX_PAGES,
         }
     }
 
     pub fn insert(
         &mut self,
         vid: VolumeId,
-        offset: PageOffset,
+        offset: PageIdx,
         page: Page,
     ) -> Result<(), Culprit<SegmentFullErr>> {
         if !self.has_space_for(&vid) {
@@ -79,7 +78,7 @@ impl OpenSegment {
     }
 
     #[cfg(test)]
-    pub fn find_page(&self, vid: &VolumeId, offset: PageOffset) -> Option<&Page> {
+    pub fn find_page(&self, vid: &VolumeId, offset: PageIdx) -> Option<&Page> {
         self.index.get(vid)?.get(&offset)
     }
 
@@ -122,6 +121,7 @@ mod tests {
     use super::*;
     use crate::segment::closed::{ClosedSegment, SEGMENT_MAX_PAGES};
     use assert_matches::assert_matches;
+    use graft_core::pageidx;
 
     #[graft_test::test]
     fn test_segment_sanity() {
@@ -132,21 +132,15 @@ mod tests {
         let page1 = Page::test_filled(2);
 
         open_segment
-            .insert(vid.clone(), PageOffset::new(0), page0.clone())
+            .insert(vid.clone(), pageidx!(1), page0.clone())
             .unwrap();
         open_segment
-            .insert(vid.clone(), PageOffset::new(1), page1.clone())
+            .insert(vid.clone(), pageidx!(2), page1.clone())
             .unwrap();
 
         // ensure that we can query pages in the open_segment
-        assert_eq!(
-            open_segment.find_page(&vid, PageOffset::new(0)),
-            Some(&page0)
-        );
-        assert_eq!(
-            open_segment.find_page(&vid, PageOffset::new(1)),
-            Some(&page1)
-        );
+        assert_eq!(open_segment.find_page(&vid, pageidx!(1)), Some(&page0));
+        assert_eq!(open_segment.find_page(&vid, pageidx!(2)), Some(&page1));
 
         let expected_size = open_segment.serialized_size();
 
@@ -162,20 +156,20 @@ mod tests {
         assert_eq!(closed_segment.pages(), 2);
         assert!(!closed_segment.is_empty());
         assert_eq!(
-            closed_segment.find_page(vid.clone(), PageOffset::new(0)),
+            closed_segment.find_page(vid.clone(), pageidx!(1)),
             Some(page0)
         );
         assert_eq!(
-            closed_segment.find_page(vid.clone(), PageOffset::new(1)),
+            closed_segment.find_page(vid.clone(), pageidx!(2)),
             Some(page1)
         );
 
         // validate the offsets map
         assert!(!offsets.is_empty());
-        assert!(offsets.contains(&vid, PageOffset::new(0)));
-        assert!(offsets.contains(&vid, PageOffset::new(1)));
-        assert!(!offsets.contains(&vid, PageOffset::new(2)));
-        assert!(!offsets.contains(&VolumeId::random(), PageOffset::new(0)));
+        assert!(offsets.contains(&vid, pageidx!(1)));
+        assert!(offsets.contains(&vid, pageidx!(2)));
+        assert!(!offsets.contains(&vid, pageidx!(3)));
+        assert!(!offsets.contains(&VolumeId::random(), pageidx!(1)));
     }
 
     #[graft_test::test]
@@ -194,7 +188,7 @@ mod tests {
         let buf = buf.into_bytes();
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
 
-        assert_eq!(closed_segment.pages(), 0);
+        assert!(closed_segment.pages().is_empty());
         assert!(closed_segment.is_empty());
     }
 
@@ -210,7 +204,7 @@ mod tests {
         // insert SEGMENT_MAX_PAGES pages while cycling through the volumes
         let page = Page::test_filled(1);
         let mut vid_cycle = vids.iter().cycle();
-        for offset in SEGMENT_MAX_PAGES.offsets() {
+        for offset in SEGMENT_MAX_PAGES.iter() {
             open_segment
                 .insert(vid_cycle.next().unwrap().clone(), offset, page.clone())
                 .unwrap();
@@ -226,7 +220,7 @@ mod tests {
 
         assert!(!offsets.is_empty());
         let mut vid_cycle = vids.iter().cycle();
-        for offset in SEGMENT_MAX_PAGES.offsets() {
+        for offset in SEGMENT_MAX_PAGES.iter() {
             assert!(offsets.contains(vid_cycle.next().unwrap(), offset));
         }
 
@@ -247,7 +241,7 @@ mod tests {
 
         // fill the segment with one fewer page than the max
         let mut vid_cycle = vids.iter().cycle();
-        for offset in SEGMENT_MAX_PAGES.saturating_decr().offsets() {
+        for offset in SEGMENT_MAX_PAGES.saturating_decr().iter() {
             open_segment
                 .insert(vid_cycle.next().unwrap().clone(), offset, page.clone())
                 .unwrap();
@@ -260,7 +254,7 @@ mod tests {
 
         // insert a page for the last volume
         open_segment
-            .insert(vids[0].clone(), PageOffset::MAX, page.clone())
+            .insert(vids[0].clone(), PageIdx::LAST, page.clone())
             .expect("expected segment to accept one more page");
 
         // the segment should not be able to accept any more pages for any volume
@@ -269,7 +263,7 @@ mod tests {
 
         // insert one more page; should fail
         let err = open_segment
-            .insert(vids[0].clone(), PageOffset::MAX, page.clone())
+            .insert(vids[0].clone(), PageIdx::LAST, page.clone())
             .expect_err("expected segment to be full");
         assert_matches!(err.ctx(), SegmentFullErr);
     }

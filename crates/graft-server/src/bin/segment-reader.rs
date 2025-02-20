@@ -4,8 +4,7 @@ use clap::{arg, Parser, Subcommand};
 use culprit::{Culprit, ResultExt};
 use graft_core::{
     page::{Page, PAGESIZE},
-    page_offset::PageOffset,
-    VolumeId,
+    PageIdx, VolumeId,
 };
 use graft_server::segment::closed::{ClosedSegment, SegmentValidationErr};
 use thiserror::Error;
@@ -32,8 +31,8 @@ enum Commands {
         vid: VolumeId,
 
         /// The offset of the page
-        #[arg(default_value_t = PageOffset::ZERO)]
-        offset: PageOffset,
+        #[arg(default_value_t = PageIdx::FIRST)]
+        offset: PageIdx,
     },
 }
 
@@ -81,7 +80,7 @@ fn print_segment(segment: &ClosedSegment) {
             "{:<10} {:<10} {:<10} ",
             vid.short(),
             offset,
-            page.iter().all(|&b| b == 0)
+            page.is_empty()
         );
         print_page(page, 10);
     }

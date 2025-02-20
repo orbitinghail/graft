@@ -10,9 +10,9 @@ use graft_core::{
     lsn::{LSNRangeExt, LSN},
     page::PageSizeErr,
     page_count::PageCount,
-    page_offset::PageOffset,
+    page_index::ConvertToPageIdxErr,
     zerocopy_err::ZerocopyErr,
-    VolumeId,
+    PageIdx, VolumeId,
 };
 use graft_proto::pagestore::v1::PageAtOffset;
 use memtable::Memtable;
@@ -73,6 +73,9 @@ pub enum StorageErr {
         "The local Volume state is ahead of the remote state, refusing to accept remote changes"
     )]
     RemoteConflict,
+
+    #[error("invalid page index")]
+    ConvertToPageIdxErr(#[from] ConvertToPageIdxErr),
 }
 
 impl From<io::Error> for StorageErr {
@@ -243,7 +246,7 @@ impl Storage {
     pub fn snapshot(&self, vid: &VolumeId) -> Result<Option<Snapshot>> {
         let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot);
         if let Some(snapshot) = self.volumes.get(key)? {
-            Ok(Some(Snapshot::from_bytes(&snapshot)?))
+            Ok(Some(Snapshot::try_from_bytes(&snapshot)?))
         } else {
             Ok(None)
         }
@@ -276,30 +279,25 @@ impl Storage {
         vid: &'a VolumeId,
         lsn: LSN,
         offsets: &'a SplinterRef<T>,
-    ) -> impl TryIterator<Ok = (PageOffset, Option<PageValue>), Err = Culprit<StorageErr>> + 'a
+    ) -> impl TryIterator<Ok = (PageIdx, Option<PageValue>), Err = Culprit<StorageErr>> + 'a
     where
         T: AsRef<[u8]> + 'a,
     {
-        offsets
-            .iter()
-            .map(move |offset| {
-                let offset: PageOffset = offset.into();
-                let key = PageKey::new(vid.clone(), offset, lsn);
-                Ok((offset, self.pages.get(key)?))
-            })
-            .map_ok(|(offset, page)| {
-                if let Some(page) = page {
-                    Ok((offset, Some(PageValue::try_from(page).or_into_ctx()?)))
-                } else {
-                    Ok((offset, None))
-                }
-            })
+        offsets.iter().map(move |offset| {
+            let offset: PageIdx = offset.try_into()?;
+            let key = PageKey::new(vid.clone(), offset, lsn);
+            if let Some(page) = self.pages.get(key)? {
+                Ok((offset, Some(PageValue::try_from(page).or_into_ctx()?)))
+            } else {
+                Ok((offset, None))
+            }
+        })
     }
 
     /// Returns the most recent visible page in a volume by LSN at a particular
     /// offset. Notably, this will return a page from an earlier LSN if the page
     /// hasn't changed since then.
-    pub fn read(&self, vid: &VolumeId, lsn: LSN, offset: PageOffset) -> Result<(LSN, PageValue)> {
+    pub fn read(&self, vid: &VolumeId, lsn: LSN, offset: PageIdx) -> Result<(LSN, PageValue)> {
         let first_key = PageKey::new(vid.clone(), offset, LSN::FIRST);
         let key = PageKey::new(vid.clone(), offset, lsn);
         let range = first_key..=key;
@@ -307,7 +305,7 @@ impl Storage {
         // Search for the latest page between LSN(0) and the requested LSN,
         // returning PageValue::Pending if none found.
         if let Some((key, page)) = self.pages.snapshot().range(range).next_back().transpose()? {
-            let lsn = PageKey::ref_from_bytes(&key)?.lsn();
+            let lsn = PageKey::try_ref_from_bytes(&key)?.lsn();
             let bytes: Bytes = page.into();
             Ok((lsn, PageValue::try_from(bytes).or_into_ctx()?))
         } else {
@@ -342,9 +340,9 @@ impl Storage {
         let mut offsets = Splinter::default();
 
         // persist the memtable
-        let mut page_key = PageKey::new(vid.clone(), PageOffset::ZERO, commit_lsn);
+        let mut page_key = PageKey::new(vid.clone(), PageIdx::FIRST, commit_lsn);
         for (offset, page) in memtable {
-            page_key = page_key.with_offset(offset);
+            page_key = page_key.with_index(offset);
             offsets.insert(offset.into());
             batch.insert(&self.pages, page_key.as_bytes(), PageValue::from(page));
         }
@@ -481,10 +479,10 @@ impl Storage {
         );
 
         // mark changed pages
-        let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, commit_lsn);
+        let mut key = PageKey::new(vid.clone(), PageIdx::FIRST, commit_lsn);
         let pending = Bytes::from(PageValue::Pending);
         for offset in changed.iter() {
-            key = key.with_offset(offset.into());
+            key = key.with_index(offset.try_into()?);
             batch.insert(&self.pages, key.as_ref(), pending.as_ref());
         }
 
@@ -501,10 +499,10 @@ impl Storage {
 
     /// Write a set of pages to storage at a particular vid/lsn
     pub fn receive_pages(&self, vid: &VolumeId, lsn: LSN, pages: Vec<PageAtOffset>) -> Result<()> {
-        let mut key = PageKey::new(vid.clone(), PageOffset::ZERO, lsn);
+        let mut key = PageKey::new(vid.clone(), PageIdx::FIRST, lsn);
         let mut batch = self.keyspace.batch();
         for page in pages {
-            key = key.with_offset(page.offset());
+            key = key.with_index(page.offset().or_into_ctx()?);
             let page = page.page().or_into_ctx()?;
             batch.insert(&self.pages, key.as_ref(), PageValue::from(page));
         }
@@ -782,9 +780,9 @@ impl Storage {
             // remove the commit's offsets
             let splinter = SplinterRef::from_bytes(value).or_into_ctx()?;
 
-            let mut key = PageKey::new(vid.clone(), 0.into(), key.lsn());
+            let mut key = PageKey::new(vid.clone(), PageIdx::FIRST, key.lsn());
             for offset in splinter.iter() {
-                key = key.with_offset(offset.into());
+                key = key.with_index(offset.try_into()?);
                 batch.remove(&self.pages, key.as_ref());
             }
         }
@@ -811,7 +809,7 @@ impl Debug for Storage {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::page::Page;
+    use graft_core::{page::Page, pageidx};
 
     use super::*;
 
@@ -820,7 +818,7 @@ mod tests {
         let storage = Storage::open_temporary().unwrap();
 
         let mut memtable = Memtable::default();
-        memtable.insert(0.into(), Page::test_filled(0x42));
+        memtable.insert(pageidx!(1), Page::test_filled(0x42));
 
         let mut vids = [VolumeId::random(), VolumeId::random()];
         vids.sort();

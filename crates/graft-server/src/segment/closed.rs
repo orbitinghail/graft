@@ -7,10 +7,8 @@ use culprit::{Culprit, ResultExt};
 use graft_core::{
     byte_unit::ByteUnit,
     page::{Page, PAGESIZE},
-    page_count::PageCount,
-    page_offset::PageOffset,
     zerocopy_err::ZerocopyErr,
-    SegmentId, VolumeId,
+    PageCount, PageIdx, SegmentId, VolumeId,
 };
 use thiserror::Error;
 use zerocopy::{
@@ -164,7 +162,7 @@ impl<'a> ClosedSegment<'a> {
         self.footer.sid()
     }
 
-    pub fn find_page(&self, vid: VolumeId, offset: PageOffset) -> Option<Page> {
+    pub fn find_page(&self, vid: VolumeId, offset: PageIdx) -> Option<Page> {
         self.index.lookup(&vid, offset).map(|local_offset| {
             let start = local_offset * PAGESIZE;
             let end = start + PAGESIZE;
@@ -174,7 +172,7 @@ impl<'a> ClosedSegment<'a> {
         })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&VolumeId, PageOffset, Page)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&VolumeId, PageIdx, Page)> {
         self.index
             .iter()
             .zip(0usize..)
@@ -203,6 +201,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use bytes::{Buf, BufMut, BytesMut};
+    use graft_core::pageidx;
     use zerocopy::U16;
 
     use super::*;
@@ -281,8 +280,8 @@ mod tests {
         let mut bytes = BytesMut::zeroed(PAGESIZE.as_usize());
         let mut index = SegmentIndexBuilder::default();
         let vid = VolumeId::random();
-        index.insert(&vid, PageOffset::new(0));
-        index.insert(&vid, PageOffset::new(1));
+        index.insert(&vid, pageidx!(1));
+        index.insert(&vid, pageidx!(2));
         let index = index.finish();
         let index_size = index.remaining();
         bytes.put(index);

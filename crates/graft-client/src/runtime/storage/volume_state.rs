@@ -392,7 +392,7 @@ impl VolumeState {
                 self.status = Some(VolumeStatus::from_bytes(&value)?);
             }
             VolumeStateTag::Snapshot => {
-                self.snapshot = Some(Snapshot::from_bytes(&value)?);
+                self.snapshot = Some(Snapshot::try_from_bytes(&value)?);
             }
             VolumeStateTag::Watermarks => {
                 self.watermarks = Some(Watermarks::from_bytes(&value)?);

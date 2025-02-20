@@ -2,8 +2,7 @@ use culprit::{Result, ResultExt};
 use graft_core::{
     lsn::LSN,
     page::{Page, EMPTY_PAGE},
-    page_offset::PageOffset,
-    VolumeId,
+    PageIdx, VolumeId,
 };
 use splinter::Splinter;
 
@@ -29,7 +28,7 @@ impl Fetcher for NetFetcher {
         vid: &VolumeId,
         remote_lsn: LSN,
         local_lsn: LSN,
-        offset: PageOffset,
+        offset: PageIdx,
     ) -> Result<Page, ClientErr> {
         let _span = tracing::trace_span!(
             "fetching page from pagestore",

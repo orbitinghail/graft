@@ -10,7 +10,6 @@ use graft_core::{
     gid::{ClientId, GidParseErr},
     lsn::{InvalidLSN, LSN},
     page_count::PageCount,
-    page_range::PageRange,
     zerocopy_err::ZerocopyErr,
     SegmentId, VolumeId,
 };
@@ -145,10 +144,6 @@ impl CommitMeta {
     #[inline]
     pub fn page_count(&self) -> PageCount {
         self.page_count.into()
-    }
-
-    pub fn offsets(&self) -> PageRange {
-        self.page_count().offsets()
     }
 
     #[inline]

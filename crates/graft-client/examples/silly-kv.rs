@@ -7,7 +7,6 @@
 use std::{
     env::temp_dir,
     fmt::Debug,
-    marker::PhantomData,
     ops::{Deref, DerefMut, Range},
     time::Duration,
 };
@@ -33,15 +32,16 @@ use graft_client::{
 use graft_core::{
     gid::GidParseErr,
     page::{Page, PAGESIZE},
-    page_offset::PageOffset,
-    ClientId, VolumeId,
+    pageidx,
+    zerocopy_err::ZerocopyErr,
+    ClientId, PageIdx, VolumeId,
 };
 use graft_tracing::{init_tracing, TracingConsumer};
 use rand::Rng;
 use thiserror::Error;
 use tryiter::TryIteratorExt;
 use url::Url;
-use zerocopy::{little_endian::U32, FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 type Result<T> = culprit::Result<T, CliErr>;
 
@@ -64,6 +64,9 @@ enum CliErr {
 
     #[error("startup error")]
     StartupErr(#[from] StartupErr),
+
+    #[error(transparent)]
+    ZerocopyErr(#[from] ZerocopyErr),
 }
 
 #[derive(Parser)]
@@ -134,126 +137,108 @@ enum Command {
     Get { key: String },
 }
 
+#[derive(Debug)]
 struct PageView<T> {
-    offset: PageOffset,
-    page: BytesMut,
-    _phantom: PhantomData<T>,
+    idx: PageIdx,
+    inner: T,
 }
 
-impl<T> PageView<T> {
-    fn new(offset: impl Into<PageOffset>) -> Self {
-        Self {
-            offset: offset.into(),
-            page: BytesMut::zeroed(PAGESIZE.as_usize()),
-            _phantom: PhantomData,
-        }
+impl<T: Default + TryFromBytes + IntoBytes + Immutable> PageView<T> {
+    fn new(idx: PageIdx) -> Self {
+        Self { idx, inner: T::default() }
     }
 
-    fn load(reader: &impl VolumeRead, offset: impl Into<PageOffset>) -> Result<Self> {
-        let offset = offset.into();
-        let page = reader.read(offset).or_into_ctx()?;
-        Ok(Self {
-            offset,
-            page: page.into(),
-            _phantom: PhantomData,
-        })
+    fn load(reader: &impl VolumeRead, idx: PageIdx) -> Result<Self> {
+        let page = reader.read(idx).or_into_ctx()?;
+        let inner = T::try_read_from_bytes(&page).map_err(ZerocopyErr::from)?;
+        Ok(Self { idx, inner })
     }
 
-    fn zero(mut self) -> Self {
-        self.page.clear();
-        self.page.resize(PAGESIZE.as_usize(), 0);
+    fn save(self, writer: &mut impl VolumeWrite) {
+        let mut page = BytesMut::from(self.inner.as_bytes());
+        page.resize(PAGESIZE.as_usize(), 0);
+        writer.write(self.idx, Page::try_from(page.freeze()).unwrap());
+    }
+
+    fn clear(mut self) -> Self {
+        self.inner = T::default();
         self
     }
 }
 
-impl<T: Debug + FromBytes + Immutable + KnownLayout + Unaligned> Debug for PageView<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.deref().fmt(f)
-    }
-}
-
-impl<T: FromBytes + Immutable + KnownLayout + Unaligned> Deref for PageView<T> {
+impl<T> Deref for PageView<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        T::ref_from_bytes(&self.page).unwrap()
+        &self.inner
     }
 }
 
-impl<T: IntoBytes + FromBytes + Immutable + KnownLayout + Unaligned> DerefMut for PageView<T> {
+impl<T> DerefMut for PageView<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        T::mut_from_bytes(&mut self.page).unwrap()
+        &mut self.inner
     }
 }
 
-impl<T> Into<Page> for PageView<T> {
-    fn into(self) -> Page {
-        self.page
-            .try_into()
-            .expect("failed to convert PageView to Page")
-    }
-}
-
-#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout, Unaligned)]
+#[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout, Default, Debug)]
 #[repr(C)]
 struct ListHeader {
-    head: U32,
-    free: U32,
-    _padding: [u8; PAGESIZE.as_usize() - 8],
+    head: PageIdx,
+    free: PageIdx,
 }
 
-static_assertions::assert_eq_size!(ListHeader, [u8; PAGESIZE.as_usize()]);
 type HeaderView = PageView<ListHeader>;
 
 impl ListHeader {
     fn head(&self, reader: &impl VolumeRead) -> Result<Option<NodeView>> {
-        if self.head == 0 {
+        if self.head.is_first_page() {
             return Ok(None);
         }
-        Ok(Some(NodeView::load(reader, self.head)?))
+        Ok(Some(NodeView::load(reader, self.head.try_into().unwrap())?))
     }
 
     /// allocates a node by either reusing a previously freed node or
     /// creating a new one;
     fn allocate(&mut self, reader: &impl VolumeRead) -> Result<NodeView> {
-        let last_offset = reader.snapshot().and_then(|s| s.pages().last_offset());
-        let unused_offset = last_offset.map_or(PageOffset::new(1), |o| o.saturating_next());
+        let last_index = reader.snapshot().and_then(|s| s.pages().last_index());
+        let unused_index = last_index.map_or(pageidx!(2), |o| o.saturating_next());
 
-        if self.free == 0 {
+        if self.free.is_first_page() {
             // no free nodes, create a new one
-            return Ok(NodeView::new(unused_offset));
+            return Ok(NodeView::new(unused_index));
         } else {
             // pop the first node from the free list
             let node = NodeView::load(reader, self.free)?;
             self.free = node.next;
-            return Ok(node.zero());
+            return Ok(node.clear());
         }
     }
 }
 
-impl std::fmt::Debug for ListHeader {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ListHeader")
-            .field("head", &self.head)
-            .field("free", &self.free)
-            .finish()
+#[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout, Debug)]
+#[repr(C)]
+struct ListNode {
+    next: PageIdx,
+    key_len: u32,
+    value_len: u32,
+    buf: [u8; PAGESIZE.as_usize() - 12],
+}
+
+impl Default for ListNode {
+    fn default() -> Self {
+        Self {
+            next: PageIdx::FIRST,
+            key_len: 0,
+            value_len: 0,
+            buf: [0; PAGESIZE.as_usize() - 12],
+        }
     }
 }
 
-#[derive(Clone, IntoBytes, FromBytes, Immutable, KnownLayout, Unaligned)]
-#[repr(C)]
-struct ListNode {
-    next: U32,
-    key_len: U32,
-    value_len: U32,
-    buf: [u8; PAGESIZE.as_usize() - 12],
-}
-static_assertions::assert_eq_size!(ListNode, [u8; PAGESIZE.as_usize()]);
-
 impl ListNode {
     fn update(&mut self, key: &str, value: &str) {
-        self.key_len = (key.len() as u32).into();
-        self.value_len = (value.len() as u32).into();
+        self.key_len = key.len() as u32;
+        self.value_len = value.len() as u32;
         assert!(
             self.key_len + self.value_len < PAGESIZE.as_u32() - 12,
             "key and value too large"
@@ -263,31 +248,21 @@ impl ListNode {
     }
 
     fn key(&self) -> &str {
-        let end = self.key_len.get() as usize;
+        let end = self.key_len as usize;
         std::str::from_utf8(&self.buf[..end]).unwrap()
     }
 
     fn value(&self) -> &str {
-        let start = self.key_len.get() as usize;
-        let end = start + self.value_len.get() as usize;
+        let start = self.key_len as usize;
+        let end = start + self.value_len as usize;
         std::str::from_utf8(&self.buf[start..end]).unwrap()
     }
 
     fn next(&self, reader: &impl VolumeRead) -> Result<Option<NodeView>> {
-        if self.next == 0 {
+        if self.next.is_first_page() {
             return Ok(None);
         }
         Ok(Some(NodeView::load(reader, self.next)?))
-    }
-}
-
-impl Debug for ListNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ListNode")
-            .field("next", &self.next)
-            .field("key", &self.key())
-            .field("value", &self.value())
-            .finish()
     }
 }
 
@@ -300,7 +275,7 @@ struct ListIter<'a, R> {
 
 impl<'a, R: VolumeRead> ListIter<'a, R> {
     fn new(reader: &'a R) -> Result<Self> {
-        let header = HeaderView::load(reader, 0)?;
+        let header = HeaderView::load(reader, PageIdx::FIRST)?;
         let cursor = header.head(reader)?;
         Ok(Self { reader, cursor })
     }
@@ -348,7 +323,7 @@ fn list_get(reader: &impl VolumeRead, key: &str) -> Result<Option<NodeView>> {
 }
 
 fn list_set(writer: &mut VolumeWriter, key: &str, value: &str) -> Result<()> {
-    let mut header = HeaderView::load(writer, 0)?;
+    let mut header = HeaderView::load(writer, PageIdx::FIRST)?;
 
     // either find the node to update, or find the insertion point
     let candidate = list_find_last(writer, |candidate| candidate <= key)?;
@@ -358,15 +333,15 @@ fn list_set(writer: &mut VolumeWriter, key: &str, value: &str) -> Result<()> {
             let mut new_node = header.allocate(writer)?;
             new_node.update(key, value);
             new_node.next = header.head;
-            header.head = new_node.offset.into();
-            writer.write(new_node.offset, new_node.into());
-            writer.write(0, header.into());
+            header.head = new_node.idx.into();
+            new_node.save(writer);
+            header.save(writer);
         }
 
         // candidate matches search key, update node in place
         Some(mut candidate) if candidate.key() == key => {
             candidate.update(key, value);
-            writer.write(candidate.offset, candidate.into());
+            candidate.save(writer);
         }
 
         // candidate is the last node in the list with key < search key
@@ -375,10 +350,10 @@ fn list_set(writer: &mut VolumeWriter, key: &str, value: &str) -> Result<()> {
             let mut new_node = header.allocate(writer)?;
             new_node.update(key, value);
             new_node.next = candidate.next;
-            candidate.next = new_node.offset.into();
-            writer.write(candidate.offset, candidate.into());
-            writer.write(new_node.offset, new_node.into());
-            writer.write(0, header.into());
+            candidate.next = new_node.idx.into();
+            candidate.save(writer);
+            new_node.save(writer);
+            header.save(writer);
         }
     }
 
@@ -386,7 +361,7 @@ fn list_set(writer: &mut VolumeWriter, key: &str, value: &str) -> Result<()> {
 }
 
 fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
-    let mut header = HeaderView::load(writer, 0)?;
+    let mut header = HeaderView::load(writer, PageIdx::FIRST)?;
 
     // find the node immediately before the node to remove (if it exists)
     if let Some(mut prev) = list_find_last(writer, |candidate| candidate < key)? {
@@ -395,10 +370,10 @@ fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
             if next.key() == key {
                 prev.next = next.next;
                 next.next = header.free;
-                header.free = next.offset.into();
-                writer.write(next.offset, next.into());
-                writer.write(prev.offset, prev.into());
-                writer.write(0, header.into());
+                header.free = next.idx.into();
+                next.save(writer);
+                prev.save(writer);
+                header.save(writer);
                 return Ok(true);
             }
         }
@@ -408,9 +383,9 @@ fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
             if head.key() == key {
                 header.head = head.next;
                 head.next = header.free;
-                header.free = head.offset.into();
-                writer.write(head.offset, head.into());
-                writer.write(0, header.into());
+                header.free = head.idx.into();
+                head.save(writer);
+                header.save(writer);
                 return Ok(true);
             }
         }
@@ -502,7 +477,7 @@ fn main() -> Result<()> {
             } else {
                 println!("No snapshot")
             }
-            let header = HeaderView::load(&reader, 0).or_into_ctx()?;
+            let header = HeaderView::load(&reader, PageIdx::FIRST).or_into_ctx()?;
             println!("List header: {header:?}");
         }
 

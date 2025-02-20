@@ -2,8 +2,7 @@ use culprit::{Result, ResultExt};
 
 use graft_core::{
     page::{Page, EMPTY_PAGE},
-    page_offset::PageOffset,
-    VolumeId,
+    PageIdx, VolumeId,
 };
 
 use crate::ClientErr;
@@ -21,7 +20,7 @@ pub trait VolumeRead {
     fn snapshot(&self) -> Option<&Snapshot>;
 
     /// Read a page from the snapshot
-    fn read(&self, offset: impl Into<PageOffset>) -> Result<Page, ClientErr>;
+    fn read(&self, offset: PageIdx) -> Result<Page, ClientErr>;
 }
 
 #[derive(Debug, Clone)]
@@ -58,7 +57,7 @@ impl VolumeRead for VolumeReader {
         self.snapshot.as_ref()
     }
 
-    fn read(&self, offset: impl Into<PageOffset>) -> Result<Page, ClientErr> {
+    fn read(&self, offset: PageIdx) -> Result<Page, ClientErr> {
         let offset = offset.into();
         if let Some(snapshot) = self.snapshot() {
             match self

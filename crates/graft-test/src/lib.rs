@@ -11,7 +11,7 @@ use culprit::{Culprit, ResultExt};
 use graft_client::{ClientPair, MetastoreClient, NetClient, PagestoreClient};
 use graft_core::{
     page::{Page, PAGESIZE},
-    page_offset::PageOffset,
+    PageIdx,
 };
 use graft_server::{
     api::{
@@ -206,15 +206,15 @@ pub enum PageTrackerErr {
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct PageTracker {
-    pages: HashMap<PageOffset, PageHash>,
+    pages: HashMap<PageIdx, PageHash>,
 }
 
 impl PageTracker {
-    pub fn upsert(&mut self, offset: PageOffset, hash: PageHash) -> Option<PageHash> {
+    pub fn upsert(&mut self, offset: PageIdx, hash: PageHash) -> Option<PageHash> {
         self.pages.insert(offset, hash)
     }
 
-    pub fn get_hash(&self, offset: PageOffset) -> Option<&PageHash> {
+    pub fn get_hash(&self, offset: PageIdx) -> Option<&PageHash> {
         self.pages.get(&offset)
     }
 

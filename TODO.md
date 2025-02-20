@@ -1,15 +1,11 @@
-Next: SQLite extension
-
 Stack:
 
-- sqlite antithesis workload
-
-Then:
-
+- rename all instances of "offset" to "index" and "offsets" to "indexes"
 - prefetcher
 
   - do we need an index tracking which offsets we have for the latest snapshot? if not, how does the prefetcher avoid re-fetching offsets we already have? or more generally, how can we avoid refetching efficiently?
 
+- sqlite antithesis workload
 - consider switching pagestore to websockets or http streaming bodies
 - garbage collection
 - authentication (api keys)

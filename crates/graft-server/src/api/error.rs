@@ -5,7 +5,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use culprit::Culprit;
-use graft_core::{gid::GidParseErr, lsn::InvalidLSN, page::PageSizeErr};
+use graft_core::{
+    gid::GidParseErr, lsn::InvalidLSN, page::PageSizeErr, page_index::ConvertToPageIdxErr,
+};
 use graft_proto::common::v1::{GraftErr, GraftErrCode};
 use splinter::DecodeErr;
 use thiserror::Error;
@@ -44,12 +46,6 @@ pub enum ApiErrCtx {
     #[error("invalid page")]
     PageSizeErr(#[from] PageSizeErr),
 
-    #[error("duplicate page offset")]
-    DuplicatePageOffset,
-
-    #[error("failed to parse offsets")]
-    OffsetsDecodeErr(#[from] DecodeErr),
-
     #[error("catalog error")]
     CatalogErr(#[from] VolumeCatalogErr),
 
@@ -71,8 +67,20 @@ pub enum ApiErrCtx {
     #[error("graft client request failed")]
     ClientErr(#[from] graft_client::ClientErr),
 
+    #[error("duplicate page offset")]
+    DuplicatePageOffset,
+
+    #[error("failed to parse offsets")]
+    OffsetsDecodeErr(#[from] DecodeErr),
+
     #[error("requested too many page offsets")]
     TooManyOffsets,
+
+    #[error("requested invalid offset")]
+    InvalidOffset(u32),
+
+    #[error("invalid page index")]
+    ConvertToPageIdxErr(#[from] ConvertToPageIdxErr),
 
     #[error("invalid LSN")]
     InvalidLSN,
@@ -121,6 +129,10 @@ impl IntoResponse for ApiErr {
             OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             SnapshotMissing => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
             RejectedCommit => (StatusCode::CONFLICT, GraftErrCode::CommitRejected),
+            ConvertToPageIdxErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            InvalidOffset(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            TooManyOffsets => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            InvalidLSN => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             ClientErr(graft_client::ClientErr::HttpErr(_)) => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 GraftErrCode::ServiceUnavailable,

@@ -1,26 +1,9 @@
-use std::fmt::Display;
+use std::{fmt::Display, num::TryFromIntError};
 
-use splinter::SPLINTER_MAX_VALUE;
-use thiserror::Error;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
+use serde::{Deserialize, Serialize};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::{
-    byte_unit::ByteUnit,
-    page::PAGESIZE,
-    page_offset::{PageOffset, PageOffsetOverflow},
-    page_range::PageRange,
-};
-
-#[derive(Error, Debug)]
-#[error("page count out of bounds")]
-pub struct PageCountOverflow;
-
-impl From<PageOffsetOverflow> for PageCountOverflow {
-    #[inline]
-    fn from(_: PageOffsetOverflow) -> Self {
-        Self
-    }
-}
+use crate::{byte_unit::ByteUnit, page::PAGESIZE, page_index::PageIdx};
 
 #[derive(
     Debug,
@@ -34,57 +17,47 @@ impl From<PageOffsetOverflow> for PageCountOverflow {
     KnownLayout,
     IntoBytes,
     FromBytes,
-    Unaligned,
     Immutable,
+    Serialize,
+    Deserialize,
 )]
 #[repr(transparent)]
 /// The number of pages in a volume.
-pub struct PageCount(PageOffset);
+pub struct PageCount(u32);
 
 impl PageCount {
-    pub const ZERO: Self = Self(PageOffset::ZERO);
+    pub const ZERO: Self = Self(0);
     pub const ONE: Self = Self(1);
-    pub const MAX: Self = Self(SPLINTER_MAX_VALUE + 1);
+    pub const MAX: Self = Self(u32::MAX);
 
     #[inline]
     pub const fn new(count: u32) -> Self {
-        assert!(count <= Self::MAX.0, "page count out of bounds");
         Self(count)
     }
 
     #[inline]
-    pub const fn try_from_u32(offset: u32) -> Result<Self, PageCountOverflow> {
-        if offset <= Self::MAX.0 {
-            Ok(Self(offset))
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    #[inline]
+    pub const fn iter(self) -> PageCountIter {
+        PageCountIter { idx: 0, limit: self.0 }
+    }
+
+    #[inline]
+    pub const fn last_index(self) -> Option<PageIdx> {
+        if self.is_empty() {
+            None
         } else {
-            Err(PageCountOverflow)
-        }
-    }
-
-    #[inline]
-    pub const fn offsets(self) -> PageRange {
-        // PageRange's end is exclusive, so this is correct for all values of Self
-        let end = PageOffset::new(self.0);
-        PageRange::new(PageOffset::ZERO, end)
-    }
-
-    #[inline]
-    pub const fn last_offset(self) -> Option<PageOffset> {
-        let prev = self.0.checked_sub(1);
-        match prev {
-            Some(offset) => Some(PageOffset::new(offset)),
-            None => None,
+            // SAFETY: self is not empty
+            Some(unsafe { PageIdx::new_unchecked(self.0) })
         }
     }
 
     #[inline]
     pub const fn saturating_incr(self) -> Self {
-        let next = self.0 + 1;
-        if next > Self::MAX.0 {
-            Self::MAX
-        } else {
-            Self(next)
-        }
+        Self(self.0.saturating_add(1))
     }
 
     #[inline]
@@ -103,8 +76,8 @@ impl PageCount {
     }
 
     #[inline]
-    pub const fn contains(self, offset: PageOffset) -> bool {
-        offset.to_u32() < self.0
+    pub const fn contains(self, idx: PageIdx) -> bool {
+        idx.to_u32() <= self.0
     }
 
     #[inline]
@@ -120,22 +93,10 @@ impl Display for PageCount {
     }
 }
 
-impl TryFrom<u32> for PageCount {
-    type Error = PageCountOverflow;
-
+impl From<u32> for PageCount {
     #[inline]
-    fn try_from(count: u32) -> Result<Self, Self::Error> {
-        Self::try_from_u32(count)
-    }
-}
-
-impl TryFrom<usize> for PageCount {
-    type Error = PageCountOverflow;
-
-    #[inline]
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        let n: u32 = value.try_into().map_err(|_| PageCountOverflow)?;
-        Self::try_from_u32(n)
+    fn from(count: u32) -> Self {
+        Self::new(count)
     }
 }
 
@@ -146,46 +107,97 @@ impl From<PageCount> for u32 {
     }
 }
 
+impl TryFrom<usize> for PageCount {
+    type Error = TryFromIntError;
+
+    #[inline]
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        let n: u32 = value.try_into()?;
+        Ok(Self::new(n))
+    }
+}
+
 impl PartialEq<PageCount> for u32 {
     #[inline]
     fn eq(&self, other: &PageCount) -> bool {
-        *self == other.0
+        *self == other.to_u32()
     }
 }
 
 impl PartialEq<u32> for PageCount {
     #[inline]
     fn eq(&self, other: &u32) -> bool {
-        self.0 == *other
+        self.to_u32() == *other
     }
 }
 
 impl PartialOrd<PageCount> for u32 {
     #[inline]
     fn partial_cmp(&self, other: &PageCount) -> Option<std::cmp::Ordering> {
-        self.partial_cmp(&other.0)
+        self.partial_cmp(&other.to_u32())
     }
 }
 
 impl PartialOrd<u32> for PageCount {
     #[inline]
     fn partial_cmp(&self, other: &u32) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(other)
+        self.to_u32().partial_cmp(other)
     }
 }
 
 impl<E: zerocopy::ByteOrder> From<PageCount> for zerocopy::U32<E> {
     #[inline]
     fn from(value: PageCount) -> Self {
-        zerocopy::U32::new(value.0)
+        zerocopy::U32::new(value.to_u32())
     }
 }
 
-impl<E: zerocopy::ByteOrder> TryFrom<zerocopy::U32<E>> for PageCount {
-    type Error = PageCountOverflow;
-
+impl<E: zerocopy::ByteOrder> From<zerocopy::U32<E>> for PageCount {
     #[inline]
-    fn try_from(value: zerocopy::U32<E>) -> Result<Self, Self::Error> {
-        Self::try_from_u32(value.get())
+    fn from(value: zerocopy::U32<E>) -> Self {
+        Self::new(value.get())
+    }
+}
+
+pub struct PageCountIter {
+    idx: u32,
+    limit: u32,
+}
+
+impl Iterator for PageCountIter {
+    type Item = PageIdx;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.idx = self.idx.saturating_add(1);
+        if self.idx <= self.limit {
+            // SAFETY: self.idx was just incremented and saturates at numeric bounds
+            Some(unsafe { PageIdx::new_unchecked(self.idx) })
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::pageidx;
+
+    #[test]
+    fn test_page_count_iter() {
+        let count = super::PageCount::new(3);
+        let mut iter = count.iter();
+        assert_eq!(iter.next(), Some(pageidx!(1)));
+        assert_eq!(iter.next(), Some(pageidx!(2)));
+        assert_eq!(iter.next(), Some(pageidx!(3)));
+        assert_eq!(iter.next(), None);
+
+        let count = super::PageCount::default();
+        let mut iter = count.iter();
+        assert_eq!(iter.next(), None);
+
+        let count = super::PageCount::new(1);
+        let mut iter = count.iter();
+        assert_eq!(iter.next(), Some(pageidx!(1)));
+        assert_eq!(iter.next(), None);
     }
 }

@@ -2,7 +2,7 @@ use std::{sync::Arc, vec};
 
 use axum::{extract::State, response::IntoResponse};
 use culprit::{Culprit, ResultExt};
-use graft_core::{page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{page::Page, VolumeId};
 use graft_proto::{
     common::v1::SegmentInfo,
     pagestore::v1::{WritePagesRequest, WritePagesResponse},
@@ -39,7 +39,7 @@ pub async fn handler<C>(
 
     let mut seen = HashSet::with_capacity(req.pages.len());
     for page in req.pages {
-        let offset: PageOffset = page.offset.into();
+        let offset = page.offset().or_into_ctx()?;
         let page: Page = Page::try_from(page.data).or_into_ctx()?;
 
         if !seen.insert(offset) {
@@ -165,14 +165,14 @@ mod tests {
 
         let req1 = WritePagesRequest {
             vid: VolumeId::random().copy_to_bytes(),
-            pages: vec![PageAtOffset { offset: 0, data: page.clone() }],
+            pages: vec![PageAtOffset { offset: 1, data: page.clone() }],
         };
 
         let req2 = WritePagesRequest {
             vid: VolumeId::random().copy_to_bytes(),
             pages: vec![
-                PageAtOffset { offset: 0, data: page.clone() },
                 PageAtOffset { offset: 1, data: page.clone() },
+                PageAtOffset { offset: 2, data: page.clone() },
             ],
         };
 
@@ -198,13 +198,13 @@ mod tests {
         assert_eq!(resp1.segments.len(), 1, "expected 1 segment");
         let offsets = SplinterRef::from_bytes(resp1.segments[0].offsets.clone()).unwrap();
         assert_eq!(offsets.cardinality(), 1);
-        assert!(offsets.contains(0));
+        assert!(offsets.contains(1));
 
         let resp2 = WritePagesResponse::decode(resp2.into_bytes()).unwrap();
         assert_eq!(resp2.segments.len(), 1, "expected 1 segment");
         let offsets = SplinterRef::from_bytes(resp2.segments[0].offsets.clone()).unwrap();
         assert_eq!(offsets.cardinality(), 2);
-        assert!(offsets.contains(0));
         assert!(offsets.contains(1));
+        assert!(offsets.contains(2));
     }
 }

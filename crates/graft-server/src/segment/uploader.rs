@@ -136,7 +136,7 @@ impl<C: Cache> SegmentUploaderTask<C> {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{gid::VolumeId, page::Page, page_offset::PageOffset};
+    use graft_core::{gid::VolumeId, page::Page, pageidx};
     use object_store::memory::InMemory;
 
     use crate::segment::{cache::mem::MemCache, closed::ClosedSegment, open::OpenSegment};
@@ -168,10 +168,10 @@ mod tests {
         let page0 = Page::test_filled(1);
         let page1 = Page::test_filled(2);
         segment
-            .insert(vid.clone(), PageOffset::new(0), page0.clone())
+            .insert(vid.clone(), pageidx!(1), page0.clone())
             .unwrap();
         segment
-            .insert(vid.clone(), PageOffset::new(1), page1.clone())
+            .insert(vid.clone(), pageidx!(2), page1.clone())
             .unwrap();
 
         input_tx.send(StoreSegmentReq { segment }).await.unwrap();
@@ -185,14 +185,8 @@ mod tests {
         let segment = ClosedSegment::from_bytes(&bytes).unwrap();
 
         assert_eq!(segment.pages(), 2);
-        assert_eq!(
-            segment.find_page(vid.clone(), PageOffset::new(0)),
-            Some(page0)
-        );
-        assert_eq!(
-            segment.find_page(vid.clone(), PageOffset::new(1)),
-            Some(page1)
-        );
+        assert_eq!(segment.find_page(vid.clone(), pageidx!(1)), Some(page0));
+        assert_eq!(segment.find_page(vid.clone(), pageidx!(2)), Some(page1));
 
         // check that the cached and stored segment are identical
         let cached = cache.get(&commit.sid).await.unwrap().unwrap();

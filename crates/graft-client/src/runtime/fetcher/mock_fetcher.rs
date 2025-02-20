@@ -2,8 +2,7 @@ use culprit::Result;
 use graft_core::{
     lsn::LSN,
     page::{self, EMPTY_PAGE},
-    page_offset::PageOffset,
-    VolumeId,
+    PageIdx, VolumeId,
 };
 
 use crate::{runtime::storage::Storage, ClientErr};
@@ -20,7 +19,7 @@ impl Fetcher for MockFetcher {
         _vid: &VolumeId,
         _remote_lsn: LSN,
         _local_lsn: LSN,
-        _offset: PageOffset,
+        _offset: PageIdx,
     ) -> Result<page::Page, ClientErr> {
         Ok(EMPTY_PAGE)
     }

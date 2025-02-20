@@ -3,7 +3,7 @@ use rand::{distr::StandardUniform, prelude::Distribution, Rng};
 
 use crate::{
     page::{Page, PAGESIZE},
-    page_offset::PageOffset,
+    page_index::PageIdx,
 };
 
 impl Page {
@@ -20,17 +20,16 @@ impl Distribution<Page> for StandardUniform {
     }
 }
 
-impl PageOffset {
+impl PageIdx {
     #[inline]
     pub const fn new(n: u32) -> Self {
-        assert!(n <= Self::MAX.to_u32(), "page offset out of bounds");
-        Self::saturating_from_u32(n)
+        Self::try_new(n).expect("page index must be non-zero")
     }
 
-    /// generates a random page offset in the range [0, max] (inclusive)
+    /// generates a random page index in the range [1, max] (inclusive)
     pub fn test_random<R: Rng + ?Sized>(rng: &mut R, max: u32) -> Self {
         // ensure max is in PageOffset bounds
-        let max = PageOffset::try_from_u32(max).unwrap().to_u32();
-        PageOffset::saturating_from_u32(rng.random_range(0..max))
+        let max = PageIdx::try_new(max).unwrap().to_u32();
+        PageIdx::try_new(rng.random_range(0..max)).unwrap()
     }
 }

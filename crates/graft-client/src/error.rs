@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use graft_core::{page_count::PageCountOverflow, page_offset::PageOffsetOverflow};
+use graft_core::page_index::ConvertToPageIdxErr;
 use graft_proto::common::v1::{GraftErr, GraftErrCode};
 use thiserror::Error;
 
@@ -26,11 +26,8 @@ pub enum ClientErr {
     #[error("io error: {0}")]
     IoErr(std::io::ErrorKind),
 
-    #[error("page offset out of bounds")]
-    PageOffsetOverflow,
-
-    #[error("page count out of bounds")]
-    PageCountOverflow,
+    #[error("invalid page index")]
+    ConvertToPageIdxErr(#[from] ConvertToPageIdxErr),
 }
 
 impl From<http::Error> for ClientErr {
@@ -56,18 +53,6 @@ impl From<std::io::Error> for ClientErr {
 impl From<prost::DecodeError> for ClientErr {
     fn from(_: prost::DecodeError) -> Self {
         ClientErr::ProtobufDecodeErr
-    }
-}
-
-impl From<PageOffsetOverflow> for ClientErr {
-    fn from(_: PageOffsetOverflow) -> Self {
-        ClientErr::PageOffsetOverflow
-    }
-}
-
-impl From<PageCountOverflow> for ClientErr {
-    fn from(_: PageCountOverflow) -> Self {
-        ClientErr::PageCountOverflow
     }
 }
 

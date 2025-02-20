@@ -4,18 +4,19 @@ use culprit::{Culprit, ResultExt};
 use fjall::Slice;
 use graft_core::{
     lsn::{MaybeLSN, LSN},
-    page_count::{PageCount, PageCountOverflow},
+    page_count::PageCount,
 };
+use serde::Serialize;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 use super::{volume_state::VolumeStateTag, StorageErr};
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq, Serialize)]
 #[repr(C)]
 pub struct Snapshot {
     local: LSN,
     remote: MaybeLSN,
-    pages: zerocopy::U32<zerocopy::LittleEndian>,
+    pages: PageCount,
     _padding: [u8; 4],
 }
 
@@ -25,13 +26,13 @@ impl Snapshot {
         Self {
             local,
             remote: remote.into(),
-            pages: pages.into(),
+            pages,
             _padding: [0; 4],
         }
     }
 
     #[track_caller]
-    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, Culprit<StorageErr>> {
+    pub(crate) fn try_from_bytes(bytes: &[u8]) -> Result<Self, Culprit<StorageErr>> {
         Ok(Self::try_read_from_bytes(&bytes)
             .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Snapshot, e.into()))?)
     }
@@ -47,8 +48,8 @@ impl Snapshot {
     }
 
     #[inline]
-    pub fn pages(&self) -> Result<PageCount, PageCountOverflow> {
-        self.pages.try_into()
+    pub fn pages(&self) -> PageCount {
+        self.pages
     }
 }
 

@@ -16,10 +16,7 @@
 use std::mem::size_of;
 
 use bytes::BytesMut;
-use graft_core::{
-    byte_unit::ByteUnit, page_count::PageCount, page_offset::PageOffset, zerocopy_err::ZerocopyErr,
-    VolumeId,
-};
+use graft_core::{byte_unit::ByteUnit, zerocopy_err::ZerocopyErr, PageCount, PageIdx, VolumeId};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 use crate::bytes_vec::BytesVec;
@@ -38,7 +35,7 @@ struct VolumeMeta {
 
 pub struct SegmentIndex<'a> {
     volume_index: &'a [VolumeMeta],
-    page_offsets: &'a [PageOffset],
+    page_offsets: &'a [PageIdx],
 }
 
 impl<'a> SegmentIndex<'a> {
@@ -50,7 +47,7 @@ impl<'a> SegmentIndex<'a> {
         );
         let (volume_index, page_offsets) = data.split_at(volume_index_size);
         let volume_index = <[VolumeMeta]>::try_ref_from_bytes(volume_index)?;
-        let page_offsets = <[PageOffset]>::try_ref_from_bytes(page_offsets)?;
+        let page_offsets = <[PageIdx]>::try_ref_from_bytes(page_offsets)?;
         Ok(Self { volume_index, page_offsets })
     }
 
@@ -64,7 +61,7 @@ impl<'a> SegmentIndex<'a> {
 
     /// Lookup the local offset of a page by (VolumeId, PageOffset)
     /// The returned value can be used to index into the segment's page list
-    pub fn lookup(&self, vid: &VolumeId, offset: PageOffset) -> Option<usize> {
+    pub fn lookup(&self, vid: &VolumeId, offset: PageIdx) -> Option<usize> {
         let meta_idx = self
             .volume_index
             .binary_search_by(|meta| meta.vid.cmp(vid))
@@ -80,7 +77,7 @@ impl<'a> SegmentIndex<'a> {
         Some(start + relative_offset)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&VolumeId, PageOffset)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&VolumeId, PageIdx)> {
         self.volume_index.iter().flat_map(|meta| {
             let start = meta.start as usize;
             let end = start + (meta.pages as usize);
@@ -98,14 +95,14 @@ pub struct SegmentIndexBuilder {
 
     current: Option<VolumeMeta>,
     pages: u16,
-    last_offset: Option<PageOffset>,
+    last_offset: Option<PageIdx>,
 }
 
 impl SegmentIndexBuilder {
     pub fn new_with_capacity(volumes: usize, pages: PageCount) -> Self {
         Self {
             volume_index: BytesMut::with_capacity(volumes * size_of::<VolumeMeta>()),
-            page_offsets: BytesMut::with_capacity(pages.to_usize() * size_of::<PageOffset>()),
+            page_offsets: BytesMut::with_capacity(pages.to_usize() * size_of::<PageIdx>()),
             current: None,
             pages: 0,
             last_offset: None,
@@ -114,11 +111,11 @@ impl SegmentIndexBuilder {
 
     pub fn serialized_size(num_volumes: usize, num_pages: PageCount) -> ByteUnit {
         let volume_index_size = (num_volumes * size_of::<VolumeMeta>()) as u64;
-        let page_offsets_size = (num_pages.to_usize() * size_of::<PageOffset>()) as u64;
+        let page_offsets_size = (num_pages.to_usize() * size_of::<PageIdx>()) as u64;
         ByteUnit::new(volume_index_size + page_offsets_size)
     }
 
-    pub fn insert(&mut self, vid: &VolumeId, offset: PageOffset) {
+    pub fn insert(&mut self, vid: &VolumeId, offset: PageIdx) {
         let current = self.current.get_or_insert_with(|| VolumeMeta {
             vid: vid.clone(),
             start: self.pages,
@@ -170,6 +167,7 @@ impl SegmentIndexBuilder {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[graft_test::test]
@@ -179,10 +177,10 @@ mod tests {
         let mut vids = vec![VolumeId::random(), VolumeId::random(), VolumeId::random()];
         vids.sort();
 
-        // insert 100 offsets for each vid
+        // insert 100 page indexes for each vid
         for vid in &vids {
-            for i in 0..100 {
-                builder.insert(vid, PageOffset::saturating_from_u32(i));
+            for i in 1..=100 {
+                builder.insert(vid, PageIdx::new(i));
             }
         }
 
@@ -193,9 +191,9 @@ mod tests {
         // lookup all the offsets
         for (volume_offset, vid) in vids.iter().enumerate() {
             for i in 0..100 {
-                let offset = PageOffset::saturating_from_u32(i);
-                let idx = index.lookup(vid, offset).expect("offset not found");
-                assert_eq!(idx, (volume_offset * 100) + i as usize);
+                let offset = PageIdx::new(i + 1);
+                let local_offset = index.lookup(vid, offset).expect("offset not found");
+                assert_eq!(local_offset, (volume_offset * 100) + i as usize);
             }
         }
     }

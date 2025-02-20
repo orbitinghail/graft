@@ -21,7 +21,7 @@ use graft_client::{
     },
     ClientErr,
 };
-use graft_core::{gid::ClientId, page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{gid::ClientId, page::Page, PageIdx, VolumeId};
 use graft_proto::GraftErrCode;
 use graft_server::supervisor;
 use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
@@ -196,7 +196,7 @@ fn load_tracker(
 
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
-    let first_page = reader.read(0).or_into_ctx()?;
+    let first_page = reader.read(PageIdx::FIRST).or_into_ctx()?;
     let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
     // record the hash of the page tracker for debugging
@@ -253,8 +253,8 @@ fn workload_writer<R: Rng>(
         let reader = handle.reader().or_into_ctx()?;
 
         // randomly pick a page offset and a page value.
-        // select the next offset to ensure we don't pick the 0th page
-        let offset = PageOffset::test_random(&mut env.rng, 16).saturating_next();
+        // select the next offset to ensure we don't pick the first page
+        let offset = PageIdx::test_random(&mut env.rng, 15).saturating_next();
         let new_page: Page = env.rng.random();
         let new_hash = PageHash::new(&new_page);
 
@@ -306,7 +306,7 @@ fn workload_writer<R: Rng>(
 
         // write out the updated page tracker and the new page
         let mut writer = reader.upgrade();
-        writer.write(0, tracker_page);
+        writer.write(PageIdx::FIRST, tracker_page);
         writer.write(offset, new_page);
 
         // commit the changes
@@ -387,7 +387,7 @@ fn workload_reader<R: Rng>(
             );
         }
 
-        if page_count == 0 {
+        if page_count.is_empty() {
             tracing::info!("volume is empty, waiting for the next commit");
             continue;
         } else {
@@ -398,8 +398,8 @@ fn workload_reader<R: Rng>(
         let page_tracker = load_tracker(&reader, &env.cid).or_into_ctx()?;
 
         // ensure all pages are either empty or have the expected hash
-        for offset in snapshot.pages().offsets() {
-            if offset == 0 {
+        for offset in snapshot.pages().iter() {
+            if offset.is_first_page() {
                 // skip the page tracker
                 continue;
             }

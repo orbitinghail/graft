@@ -1,30 +1,14 @@
-use std::fmt::Debug;
-
-use std::fmt::Display;
-
 use bytes::Bytes;
-use culprit::Culprit;
-use culprit::ResultExt;
+use culprit::{Culprit, ResultExt};
 use fjall::Slice;
-use graft_core::lsn::LSN;
-
-use graft_core::page::Page;
-use graft_core::page::PageSizeErr;
-use graft_core::page::EMPTY_PAGE;
-use graft_core::page_offset::PageOffset;
-
-use graft_core::VolumeId;
+use graft_core::{
+    lsn::LSN,
+    page::{Page, PageSizeErr, EMPTY_PAGE},
+    PageIdx, VolumeId,
+};
+use std::fmt::{Debug, Display};
 use thiserror::Error;
-use zerocopy::Immutable;
-use zerocopy::IntoBytes;
-use zerocopy::KnownLayout;
-use zerocopy::TryFromBytes;
-use zerocopy::Unaligned;
-use zerocopy::U64;
-
-use zerocopy::BE;
-
-use zerocopy::U32;
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, BE, U32, U64};
 
 use super::StorageErr;
 
@@ -32,28 +16,31 @@ use super::StorageErr;
 #[repr(C)]
 pub struct PageKey {
     vid: VolumeId,
-    offset: U32<BE>,
+    index: U32<BE>,
     lsn: U64<BE>,
 }
 
 impl PageKey {
     #[inline]
-    pub fn new(vid: VolumeId, offset: PageOffset, lsn: LSN) -> Self {
+    pub fn new(vid: VolumeId, index: PageIdx, lsn: LSN) -> Self {
         Self {
             vid,
-            offset: offset.into(),
+            index: index.into(),
             lsn: lsn.into(),
         }
     }
 
     #[track_caller]
-    pub(crate) fn ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
-        Ok(Self::try_ref_from_bytes(&bytes).or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
+    pub(crate) fn try_ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
+        Ok(
+            TryFromBytes::try_ref_from_bytes(&bytes)
+                .or_ctx(|e| StorageErr::CorruptKey(e.into()))?,
+        )
     }
 
     #[inline]
-    pub fn with_offset(self, offset: PageOffset) -> Self {
-        Self { offset: offset.into(), ..self }
+    pub fn with_index(self, index: PageIdx) -> Self {
+        Self { index: index.into(), ..self }
     }
 
     pub fn lsn(&self) -> LSN {
@@ -69,7 +56,7 @@ impl AsRef<[u8]> for PageKey {
 
 impl Display for PageKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}@{}", self.vid.short(), self.offset, self.lsn)
+        write!(f, "{}/{}@{}", self.vid.short(), self.index, self.lsn)
     }
 }
 
@@ -83,7 +70,7 @@ impl Clone for PageKey {
     fn clone(&self) -> Self {
         Self {
             vid: self.vid.clone(),
-            offset: self.offset,
+            index: self.index,
             lsn: self.lsn,
         }
     }

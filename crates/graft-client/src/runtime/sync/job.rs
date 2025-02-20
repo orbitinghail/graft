@@ -3,8 +3,7 @@ use graft_core::{
     gid::ClientId,
     lsn::{LSNRangeExt, LSN},
     page::Page,
-    page_offset::PageOffset,
-    VolumeId,
+    PageIdx, VolumeId,
 };
 use graft_proto::pagestore::v1::PageAtOffset;
 use serde::Serialize;
@@ -113,9 +112,9 @@ impl PushJob {
         // setup temporary storage for pages
         // TODO: we will eventually stream pages directly to the remote
         let mut pages = Vec::new();
-        let mut upsert_page = |offset: PageOffset, page: Page| {
+        let mut upsert_page = |offset: PageIdx, page: Page| {
             // binary search upsert the page into pages
-            match pages.binary_search_by_key(&offset, |p: &PageAtOffset| p.offset()) {
+            match pages.binary_search_by_key(&offset.to_u32(), |p: &PageAtOffset| p.offset) {
                 Ok(i) => {
                     // replace the page in the list with this page
                     pages[i].data = page.into();

@@ -10,10 +10,8 @@ use graft_core::{
     gid::{ClientId, GidParseErr},
     lsn::{InvalidLSN, LSNRangeExt, LSN},
     page::{Page, PageSizeErr},
-    page_count::{PageCount, PageCountOverflow},
-    page_offset::{PageOffset, PageOffsetOverflow},
-    page_range::PageRange,
-    SegmentId, VolumeId,
+    page_index::ConvertToPageIdxErr,
+    PageCount, PageIdx, SegmentId, VolumeId,
 };
 use pagestore::v1::PageAtOffset;
 use prost_types::TimestampError;
@@ -84,13 +82,8 @@ impl Snapshot {
         LSN::try_from(self.checkpoint_lsn).or_into_ctx()
     }
 
-    pub fn pages(&self) -> Result<PageCount, Culprit<PageCountOverflow>> {
-        PageCount::try_from_u32(self.page_count).or_into_ctx()
-    }
-
-    /// Returns the range of page offsets in the snapshot.
-    pub fn offsets(&self) -> Result<PageRange, Culprit<PageCountOverflow>> {
-        Ok(self.pages()?.offsets())
+    pub fn pages(&self) -> PageCount {
+        self.page_count.into()
     }
 
     pub fn system_time(&self) -> Result<Option<SystemTime>, TimestampError> {
@@ -118,13 +111,13 @@ impl LsnRange {
 }
 
 impl PageAtOffset {
-    pub fn new(offset: PageOffset, page: Page) -> Self {
+    pub fn new(offset: PageIdx, page: Page) -> Self {
         Self { offset: offset.into(), data: page.into() }
     }
 
     #[inline]
-    pub fn offset(&self) -> Result<PageOffset, Culprit<PageOffsetOverflow>> {
-        PageOffset::try_from_u32(self.offset).or_into_ctx()
+    pub fn offset(&self) -> Result<PageIdx, Culprit<ConvertToPageIdxErr>> {
+        PageIdx::try_from(self.offset).or_into_ctx()
     }
 
     #[inline]

@@ -10,7 +10,7 @@ use graft_client::runtime::{
 use graft_core::{
     page::{Page, PAGESIZE},
     page_count::PageCount,
-    page_offset::PageOffset,
+    PageIdx,
 };
 use parking_lot::{Mutex, MutexGuard};
 use sqlite_plugin::flags::{LockLevel, OpenOpts};
@@ -246,7 +246,7 @@ impl VfsFile for VolFile {
 
     fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, ErrCtx> {
         // locate the page offset of the requested page
-        let page_offset: PageOffset = (offset / PAGESIZE.as_usize())
+        let page_idx: PageIdx = ((offset / PAGESIZE.as_usize()) + 1)
             .try_into()
             .expect("offset out of volume range");
         // local_offset is the offset *within* the requested page
@@ -266,16 +266,16 @@ impl VfsFile for VolFile {
                 self.handle()
                     .reader()
                     .or_into_ctx()?
-                    .read(page_offset)
+                    .read(page_idx)
                     .or_into_ctx()?
             }
             VolFileState::Shared { reader, performed_read } => {
                 *performed_read = true;
-                reader.read(page_offset).or_into_ctx()?
+                reader.read(page_idx).or_into_ctx()?
             }
             VolFileState::Reserved { writer, performed_read } => {
                 *performed_read = true;
-                writer.read(page_offset).or_into_ctx()?
+                writer.read(page_idx).or_into_ctx()?
             }
             VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
         };
@@ -315,8 +315,8 @@ impl VfsFile for VolFile {
             ));
         };
 
-        // locate the page offset of the requested page
-        let page_offset: PageOffset = (offset / PAGESIZE.as_usize())
+        // locate the requested page index
+        let page_idx: PageIdx = ((offset / PAGESIZE.as_usize()) + 1)
             .try_into()
             .expect("offset out of volume range");
         // local_offset is the offset *within* the requested page
@@ -333,14 +333,14 @@ impl VfsFile for VolFile {
         } else {
             // writing a partial page
             // we need to read and then update the page
-            let mut page: BytesMut = writer.read(page_offset).or_into_ctx()?.into();
+            let mut page: BytesMut = writer.read(page_idx).or_into_ctx()?.into();
             // SAFETY: we already verified that the write does not cross a page boundary
             let range = local_offset.as_usize()..(local_offset + data.len()).as_usize();
             page[range].copy_from_slice(data);
             page.try_into().expect("we did not change the page size")
         };
 
-        writer.write(page_offset, page);
+        writer.write(page_idx, page);
         Ok(data.len())
     }
 }

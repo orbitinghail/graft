@@ -10,7 +10,7 @@ use graft_client::runtime::{
     volume_reader::VolumeRead,
     volume_writer::VolumeWrite,
 };
-use graft_core::{gid::ClientId, page::Page, page_offset::PageOffset, VolumeId};
+use graft_core::{gid::ClientId, page::Page, PageIdx, VolumeId};
 use graft_test::start_graft_backend;
 
 #[graft_test::test]
@@ -50,7 +50,7 @@ fn test_client_sync_sanity() {
     let subscription = handle2.subscribe_to_remote_changes();
 
     let page = Page::test_filled(0x42);
-    let offset = PageOffset::new(0);
+    let offset = PageIdx::FIRST;
 
     // write and wait for replication multiple times
     for i in 1..10 {

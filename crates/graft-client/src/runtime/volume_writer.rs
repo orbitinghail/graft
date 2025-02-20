@@ -1,5 +1,5 @@
 use culprit::{Result, ResultExt};
-use graft_core::{page::Page, page_count::PageCount, page_offset::PageOffset, VolumeId};
+use graft_core::{page::Page, page_count::PageCount, PageIdx, VolumeId};
 
 use crate::ClientErr;
 
@@ -12,11 +12,11 @@ pub trait VolumeWrite {
     type CommitOutput;
 
     /// Write a page
-    fn write(&mut self, offset: impl Into<PageOffset>, page: Page);
+    fn write(&mut self, offset: PageIdx, page: Page);
 
     /// Truncate the volume to a new page count.
     /// This can be used to increase or decrease the Volume's size.
-    fn truncate(&mut self, pages: impl Into<PageCount>);
+    fn truncate(&mut self, pages: PageCount);
 
     /// Commit the transaction
     fn commit(self) -> Result<Self::CommitOutput, ClientErr>;
@@ -59,7 +59,7 @@ impl VolumeRead for VolumeWriter {
     }
 
     /// Read a page; supports read your own writes (RYOW)
-    fn read(&self, offset: impl Into<PageOffset>) -> Result<Page, ClientErr> {
+    fn read(&self, offset: PageIdx) -> Result<Page, ClientErr> {
         let offset = offset.into();
         if let Some(page) = self.memtable.get(offset) {
             return Ok(page.clone());
@@ -71,15 +71,14 @@ impl VolumeRead for VolumeWriter {
 impl VolumeWrite for VolumeWriter {
     type CommitOutput = VolumeReader;
 
-    fn write(&mut self, offset: impl Into<PageOffset>, page: Page) {
-        let offset = offset.into();
+    fn write(&mut self, offset: PageIdx, page: Page) {
         self.pages = self.pages.max(offset.pages());
         self.memtable.insert(offset, page);
     }
 
-    fn truncate(&mut self, pages: impl Into<PageCount>) {
-        self.pages = pages.into();
-        self.memtable.truncate(self.pages.last_offset())
+    fn truncate(&mut self, pages: PageCount) {
+        self.pages = pages;
+        self.memtable.truncate(self.pages.last_index())
     }
 
     fn commit(self) -> Result<VolumeReader, ClientErr> {
