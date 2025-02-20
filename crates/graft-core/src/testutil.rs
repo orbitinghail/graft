@@ -30,6 +30,6 @@ impl PageIdx {
     pub fn test_random<R: Rng + ?Sized>(rng: &mut R, max: u32) -> Self {
         // ensure max is in PageOffset bounds
         let max = PageIdx::try_new(max).unwrap().to_u32();
-        PageIdx::try_new(rng.random_range(0..max)).unwrap()
+        PageIdx::try_new(rng.random_range(1..max)).unwrap()
     }
 }
