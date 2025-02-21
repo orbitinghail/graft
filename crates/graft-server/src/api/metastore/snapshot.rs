@@ -31,7 +31,7 @@ pub async fn handler(
 
     if let Some(snapshot) = snapshot {
         Ok(ProtoResponse::new(SnapshotResponse {
-            snapshot: Some(snapshot.into_snapshot(&vid)),
+            snapshot: Some(snapshot.into_snapshot()),
         }))
     } else {
         return Err(Culprit::new_with_note(
@@ -108,21 +108,19 @@ mod tests {
 
         // case 2: catalog is empty, store has a commit
         let meta = CommitMeta::new(
+            vid.clone(),
             cid,
             LSN::FIRST,
             LSN::FIRST,
             PageCount::new(1),
             SystemTime::now(),
         );
-        let mut commit = CommitBuilder::default();
+        let mut commit = CommitBuilder::new_with_capacity(meta, 1);
         commit.write_offsets(
             SegmentId::random(),
-            &[0u32]
-                .into_iter()
-                .collect::<Splinter>()
-                .serialize_to_bytes(),
+            Splinter::from_slice(&[0]).serialize_to_bytes(),
         );
-        store.commit(commit.build(vid.clone(), meta)).await.unwrap();
+        store.commit(commit.build()).await.unwrap();
 
         // request latest
         let req = SnapshotRequest { vid: vid.copy_to_bytes(), lsn: None };

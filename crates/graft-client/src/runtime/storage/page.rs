@@ -4,6 +4,7 @@ use fjall::Slice;
 use graft_core::{
     lsn::LSN,
     page::{Page, PageSizeErr, EMPTY_PAGE},
+    zerocopy_ext::TryFromBytesExt,
     PageIdx, VolumeId,
 };
 use std::fmt::{Debug, Display};
@@ -32,10 +33,8 @@ impl PageKey {
 
     #[track_caller]
     pub(crate) fn try_ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
-        Ok(
-            TryFromBytes::try_ref_from_bytes(&bytes)
-                .or_ctx(|e| StorageErr::CorruptKey(e.into()))?,
-        )
+        Ok(TryFromBytesExt::try_ref_from_unaligned_bytes(&bytes)
+            .or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
     }
 
     #[inline]

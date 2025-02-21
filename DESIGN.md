@@ -8,7 +8,7 @@ Transactional blob storage engine supporting lazy partial replication to the edg
   A 128 bit Graft Identifier. See [GIDs](#gids) for details.
 
 - **Volume**
-  A sparse data object consisting of Pages located at Offsets starting from 0. Volumes are referred to primarily by a Volume ID.
+  A sparse data object consisting of Pages located at PageIdxs starting from 1. Volumes are referred to primarily by a Volume ID.
 
 - **Volume ID**
   A 16 byte GID used to uniquely identify a Volume.
@@ -16,23 +16,23 @@ Transactional blob storage engine supporting lazy partial replication to the edg
 - **Page**
   A fixed-length block of storage. The default size is 4KiB (4096 bytes).
 
-- **Offset**
-  The position of a page within a volume, measured in terms of page numbers rather than bytes. The offset represents the index of the page, with the first page in the volume having an offset of 0.
+- **PageIdx**
+  The index of a page within a volume. The first page of a volume has a page index of 1.
+
+- **PageCount**
+  The number of logical pages in a Volume. This does not take into account sparseness. This means that if a page is written to PageIdx(1000) in an empty Volume, the Volume's size will immediately jump to 1000 pages.
 
 - **LSN** (Log Sequence Number)
   A monotonically increasing number that tracks changes to a Volume. Each transaction results in a new LSN, which is greater than all previous LSNs for the Volume.
 
 - **Snapshot**
-  A tuple (volume id, lsn, max offset) that defines a fixed point in time for the state of a volume. Max offset can be used to determine Volume length and calculate the Volume's maximum size (actual size must take sparseness into account).
-
-- **Graft**
-  The set of Offsets which have changed between any two Snapshots.
+  A tuple (volume id, lsn, PageCount) that defines a fixed point in time for the state of a volume.
 
 - **Metastore**
   A service which stores Volume metadata including the log of segments per Volume. This service is also responsible for coordinating GC, authn, authz, and background tasks.
 
 - **Pagestore**
-  A service which stores pages keyed by `[volume id]/[offset]/[lsn]`. It can efficiently retrieve the latest LSN for a given Offset that is less than or equal to a specified LSN, allowing the Pagestore to read the state of a Volume at any Snapshot.
+  A service which stores pages keyed by `[volume id]/[pageidx]/[lsn]`. It can efficiently retrieve the latest LSN for a given PageIdx that is less than or equal to a specified LSN, allowing the Pagestore to read the state of a Volume at any Snapshot.
 
 - **Replica Client**
   A node that keeps up with changes to a Volume over time. May subscribe the Metastore to receive Grafts, or periodically poll for updates. Notably, Graft Replicas lazily retrieve Pages they want rather than downloading all changes.
@@ -41,7 +41,7 @@ Transactional blob storage engine supporting lazy partial replication to the edg
   An embedded client optimized for reading or writing to a volume without any state. Generally has a very small (or non-existant) cache and does not subscribe to updates. Used in "fire and forget" workloads.
 
 - **Segment**
-  An object stored in blob storage containing Pages and an index mapping from (Volume ID, Offset) to each Page.
+  An object stored in blob storage containing Pages and an index mapping from (Volume ID, PageIdx) to each Page.
 
 - **Segment ID**
   A 16 byte GID used to uniquely identify a Segment.
@@ -100,14 +100,21 @@ The Metastore will store it's data in a key value store. For now we will use obj
   CommitHeader
   list of Segment
 
-CommitHeader (36 bytes)
-  vid: VolumeId (16 bytes)
-  lsn: LSN (8 bytes)
-  ts: Unix timestamp in milliseconds (8 bytes)
-  num_segments: u32 (4 bytes)
+CommitHeader
+  vid: VolumeId
+  meta: CommitMeta
+
+CommitMeta:
+  cid: ClientId
+  lsn: LSN
+  checkpoint_lsn: LSN
+  page_count: u32
+  timestamp: u64
 
 Segment
-  sid: SegmentId (16 bytes)
+  sid: SegmentId
+  volumes: u16 (2 bytes)
+  index_size: u16
   offsets_size: u32 (4 bytes)
   offsets: Splinter (offsets_size bytes)
 ```
@@ -372,7 +379,7 @@ When the Graft runtime detects a local commit has occurred, it tries to push the
 6. release the local commit lock
 7. iterate through the local commit splinters
 
-   - send the most recent page for each offset to the pagestore
+   - send the most recent page for each pageidx to the pagestore
    - collect new segments
 
 8. commit the segments to the metastore
@@ -421,3 +428,7 @@ Networking stack:
 
 - transport: TCP
 - application: Protobuf over HTTPs
+
+## Endianness
+
+Graft serializes and deserializes a lot of data to disk and object_storage. It currently only runs on Little Endian systems which are the vast majority. If you happen to want to use Graft on a Big Endian system please file an issue and we can talk about it. All Graft network messages are Protobuf which is agnostic to the Endianness of the system, so building a Graft Client that works on Big Endian systems should be fine.

@@ -6,8 +6,11 @@ Stack:
   - do we need an index tracking which offsets we have for the latest snapshot? if not, how does the prefetcher avoid re-fetching offsets we already have? or more generally, how can we avoid refetching efficiently?
 
 - sqlite antithesis workload
-- consider switching pagestore to websockets or http streaming bodies
+- currently we inconsistently use magic numbers and sometimes format versions
+  - we also don't use checksums
+  - consider standardizing magic+version, and adopting checksums
 - garbage collection
+- consider switching pagestore to websockets or http streaming bodies
 - authentication (api keys)
 
 # Client prefetching and overfetching

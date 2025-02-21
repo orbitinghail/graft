@@ -1,0 +1,13 @@
+disallowed-methods = [
+    # This function is dangerous because it can be used on types that have an
+    # Alignment > 1. This is dangerous because it can lead developers to a false
+    # sense of security as data is often unintentionally aligned until it's
+    # suddenly not. So, rather than allowing for rare runtime exceptions, we
+    # choose to ban the usage of this function by default in favor of a safer
+    # alternative.
+    #
+    # Instead of using TryFromBytes::try_ref_from_bytes, use
+    # `graft_core::zerocopy_ext::TryFromBytesExt::try_ref_from_unaligned_bytes`
+    # which will guarantee alignment safety via the Unaligned tag.
+    "zerocopy::TryFromBytes::try_ref_from_bytes",
+]

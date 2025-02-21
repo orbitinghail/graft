@@ -90,7 +90,7 @@ pub async fn handler(
     }
 
     Ok(ProtoResponse::new(PullOffsetsResponse {
-        snapshot: Some(snapshot.into_snapshot(&vid)),
+        snapshot: Some(snapshot.into_snapshot()),
         range: Some(LsnRange::from_range(lsns)),
         offsets: splinter.serialize_to_bytes(),
     }))
@@ -152,15 +152,16 @@ mod tests {
         let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
         for lsn in 1u64..=9 {
             let meta = CommitMeta::new(
+                vid.clone(),
                 cid.clone(),
                 LSN::new(lsn),
                 LSN::FIRST,
                 PageCount::new(1),
                 SystemTime::now(),
             );
-            let mut commit = CommitBuilder::default();
-            commit.write_offsets(SegmentId::random(), &offsets);
-            let commit = commit.build(vid.clone(), meta);
+            let mut commit = CommitBuilder::new_with_capacity(meta, 1);
+            commit.write_offsets(SegmentId::random(), offsets.clone());
+            let commit = commit.build();
             store.commit(commit).await.unwrap();
         }
 

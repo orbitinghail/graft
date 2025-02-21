@@ -2,6 +2,7 @@ use culprit::{Culprit, ResultExt};
 use fjall::{KvPair, Slice};
 use graft_core::{
     lsn::{MaybeLSN, LSN},
+    zerocopy_ext::TryFromBytesExt,
     VolumeId,
 };
 use serde::{Deserialize, Serialize};
@@ -53,7 +54,8 @@ impl VolumeStateKey {
     }
 
     pub(crate) fn ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
-        Ok(Self::try_ref_from_bytes(&bytes).or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
+        Ok(Self::try_ref_from_unaligned_bytes(&bytes)
+            .or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
     }
 
     #[inline]

@@ -70,7 +70,7 @@ impl Snapshot {
         Ok(self.vid.as_ref().try_into()?)
     }
 
-    pub fn cid(&self) -> Result<&VolumeId, Culprit<GidParseErr>> {
+    pub fn cid(&self) -> Result<&ClientId, Culprit<GidParseErr>> {
         Ok(self.cid.as_ref().try_into()?)
     }
 

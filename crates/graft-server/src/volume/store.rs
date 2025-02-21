@@ -1,5 +1,6 @@
 use std::{future::ready, ops::RangeBounds, sync::Arc};
 
+use bytes::Bytes;
 use culprit::{Culprit, ResultExt};
 use futures::{stream::FuturesUnordered, Stream, TryStreamExt};
 use graft_core::{
@@ -8,9 +9,12 @@ use graft_core::{
 };
 use object_store::{Attributes, ObjectStore, PutMode, PutOptions, TagSet};
 
-use crate::volume::commit::{commit_key_prefix, CommitValidationErr};
+use crate::{
+    bytes_vec::BytesVec,
+    volume::commit::{commit_key_path_prefix, CommitValidationErr},
+};
 
-use super::commit::{commit_key, parse_commit_key, Commit, CommitKeyParseErr};
+use super::commit::{commit_key_path, parse_commit_key, Commit, CommitKeyParseErr};
 
 const REPLAY_CONCURRENCY: usize = 5;
 
@@ -47,8 +51,8 @@ impl VolumeStore {
         Self { store }
     }
 
-    pub async fn commit(&self, commit: Commit) -> Result<(), Culprit<VolumeStoreErr>> {
-        let key = commit_key(commit.vid(), commit.meta().lsn());
+    pub async fn commit(&self, commit: Commit<BytesVec>) -> Result<(), Culprit<VolumeStoreErr>> {
+        let key = commit_key_path(commit.vid(), commit.meta().lsn());
         self.store
             .put_opts(
                 &key,
@@ -68,12 +72,14 @@ impl VolumeStore {
         &'a self,
         vid: VolumeId,
         range: &'a R,
-    ) -> impl Stream<Item = Result<Commit, Culprit<VolumeStoreErr>>> + 'a {
+    ) -> impl Stream<Item = Result<Commit<Bytes>, Culprit<VolumeStoreErr>>> + 'a {
         let stream = if let Some(from_lsn) = range.try_start_exclusive() {
-            self.store
-                .list_with_offset(Some(&commit_key_prefix(&vid)), &commit_key(&vid, from_lsn))
+            self.store.list_with_offset(
+                Some(&commit_key_path_prefix(&vid)),
+                &commit_key_path(&vid, from_lsn),
+            )
         } else {
-            self.store.list(Some(&commit_key_prefix(&vid)))
+            self.store.list(Some(&commit_key_path_prefix(&vid)))
         };
 
         stream
@@ -103,8 +109,8 @@ impl VolumeStore {
         &self,
         vid: VolumeId,
         lsn: LSN,
-    ) -> Result<Commit, Culprit<VolumeStoreErr>> {
-        let path = commit_key(&vid, lsn);
+    ) -> Result<Commit<Bytes>, Culprit<VolumeStoreErr>> {
+        let path = commit_key_path(&vid, lsn);
         let commit = self.store.get(&path).await?;
         let data = commit.bytes().await?;
         Ok(Commit::from_bytes(data).or_into_ctx()?)

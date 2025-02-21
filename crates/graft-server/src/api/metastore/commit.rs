@@ -69,7 +69,7 @@ pub async fn handler(
             // if the commit snapshot's cid matches the cid, return a successful response
             if commit_snapshot.as_ref().map(|s| s.cid()) == Some(&cid) {
                 return Ok(ProtoResponse::new(CommitResponse {
-                    snapshot: commit_snapshot.map(|s| s.into_snapshot(&vid)),
+                    snapshot: commit_snapshot.map(|s| s.into_snapshot()),
                 }));
             }
         }
@@ -80,32 +80,41 @@ pub async fn handler(
         ).into());
     }
 
-    let mut commit = CommitBuilder::default();
-    for segment in req.segments {
-        let sid = segment.sid().or_into_ctx()?;
-        let offsets = segment.offsets().or_into_ctx()?;
-        commit.write_offsets(sid.clone(), offsets.inner());
-    }
-
     // checkpoint doesn't change
     let checkpoint = latest_snapshot
         .map(|s| s.checkpoint())
         .unwrap_or(LSN::FIRST);
 
-    let meta = CommitMeta::new(cid, commit_lsn, checkpoint, page_count, SystemTime::now());
-    let commit = commit.build(vid.clone(), meta.clone());
+    let mut commit = CommitBuilder::new_with_capacity(
+        CommitMeta::new(
+            vid.clone(),
+            cid,
+            commit_lsn,
+            checkpoint,
+            page_count,
+            SystemTime::now(),
+        ),
+        req.segments.len(),
+    );
+    for segment in req.segments {
+        let sid = segment.sid().or_into_ctx()?;
+        let offsets = segment.offsets().or_into_ctx()?;
+        commit.write_offsets(sid.clone(), offsets.into_inner());
+    }
+
+    let commit = commit.build();
 
     // commit the new snapshot to the store
     state.store.commit(commit.clone()).await.or_into_ctx()?;
 
     // update the catalog
     let mut batch = state.catalog.batch_insert();
-    batch.insert_commit(commit).or_into_ctx()?;
+    batch.insert_commit(&commit).or_into_ctx()?;
     batch.commit().or_into_ctx()?;
 
     // the commit was successful, return the new snapshot
     Ok(ProtoResponse::new(CommitResponse {
-        snapshot: Some(meta.into_snapshot(&vid)),
+        snapshot: Some(commit.into_snapshot()),
     }))
 }
 

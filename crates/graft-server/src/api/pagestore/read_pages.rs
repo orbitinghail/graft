@@ -158,7 +158,7 @@ mod tests {
 
         let server = TestServer::builder()
             .default_content_type(CONTENT_TYPE_PROTOBUF.to_str().unwrap())
-            // .expect_success_by_default()
+            .expect_success_by_default()
             .build(handler.with_state(state).into_make_service())
             .unwrap();
 
@@ -201,7 +201,14 @@ mod tests {
         batch
             .insert_snapshot(
                 vid.clone(),
-                CommitMeta::new(cid, lsn, LSN::FIRST, PageCount::new(5), SystemTime::now()),
+                CommitMeta::new(
+                    vid.clone(),
+                    cid,
+                    lsn,
+                    LSN::FIRST,
+                    PageCount::new(5),
+                    SystemTime::now(),
+                ),
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),

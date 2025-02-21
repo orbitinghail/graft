@@ -7,7 +7,7 @@ use culprit::{Culprit, ResultExt};
 use graft_core::{
     byte_unit::ByteUnit,
     page::{Page, PAGESIZE},
-    zerocopy_err::ZerocopyErr,
+    zerocopy_ext::ZerocopyErr,
     PageCount, PageIdx, SegmentId, VolumeId,
 };
 use thiserror::Error;
@@ -200,9 +200,11 @@ mod tests {
     use std::vec;
 
     use assert_matches::assert_matches;
-    use bytes::{Buf, BufMut, BytesMut};
+    use bytes::BytesMut;
     use graft_core::pageidx;
     use zerocopy::U16;
+
+    use crate::bytes_vec::BytesVec;
 
     use super::*;
 
@@ -277,25 +279,24 @@ mod tests {
         );
 
         // test invalid page count err
-        let mut bytes = BytesMut::zeroed(PAGESIZE.as_usize());
-        let mut index = SegmentIndexBuilder::default();
+        let mut buf = BytesVec::default();
+        buf.put(BytesMut::zeroed(PAGESIZE.as_usize()).freeze());
+        let mut index = SegmentIndexBuilder::new_with_capacity(1, PageCount::new(2));
         let vid = VolumeId::random();
         index.insert(&vid, pageidx!(1));
         index.insert(&vid, pageidx!(2));
-        let index = index.finish();
-        let index_size = index.remaining();
-        bytes.put(index);
-        bytes.put_slice(
+        let index_size = index.finish(&mut buf);
+        buf.put_slice(
             SegmentFooter {
                 sid: SegmentId::random(),
                 volumes: U16::new(1),
-                index_size: U16::new(index_size as u16),
+                index_size: U16::new(index_size.as_u16()),
                 _padding: Default::default(),
                 magic: SEGMENT_MAGIC,
             }
             .as_bytes(),
         );
-        let bytes = bytes.freeze();
+        let bytes = buf.into_bytes();
         assert_matches!(
             ClosedSegment::from_bytes(&bytes).unwrap_err().ctx(),
             SegmentValidationErr::InvalidPageCount

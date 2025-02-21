@@ -1,6 +1,6 @@
 use culprit::{Culprit, ResultExt};
 use fjall::Slice;
-use graft_core::{lsn::LSN, VolumeId};
+use graft_core::{lsn::LSN, zerocopy_ext::TryFromBytesExt, VolumeId};
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, U64};
 
 use super::StorageErr;
@@ -20,7 +20,8 @@ impl CommitKey {
 
     #[track_caller]
     pub(crate) fn ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
-        Ok(Self::try_ref_from_bytes(&bytes).or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
+        Ok(Self::try_ref_from_unaligned_bytes(&bytes)
+            .or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
     }
 
     #[inline]

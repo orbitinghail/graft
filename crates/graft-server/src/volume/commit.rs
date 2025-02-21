@@ -1,16 +1,18 @@
 use std::{
+    fmt::Debug,
+    iter::once,
     num::ParseIntError,
     time::{Duration, SystemTime},
 };
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Buf, Bytes};
 use culprit::{Culprit, ResultExt};
 use fjall::Slice;
 use graft_core::{
     gid::{ClientId, GidParseErr},
     lsn::{InvalidLSN, LSN},
     page_count::PageCount,
-    zerocopy_err::ZerocopyErr,
+    zerocopy_ext::ZerocopyErr,
     SegmentId, VolumeId,
 };
 use graft_proto::common::v1::Snapshot;
@@ -18,18 +20,16 @@ use object_store::{path::Path, PutPayload};
 use prost_types::TimestampError;
 use splinter::SplinterRef;
 use thiserror::Error;
-use zerocopy::{
-    ConvertError, Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, U32, U64,
-};
+use zerocopy::{ConvertError, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-pub const COMMIT_MAGIC: U32<LittleEndian> = U32::from_bytes([0x31, 0x99, 0xBF, 0x00]);
+use crate::bytes_vec::BytesVec;
 
-pub fn commit_key_prefix(vid: &VolumeId) -> Path {
+pub fn commit_key_path_prefix(vid: &VolumeId) -> Path {
     Path::parse(format!("volumes/{}", vid.pretty())).expect("invalid object_store path")
 }
 
-pub fn commit_key(vid: &VolumeId, lsn: LSN) -> Path {
-    commit_key_prefix(vid).child(lsn.format_fixed_hex())
+pub fn commit_key_path(vid: &VolumeId, lsn: LSN) -> Path {
+    commit_key_path_prefix(vid).child(lsn.format_fixed_hex())
 }
 
 fn time_to_millis(time: SystemTime) -> u64 {
@@ -86,27 +86,34 @@ pub fn parse_commit_key(key: &Path) -> Result<(VolumeId, LSN), Culprit<CommitKey
 }
 
 #[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
-#[repr(C)]
-pub struct CommitHeader {
-    magic: U32<LittleEndian>,
-    vid: VolumeId,
-    meta: CommitMeta,
+#[repr(u32)]
+enum CommitMagic {
+    Magic = 0x71DB116B,
 }
 
-static_assertions::const_assert_eq!(size_of::<CommitHeader>(), 64);
+impl Debug for CommitMagic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CommitMagic")
+    }
+}
 
 #[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout, Debug)]
 #[repr(C)]
 pub struct CommitMeta {
+    magic: CommitMagic,
+    page_count: PageCount,
+    vid: VolumeId,
     cid: ClientId,
-    lsn: U64<LittleEndian>,
-    checkpoint_lsn: U64<LittleEndian>,
-    page_count: U32<LittleEndian>,
-    timestamp: U64<LittleEndian>,
+    lsn: LSN,
+    checkpoint_lsn: LSN,
+    timestamp: u64,
 }
+
+static_assertions::const_assert_eq!(size_of::<CommitMeta>(), 64);
 
 impl CommitMeta {
     pub fn new(
+        vid: VolumeId,
         cid: ClientId,
         lsn: LSN,
         checkpoint: LSN,
@@ -118,6 +125,8 @@ impl CommitMeta {
             "checkpoint must be less than or equal to lsn"
         );
         Self {
+            magic: CommitMagic::Magic,
+            vid,
             cid,
             lsn: lsn.into(),
             checkpoint_lsn: checkpoint.into(),
@@ -127,28 +136,33 @@ impl CommitMeta {
     }
 
     #[inline]
+    pub fn vid(&self) -> &VolumeId {
+        &self.vid
+    }
+
+    #[inline]
     pub fn cid(&self) -> &ClientId {
         &self.cid
     }
 
     #[inline]
     pub fn lsn(&self) -> LSN {
-        self.lsn.try_into().expect("invalid LSN")
+        self.lsn
     }
 
     #[inline]
     pub fn checkpoint(&self) -> LSN {
-        self.checkpoint_lsn.try_into().expect("invalid LSN")
+        self.checkpoint_lsn
     }
 
     #[inline]
     pub fn page_count(&self) -> PageCount {
-        self.page_count.into()
+        self.page_count
     }
 
     #[inline]
     pub fn timestamp(&self) -> u64 {
-        self.timestamp.get()
+        self.timestamp
     }
 
     #[inline]
@@ -156,13 +170,13 @@ impl CommitMeta {
         millis_to_time(self.timestamp())
     }
 
-    pub fn into_snapshot(self, vid: &VolumeId) -> Snapshot {
+    pub fn into_snapshot(self) -> Snapshot {
         Snapshot::new(
-            vid,
-            self.cid(),
-            self.lsn(),
-            self.checkpoint(),
-            self.page_count(),
+            &self.vid,
+            &self.cid,
+            self.lsn,
+            self.checkpoint_lsn,
+            self.page_count,
             self.system_time(),
         )
     }
@@ -198,10 +212,11 @@ impl TryFrom<Snapshot> for CommitMeta {
     fn try_from(snapshot: Snapshot) -> Result<Self, Self::Error> {
         let ts = snapshot.system_time()?.unwrap_or(SystemTime::UNIX_EPOCH);
         Ok(Self::new(
-            ClientId::try_from(snapshot.cid).or_into_ctx()?,
-            LSN::try_from(snapshot.lsn).or_into_ctx()?,
-            LSN::try_from(snapshot.checkpoint_lsn).or_into_ctx()?,
-            snapshot.page_count.into(),
+            snapshot.vid().cloned().or_into_ctx()?,
+            snapshot.cid().cloned().or_into_ctx()?,
+            snapshot.lsn().or_into_ctx()?,
+            snapshot.checkpoint().or_into_ctx()?,
+            snapshot.pages(),
             ts,
         ))
     }
@@ -211,71 +226,55 @@ impl TryFrom<Snapshot> for CommitMeta {
 #[repr(C)]
 pub struct OffsetsHeader {
     sid: SegmentId,
-    size: U32<LittleEndian>,
+    size: u32,
 }
 
-#[derive(Default)]
 pub struct CommitBuilder {
-    offsets: BytesMut,
+    meta: CommitMeta,
+    offsets: BytesVec,
 }
 
 impl CommitBuilder {
-    pub fn write_offsets(&mut self, sid: SegmentId, splinter: &[u8]) {
-        let header = OffsetsHeader {
-            sid,
-            size: (splinter.len() as u32).into(),
-        };
-        self.offsets.put_slice(header.as_bytes());
-        self.offsets.put_slice(splinter);
+    pub fn new_with_capacity(meta: CommitMeta, capacity: usize) -> Self {
+        Self {
+            meta,
+            offsets: BytesVec::with_capacity(capacity),
+        }
     }
 
-    pub fn build(self, vid: VolumeId, meta: CommitMeta) -> Commit {
-        let header = CommitHeader { magic: COMMIT_MAGIC, vid, meta };
-        Commit { header, offsets: self.offsets.freeze() }
+    pub fn write_offsets(&mut self, sid: SegmentId, splinter: Bytes) {
+        let header = OffsetsHeader {
+            sid,
+            size: splinter.len().try_into().expect("bug: splinter too large"),
+        };
+        self.offsets.put_slice(header.as_bytes());
+        self.offsets.put(splinter);
+    }
+
+    pub fn build(self) -> Commit<BytesVec> {
+        Commit { header: self.meta, offsets: self.offsets }
     }
 }
 
 #[derive(Debug, Error)]
-pub enum CommitValidationErr {
-    #[error("corrupt commit header: {0}")]
-    Corrupt(#[from] ZerocopyErr),
-
-    #[error("serialized commit is too short")]
-    InvalidLength,
-
-    #[error("invalid magic number")]
-    Magic,
-}
+#[error("corrupt commit header: {0}")]
+pub struct CommitValidationErr(ZerocopyErr);
 
 impl<A, S, V> From<ConvertError<A, S, V>> for CommitValidationErr {
     #[inline]
     #[track_caller]
     fn from(value: ConvertError<A, S, V>) -> Self {
-        Self::Corrupt(value.into())
+        Self(value.into())
     }
 }
 
 #[derive(Clone)]
-pub struct Commit {
-    header: CommitHeader,
-    offsets: Bytes,
+pub struct Commit<T> {
+    header: CommitMeta,
+    offsets: T,
 }
 
-impl Commit {
-    pub fn from_bytes(mut data: Bytes) -> Result<Self, Culprit<CommitValidationErr>> {
-        if data.len() < size_of::<CommitHeader>() {
-            return Err(Culprit::new(CommitValidationErr::InvalidLength));
-        }
-        let header = data.split_to(size_of::<CommitHeader>());
-        let header = CommitHeader::try_read_from_bytes(&header)?;
-
-        if header.magic != COMMIT_MAGIC {
-            return Err(Culprit::new(CommitValidationErr::Magic));
-        }
-
-        Ok(Self { header, offsets: data })
-    }
-
+impl<T> Commit<T> {
     #[inline]
     pub fn vid(&self) -> &VolumeId {
         &self.header.vid
@@ -283,16 +282,34 @@ impl Commit {
 
     #[inline]
     pub fn meta(&self) -> &CommitMeta {
-        &self.header.meta
+        &self.header
     }
 
-    pub fn iter_offsets(&self) -> OffsetsIter {
+    pub fn into_snapshot(self) -> Snapshot {
+        self.header.into_snapshot()
+    }
+}
+
+impl<T: Buf + Clone> Commit<T> {
+    pub fn from_bytes(mut data: T) -> Result<Self, Culprit<CommitValidationErr>> {
+        if data.remaining() < size_of::<CommitMeta>() {
+            return Err(Culprit::new(CommitValidationErr(ZerocopyErr::InvalidSize)));
+        }
+        let header = data.copy_to_bytes(size_of::<CommitMeta>());
+        let header = CommitMeta::try_read_from_bytes(&header)?;
+
+        Ok(Self { header, offsets: data })
+    }
+
+    pub fn iter_offsets(&self) -> OffsetsIter<T> {
         OffsetsIter { offsets: self.offsets.clone() }
     }
+}
 
+impl Commit<BytesVec> {
     pub fn into_payload(self) -> PutPayload {
         let header = Bytes::copy_from_slice(self.header.as_bytes());
-        [header, self.offsets].into_iter().collect()
+        once(header).chain(self.offsets.into_iter()).collect()
     }
 }
 
@@ -316,45 +333,46 @@ impl<A, S, V> From<ConvertError<A, S, V>> for OffsetsValidationErr {
     }
 }
 
-pub struct OffsetsIter {
-    offsets: Bytes,
+pub struct OffsetsIter<T> {
+    offsets: T,
 }
 
-impl OffsetsIter {
-    #[allow(clippy::type_complexity)]
+impl<T: Buf> OffsetsIter<T> {
     fn next_inner(
         &mut self,
     ) -> Result<Option<(SegmentId, SplinterRef<Bytes>)>, Culprit<OffsetsValidationErr>> {
-        if self.offsets.is_empty() {
+        if !self.offsets.has_remaining() {
             return Ok(None);
         }
 
         // read the next header
-        if self.offsets.len() < std::mem::size_of::<OffsetsHeader>() {
+        if self.offsets.remaining() < std::mem::size_of::<OffsetsHeader>() {
             return Err(Culprit::new_with_note(
                 OffsetsValidationErr::InvalidSize,
                 "header size is larger than remaining offsets data",
             ));
         }
-        let header = self.offsets.split_to(std::mem::size_of::<OffsetsHeader>());
+        let header = self
+            .offsets
+            .copy_to_bytes(std::mem::size_of::<OffsetsHeader>());
         let header = OffsetsHeader::try_read_from_bytes(&header)?;
 
         // read the splinter
-        let splinter_len = header.size.get() as usize;
-        if self.offsets.len() < splinter_len {
+        let splinter_len = header.size as usize;
+        if self.offsets.remaining() < splinter_len {
             return Err(Culprit::new_with_note(
                 OffsetsValidationErr::InvalidSize,
                 "splinter size is larger than remaining offsets data",
             ));
         }
-        let splinter = self.offsets.split_to(splinter_len);
+        let splinter = self.offsets.copy_to_bytes(splinter_len);
         let splinter = SplinterRef::from_bytes(splinter).or_into_ctx()?;
 
         Ok(Some((header.sid, splinter)))
     }
 }
 
-impl Iterator for OffsetsIter {
+impl<T: Buf> Iterator for OffsetsIter<T> {
     type Item = Result<(SegmentId, SplinterRef<Bytes>), Culprit<OffsetsValidationErr>>;
 
     fn next(&mut self) -> Option<Self::Item> {

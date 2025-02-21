@@ -1,6 +1,6 @@
 use std::io::IoSlice;
 
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 #[derive(Default, Clone)]
 pub struct BytesVec {
@@ -66,6 +66,27 @@ impl Buf for BytesVec {
             }
         }
         self.bufs.drain(0..to_remove);
+    }
+
+    fn copy_to_bytes(&mut self, len: usize) -> bytes::Bytes {
+        if self.remaining() < len {
+            panic!(
+                "advance out of bounds: the len is {} but advancing by {}",
+                self.remaining(),
+                len
+            )
+        }
+
+        // fast path if we can pull all the requested bytes from the first buffer
+        if let Some(first) = self.bufs.first_mut() {
+            if first.len() >= len {
+                return first.copy_to_bytes(len);
+            }
+        }
+
+        let mut ret = BytesMut::with_capacity(len);
+        ret.put(self.take(len));
+        ret.freeze()
     }
 }
 

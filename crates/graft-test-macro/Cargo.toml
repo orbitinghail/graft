@@ -3,6 +3,9 @@ name = "graft-test-macro"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [lib]
 proc-macro = true
 

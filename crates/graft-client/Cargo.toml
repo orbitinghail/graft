@@ -3,6 +3,9 @@ name = "graft-client"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }

@@ -81,7 +81,7 @@ pub async fn handler(
         }
 
         result.commits.push(Commit {
-            snapshot: Some(meta.into_snapshot(&vid)),
+            snapshot: Some(meta.into_snapshot()),
             segments: segment_infos,
         });
     }
@@ -150,15 +150,16 @@ mod tests {
             .serialize_to_bytes();
         for lsn in 1u64..11 {
             let meta = CommitMeta::new(
+                vid.clone(),
                 cid.clone(),
                 LSN::new(lsn),
                 LSN::FIRST,
                 PageCount::new(1),
                 SystemTime::now(),
             );
-            let mut commit = CommitBuilder::default();
-            commit.write_offsets(SegmentId::random(), offsets);
-            let commit = commit.build(vid.clone(), meta);
+            let mut commit = CommitBuilder::new_with_capacity(meta, 1);
+            commit.write_offsets(SegmentId::random(), offsets.clone());
+            let commit = commit.build();
             store.commit(commit).await.unwrap();
         }
 

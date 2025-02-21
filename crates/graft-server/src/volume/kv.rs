@@ -8,9 +8,9 @@ use graft_core::{
     lsn::{LSNRangeExt, LSN},
     {SegmentId, VolumeId},
 };
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, BE, U64};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, BE, U64};
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned)]
 #[repr(C, packed)]
 pub struct CommitKey {
     vid: VolumeId,
@@ -63,7 +63,7 @@ impl Clone for CommitKey {
     }
 }
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)]
+#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned)]
 #[repr(C, packed)]
 pub struct SegmentKey {
     commit: CommitKey,

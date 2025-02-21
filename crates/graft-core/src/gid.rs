@@ -14,7 +14,10 @@ use zerocopy::{
     ValidityError,
 };
 
-use crate::{byte_unit::ByteUnit, zerocopy_err::ZerocopyErr};
+use crate::{
+    byte_unit::ByteUnit,
+    zerocopy_ext::{TryFromBytesExt, ZerocopyErr},
+};
 
 const GID_SIZE: ByteUnit = ByteUnit::new(16);
 const SHORT_LEN: usize = 12;
@@ -181,7 +184,7 @@ impl<'a, P: Prefix> TryFrom<&'a [u8]> for &'a Gid<P> {
             return Err(GidParseErr::InvalidLength);
         }
 
-        Ok(Gid::<P>::try_ref_from_bytes(value)?)
+        Ok(Gid::<P>::try_ref_from_unaligned_bytes(value)?)
     }
 }
 

@@ -33,7 +33,7 @@ use graft_core::{
     gid::GidParseErr,
     page::{Page, PAGESIZE},
     pageidx,
-    zerocopy_err::ZerocopyErr,
+    zerocopy_ext::ZerocopyErr,
     ClientId, PageIdx, VolumeId,
 };
 use graft_tracing::{init_tracing, TracingConsumer};

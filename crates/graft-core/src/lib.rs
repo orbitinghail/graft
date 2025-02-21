@@ -5,7 +5,7 @@ pub mod lsn;
 pub mod page;
 pub mod page_count;
 pub mod page_index;
-pub mod zerocopy_err;
+pub mod zerocopy_ext;
 
 pub use gid::{ClientId, SegmentId, VolumeId};
 pub use page_count::PageCount;

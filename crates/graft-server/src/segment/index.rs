@@ -15,27 +15,44 @@
 
 use std::mem::size_of;
 
-use bytes::BytesMut;
-use graft_core::{byte_unit::ByteUnit, zerocopy_err::ZerocopyErr, PageCount, PageIdx, VolumeId};
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use bytes::{Buf, Bytes, BytesMut};
+use graft_core::{
+    byte_unit::ByteUnit,
+    zerocopy_ext::{TryFromBytesExt, ZerocopyErr},
+    PageCount, PageIdx, VolumeId,
+};
+use zerocopy::{
+    Immutable, IntoBytes, KnownLayout, LittleEndian, TryFromBytes, Unaligned, U16, U32,
+};
 
 use crate::bytes_vec::BytesVec;
 
-#[derive(Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone)]
+#[derive(Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, Unaligned)]
 #[repr(C)]
 struct VolumeMeta {
     vid: VolumeId,
 
     /// The position of the first page for this Volume in the segment
-    start: u16,
+    start: U16<LittleEndian>,
 
     /// The number of pages stored in this Segment for this Volume
-    pages: u16,
+    pages: U16<LittleEndian>,
+}
+
+impl VolumeMeta {
+    fn incr_pages(&mut self) {
+        self.pages = self
+            .pages
+            .get()
+            .checked_add(1)
+            .expect("pages overflow")
+            .into();
+    }
 }
 
 pub struct SegmentIndex<'a> {
     volume_index: &'a [VolumeMeta],
-    page_offsets: &'a [PageIdx],
+    page_offsets: &'a [U32<LittleEndian>],
 }
 
 impl<'a> SegmentIndex<'a> {
@@ -46,9 +63,10 @@ impl<'a> SegmentIndex<'a> {
             "segment must be at least as long as the volume index"
         );
         let (volume_index, page_offsets) = data.split_at(volume_index_size);
-        let volume_index = <[VolumeMeta]>::try_ref_from_bytes(volume_index)?;
-        let page_offsets = <[PageIdx]>::try_ref_from_bytes(page_offsets)?;
-        Ok(Self { volume_index, page_offsets })
+        Ok(Self {
+            volume_index: TryFromBytesExt::try_ref_from_unaligned_bytes(volume_index)?,
+            page_offsets: TryFromBytesExt::try_ref_from_unaligned_bytes(page_offsets)?,
+        })
     }
 
     pub fn pages(&self) -> PageCount {
@@ -69,29 +87,64 @@ impl<'a> SegmentIndex<'a> {
 
         let meta = &self.volume_index[meta_idx];
 
-        let start = meta.start as usize;
-        let end = start + (meta.pages as usize);
+        let start = meta.start.get() as usize;
+        let end = start + (meta.pages.get() as usize);
 
-        let relative_offset = self.page_offsets[start..end].binary_search(&offset).ok()?;
+        let relative_offset = self.page_offsets[start..end]
+            .binary_search(&offset.into())
+            .ok()?;
 
         Some(start + relative_offset)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&VolumeId, PageIdx)> {
         self.volume_index.iter().flat_map(|meta| {
-            let start = meta.start as usize;
-            let end = start + (meta.pages as usize);
-            self.page_offsets[start..end]
-                .iter()
-                .map(move |offset| (&meta.vid, *offset))
+            let start = meta.start.get() as usize;
+            let end = start + (meta.pages.get() as usize);
+            self.page_offsets[start..end].iter().map(move |&offset| {
+                (
+                    &meta.vid,
+                    PageIdx::try_from(offset).expect("bug: PageIdx should never be zero"),
+                )
+            })
         })
     }
 }
 
-#[derive(Default)]
+struct TypedByteArray<T> {
+    data: BytesMut,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: IntoBytes + Immutable> TypedByteArray<T> {
+    fn serialized_size(count: usize) -> usize {
+        count * size_of::<T>()
+    }
+
+    fn with_capacity(count: usize) -> Self {
+        Self {
+            data: BytesMut::with_capacity(count * size_of::<T>()),
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    fn push(&mut self, item: T) {
+        self.data.extend_from_slice(item.as_bytes());
+    }
+
+    fn freeze(self) -> Bytes {
+        assert_eq!(
+            self.data.capacity() - self.data.remaining(),
+            0,
+            "not all data was consumed"
+        );
+        self.data.freeze()
+    }
+}
+
 pub struct SegmentIndexBuilder {
-    volume_index: BytesMut,
-    page_offsets: BytesMut,
+    volume_index: TypedByteArray<VolumeMeta>,
+    page_offsets: TypedByteArray<U32<LittleEndian>>,
 
     current: Option<VolumeMeta>,
     pages: u16,
@@ -101,8 +154,8 @@ pub struct SegmentIndexBuilder {
 impl SegmentIndexBuilder {
     pub fn new_with_capacity(volumes: usize, pages: PageCount) -> Self {
         Self {
-            volume_index: BytesMut::with_capacity(volumes * size_of::<VolumeMeta>()),
-            page_offsets: BytesMut::with_capacity(pages.to_usize() * size_of::<PageIdx>()),
+            volume_index: TypedByteArray::with_capacity(volumes),
+            page_offsets: TypedByteArray::with_capacity(pages.to_usize()),
             current: None,
             pages: 0,
             last_offset: None,
@@ -110,16 +163,17 @@ impl SegmentIndexBuilder {
     }
 
     pub fn serialized_size(num_volumes: usize, num_pages: PageCount) -> ByteUnit {
-        let volume_index_size = (num_volumes * size_of::<VolumeMeta>()) as u64;
-        let page_offsets_size = (num_pages.to_usize() * size_of::<PageIdx>()) as u64;
+        let volume_index_size = TypedByteArray::<VolumeMeta>::serialized_size(num_volumes) as u64;
+        let page_offsets_size =
+            TypedByteArray::<U32<LittleEndian>>::serialized_size(num_pages.to_usize()) as u64;
         ByteUnit::new(volume_index_size + page_offsets_size)
     }
 
     pub fn insert(&mut self, vid: &VolumeId, offset: PageIdx) {
         let current = self.current.get_or_insert_with(|| VolumeMeta {
             vid: vid.clone(),
-            start: self.pages,
-            pages: 0,
+            start: self.pages.into(),
+            pages: 0.into(),
         });
 
         // If the VolumeId has changed, write the current VolumeMeta to the volume_index
@@ -132,11 +186,11 @@ impl SegmentIndexBuilder {
                 current,
                 VolumeMeta {
                     vid: vid.clone(),
-                    start: self.pages,
-                    pages: 0,
+                    start: self.pages.into(),
+                    pages: 0.into(),
                 },
             );
-            self.volume_index.extend_from_slice(last.as_bytes());
+            self.volume_index.push(last);
             self.last_offset = None;
         }
 
@@ -148,31 +202,37 @@ impl SegmentIndexBuilder {
             );
         }
 
-        // Write the PageOffset to the page_offsets
-        self.page_offsets.extend_from_slice(offset.as_bytes());
+        // Write the PageOffset to the page_offsets array
+        self.page_offsets.push(offset.into());
 
         // Increment page counters
-        current.pages = current.pages.checked_add(1).expect("pages overflow");
+        current.incr_pages();
         self.pages = self.pages.checked_add(1).expect("pages overflow");
     }
 
-    pub fn finish(self) -> BytesVec {
+    pub fn finish(self, out: &mut BytesVec) -> ByteUnit {
         let mut volume_index = self.volume_index;
         if let Some(current) = self.current {
-            volume_index.extend_from_slice(current.as_bytes());
+            volume_index.push(current);
         }
-        vec![volume_index.freeze(), self.page_offsets.freeze()].into()
+        let (volume_index, page_offsets) = (volume_index.freeze(), self.page_offsets.freeze());
+        let size = volume_index.len() + page_offsets.len();
+        out.put(volume_index);
+        out.put(page_offsets);
+        size.into()
     }
 }
 
 #[cfg(test)]
 mod tests {
 
+    use bytes::Buf;
+
     use super::*;
 
     #[graft_test::test]
     fn test_segment_index_sanity() {
-        let mut builder = SegmentIndexBuilder::default();
+        let mut builder = SegmentIndexBuilder::new_with_capacity(3, 300.into());
 
         let mut vids = vec![VolumeId::random(), VolumeId::random(), VolumeId::random()];
         vids.sort();
@@ -184,7 +244,15 @@ mod tests {
             }
         }
 
-        let data = builder.finish().into_bytes();
+        let mut data = BytesVec::default();
+        let size = builder.finish(&mut data);
+        assert_eq!(data.remaining(), size);
+        assert_eq!(
+            size,
+            SegmentIndexBuilder::serialized_size(vids.len(), 300.into()).as_usize()
+        );
+        let data = data.into_bytes();
+
         let index =
             SegmentIndex::from_bytes(&data, vids.len()).expect("failed to load segment index");
 

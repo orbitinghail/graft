@@ -2,7 +2,6 @@
 
 use std::{collections::BTreeMap, fmt::Debug};
 
-use bytes::Buf;
 use culprit::Culprit;
 use graft_core::{
     byte_unit::ByteUnit, page::Page, page_count::PageCount, PageIdx, SegmentId, VolumeId,
@@ -91,6 +90,7 @@ impl OpenSegment {
         let pages = self.pages();
         // +2 for the index, +1 for the footer
         let mut data = BytesVec::with_capacity(pages.to_usize() + 2 + 1);
+        dbg!(volumes, pages);
         let mut index_builder = SegmentIndexBuilder::new_with_capacity(volumes, pages);
         let mut offsets_builder = OffsetsMap::builder();
 
@@ -104,9 +104,12 @@ impl OpenSegment {
         }
 
         // write out the index
-        let index_bytes = index_builder.finish();
-        let index_size = index_bytes.remaining().into();
-        data.append(index_bytes);
+        let index_size = index_builder.finish(&mut data);
+        debug_assert_eq!(
+            index_size,
+            SegmentIndexBuilder::serialized_size(volumes, pages),
+            "index size mismatch"
+        );
 
         // write out the footer
         let footer = SegmentFooter::new(sid, volumes, index_size);
@@ -121,6 +124,7 @@ mod tests {
     use super::*;
     use crate::segment::closed::{ClosedSegment, SEGMENT_MAX_PAGES};
     use assert_matches::assert_matches;
+    use bytes::Buf;
     use graft_core::pageidx;
 
     #[graft_test::test]

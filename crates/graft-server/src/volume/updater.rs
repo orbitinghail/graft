@@ -120,9 +120,9 @@ impl VolumeCatalogUpdater {
         // only create a transaction if we have commits to replay
         if let Some(commit) = commits.try_next().await.or_into_ctx()? {
             let mut batch = catalog.batch_insert();
-            batch.insert_commit(commit).or_into_ctx()?;
+            batch.insert_commit(&commit).or_into_ctx()?;
             while let Some(commit) = commits.try_next().await.or_into_ctx()? {
-                batch.insert_commit(commit).or_into_ctx()?;
+                batch.insert_commit(&commit).or_into_ctx()?;
             }
             batch.commit().or_into_ctx()?;
         }
@@ -155,7 +155,7 @@ impl VolumeCatalogUpdater {
         let mut batch = catalog.batch_insert();
         let mut commits = store.replay_unordered(vid.clone(), lsns);
         while let Some(commit) = commits.try_next().await.or_into_ctx()? {
-            batch.insert_commit(commit).or_into_ctx()?;
+            batch.insert_commit(&commit).or_into_ctx()?;
         }
         batch.commit().or_into_ctx()?;
 

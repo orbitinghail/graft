@@ -1,5 +1,21 @@
 use thiserror::Error;
-use zerocopy::{ConvertError, SizeError, TryFromBytes, ValidityError};
+use zerocopy::{
+    ConvertError, Immutable, KnownLayout, SizeError, TryFromBytes, Unaligned, ValidityError,
+};
+
+pub trait TryFromBytesExt: TryFromBytes {
+    #[must_use = "has no side effects"]
+    #[inline]
+    fn try_ref_from_unaligned_bytes(source: &[u8]) -> Result<&Self, ZerocopyErr>
+    where
+        Self: Unaligned + Immutable + KnownLayout,
+    {
+        #[allow(clippy::disallowed_methods)]
+        Self::try_ref_from_bytes(source).map_err(Into::into)
+    }
+}
+
+impl<T: TryFromBytes + ?Sized> TryFromBytesExt for T {}
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ZerocopyErr {

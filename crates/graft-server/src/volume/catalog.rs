@@ -5,12 +5,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use culprit::{Culprit, ResultExt};
 use fjall::{
     Batch, Config, Keyspace, KvSeparationOptions, Partition, PartitionCreateOptions, Slice,
 };
-use graft_core::{gid::VolumeId, lsn::LSN, zerocopy_err::ZerocopyErr};
+use graft_core::{
+    gid::VolumeId,
+    lsn::LSN,
+    zerocopy_ext::{TryFromBytesExt, ZerocopyErr},
+};
 use graft_proto::common::v1::SegmentInfo;
 use serde::{Deserialize, Serialize};
 use splinter::SplinterRef;
@@ -97,10 +101,10 @@ impl TryFrom<VolumeCatalogConfig> for Config {
 pub struct VolumeCatalog {
     keyspace: Keyspace,
 
-    /// maps kv::CommitKey { vid, lsn } to CommitMeta { lsn, page_count, timestamp }
+    /// maps kv::CommitKey to commit::CommitMeta
     volumes: Partition,
 
-    /// maps kv::SegmentKey { CommitKey { vid, lsn }, sid} to OffsetSet
+    /// maps kv::SegmentKey to OffsetSet
     segments: Partition,
 }
 
@@ -156,7 +160,7 @@ impl VolumeCatalog {
 
         for kv in self.volumes.snapshot().range(range) {
             let (key, _) = kv?;
-            let key = CommitKey::try_ref_from_bytes(&key)
+            let key = CommitKey::try_ref_from_unaligned_bytes(&key)
                 .or_into_culprit("failed to decode CommitKey")?;
             if key.lsn() != cursor {
                 return Ok(false);
@@ -260,7 +264,10 @@ pub struct VolumeCatalogBatch {
 }
 
 impl VolumeCatalogBatch {
-    pub fn insert_commit(&mut self, commit: Commit) -> Result<(), Culprit<VolumeCatalogErr>> {
+    pub fn insert_commit<T: Buf + Clone>(
+        &mut self,
+        commit: &Commit<T>,
+    ) -> Result<(), Culprit<VolumeCatalogErr>> {
         let commit_key = CommitKey::new(commit.vid().clone(), commit.meta().lsn());
 
         self.batch.insert(

@@ -11,7 +11,7 @@ use graft_core::{
     page::PageSizeErr,
     page_count::PageCount,
     page_index::ConvertToPageIdxErr,
-    zerocopy_err::ZerocopyErr,
+    zerocopy_ext::ZerocopyErr,
     PageIdx, VolumeId,
 };
 use graft_proto::pagestore::v1::PageAtOffset;

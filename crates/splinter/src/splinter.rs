@@ -68,6 +68,14 @@ pub struct Splinter {
 }
 
 impl Splinter {
+    pub fn from_slice(data: &[u32]) -> Self {
+        let mut splinter = Self::default();
+        for &key in data {
+            splinter.insert(key);
+        }
+        splinter
+    }
+
     pub fn from_bytes<T: AsRef<[u8]>>(data: T) -> Result<Self, Culprit<DecodeErr>> {
         SplinterRef::from_bytes(data).map(Into::into)
     }

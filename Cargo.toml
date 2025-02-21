@@ -67,3 +67,6 @@ tryiter = "0.6"
 ureq = { version = "3.0", default-features = false, features = ["rustls", "brotli"]}
 url = "2.5"
 zerocopy = "0.8"
+
+[workspace.lints.clippy]
+disallowed_methods = "deny"
