@@ -111,13 +111,16 @@ impl LsnRange {
 }
 
 impl PageAtIdx {
-    pub fn new(idx: PageIdx, page: Page) -> Self {
-        Self { idx: idx.into(), data: page.into() }
+    pub fn new(pageidx: PageIdx, page: Page) -> Self {
+        Self {
+            pageidx: pageidx.into(),
+            data: page.into(),
+        }
     }
 
     #[inline]
     pub fn pageidx(&self) -> Result<PageIdx, Culprit<ConvertToPageIdxErr>> {
-        PageIdx::try_from(self.idx).or_into_ctx()
+        PageIdx::try_from(self.pageidx).or_into_ctx()
     }
 
     #[inline]

@@ -114,7 +114,7 @@ impl PushJob {
         let mut pages = Vec::new();
         let mut upsert_page = |pageidx: PageIdx, page: Page| {
             // binary search upsert the page into pages
-            match pages.binary_search_by_key(&pageidx.to_u32(), |p: &PageAtIdx| p.idx) {
+            match pages.binary_search_by_key(&pageidx.to_u32(), |p: &PageAtIdx| p.pageidx) {
                 Ok(i) => {
                     // replace the page in the list with this page
                     pages[i].data = page.into();

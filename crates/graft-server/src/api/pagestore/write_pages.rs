@@ -165,14 +165,14 @@ mod tests {
 
         let req1 = WritePagesRequest {
             vid: VolumeId::random().copy_to_bytes(),
-            pages: vec![PageAtIdx { idx: 1, data: page.clone() }],
+            pages: vec![PageAtIdx { pageidx: 1, data: page.clone() }],
         };
 
         let req2 = WritePagesRequest {
             vid: VolumeId::random().copy_to_bytes(),
             pages: vec![
-                PageAtIdx { idx: 1, data: page.clone() },
-                PageAtIdx { idx: 2, data: page.clone() },
+                PageAtIdx { pageidx: 1, data: page.clone() },
+                PageAtIdx { pageidx: 2, data: page.clone() },
             ],
         };
 

@@ -85,9 +85,7 @@ pub async fn handler<C: Cache>(
             let page = segment
                 .find_page(vid.clone(), pageidx.try_into()?)
                 .expect("bug: failed to find expected pageidx in segment; index out of sync");
-            result
-                .pages
-                .push(PageAtIdx { idx: pageidx, data: page.into() });
+            result.pages.push(PageAtIdx { pageidx, data: page.into() });
         }
     }
 
@@ -240,13 +238,13 @@ mod tests {
         // we expect to see all 5 pages here
         assert_eq!(resp.pages.len(), 5);
         // sort by pageidx to make the test deterministic
-        resp.pages.sort_by_key(|p| p.idx);
-        for (PageAtIdx { idx, data }, expected) in resp.pages.into_iter().zip(1..) {
-            assert_eq!(idx, expected);
+        resp.pages.sort_by_key(|p| p.pageidx);
+        for (PageAtIdx { pageidx, data }, expected) in resp.pages.into_iter().zip(1..) {
+            assert_eq!(pageidx, expected);
             assert_eq!(
                 data,
                 Bytes::from(Page::test_filled(expected as u8)),
-                "page data mismatch for offset: {idx}",
+                "page data mismatch for offset: {pageidx}",
             );
         }
     }

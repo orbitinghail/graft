@@ -10,7 +10,7 @@ message ReadPagesRequest {
 }
 
 message PageAtIdx {
-  uint32 idx = 1;
+  uint32 pageidx = 1;
   bytes data = 2;
 }
 
