@@ -8,7 +8,7 @@ use super::routes::Routes;
 
 mod commit;
 mod pull_commits;
-mod pull_offsets;
+mod pull_graft;
 mod snapshot;
 
 pub struct MetastoreApiState {
@@ -42,7 +42,7 @@ impl MetastoreApiState {
 pub fn metastore_routes() -> Routes<Arc<MetastoreApiState>> {
     vec![
         ("/metastore/v1/snapshot", post(snapshot::handler)),
-        ("/metastore/v1/pull_offsets", post(pull_offsets::handler)),
+        ("/metastore/v1/pull_graft", post(pull_graft::handler)),
         ("/metastore/v1/pull_commits", post(pull_commits::handler)),
         ("/metastore/v1/commit", post(commit::handler)),
     ]

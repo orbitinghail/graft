@@ -22,7 +22,7 @@ use super::MetastoreApiState;
 /// return the latest Snapshot of the Volume. If no lsn range is specified, it
 /// will return offsets changed between the last checkpoint and the latest
 /// snapshot.
-#[tracing::instrument(name = "metastore/v1/pull_offsets", skip(state, req))]
+#[tracing::instrument(name = "metastore/v1/pull_graft", skip(state, req))]
 pub async fn handler(
     State(state): State<Arc<MetastoreApiState>>,
     Protobuf(req): Protobuf<PullGraftRequest>,
@@ -119,7 +119,7 @@ mod tests {
     use super::*;
 
     #[graft_test::test]
-    async fn test_pull_offsets_sanity() {
+    async fn test_pull_graft_sanity() {
         let store = Arc::new(InMemory::default());
         let store = Arc::new(VolumeStore::new(store));
         let catalog = VolumeCatalog::open_temporary().unwrap();

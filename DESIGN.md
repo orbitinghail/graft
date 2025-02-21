@@ -127,8 +127,8 @@ To ensure that each volume log sorts correctly, LSNs will need to be fixed lengt
 **`snapshot(VolumeId, LSN)`**
 Returns Snapshot metadata for a particular LSN (or the latest if null). Does not include Segments.
 
-**`pull_offsets(VolumeId, LSN Range)`**
-Retrieve the snapshot at the end of the given LSN range along with a Splinter containing all changed offsets. If the start of the range is Unbounded, it will be set to the last checkpoint.
+**`pull_graft(VolumeId, LSN Range)`**
+Retrieve the snapshot at the end of the given LSN range along with a Graft containing all changed indexes in the range. If the start of the range is Unbounded, it will be set to the last checkpoint.
 
 **`pull_commits(VolumeId, LSN Range)`**
 Retrieve all of the commits to the Volume in the provided LSN Range. If the start of the range is Unbounded, it will be set to the last checkpoint. Returns: graft.metastore.v1.PullSegmentsResponse
@@ -332,7 +332,7 @@ Future work:
 
 ### Sync: Pull
 
-The Graft runtime polls pull_offsets for changes. When a change is detected, the runtime attempts to "accept" the change.
+The Graft runtime polls /metastore/v1/pull_graft for changes. When a change is detected, the runtime attempts to "accept" the change.
 
 The pull process happens atomically via a Fjall batch.
 

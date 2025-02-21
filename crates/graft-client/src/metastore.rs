@@ -43,12 +43,12 @@ impl MetastoreClient {
         }
     }
 
-    pub fn pull_offsets<R: RangeBounds<LSN>>(
+    pub fn pull_graft<R: RangeBounds<LSN>>(
         &self,
         vid: &VolumeId,
         range: R,
     ) -> Result<Option<(Snapshot, LsnRange, SplinterRef<Bytes>)>, Culprit<error::ClientErr>> {
-        let uri = self.endpoint.build("/metastore/v1/pull_offsets")?;
+        let uri = self.endpoint.build("/metastore/v1/pull_graft")?;
         let req = PullGraftRequest {
             vid: vid.copy_to_bytes(),
             range: Some(LsnRange::from_range(range)),
