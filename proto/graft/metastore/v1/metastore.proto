@@ -10,23 +10,21 @@ message SnapshotRequest {
   optional uint64 lsn = 2;
 }
 
-message SnapshotResponse {
-  graft.common.v1.Snapshot snapshot = 1;
-}
+message SnapshotResponse { graft.common.v1.Snapshot snapshot = 1; }
 
 // Retrieve the snapshot at the end of the given LSN range along with a Splinter
-// containing all changed offsets. If the start of the range is Unbounded, it
+// containing all changed indicies. If the start of the range is Unbounded, it
 // will be set to the last checkpoint.
-// Returns: graft.metastore.v1.PullOffsetsResponse
-message PullOffsetsRequest {
+// Returns: graft.metastore.v1.PullGraftResponse
+message PullGraftRequest {
   bytes vid = 1;
   graft.common.v1.LsnRange range = 2;
 }
 
-message PullOffsetsResponse {
+message PullGraftResponse {
   graft.common.v1.Snapshot snapshot = 1;
   graft.common.v1.LsnRange range = 2;
-  bytes offsets = 3;
+  bytes graft = 3;
 }
 
 // Retrieve all of the commits to the Volume in the provided LSN Range. If the
@@ -37,9 +35,7 @@ message PullCommitsRequest {
   graft.common.v1.LsnRange range = 2;
 }
 
-message PullCommitsResponse {
-  repeated graft.common.v1.Commit commits = 1;
-}
+message PullCommitsResponse { repeated graft.common.v1.Commit commits = 1; }
 
 // Commit changes to a Volume if it is safe to do so. The provided Snapshot LSN
 // is the snapshot the commit was based on. Returns the newly committed Snapshot
@@ -52,6 +48,4 @@ message CommitRequest {
   repeated graft.common.v1.SegmentInfo segments = 5;
 }
 
-message CommitResponse {
-  graft.common.v1.Snapshot snapshot = 1;
-}
+message CommitResponse { graft.common.v1.Snapshot snapshot = 1; }

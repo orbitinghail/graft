@@ -76,7 +76,7 @@ pub async fn handler(
         while let Some((key, splinter)) = segments.try_next().or_into_ctx()? {
             segment_infos.push(SegmentInfo {
                 sid: key.sid().copy_to_bytes(),
-                offsets: splinter.into_inner(),
+                graft: splinter.into_inner(),
             });
         }
 
@@ -178,7 +178,7 @@ mod tests {
         assert_eq!(snapshot.pages(), 1);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
         for segment in &last_commit.segments {
-            assert_eq!(segment.offsets, offsets);
+            assert_eq!(segment.graft, offsets);
         }
 
         // request all the commits

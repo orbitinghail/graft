@@ -98,8 +98,8 @@ pub async fn handler(
     );
     for segment in req.segments {
         let sid = segment.sid().or_into_ctx()?;
-        let offsets = segment.offsets().or_into_ctx()?;
-        commit.write_offsets(sid.clone(), offsets.into_inner());
+        let graft = segment.graft().or_into_ctx()?;
+        commit.write_offsets(sid.clone(), graft.into_inner());
     }
 
     let commit = commit.build();

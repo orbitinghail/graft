@@ -5,7 +5,7 @@ use culprit::{Culprit, ResultExt};
 use graft_core::VolumeId;
 use graft_proto::{
     common::v1::LsnRange,
-    metastore::v1::{PullOffsetsRequest, PullOffsetsResponse},
+    metastore::v1::{PullGraftRequest, PullGraftResponse},
 };
 use splinter::{ops::Merge, Splinter};
 use tryiter::TryIteratorExt;
@@ -25,8 +25,8 @@ use super::MetastoreApiState;
 #[tracing::instrument(name = "metastore/v1/pull_offsets", skip(state, req))]
 pub async fn handler(
     State(state): State<Arc<MetastoreApiState>>,
-    Protobuf(req): Protobuf<PullOffsetsRequest>,
-) -> Result<ProtoResponse<PullOffsetsResponse>, ApiErr> {
+    Protobuf(req): Protobuf<PullGraftRequest>,
+) -> Result<ProtoResponse<PullGraftResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsns = req.range;
     let end_lsn = match lsns {
@@ -89,10 +89,10 @@ pub async fn handler(
         splinter.merge(&offsets);
     }
 
-    Ok(ProtoResponse::new(PullOffsetsResponse {
+    Ok(ProtoResponse::new(PullGraftResponse {
         snapshot: Some(snapshot.into_snapshot()),
         range: Some(LsnRange::from_range(lsns)),
-        offsets: splinter.serialize_to_bytes(),
+        graft: splinter.serialize_to_bytes(),
     }))
 }
 
@@ -140,7 +140,7 @@ mod tests {
         let cid = ClientId::random();
 
         // case 1: catalog and store are empty
-        let req = PullOffsetsRequest { vid: vid.copy_to_bytes(), range: None };
+        let req = PullGraftRequest { vid: vid.copy_to_bytes(), range: None };
         let resp = server
             .post("/")
             .bytes(req.encode_to_vec().into())
@@ -167,12 +167,12 @@ mod tests {
 
         // request the last 5 segments
         let lsns = LSN::new(5)..=LSN::new(9);
-        let req = PullOffsetsRequest {
+        let req = PullGraftRequest {
             vid: vid.copy_to_bytes(),
             range: Some(LsnRange::from_range(lsns.clone())),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
-        let resp = PullOffsetsResponse::decode(resp.into_bytes()).unwrap();
+        let resp = PullGraftResponse::decode(resp.into_bytes()).unwrap();
         let snapshot = resp.snapshot.unwrap();
         assert_eq!(snapshot.lsn().unwrap(), 9);
         assert_eq!(snapshot.pages(), 1);
@@ -182,15 +182,15 @@ mod tests {
                 .map(|r| r.start().unwrap()..=r.end().unwrap().unwrap()),
             Some(lsns)
         );
-        let splinter = Splinter::from_bytes(resp.offsets).unwrap();
+        let splinter = Splinter::from_bytes(resp.graft).unwrap();
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);
 
         // request all the segments
-        let req = PullOffsetsRequest { vid: vid.copy_to_bytes(), range: None };
+        let req = PullGraftRequest { vid: vid.copy_to_bytes(), range: None };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
-        let resp = PullOffsetsResponse::decode(resp.into_bytes()).unwrap();
-        let splinter = Splinter::from_bytes(resp.offsets).unwrap();
+        let resp = PullGraftResponse::decode(resp.into_bytes()).unwrap();
+        let splinter = Splinter::from_bytes(resp.graft).unwrap();
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);
     }

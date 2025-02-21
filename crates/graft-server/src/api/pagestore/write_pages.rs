@@ -39,7 +39,7 @@ pub async fn handler<C>(
 
     let mut seen = HashSet::with_capacity(req.pages.len());
     for page in req.pages {
-        let offset = page.offset().or_into_ctx()?;
+        let offset = page.pageidx().or_into_ctx()?;
         let page: Page = Page::try_from(page.data).or_into_ctx()?;
 
         if !seen.insert(offset) {
@@ -73,7 +73,7 @@ pub async fn handler<C>(
             // store the segment
             segments.push(SegmentInfo {
                 sid: commit.sid.copy_to_bytes(),
-                offsets: offsets.inner().clone(),
+                graft: offsets.inner().clone(),
             });
         }
     }
@@ -95,7 +95,7 @@ mod tests {
     use axum_test::TestServer;
     use bytes::Bytes;
     use graft_client::{MetastoreClient, NetClient};
-    use graft_proto::pagestore::v1::PageAtOffset;
+    use graft_proto::pagestore::v1::PageAtIdx;
     use object_store::memory::InMemory;
     use prost::Message;
     use splinter::SplinterRef;
@@ -165,14 +165,14 @@ mod tests {
 
         let req1 = WritePagesRequest {
             vid: VolumeId::random().copy_to_bytes(),
-            pages: vec![PageAtOffset { offset: 1, data: page.clone() }],
+            pages: vec![PageAtIdx { idx: 1, data: page.clone() }],
         };
 
         let req2 = WritePagesRequest {
             vid: VolumeId::random().copy_to_bytes(),
             pages: vec![
-                PageAtOffset { offset: 1, data: page.clone() },
-                PageAtOffset { offset: 2, data: page.clone() },
+                PageAtIdx { idx: 1, data: page.clone() },
+                PageAtIdx { idx: 2, data: page.clone() },
             ],
         };
 
@@ -196,13 +196,13 @@ mod tests {
 
         let resp1 = WritePagesResponse::decode(resp1.into_bytes()).unwrap();
         assert_eq!(resp1.segments.len(), 1, "expected 1 segment");
-        let offsets = SplinterRef::from_bytes(resp1.segments[0].offsets.clone()).unwrap();
+        let offsets = SplinterRef::from_bytes(resp1.segments[0].graft.clone()).unwrap();
         assert_eq!(offsets.cardinality(), 1);
         assert!(offsets.contains(1));
 
         let resp2 = WritePagesResponse::decode(resp2.into_bytes()).unwrap();
         assert_eq!(resp2.segments.len(), 1, "expected 1 segment");
-        let offsets = SplinterRef::from_bytes(resp2.segments[0].offsets.clone()).unwrap();
+        let offsets = SplinterRef::from_bytes(resp2.segments[0].graft.clone()).unwrap();
         assert_eq!(offsets.cardinality(), 2);
         assert!(offsets.contains(1));
         assert!(offsets.contains(2));

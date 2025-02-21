@@ -297,7 +297,7 @@ impl VolumeCatalogBatch {
             .insert(&self.volumes, commit_key.as_bytes(), snapshot);
         for segment in segments {
             let key = SegmentKey::new(commit_key.clone(), segment.sid.try_into()?);
-            self.batch.insert(&self.segments, key, segment.offsets);
+            self.batch.insert(&self.segments, key, segment.graft);
         }
         Ok(())
     }

@@ -4,7 +4,7 @@ use axum::{extract::State, response::IntoResponse};
 use culprit::ResultExt;
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
 use graft_core::{lsn::LSN, VolumeId};
-use graft_proto::pagestore::v1::{PageAtOffset, ReadPagesRequest, ReadPagesResponse};
+use graft_proto::pagestore::v1::{PageAtIdx, ReadPagesRequest, ReadPagesResponse};
 use splinter::{ops::Cut, Splinter};
 
 use crate::api::error::ApiErrCtx;
@@ -26,7 +26,7 @@ pub async fn handler<C: Cache>(
 ) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsn = LSN::try_from(req.lsn).or_into_ctx()?;
-    let mut offsets = Splinter::from_bytes(req.offsets).or_into_ctx()?;
+    let mut offsets = Splinter::from_bytes(req.graft).or_into_ctx()?;
     let num_offsets = offsets.cardinality();
 
     tracing::info!(?vid, ?lsn, num_offsets);
@@ -81,13 +81,13 @@ pub async fn handler<C: Cache>(
     while let Some((segment, cut)) = loading.try_next().await? {
         let segment = ClosedSegment::from_bytes(&segment).or_into_ctx()?;
 
-        for offset in cut.iter() {
+        for pageidx in cut.iter() {
             let page = segment
-                .find_page(vid.clone(), offset.try_into()?)
+                .find_page(vid.clone(), pageidx.try_into()?)
                 .expect("failed to find expected offset in segment; index out of sync");
             result
                 .pages
-                .push(PageAtOffset { offset, data: page.into() });
+                .push(PageAtIdx { idx: pageidx, data: page.into() });
         }
     }
 
@@ -212,11 +212,11 @@ mod tests {
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),
-                        offsets: offsets1.get(&vid).unwrap().clone().into_inner(),
+                        graft: offsets1.get(&vid).unwrap().clone().into_inner(),
                     },
                     SegmentInfo {
                         sid: sid2.copy_to_bytes(),
-                        offsets: offsets2.get(&vid).unwrap().clone().into_inner(),
+                        graft: offsets2.get(&vid).unwrap().clone().into_inner(),
                     },
                 ],
             )
@@ -227,7 +227,7 @@ mod tests {
         let req = ReadPagesRequest {
             vid: vid.copy_to_bytes(),
             lsn: lsn.into(),
-            offsets: (1u32..=5).collect::<Splinter>().serialize_to_bytes(),
+            graft: (1u32..=5).collect::<Splinter>().serialize_to_bytes(),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         if resp.status_code() != 200 {
@@ -240,13 +240,13 @@ mod tests {
         // we expect to see all 5 pages here
         assert_eq!(resp.pages.len(), 5);
         // sort by offset to make the test deterministic
-        resp.pages.sort_by_key(|p| p.offset);
-        for (PageAtOffset { offset, data }, expected) in resp.pages.into_iter().zip(1..) {
-            assert_eq!(offset, expected);
+        resp.pages.sort_by_key(|p| p.idx);
+        for (PageAtIdx { idx, data }, expected) in resp.pages.into_iter().zip(1..) {
+            assert_eq!(idx, expected);
             assert_eq!(
                 data,
                 Bytes::from(Page::test_filled(expected as u8)),
-                "page data mismatch for offset: {offset}",
+                "page data mismatch for offset: {idx}",
             );
         }
     }

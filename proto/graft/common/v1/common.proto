@@ -23,7 +23,7 @@ message GraftErr {
 
 message SegmentInfo {
   bytes sid = 1;
-  bytes offsets = 2;
+  bytes graft = 2;
 }
 
 // A snapshot contains the metadata of a volume at a given LSN.

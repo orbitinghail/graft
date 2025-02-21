@@ -48,7 +48,7 @@ impl Fetcher for NetFetcher {
         }
         let page = pages[0].clone();
         assert!(
-            page.offset().or_into_ctx()? == offset,
+            page.pageidx().or_into_ctx()? == offset,
             "received page at wrong offset"
         );
         storage.receive_pages(vid, local_lsn, pages).or_into_ctx()?;

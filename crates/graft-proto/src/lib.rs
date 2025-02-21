@@ -13,7 +13,7 @@ use graft_core::{
     page_idx::ConvertToPageIdxErr,
     PageCount, PageIdx, SegmentId, VolumeId,
 };
-use pagestore::v1::PageAtOffset;
+use pagestore::v1::PageAtIdx;
 use prost_types::TimestampError;
 
 pub use graft::common::v1::{GraftErrCode, Snapshot};
@@ -34,16 +34,16 @@ impl Commit {
 }
 
 impl SegmentInfo {
-    pub fn new(sid: &SegmentId, offsets: Bytes) -> Self {
-        Self { sid: sid.copy_to_bytes(), offsets }
+    pub fn new(sid: &SegmentId, graft: Bytes) -> Self {
+        Self { sid: sid.copy_to_bytes(), graft }
     }
 
     pub fn sid(&self) -> Result<&SegmentId, Culprit<GidParseErr>> {
         Ok(self.sid.as_ref().try_into()?)
     }
 
-    pub fn offsets(&self) -> Result<SplinterRef<Bytes>, Culprit<DecodeErr>> {
-        SplinterRef::from_bytes(self.offsets.clone())
+    pub fn graft(&self) -> Result<SplinterRef<Bytes>, Culprit<DecodeErr>> {
+        SplinterRef::from_bytes(self.graft.clone())
     }
 }
 
@@ -110,14 +110,14 @@ impl LsnRange {
     }
 }
 
-impl PageAtOffset {
-    pub fn new(offset: PageIdx, page: Page) -> Self {
-        Self { offset: offset.into(), data: page.into() }
+impl PageAtIdx {
+    pub fn new(idx: PageIdx, page: Page) -> Self {
+        Self { idx: idx.into(), data: page.into() }
     }
 
     #[inline]
-    pub fn offset(&self) -> Result<PageIdx, Culprit<ConvertToPageIdxErr>> {
-        PageIdx::try_from(self.offset).or_into_ctx()
+    pub fn pageidx(&self) -> Result<PageIdx, Culprit<ConvertToPageIdxErr>> {
+        PageIdx::try_from(self.idx).or_into_ctx()
     }
 
     #[inline]

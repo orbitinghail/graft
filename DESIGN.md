@@ -19,6 +19,9 @@ Transactional blob storage engine supporting lazy partial replication to the edg
 - **PageIdx**
   The index of a page within a volume. The first page of a volume has a page index of 1.
 
+- **Graft**
+  A set of PageIdxs corresponding to a single Volume. Used to track which PageIdxs are contained in a Segment or which PageIdxs have changed between two Snapshots.
+
 - **PageCount**
   The number of logical pages in a Volume. This does not take into account sparseness. This means that if a page is written to PageIdx(1000) in an empty Volume, the Volume's size will immediately jump to 1000 pages.
 

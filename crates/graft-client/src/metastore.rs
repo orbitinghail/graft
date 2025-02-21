@@ -4,8 +4,8 @@ use graft_core::{gid::ClientId, lsn::LSN, page_count::PageCount, VolumeId};
 use graft_proto::{
     common::v1::{Commit, LsnRange, SegmentInfo, Snapshot},
     metastore::v1::{
-        CommitRequest, CommitResponse, PullCommitsRequest, PullCommitsResponse, PullOffsetsRequest,
-        PullOffsetsResponse, SnapshotRequest, SnapshotResponse,
+        CommitRequest, CommitResponse, PullCommitsRequest, PullCommitsResponse, PullGraftRequest,
+        PullGraftResponse, SnapshotRequest, SnapshotResponse,
     },
 };
 use splinter::SplinterRef;
@@ -49,16 +49,16 @@ impl MetastoreClient {
         range: R,
     ) -> Result<Option<(Snapshot, LsnRange, SplinterRef<Bytes>)>, Culprit<error::ClientErr>> {
         let uri = self.endpoint.build("/metastore/v1/pull_offsets")?;
-        let req = PullOffsetsRequest {
+        let req = PullGraftRequest {
             vid: vid.copy_to_bytes(),
             range: Some(LsnRange::from_range(range)),
         };
-        match self.client.send::<_, PullOffsetsResponse>(uri, req) {
+        match self.client.send::<_, PullGraftResponse>(uri, req) {
             Ok(resp) => {
                 let snapshot = resp.snapshot.expect("snapshot is missing");
                 let range = resp.range.expect("range is missing");
-                let offsets = SplinterRef::from_bytes(resp.offsets).or_into_ctx()?;
-                Ok(Some((snapshot, range, offsets)))
+                let graft = SplinterRef::from_bytes(resp.graft).or_into_ctx()?;
+                Ok(Some((snapshot, range, graft)))
             }
             Err(err) if err.ctx().is_snapshot_missing() => Ok(None),
             Err(err) => Err(err),

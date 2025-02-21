@@ -6,21 +6,19 @@ import "graft/common/v1/common.proto";
 message ReadPagesRequest {
   bytes vid = 1;
   uint64 lsn = 2;
-  bytes offsets = 3;
+  bytes graft = 3;
 }
 
-message PageAtOffset {
-  uint32 offset = 1;
+message PageAtIdx {
+  uint32 idx = 1;
   bytes data = 2;
 }
 
-message ReadPagesResponse {
-  repeated PageAtOffset pages = 1;
-}
+message ReadPagesResponse { repeated PageAtIdx pages = 1; }
 
 message WritePagesRequest {
   bytes vid = 1;
-  repeated PageAtOffset pages = 2;
+  repeated PageAtIdx pages = 2;
 }
 
 message WritePagesResponse {

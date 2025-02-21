@@ -14,7 +14,7 @@ use graft_core::{
     zerocopy_ext::ZerocopyErr,
     PageIdx, VolumeId,
 };
-use graft_proto::pagestore::v1::PageAtOffset;
+use graft_proto::pagestore::v1::PageAtIdx;
 use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
 use parking_lot::{Mutex, MutexGuard};
@@ -498,11 +498,11 @@ impl Storage {
     }
 
     /// Write a set of pages to storage at a particular vid/lsn
-    pub fn receive_pages(&self, vid: &VolumeId, lsn: LSN, pages: Vec<PageAtOffset>) -> Result<()> {
+    pub fn receive_pages(&self, vid: &VolumeId, lsn: LSN, pages: Vec<PageAtIdx>) -> Result<()> {
         let mut key = PageKey::new(vid.clone(), PageIdx::FIRST, lsn);
         let mut batch = self.keyspace.batch();
         for page in pages {
-            key = key.with_index(page.offset().or_into_ctx()?);
+            key = key.with_index(page.pageidx().or_into_ctx()?);
             let page = page.page().or_into_ctx()?;
             batch.insert(&self.pages, key.as_ref(), PageValue::from(page));
         }
