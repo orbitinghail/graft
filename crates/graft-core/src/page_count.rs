@@ -3,7 +3,7 @@ use std::{fmt::Display, num::TryFromIntError};
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::{byte_unit::ByteUnit, page::PAGESIZE, page_index::PageIdx};
+use crate::{byte_unit::ByteUnit, page::PAGESIZE, page_idx::PageIdx};
 
 #[derive(
     Debug,

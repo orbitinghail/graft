@@ -35,7 +35,7 @@ pub struct PageIdx(NonZero<u32>);
 /// Create a PageIndex from a literal at compile time.
 macro_rules! pageidx {
     ($idx:literal) => {
-        $crate::page_index::PageIdx::try_new($idx).expect("page index out of range")
+        $crate::PageIdx::try_new($idx).expect("page index out of range")
     };
 }
 

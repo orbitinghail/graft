@@ -3,7 +3,7 @@ use rand::{distr::StandardUniform, prelude::Distribution, Rng};
 
 use crate::{
     page::{Page, PAGESIZE},
-    page_index::PageIdx,
+    page_idx::PageIdx,
 };
 
 impl Page {

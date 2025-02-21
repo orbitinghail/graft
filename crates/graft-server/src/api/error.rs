@@ -6,7 +6,7 @@ use axum::{
 };
 use culprit::Culprit;
 use graft_core::{
-    gid::GidParseErr, lsn::InvalidLSN, page::PageSizeErr, page_index::ConvertToPageIdxErr,
+    gid::GidParseErr, lsn::InvalidLSN, page::PageSizeErr, page_idx::ConvertToPageIdxErr,
 };
 use graft_proto::common::v1::{GraftErr, GraftErrCode};
 use splinter::DecodeErr;

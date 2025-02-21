@@ -113,10 +113,8 @@ CommitMeta:
 
 Segment
   sid: SegmentId
-  volumes: u16 (2 bytes)
-  index_size: u16
-  offsets_size: u32 (4 bytes)
-  offsets: Splinter (offsets_size bytes)
+  size: u32
+  offsets: Splinter (size bytes)
 ```
 
 To ensure that each volume log sorts correctly, LSNs will need to be fixed length and encoded in a sortable way. The easiest solution is to use 0 padded decimal numbers. However the key size can be compressed if more characters are used. It appears that base58 should sort correctly as long as the resulting string is padded to a consistent length.

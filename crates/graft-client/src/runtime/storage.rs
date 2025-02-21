@@ -10,7 +10,7 @@ use graft_core::{
     lsn::{LSNRangeExt, LSN},
     page::PageSizeErr,
     page_count::PageCount,
-    page_index::ConvertToPageIdxErr,
+    page_idx::ConvertToPageIdxErr,
     zerocopy_ext::ZerocopyErr,
     PageIdx, VolumeId,
 };

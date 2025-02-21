@@ -10,7 +10,7 @@ use graft_core::{
     gid::{ClientId, GidParseErr},
     lsn::{InvalidLSN, LSNRangeExt, LSN},
     page::{Page, PageSizeErr},
-    page_index::ConvertToPageIdxErr,
+    page_idx::ConvertToPageIdxErr,
     PageCount, PageIdx, SegmentId, VolumeId,
 };
 use pagestore::v1::PageAtOffset;
