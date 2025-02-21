@@ -20,8 +20,7 @@ impl CommitKey {
 
     #[track_caller]
     pub(crate) fn ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
-        Ok(Self::try_ref_from_unaligned_bytes(&bytes)
-            .or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
+        Self::try_ref_from_unaligned_bytes(bytes).or_ctx(StorageErr::CorruptKey)
     }
 
     #[inline]
@@ -46,8 +45,8 @@ impl AsRef<[u8]> for CommitKey {
     }
 }
 
-impl Into<Slice> for CommitKey {
-    fn into(self) -> Slice {
-        self.as_bytes().into()
+impl From<CommitKey> for Slice {
+    fn from(key: CommitKey) -> Slice {
+        key.as_bytes().into()
     }
 }

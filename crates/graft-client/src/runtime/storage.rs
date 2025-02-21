@@ -382,7 +382,7 @@ impl Storage {
         batch.commit()?;
 
         // notify listeners of the new local commit
-        self.local_changeset.mark_changed(&vid);
+        self.local_changeset.mark_changed(vid);
 
         // log the result
         span.record("result", snapshot.to_string());
@@ -489,7 +489,7 @@ impl Storage {
         batch.commit()?;
 
         // notify listeners of the new remote commit
-        self.remote_changeset.mark_changed(&vid);
+        self.remote_changeset.mark_changed(vid);
 
         // log the result
         span.record("result", new_snapshot.to_string());
@@ -514,6 +514,7 @@ impl Storage {
     /// - the volume snapshot
     /// - the range of LSNs to sync
     /// - an iterator of commits to sync
+    #[allow(clippy::type_complexity)]
     pub fn prepare_sync_to_remote(
         &self,
         vid: &VolumeId,
@@ -706,7 +707,7 @@ impl Storage {
         .entered();
 
         // retrieve the current volume state
-        let state = self.volume_state(&vid)?;
+        let state = self.volume_state(vid)?;
         let snapshot = state.snapshot();
         let local_lsn = snapshot.map(|s| s.local());
         let target_lsn = state.watermarks().last_sync();
@@ -795,7 +796,7 @@ impl Storage {
 
         // now that we have reset to the earlier volume state, we can receive
         // the remote commit
-        return self.receive_remote_commit_holding_lock(permit, vid, remote_snapshot, changed);
+        self.receive_remote_commit_holding_lock(permit, vid, remote_snapshot, changed)
     }
 }
 

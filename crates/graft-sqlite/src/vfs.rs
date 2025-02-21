@@ -143,7 +143,7 @@ impl Vfs for GraftVfs {
     fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         tracing::debug!("access: path={path:?}; flags={flags:?}");
         ErrCtx::wrap(move || {
-            if let Some(vid) = path.parse::<VolumeId>().ok() {
+            if let Ok(vid) = path.parse::<VolumeId>() {
                 Ok(self
                     .runtime
                     .iter_volumes()
@@ -221,7 +221,7 @@ impl Vfs for GraftVfs {
     fn delete(&self, path: &str) -> VfsResult<()> {
         tracing::debug!("delete: path={path:?}");
         ErrCtx::wrap(|| {
-            if let Some(vid) = path.parse().ok() {
+            if let Ok(vid) = path.parse() {
                 // TODO: do we want to actually delete volumes? or mark them for deletion?
                 self.runtime
                     .update_volume_config(&vid, |conf| conf.with_sync(SyncDirection::Disabled))

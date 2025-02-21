@@ -33,8 +33,8 @@ impl Snapshot {
 
     #[track_caller]
     pub(crate) fn try_from_bytes(bytes: &[u8]) -> Result<Self, Culprit<StorageErr>> {
-        Ok(Self::try_read_from_bytes(&bytes)
-            .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Snapshot, e.into()))?)
+        Self::try_read_from_bytes(bytes)
+            .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Snapshot, e.into()))
     }
 
     #[inline]
@@ -74,8 +74,8 @@ impl Display for Snapshot {
     }
 }
 
-impl Into<Slice> for Snapshot {
-    fn into(self) -> Slice {
-        self.as_bytes().into()
+impl From<Snapshot> for Slice {
+    fn from(snapshot: Snapshot) -> Slice {
+        snapshot.as_bytes().into()
     }
 }

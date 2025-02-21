@@ -52,6 +52,12 @@ pub struct NetClient {
     agent: Agent,
 }
 
+impl Default for NetClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetClient {
     pub fn new() -> Self {
         Self {

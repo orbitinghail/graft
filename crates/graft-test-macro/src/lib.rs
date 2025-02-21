@@ -47,16 +47,6 @@ impl Parse for DatatestArgs {
 /// Maps a runner function over a glob of paths. Each matching file will
 /// generate a separate rust `#[test]` named after the basename of the file
 /// (excluding the extension).
-///
-/// Example:
-///
-/// ```
-/// fn runner(path: &std::path::Path) {
-///   println!("testing {path:?}");
-/// }
-///
-/// datatest!(runner, "tests/**/*.sql");
-/// ```
 #[proc_macro]
 pub fn datatest(args: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as DatatestArgs);

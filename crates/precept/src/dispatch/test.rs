@@ -13,13 +13,13 @@ impl Dispatch for TestDispatch {
                 // nothing to do
             }
             Event::EmitEntry { entry, condition, details } => {
-                let passed = match (entry.expectation(), condition) {
-                    (Expectation::Always, true) => true,
-                    (Expectation::AlwaysOrUnreachable, true) => true,
-                    (Expectation::Sometimes, _) => true,
-                    (Expectation::Reachable, _) => true,
-                    _ => false,
-                };
+                let passed = matches!(
+                    (entry.expectation(), condition),
+                    (Expectation::Always, true)
+                        | (Expectation::AlwaysOrUnreachable, true)
+                        | (Expectation::Sometimes, _)
+                        | (Expectation::Reachable, _)
+                );
                 if !passed {
                     tracing::error!(
                         details = serde_json::to_string(&details).unwrap(),

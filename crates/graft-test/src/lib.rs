@@ -238,7 +238,7 @@ impl PageTracker {
         bytes.put_u64_le(json.len() as u64);
         bytes.put_slice(&json);
         bytes.resize(PAGESIZE.as_usize(), 0);
-        Ok(Page::try_from(bytes.freeze()).or_ctx(|_| PageTrackerErr::Serialize)?)
+        Page::try_from(bytes.freeze()).or_ctx(|_| PageTrackerErr::Serialize)
     }
 
     pub fn deserialize_from_page(page: &Page) -> Result<Self, Culprit<PageTrackerErr>> {
@@ -250,7 +250,7 @@ impl PageTracker {
         let mut bytes = page.as_ref();
         let len = bytes.get_u64_le() as usize;
         let (json, _) = bytes.split_at(len);
-        serde_json::from_slice(&json).or_ctx(|_| PageTrackerErr::Deserialize)
+        serde_json::from_slice(json).or_ctx(|_| PageTrackerErr::Deserialize)
     }
 }
 

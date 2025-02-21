@@ -433,7 +433,7 @@ mod tests {
             let out: Vec<u32> = iproduct!(high, mid, low, block)
                 .map(|(a, b, c, d)| u32::from_be_bytes([a, b, c, d]))
                 .collect();
-            assert_eq!(out.len(), expected_len.into());
+            assert_eq!(out.len(), expected_len);
             out
         }
 

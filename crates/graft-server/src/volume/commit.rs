@@ -128,10 +128,10 @@ impl CommitMeta {
             magic: CommitMagic::Magic,
             vid,
             cid,
-            lsn: lsn.into(),
-            checkpoint_lsn: checkpoint.into(),
-            page_count: page_count.into(),
-            timestamp: time_to_millis(timestamp).into(),
+            lsn,
+            checkpoint_lsn: checkpoint,
+            page_count,
+            timestamp: time_to_millis(timestamp),
         }
     }
 
@@ -188,9 +188,9 @@ impl AsRef<[u8]> for CommitMeta {
     }
 }
 
-impl Into<Slice> for CommitMeta {
-    fn into(self) -> Slice {
-        self.as_bytes().into()
+impl From<CommitMeta> for Slice {
+    fn from(meta: CommitMeta) -> Slice {
+        meta.as_bytes().into()
     }
 }
 
@@ -309,7 +309,7 @@ impl<T: Buf + Clone> Commit<T> {
 impl Commit<BytesVec> {
     pub fn into_payload(self) -> PutPayload {
         let header = Bytes::copy_from_slice(self.header.as_bytes());
-        once(header).chain(self.grafts.into_iter()).collect()
+        once(header).chain(self.grafts).collect()
     }
 }
 

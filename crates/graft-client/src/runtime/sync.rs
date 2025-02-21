@@ -108,7 +108,11 @@ impl SyncTaskHandle {
     pub fn shutdown(&self, deadline: Instant) -> Result<(), ShutdownErr> {
         if let Some(inner) = self.inner.write().take() {
             // drop the control channel to trigger shutdown
-            if let Err(_) = inner.control.send_deadline(SyncControl::Shutdown, deadline) {
+            if inner
+                .control
+                .send_deadline(SyncControl::Shutdown, deadline)
+                .is_err()
+            {
                 return Err(Culprit::new_with_note(
                     ShutdownErr::Timeout,
                     "timeout while waiting to send Shutdown message to sync task",

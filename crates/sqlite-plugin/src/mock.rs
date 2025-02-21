@@ -115,7 +115,7 @@ impl MockVfs {
 }
 
 impl Shared {
-    fn log<'a>(&self, f: fmt::Arguments<'a>) {
+    fn log(&self, f: fmt::Arguments<'_>) {
         if let Some(log) = &self.log {
             let buf = format!("{}", f);
             log.log(SqliteLogLevel::Notice, buf.as_bytes());
@@ -144,7 +144,7 @@ impl Vfs for MockVfs {
         let mut shared = self.shared();
         shared.log(format_args!("canonical_path: path={:?}", path));
         shared.hooks.canonical_path(&path);
-        Ok(path.into())
+        Ok(path)
     }
 
     fn open(&self, path: Option<&str>, opts: flags::OpenOpts) -> VfsResult<Self::Handle> {

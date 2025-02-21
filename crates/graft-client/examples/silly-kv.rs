@@ -194,7 +194,7 @@ impl ListHeader {
         if self.head.is_first_page() {
             return Ok(None);
         }
-        Ok(Some(NodeView::load(reader, self.head.try_into().unwrap())?))
+        Ok(Some(NodeView::load(reader, self.head)?))
     }
 
     /// allocates a node by either reusing a previously freed node or
@@ -205,12 +205,12 @@ impl ListHeader {
 
         if self.free.is_first_page() {
             // no free nodes, create a new one
-            return Ok(NodeView::new(unused_index));
+            Ok(NodeView::new(unused_index))
         } else {
             // pop the first node from the free list
             let node = NodeView::load(reader, self.free)?;
             self.free = node.next;
-            return Ok(node.clear());
+            Ok(node.clear())
         }
     }
 }
@@ -290,7 +290,7 @@ impl<'a, R: VolumeRead> ListIter<'a, R> {
     }
 }
 
-impl<'a, R: VolumeRead> Iterator for ListIter<'a, R> {
+impl<R: VolumeRead> Iterator for ListIter<'_, R> {
     type Item = Result<NodeView>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -333,7 +333,7 @@ fn list_set(writer: &mut VolumeWriter, key: &str, value: &str) -> Result<()> {
             let mut new_node = header.allocate(writer)?;
             new_node.update(key, value);
             new_node.next = header.head;
-            header.head = new_node.idx.into();
+            header.head = new_node.idx;
             new_node.save(writer);
             header.save(writer);
         }
@@ -350,7 +350,7 @@ fn list_set(writer: &mut VolumeWriter, key: &str, value: &str) -> Result<()> {
             let mut new_node = header.allocate(writer)?;
             new_node.update(key, value);
             new_node.next = candidate.next;
-            candidate.next = new_node.idx.into();
+            candidate.next = new_node.idx;
             candidate.save(writer);
             new_node.save(writer);
             header.save(writer);
@@ -370,7 +370,7 @@ fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
             if next.key() == key {
                 prev.next = next.next;
                 next.next = header.free;
-                header.free = next.idx.into();
+                header.free = next.idx;
                 next.save(writer);
                 prev.save(writer);
                 header.save(writer);
@@ -383,14 +383,14 @@ fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
             if head.key() == key {
                 header.head = head.next;
                 head.next = header.free;
-                header.free = head.idx.into();
+                header.free = head.idx;
                 head.save(writer);
                 header.save(writer);
                 return Ok(true);
             }
         }
     }
-    return Ok(false);
+    Ok(false)
 }
 
 struct Simulator {

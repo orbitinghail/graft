@@ -1,4 +1,4 @@
-use std::{thread::sleep, time::Duration, u64};
+use std::{thread::sleep, time::Duration};
 
 use crate::{PageHash, Ticker};
 
@@ -66,25 +66,25 @@ impl From<ConfigError> for WorkloadErr {
 impl WorkloadErr {
     fn should_retry(&self) -> bool {
         fn should_retry_io(err: std::io::ErrorKind) -> bool {
-            match err {
+            matches!(
+                err,
                 std::io::ErrorKind::TimedOut
-                | std::io::ErrorKind::NotConnected
-                | std::io::ErrorKind::ConnectionReset
-                | std::io::ErrorKind::ConnectionAborted
-                | std::io::ErrorKind::ConnectionRefused
-                | std::io::ErrorKind::NetworkDown
-                | std::io::ErrorKind::NetworkUnreachable => true,
-                _ => false,
-            }
+                    | std::io::ErrorKind::NotConnected
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::ConnectionRefused
+                    | std::io::ErrorKind::NetworkDown
+                    | std::io::ErrorKind::NetworkUnreachable
+            )
         }
 
         match self {
-            WorkloadErr::ClientErr(ClientErr::GraftErr(err)) => match err.code() {
-                GraftErrCode::CommitRejected => true,
-                GraftErrCode::SnapshotMissing => true,
-                GraftErrCode::ServiceUnavailable => true,
-                _ => false,
-            },
+            WorkloadErr::ClientErr(ClientErr::GraftErr(err)) => matches!(
+                err.code(),
+                GraftErrCode::CommitRejected
+                    | GraftErrCode::SnapshotMissing
+                    | GraftErrCode::ServiceUnavailable
+            ),
             WorkloadErr::ClientErr(ClientErr::HttpErr(err)) => match err {
                 ureq::Error::ConnectionFailed
                 | ureq::Error::HostNotFound
@@ -94,10 +94,9 @@ impl WorkloadErr {
                 _ => false,
             },
             WorkloadErr::ClientErr(ClientErr::IoErr(err)) => should_retry_io(*err),
-            WorkloadErr::ClientErr(ClientErr::StorageErr(err)) => match err {
-                StorageErr::ConcurrentWrite | StorageErr::RemoteConflict => true,
-                _ => false,
-            },
+            WorkloadErr::ClientErr(ClientErr::StorageErr(
+                StorageErr::ConcurrentWrite | StorageErr::RemoteConflict,
+            )) => true,
             _ => false,
         }
     }
@@ -338,7 +337,7 @@ fn workload_reader<R: Rng>(
 ) -> Result<(), Culprit<WorkloadErr>> {
     let handle = env
         .runtime
-        .open_volume(&vid, VolumeConfig::new(SyncDirection::Pull))
+        .open_volume(vid, VolumeConfig::new(SyncDirection::Pull))
         .or_into_ctx()?;
 
     // ensure the volume is recovered and synced with the server

@@ -113,6 +113,6 @@ impl VolumeStore {
         let path = commit_key_path(&vid, lsn);
         let commit = self.store.get(&path).await?;
         let data = commit.bytes().await?;
-        Ok(Commit::from_bytes(data).or_into_ctx()?)
+        Commit::from_bytes(data).or_into_ctx()
     }
 }

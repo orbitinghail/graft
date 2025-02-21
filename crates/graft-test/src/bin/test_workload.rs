@@ -28,10 +28,10 @@ struct Args {
 fn get_or_init_cid() -> (ClientId, FileLock) {
     let locks = temp_dir().join("worker_locks");
     std::fs::create_dir_all(&locks)
-        .expect(&format!("failed to create workers directory: {locks:?}"));
+        .unwrap_or_else(|_| panic!("failed to create workers directory: {locks:?}"));
 
-    for entry in
-        std::fs::read_dir(&locks).expect(&format!("failed to read workers directory: {locks:?}"))
+    for entry in std::fs::read_dir(&locks)
+        .unwrap_or_else(|_| panic!("failed to read workers directory: {locks:?}"))
     {
         let entry = entry.expect("failed to read entry");
         let path = entry.path();
@@ -44,7 +44,7 @@ fn get_or_init_cid() -> (ClientId, FileLock) {
             let file_name = file_name.to_string_lossy();
             let cid: ClientId = file_name
                 .parse()
-                .expect(&format!("failed to parse ClientId from {}", file_name));
+                .unwrap_or_else(|_| panic!("failed to parse ClientId from {}", file_name));
             return (cid, lock);
         }
     }

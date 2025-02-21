@@ -64,7 +64,7 @@ impl Runtime {
         self.shared
             .storage()
             .iter_volumes()
-            .map_err(|e| e.map_ctx(|c| ClientErr::StorageErr(c)))
+            .map_err(|e| e.map_ctx(ClientErr::StorageErr))
     }
 
     pub fn open_volume(
@@ -74,7 +74,7 @@ impl Runtime {
     ) -> Result<VolumeHandle, ClientErr> {
         self.shared
             .storage()
-            .set_volume_config(&vid, config)
+            .set_volume_config(vid, config)
             .or_into_ctx()?;
 
         Ok(VolumeHandle::new(
@@ -90,7 +90,7 @@ impl Runtime {
     {
         self.shared
             .storage()
-            .update_volume_config(&vid, f)
+            .update_volume_config(vid, f)
             .or_into_ctx()?;
         Ok(())
     }

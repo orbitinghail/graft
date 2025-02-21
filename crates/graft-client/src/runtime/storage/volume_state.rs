@@ -35,9 +35,9 @@ pub struct VolumeStateKey {
     tag: VolumeStateTag,
 }
 
-impl Into<Slice> for VolumeStateKey {
-    fn into(self) -> Slice {
-        self.as_bytes().into()
+impl From<VolumeStateKey> for Slice {
+    fn from(key: VolumeStateKey) -> Slice {
+        key.as_bytes().into()
     }
 }
 
@@ -54,8 +54,7 @@ impl VolumeStateKey {
     }
 
     pub(crate) fn ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
-        Ok(Self::try_ref_from_unaligned_bytes(&bytes)
-            .or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
+        Self::try_ref_from_unaligned_bytes(bytes).or_ctx(StorageErr::CorruptKey)
     }
 
     #[inline]
@@ -124,8 +123,8 @@ impl VolumeConfig {
     }
 
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, Culprit<StorageErr>> {
-        Ok(Self::try_read_from_bytes(&bytes)
-            .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Config, e.into()))?)
+        Self::try_read_from_bytes(bytes)
+            .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Config, e.into()))
     }
 
     pub fn sync(&self) -> SyncDirection {
@@ -133,7 +132,7 @@ impl VolumeConfig {
     }
 
     pub fn with_sync(self, sync: SyncDirection) -> Self {
-        Self { sync, ..self }
+        Self { sync }
     }
 }
 
@@ -143,9 +142,9 @@ impl AsRef<[u8]> for VolumeConfig {
     }
 }
 
-impl Into<Slice> for VolumeConfig {
-    fn into(self) -> Slice {
-        self.as_bytes().into()
+impl From<VolumeConfig> for Slice {
+    fn from(config: VolumeConfig) -> Slice {
+        config.as_bytes().into()
     }
 }
 
@@ -179,8 +178,8 @@ pub enum VolumeStatus {
 
 impl VolumeStatus {
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, Culprit<StorageErr>> {
-        Ok(Self::try_read_from_bytes(&bytes)
-            .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Status, e.into()))?)
+        Self::try_read_from_bytes(bytes)
+            .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Status, e.into()))
     }
 }
 
@@ -190,9 +189,9 @@ impl AsRef<[u8]> for VolumeStatus {
     }
 }
 
-impl Into<Slice> for VolumeStatus {
-    fn into(self) -> Slice {
-        self.as_bytes().into()
+impl From<VolumeStatus> for Slice {
+    fn from(status: VolumeStatus) -> Slice {
+        status.as_bytes().into()
     }
 }
 
@@ -241,8 +240,8 @@ impl Watermarks {
     };
 
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, Culprit<StorageErr>> {
-        Ok(Self::try_read_from_bytes(&bytes)
-            .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Watermarks, e.into()))?)
+        Self::try_read_from_bytes(bytes)
+            .or_ctx(|e| StorageErr::CorruptVolumeState(VolumeStateTag::Watermarks, e.into()))
     }
 
     #[inline]

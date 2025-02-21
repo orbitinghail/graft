@@ -33,8 +33,7 @@ impl PageKey {
 
     #[track_caller]
     pub(crate) fn try_ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<StorageErr>> {
-        Ok(TryFromBytesExt::try_ref_from_unaligned_bytes(&bytes)
-            .or_ctx(|e| StorageErr::CorruptKey(e.into()))?)
+        TryFromBytesExt::try_ref_from_unaligned_bytes(bytes).or_ctx(StorageErr::CorruptKey)
     }
 
     #[inline]
@@ -84,8 +83,8 @@ pub enum PageValueConversionErr {
     InvalidMark,
 }
 
-const PAGE_VALUE_PENDING: &'static [u8] = b"PENDING_";
-const PAGE_VALUE_EMPTY: &'static [u8] = b"EMPTY___";
+const PAGE_VALUE_PENDING: &[u8] = b"PENDING_";
+const PAGE_VALUE_EMPTY: &[u8] = b"EMPTY___";
 const PAGE_VALUE_MARK_LEN: usize = 8;
 
 static_assertions::const_assert_eq!(PAGE_VALUE_PENDING.len(), PAGE_VALUE_MARK_LEN);

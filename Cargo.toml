@@ -8,7 +8,6 @@ lto = true
 codegen-units = 1
 
 [workspace.dependencies]
-escargot = "0.5.13"
 glob = "0.3"
 anyhow = "1.0"
 assert_matches = "1.5"
@@ -46,7 +45,7 @@ object_store = "0.11"
 parking_lot = "0.12"
 prost = "0.13"
 prost-types = "0.13"
-proc-macro2 = "1.0.93"
+proc-macro2 = "1.0"
 rand = "0.9"
 reqwest = "0.12"
 rlimit = "0.10"

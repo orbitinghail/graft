@@ -33,16 +33,15 @@ impl VolumeHandle {
 
     /// Retrieve the current volume status
     pub fn status(&self) -> Result<VolumeStatus, ClientErr> {
-        Ok(self
-            .shared
+        self.shared
             .storage()
             .get_volume_status(&self.vid)
-            .or_into_ctx()?)
+            .or_into_ctx()
     }
 
     /// Retrieve the latest snapshot for the volume
     pub fn snapshot(&self) -> Result<Option<Snapshot>, ClientErr> {
-        Ok(self.shared.storage().snapshot(&self.vid).or_into_ctx()?)
+        self.shared.storage().snapshot(&self.vid).or_into_ctx()
     }
 
     /// Open a VolumeReader at the latest snapshot

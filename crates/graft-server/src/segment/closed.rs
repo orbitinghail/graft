@@ -131,7 +131,7 @@ impl<'a> ClosedSegment<'a> {
 
         // load the index
         let index = SegmentIndex::from_bytes(index_data, footer.volumes())
-            .or_ctx(|err| SegmentValidationErr::CorruptIndex(err.into()))?;
+            .or_ctx(SegmentValidationErr::CorruptIndex)?;
 
         // validate pages
         if page_data.len() % PAGESIZE != 0 {

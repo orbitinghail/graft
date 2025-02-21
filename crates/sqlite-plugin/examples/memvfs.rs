@@ -20,7 +20,7 @@ struct File {
 
 impl File {
     fn is_named(&self, s: &str) -> bool {
-        self.name.as_ref().map_or(false, |f| f == s)
+        self.name.as_ref().is_some_and(|f| f == s)
     }
 }
 
@@ -81,7 +81,7 @@ impl Vfs for MemVfs {
             let mut files = self.files.lock();
 
             for file in files.iter() {
-                if file.is_named(&path) {
+                if file.is_named(path) {
                     if mode.must_create() {
                         return Err(vars::SQLITE_CANTOPEN);
                     }

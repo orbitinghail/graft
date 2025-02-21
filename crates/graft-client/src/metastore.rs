@@ -43,6 +43,7 @@ impl MetastoreClient {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn pull_graft<R: RangeBounds<LSN>>(
         &self,
         vid: &VolumeId,

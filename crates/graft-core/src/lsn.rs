@@ -2,7 +2,6 @@ use std::{
     fmt::Display,
     num::{NonZero, ParseIntError},
     ops::{Bound, RangeBounds, RangeInclusive},
-    u64,
 };
 
 use serde::{Deserialize, Serialize};

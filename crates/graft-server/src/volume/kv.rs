@@ -94,9 +94,9 @@ impl AsRef<[u8]> for SegmentKey {
     }
 }
 
-impl Into<Slice> for SegmentKey {
-    fn into(self) -> Slice {
-        self.as_bytes().into()
+impl From<SegmentKey> for Slice {
+    fn from(key: SegmentKey) -> Slice {
+        key.as_bytes().into()
     }
 }
 

@@ -2,7 +2,6 @@ use std::{
     fmt::{Debug, Display},
     num::{NonZero, ParseIntError, TryFromIntError},
     str::FromStr,
-    u32,
 };
 
 use serde::{Deserialize, Serialize};
@@ -52,6 +51,10 @@ impl PageIdx {
         }
     }
 
+    /// Create a new PageIndex from a u32 without checking if it is 0.
+    ///
+    /// # Safety
+    /// The provided u32 must not be 0.
     #[inline]
     pub const unsafe fn new_unchecked(n: u32) -> Self {
         Self(NonZero::new_unchecked(n))
