@@ -4,7 +4,7 @@ set unstable
 instrumented := ""
 BUILD_ARGS := instrumented && "--build-arg INSTRUMENTED=1" || ""
 
-ANTITHESIS_REGISTRY := "us-central1-docker.pkg.dev/molten-verve-216720/ant-pdogfood-repository"
+ANTITHESIS_REGISTRY := "us-central1-docker.pkg.dev/molten-verve-216720/orbitinghail-repository"
 DOCKER_PLATFORM := "linux/amd64"
 
 METASTORE_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "metastore:latest"
