@@ -18,9 +18,9 @@ use crate::api::{
 
 use super::MetastoreApiState;
 
-/// Returns a set of changed offsets in the lsn range. This method will also
+/// Returns a Graft in the lsn range. This method will also
 /// return the latest Snapshot of the Volume. If no lsn range is specified, it
-/// will return offsets changed between the last checkpoint and the latest
+/// will return pages changed between the last checkpoint and the latest
 /// snapshot.
 #[tracing::instrument(name = "metastore/v1/pull_graft", skip(state, req))]
 pub async fn handler(
@@ -84,15 +84,15 @@ pub async fn handler(
 
     // read the segments, and merge into a single splinter
     let mut iter = state.catalog.scan_segments(&vid, &lsns);
-    let mut splinter = Splinter::default();
-    while let Some((_, offsets)) = iter.try_next().or_into_ctx()? {
-        splinter.merge(&offsets);
+    let mut graft = Splinter::default();
+    while let Some((_, segment_graft)) = iter.try_next().or_into_ctx()? {
+        graft.merge(&segment_graft);
     }
 
     Ok(ProtoResponse::new(PullGraftResponse {
         snapshot: Some(snapshot.into_snapshot()),
         range: Some(LsnRange::from_range(lsns)),
-        graft: splinter.serialize_to_bytes(),
+        graft: graft.serialize_to_bytes(),
     }))
 }
 
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has 10 commits
-        let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
+        let graft = Splinter::from_iter([0u32]).serialize_to_bytes();
         for lsn in 1u64..=9 {
             let meta = CommitMeta::new(
                 vid.clone(),
@@ -160,7 +160,7 @@ mod tests {
                 SystemTime::now(),
             );
             let mut commit = CommitBuilder::new_with_capacity(meta, 1);
-            commit.write_offsets(SegmentId::random(), offsets.clone());
+            commit.write_graft(SegmentId::random(), graft.clone());
             let commit = commit.build();
             store.commit(commit).await.unwrap();
         }

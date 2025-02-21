@@ -12,7 +12,7 @@ pub trait VolumeWrite {
     type CommitOutput;
 
     /// Write a page
-    fn write(&mut self, offset: PageIdx, page: Page);
+    fn write(&mut self, pageidx: PageIdx, page: Page);
 
     /// Truncate the volume to a new page count.
     /// This can be used to increase or decrease the Volume's size.
@@ -59,21 +59,20 @@ impl VolumeRead for VolumeWriter {
     }
 
     /// Read a page; supports read your own writes (RYOW)
-    fn read(&self, offset: PageIdx) -> Result<Page, ClientErr> {
-        let offset = offset.into();
-        if let Some(page) = self.memtable.get(offset) {
+    fn read(&self, pageidx: PageIdx) -> Result<Page, ClientErr> {
+        if let Some(page) = self.memtable.get(pageidx) {
             return Ok(page.clone());
         }
-        self.reader.read(offset)
+        self.reader.read(pageidx)
     }
 }
 
 impl VolumeWrite for VolumeWriter {
     type CommitOutput = VolumeReader;
 
-    fn write(&mut self, offset: PageIdx, page: Page) {
-        self.pages = self.pages.max(offset.pages());
-        self.memtable.insert(offset, page);
+    fn write(&mut self, pageidx: PageIdx, page: Page) {
+        self.pages = self.pages.max(pageidx.pages());
+        self.memtable.insert(pageidx, page);
     }
 
     fn truncate(&mut self, pages: PageCount) {

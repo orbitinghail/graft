@@ -19,7 +19,7 @@ impl Fetcher for MockFetcher {
         _vid: &VolumeId,
         _remote_lsn: LSN,
         _local_lsn: LSN,
-        _offset: PageIdx,
+        _pageidx: PageIdx,
     ) -> Result<page::Page, ClientErr> {
         Ok(EMPTY_PAGE)
     }

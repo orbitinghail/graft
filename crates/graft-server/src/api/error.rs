@@ -67,17 +67,17 @@ pub enum ApiErrCtx {
     #[error("graft client request failed")]
     ClientErr(#[from] graft_client::ClientErr),
 
-    #[error("duplicate page offset")]
-    DuplicatePageOffset,
+    #[error("duplicate page index")]
+    DuplicatePageIdx,
 
-    #[error("failed to parse offsets")]
-    OffsetsDecodeErr(#[from] DecodeErr),
+    #[error("failed to parse graft")]
+    GraftDecodeErr(#[from] DecodeErr),
 
-    #[error("requested too many page offsets")]
-    TooManyOffsets,
+    #[error("too many page indexes")]
+    GraftTooLarge,
 
-    #[error("requested invalid offset")]
-    InvalidOffset(u32),
+    #[error("page indexes must be larger than zero")]
+    ZeroPageIdx,
 
     #[error("invalid page index")]
     ConvertToPageIdxErr(#[from] ConvertToPageIdxErr),
@@ -125,13 +125,13 @@ impl IntoResponse for ApiErr {
             InvalidRequestBody => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             GidParseErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             PageSizeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            DuplicatePageOffset => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            OffsetsDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            DuplicatePageIdx => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            GraftDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             SnapshotMissing => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
             RejectedCommit => (StatusCode::CONFLICT, GraftErrCode::CommitRejected),
             ConvertToPageIdxErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            InvalidOffset(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            TooManyOffsets => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            ZeroPageIdx => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
+            GraftTooLarge => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             InvalidLSN => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             ClientErr(graft_client::ClientErr::HttpErr(_)) => (
                 StatusCode::SERVICE_UNAVAILABLE,

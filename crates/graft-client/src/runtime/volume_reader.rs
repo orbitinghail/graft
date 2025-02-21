@@ -20,7 +20,7 @@ pub trait VolumeRead {
     fn snapshot(&self) -> Option<&Snapshot>;
 
     /// Read a page from the snapshot
-    fn read(&self, offset: PageIdx) -> Result<Page, ClientErr>;
+    fn read(&self, pageidx: PageIdx) -> Result<Page, ClientErr>;
 }
 
 #[derive(Debug, Clone)]
@@ -57,13 +57,12 @@ impl VolumeRead for VolumeReader {
         self.snapshot.as_ref()
     }
 
-    fn read(&self, offset: PageIdx) -> Result<Page, ClientErr> {
-        let offset = offset.into();
+    fn read(&self, pageidx: PageIdx) -> Result<Page, ClientErr> {
         if let Some(snapshot) = self.snapshot() {
             match self
                 .shared
                 .storage()
-                .read(self.vid(), snapshot.local(), offset)
+                .read(self.vid(), snapshot.local(), pageidx)
                 .or_into_ctx()?
             {
                 (_, PageValue::Available(page)) => Ok(page),
@@ -77,7 +76,7 @@ impl VolumeRead for VolumeReader {
                                 self.vid(),
                                 remote_lsn,
                                 local_lsn,
-                                offset,
+                                pageidx,
                             )
                             .or_into_ctx()
                     } else {

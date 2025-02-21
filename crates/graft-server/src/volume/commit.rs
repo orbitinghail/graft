@@ -242,13 +242,13 @@ impl CommitBuilder {
         }
     }
 
-    pub fn write_offsets(&mut self, sid: SegmentId, splinter: Bytes) {
+    pub fn write_graft(&mut self, sid: SegmentId, graft: Bytes) {
         let header = OffsetsHeader {
             sid,
-            size: splinter.len().try_into().expect("bug: splinter too large"),
+            size: graft.len().try_into().expect("bug: splinter too large"),
         };
         self.offsets.put_slice(header.as_bytes());
-        self.offsets.put(splinter);
+        self.offsets.put(graft);
     }
 
     pub fn build(self) -> Commit<BytesVec> {

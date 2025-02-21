@@ -133,18 +133,18 @@ impl PushJob {
 
         // load all of the pages into memory
         // TODO: stream pages directly to the remote
-        while let Some((lsn, offsets)) = commits.try_next().or_into_ctx()? {
+        while let Some((lsn, graft)) = commits.try_next().or_into_ctx()? {
             num_commits += 1;
-            let mut commit_pages = storage.query_pages(&self.vid, lsn, &offsets);
-            while let Some((offset, page)) = commit_pages.try_next().or_into_ctx()? {
+            let mut commit_pages = storage.query_pages(&self.vid, lsn, &graft);
+            while let Some((pageidx, page)) = commit_pages.try_next().or_into_ctx()? {
                 // it's a fatal error if the page is None or Pending
                 let page = page
                     .expect("page missing from storage")
                     .expect("page missing from storage");
 
                 // if the page is still contained within the page_count, include it
-                if page_count.contains(offset) {
-                    upsert_page(offset, page);
+                if page_count.contains(pageidx) {
+                    upsert_page(pageidx, page);
                 }
             }
         }

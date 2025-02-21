@@ -21,6 +21,6 @@ pub trait Fetcher: Debug + Send + Sync + 'static {
         vid: &VolumeId,
         remote_lsn: LSN,
         local_lsn: LSN,
-        offset: PageIdx,
+        pageidx: PageIdx,
     ) -> Result<Page, ClientErr>;
 }

@@ -144,10 +144,7 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has 10 commits
-        let offsets = &[0u32]
-            .into_iter()
-            .collect::<Splinter>()
-            .serialize_to_bytes();
+        let graft = Splinter::from_slice(&[0]).serialize_to_bytes();
         for lsn in 1u64..11 {
             let meta = CommitMeta::new(
                 vid.clone(),
@@ -158,7 +155,7 @@ mod tests {
                 SystemTime::now(),
             );
             let mut commit = CommitBuilder::new_with_capacity(meta, 1);
-            commit.write_offsets(SegmentId::random(), offsets.clone());
+            commit.write_graft(SegmentId::random(), graft.clone());
             let commit = commit.build();
             store.commit(commit).await.unwrap();
         }
@@ -178,7 +175,7 @@ mod tests {
         assert_eq!(snapshot.pages(), 1);
         assert!(snapshot.system_time().unwrap().unwrap() < SystemTime::now());
         for segment in &last_commit.segments {
-            assert_eq!(segment.graft, offsets);
+            assert_eq!(segment.graft, graft);
         }
 
         // request all the commits

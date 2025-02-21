@@ -116,7 +116,7 @@ mod tests {
             SystemTime::now(),
         );
         let mut commit = CommitBuilder::new_with_capacity(meta, 1);
-        commit.write_offsets(
+        commit.write_graft(
             SegmentId::random(),
             Splinter::from_slice(&[0]).serialize_to_bytes(),
         );

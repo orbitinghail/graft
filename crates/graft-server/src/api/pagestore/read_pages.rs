@@ -17,7 +17,7 @@ use super::PagestoreApiState;
 
 /// The maximum amount of pages that can be returned in a single request.
 /// This results in the maximum response size being roughly 4MB
-pub const MAX_OFFSETS: usize = 1024;
+pub const MAX_PAGES: usize = 1024;
 
 #[tracing::instrument(name = "pagestore/v1/read_pages", skip(state, req))]
 pub async fn handler<C: Cache>(
@@ -26,16 +26,16 @@ pub async fn handler<C: Cache>(
 ) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsn = LSN::try_from(req.lsn).or_into_ctx()?;
-    let mut offsets = Splinter::from_bytes(req.graft).or_into_ctx()?;
-    let num_offsets = offsets.cardinality();
+    let mut graft = Splinter::from_bytes(req.graft).or_into_ctx()?;
+    let num_pages = graft.cardinality();
 
-    tracing::info!(?vid, ?lsn, num_offsets);
+    tracing::info!(?vid, ?lsn, num_pages);
 
-    if num_offsets > MAX_OFFSETS {
-        return Err(ApiErrCtx::TooManyOffsets.into());
+    if num_pages > MAX_PAGES {
+        return Err(ApiErrCtx::GraftTooLarge.into());
     }
-    if offsets.contains(0) {
-        return Err(ApiErrCtx::InvalidOffset(0).into());
+    if graft.contains(0) {
+        return Err(ApiErrCtx::ZeroPageIdx.into());
     }
 
     // ensure we've replayed the catalog up to the requested LSN
@@ -59,7 +59,7 @@ pub async fn handler<C: Cache>(
     for result in segments {
         let (key, splinter) = result.or_into_ctx()?;
 
-        let cut = offsets.cut(&splinter);
+        let cut = graft.cut(&splinter);
         if !cut.is_empty() {
             let sid = key.sid().clone();
             loading.push(
@@ -71,20 +71,20 @@ pub async fn handler<C: Cache>(
             );
         }
 
-        if offsets.is_empty() {
-            // all offsets have been found
+        if graft.is_empty() {
+            // all pages have been found
             break;
         }
     }
 
-    let mut result = ReadPagesResponse { pages: Vec::with_capacity(num_offsets) };
+    let mut result = ReadPagesResponse { pages: Vec::with_capacity(num_pages) };
     while let Some((segment, cut)) = loading.try_next().await? {
         let segment = ClosedSegment::from_bytes(&segment).or_into_ctx()?;
 
         for pageidx in cut.iter() {
             let page = segment
                 .find_page(vid.clone(), pageidx.try_into()?)
-                .expect("failed to find expected offset in segment; index out of sync");
+                .expect("bug: failed to find expected pageidx in segment; index out of sync");
             result
                 .pages
                 .push(PageAtIdx { idx: pageidx, data: page.into() });

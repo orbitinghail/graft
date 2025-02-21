@@ -44,7 +44,7 @@ pub async fn handler<C>(
 
         if !seen.insert(offset) {
             return Err(Culprit::new_with_note(
-                ApiErrCtx::DuplicatePageOffset,
+                ApiErrCtx::DuplicatePageIdx,
                 format!("duplicate page offset: {offset}"),
             )
             .into());

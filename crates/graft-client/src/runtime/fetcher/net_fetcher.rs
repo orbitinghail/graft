@@ -28,28 +28,28 @@ impl Fetcher for NetFetcher {
         vid: &VolumeId,
         remote_lsn: LSN,
         local_lsn: LSN,
-        offset: PageIdx,
+        pageidx: PageIdx,
     ) -> Result<Page, ClientErr> {
         let _span = tracing::trace_span!(
             "fetching page from pagestore",
             ?vid,
             ?remote_lsn,
             ?local_lsn,
-            ?offset,
+            ?pageidx,
         )
         .entered();
-        let offsets = Splinter::from_iter([offset]).serialize_to_bytes();
+        let graft = Splinter::from_iter([pageidx]).serialize_to_bytes();
         let pages = self
             .clients
             .pagestore()
-            .read_pages(vid, remote_lsn, offsets)?;
+            .read_pages(vid, remote_lsn, graft)?;
         if pages.is_empty() {
             return Ok(EMPTY_PAGE);
         }
         let page = pages[0].clone();
         assert!(
-            page.pageidx().or_into_ctx()? == offset,
-            "received page at wrong offset"
+            page.pageidx().or_into_ctx()? == pageidx,
+            "received page at wrong page index"
         );
         storage.receive_pages(vid, local_lsn, pages).or_into_ctx()?;
         Ok(page.page().expect("page has invalid size"))

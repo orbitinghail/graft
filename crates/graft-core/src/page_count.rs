@@ -76,8 +76,8 @@ impl PageCount {
     }
 
     #[inline]
-    pub const fn contains(self, idx: PageIdx) -> bool {
-        idx.to_u32() <= self.0
+    pub const fn contains(self, pageidx: PageIdx) -> bool {
+        pageidx.to_u32() <= self.0
     }
 
     #[inline]

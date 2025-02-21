@@ -99,7 +99,7 @@ pub async fn handler(
     for segment in req.segments {
         let sid = segment.sid().or_into_ctx()?;
         let graft = segment.graft().or_into_ctx()?;
-        commit.write_offsets(sid.clone(), graft.into_inner());
+        commit.write_graft(sid.clone(), graft.into_inner());
     }
 
     let commit = commit.build();
@@ -155,7 +155,7 @@ mod tests {
 
         let vid = VolumeId::random();
         let cid = ClientId::random();
-        let offsets = Splinter::from_iter([0u32]).serialize_to_bytes();
+        let graft = Splinter::from_iter([0u32]).serialize_to_bytes();
 
         // let's commit and validate the store 10 times
         for i in 1..10 {
@@ -169,7 +169,7 @@ mod tests {
                 cid: cid.copy_to_bytes(),
                 snapshot_lsn,
                 page_count: 1,
-                segments: vec![SegmentInfo::new(&SegmentId::random(), offsets.clone())],
+                segments: vec![SegmentInfo::new(&SegmentId::random(), graft.clone())],
             };
 
             // commit
@@ -216,7 +216,7 @@ mod tests {
             cid: ClientId::random().copy_to_bytes(),
             snapshot_lsn: Some(5),
             page_count: 1,
-            segments: vec![SegmentInfo::new(&SegmentId::random(), offsets.clone())],
+            segments: vec![SegmentInfo::new(&SegmentId::random(), graft.clone())],
         };
         server
             .post("/")

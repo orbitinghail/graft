@@ -109,11 +109,11 @@ pub struct Storage {
     volumes: fjall::Partition,
 
     /// Used to store page contents
-    /// maps from (VolumeId, Offset, LSN) to PageValue
+    /// maps from (VolumeId, PageIdx, LSN) to PageValue
     pages: fjall::Partition,
 
     /// Used to track changes made by local commits.
-    /// maps from (VolumeId, LSN) to Splinter of written offsets
+    /// maps from (VolumeId, LSN) to Graft (Splinter of changed PageIdxs)
     commits: fjall::Partition,
 
     /// Must be held while performing read+write transactions.
@@ -278,28 +278,28 @@ impl Storage {
         &'a self,
         vid: &'a VolumeId,
         lsn: LSN,
-        offsets: &'a SplinterRef<T>,
+        graft: &'a SplinterRef<T>,
     ) -> impl TryIterator<Ok = (PageIdx, Option<PageValue>), Err = Culprit<StorageErr>> + 'a
     where
         T: AsRef<[u8]> + 'a,
     {
-        offsets.iter().map(move |offset| {
-            let offset: PageIdx = offset.try_into()?;
-            let key = PageKey::new(vid.clone(), offset, lsn);
+        graft.iter().map(move |pageidx| {
+            let pageidx: PageIdx = pageidx.try_into()?;
+            let key = PageKey::new(vid.clone(), pageidx, lsn);
             if let Some(page) = self.pages.get(key)? {
-                Ok((offset, Some(PageValue::try_from(page).or_into_ctx()?)))
+                Ok((pageidx, Some(PageValue::try_from(page).or_into_ctx()?)))
             } else {
-                Ok((offset, None))
+                Ok((pageidx, None))
             }
         })
     }
 
     /// Returns the most recent visible page in a volume by LSN at a particular
-    /// offset. Notably, this will return a page from an earlier LSN if the page
+    /// PageIdx. Notably, this will return a page from an earlier LSN if the page
     /// hasn't changed since then.
-    pub fn read(&self, vid: &VolumeId, lsn: LSN, offset: PageIdx) -> Result<(LSN, PageValue)> {
-        let first_key = PageKey::new(vid.clone(), offset, LSN::FIRST);
-        let key = PageKey::new(vid.clone(), offset, lsn);
+    pub fn read(&self, vid: &VolumeId, lsn: LSN, pageidx: PageIdx) -> Result<(LSN, PageValue)> {
+        let first_key = PageKey::new(vid.clone(), pageidx, LSN::FIRST);
+        let key = PageKey::new(vid.clone(), pageidx, lsn);
         let range = first_key..=key;
 
         // Search for the latest page between LSN(0) and the requested LSN,
@@ -336,20 +336,20 @@ impl Storage {
             .map(|lsn| lsn.next().expect("lsn overflow"))
             .unwrap_or(LSN::FIRST);
 
-        // this Splinter will contain all of the offsets this commit changed
-        let mut offsets = Splinter::default();
+        // this Splinter will contain all of the PageIdxs this commit changed
+        let mut graft = Splinter::default();
 
         // persist the memtable
         let mut page_key = PageKey::new(vid.clone(), PageIdx::FIRST, commit_lsn);
-        for (offset, page) in memtable {
-            page_key = page_key.with_index(offset);
-            offsets.insert(offset.into());
+        for (pageidx, page) in memtable {
+            page_key = page_key.with_index(pageidx);
+            graft.insert(pageidx.into());
             batch.insert(&self.pages, page_key.as_bytes(), PageValue::from(page));
         }
 
         // persist the new commit
         let commit_key = CommitKey::new(vid.clone(), commit_lsn);
-        batch.insert(&self.commits, commit_key, offsets.serialize_to_bytes());
+        batch.insert(&self.commits, commit_key, graft.serialize_to_bytes());
 
         // acquire the commit lock
         let _permit = self.commit_lock.lock();
@@ -413,7 +413,7 @@ impl Storage {
         _permit: MutexGuard<'_, ()>,
         vid: &VolumeId,
         remote_snapshot: graft_proto::Snapshot,
-        changed: SplinterRef<Bytes>,
+        graft: SplinterRef<Bytes>,
     ) -> Result<()> {
         // resolve the remote lsn and page count
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
@@ -481,8 +481,8 @@ impl Storage {
         // mark changed pages
         let mut key = PageKey::new(vid.clone(), PageIdx::FIRST, commit_lsn);
         let pending = Bytes::from(PageValue::Pending);
-        for offset in changed.iter() {
-            key = key.with_index(offset.try_into()?);
+        for pageidx in graft.iter() {
+            key = key.with_index(pageidx.try_into()?);
             batch.insert(&self.pages, key.as_ref(), pending.as_ref());
         }
 
@@ -764,7 +764,7 @@ impl Storage {
 
         // remove all pending commits
         let mut commits = self.commits.snapshot().prefix(vid);
-        while let Some((key, value)) = commits.try_next().or_into_ctx()? {
+        while let Some((key, graft)) = commits.try_next().or_into_ctx()? {
             let key = CommitKey::ref_from_bytes(&key)?;
             assert_eq!(
                 key.vid(),
@@ -777,12 +777,12 @@ impl Storage {
             );
             batch.remove(&self.commits, key.as_ref());
 
-            // remove the commit's offsets
-            let splinter = SplinterRef::from_bytes(value).or_into_ctx()?;
+            // remove the commit's changed PageIdxs
+            let graft = SplinterRef::from_bytes(graft).or_into_ctx()?;
 
             let mut key = PageKey::new(vid.clone(), PageIdx::FIRST, key.lsn());
-            for offset in splinter.iter() {
-                key = key.with_index(offset.try_into()?);
+            for pageidx in graft.iter() {
+                key = key.with_index(pageidx.try_into()?);
                 batch.remove(&self.pages, key.as_ref());
             }
         }
