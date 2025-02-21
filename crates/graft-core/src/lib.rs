@@ -13,3 +13,8 @@ pub use page_index::PageIdx;
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
+
+static_assertions::assert_cfg!(
+    target_endian = "little",
+    "Graft currently only supports little-endian systems"
+);

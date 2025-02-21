@@ -44,3 +44,8 @@ pub mod supervisor;
 
 #[cfg(test)]
 pub mod testutil;
+
+static_assertions::assert_cfg!(
+    target_endian = "little",
+    "Graft currently only supports little-endian systems"
+);
