@@ -5,11 +5,11 @@ use graft_core::{PageIdx, VolumeId};
 use splinter::{Splinter, SplinterRef};
 
 #[derive(Default)]
-pub struct OffsetsMap(BTreeMap<VolumeId, SplinterRef<Bytes>>);
+pub struct MultiGraft(BTreeMap<VolumeId, SplinterRef<Bytes>>);
 
-impl Debug for OffsetsMap {
+impl Debug for MultiGraft {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut out = f.debug_struct("OffsetsMap");
+        let mut out = f.debug_struct("MultiGraft");
         for (vid, splinter) in &self.0 {
             out.field(&vid.short(), &splinter.cardinality());
         }
@@ -17,15 +17,8 @@ impl Debug for OffsetsMap {
     }
 }
 
-#[derive(Default)]
-pub struct OffsetsMapBuilder {
-    map: OffsetsMap,
-    vid: Option<VolumeId>,
-    splinter: Splinter,
-}
-
-impl OffsetsMap {
-    pub fn builder() -> OffsetsMapBuilder {
+impl MultiGraft {
+    pub fn builder() -> MultiGraftBuilder {
         Default::default()
     }
 
@@ -37,16 +30,23 @@ impl OffsetsMap {
         self.0.get(vid)
     }
 
-    pub fn contains(&self, vid: &VolumeId, offset: PageIdx) -> bool {
+    pub fn contains(&self, vid: &VolumeId, pageidx: PageIdx) -> bool {
         self.0
             .get(vid)
-            .map(|splinter| splinter.contains(offset.into()))
+            .map(|graft| graft.contains(pageidx.into()))
             .unwrap_or(false)
     }
 }
 
-impl OffsetsMapBuilder {
-    pub fn insert(&mut self, vid: &VolumeId, offset: PageIdx) {
+#[derive(Default)]
+pub struct MultiGraftBuilder {
+    map: MultiGraft,
+    vid: Option<VolumeId>,
+    splinter: Splinter,
+}
+
+impl MultiGraftBuilder {
+    pub fn insert(&mut self, vid: &VolumeId, pageidx: PageIdx) {
         if let Some(current) = &self.vid {
             if current != vid {
                 assert!(vid > current, "Volumes must be inserted in order by ID");
@@ -61,10 +61,10 @@ impl OffsetsMapBuilder {
             self.vid = Some(vid.clone());
         }
 
-        self.splinter.insert(offset.into())
+        self.splinter.insert(pageidx.into())
     }
 
-    pub fn build(self) -> OffsetsMap {
+    pub fn build(self) -> MultiGraft {
         let Self { mut map, vid, splinter } = self;
 
         if !splinter.is_empty() {

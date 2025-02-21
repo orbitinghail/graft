@@ -14,7 +14,7 @@ use crate::bytes_vec::BytesVec;
 use super::{
     closed::{closed_segment_size, SegmentFooter, SEGMENT_MAX_PAGES, SEGMENT_MAX_VOLUMES},
     index::SegmentIndexBuilder,
-    offsets_map::OffsetsMap,
+    multigraft::MultiGraft,
 };
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -85,14 +85,14 @@ impl OpenSegment {
         closed_segment_size(self.volumes(), self.pages())
     }
 
-    pub fn serialize(self, sid: SegmentId) -> (BytesVec, OffsetsMap) {
+    pub fn serialize(self, sid: SegmentId) -> (BytesVec, MultiGraft) {
         let volumes = self.volumes();
         let pages = self.pages();
         // +2 for the index, +1 for the footer
         let mut data = BytesVec::with_capacity(pages.to_usize() + 2 + 1);
         dbg!(volumes, pages);
         let mut index_builder = SegmentIndexBuilder::new_with_capacity(volumes, pages);
-        let mut offsets_builder = OffsetsMap::builder();
+        let mut offsets_builder = MultiGraft::builder();
 
         // write pages to buffer while building index
         for (vid, pages) in self.index {

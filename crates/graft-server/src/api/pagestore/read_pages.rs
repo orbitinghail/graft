@@ -117,7 +117,7 @@ mod tests {
         api::extractors::CONTENT_TYPE_PROTOBUF,
         bytes_vec::BytesVec,
         segment::{
-            bus::Bus, cache::mem::MemCache, loader::SegmentLoader, offsets_map::OffsetsMap,
+            bus::Bus, cache::mem::MemCache, loader::SegmentLoader, multigraft::MultiGraft,
             open::OpenSegment,
         },
         volume::{catalog::VolumeCatalog, commit::CommitMeta, updater::VolumeCatalogUpdater},
@@ -125,7 +125,7 @@ mod tests {
 
     use super::*;
 
-    fn mksegment(sid: &SegmentId, pages: Vec<(VolumeId, PageIdx, Page)>) -> (BytesVec, OffsetsMap) {
+    fn mksegment(sid: &SegmentId, pages: Vec<(VolumeId, PageIdx, Page)>) -> (BytesVec, MultiGraft) {
         let mut segment = OpenSegment::default();
         for (vid, off, page) in pages {
             segment.insert(vid, off, page).unwrap();
@@ -169,7 +169,7 @@ mod tests {
 
         // segment 1 is in the store
         let sid1 = SegmentId::random();
-        let (segment, offsets1) = mksegment(
+        let (segment, graft1) = mksegment(
             &sid1,
             vec![
                 (vid.clone(), pageidx!(1), Page::test_filled(1)),
@@ -187,7 +187,7 @@ mod tests {
 
         // segment 2 is already in the cache
         let sid2 = SegmentId::random();
-        let (segment, offsets2) = mksegment(
+        let (segment, graft2) = mksegment(
             &sid2,
             vec![
                 (vid.clone(), pageidx!(4), Page::test_filled(4)),
@@ -212,11 +212,11 @@ mod tests {
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),
-                        graft: offsets1.get(&vid).unwrap().clone().into_inner(),
+                        graft: graft1.get(&vid).unwrap().clone().into_inner(),
                     },
                     SegmentInfo {
                         sid: sid2.copy_to_bytes(),
-                        graft: offsets2.get(&vid).unwrap().clone().into_inner(),
+                        graft: graft2.get(&vid).unwrap().clone().into_inner(),
                     },
                 ],
             )
@@ -239,7 +239,7 @@ mod tests {
 
         // we expect to see all 5 pages here
         assert_eq!(resp.pages.len(), 5);
-        // sort by offset to make the test deterministic
+        // sort by pageidx to make the test deterministic
         resp.pages.sort_by_key(|p| p.idx);
         for (PageAtIdx { idx, data }, expected) in resp.pages.into_iter().zip(1..) {
             assert_eq!(idx, expected);

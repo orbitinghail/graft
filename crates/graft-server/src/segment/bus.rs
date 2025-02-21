@@ -6,7 +6,7 @@ use std::sync::Arc;
 use graft_core::{page::Page, PageIdx, SegmentId, VolumeId};
 use tokio::sync::broadcast;
 
-use super::{offsets_map::OffsetsMap, open::OpenSegment};
+use super::{multigraft::MultiGraft, open::OpenSegment};
 
 #[derive(Debug)]
 pub struct WritePageReq {
@@ -29,7 +29,7 @@ pub struct StoreSegmentReq {
 #[derive(Debug, Clone)]
 pub struct CommitSegmentReq {
     pub sid: SegmentId,
-    pub offsets: Arc<OffsetsMap>,
+    pub offsets: Arc<MultiGraft>,
 }
 
 #[derive(Debug, Clone)]

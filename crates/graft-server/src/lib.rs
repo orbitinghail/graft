@@ -4,7 +4,7 @@ pub mod segment {
     pub mod closed;
     pub mod index;
     pub mod loader;
-    pub mod offsets_map;
+    pub mod multigraft;
     pub mod open;
     pub mod uploader;
     pub mod writer;
