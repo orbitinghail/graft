@@ -110,7 +110,7 @@ impl<C: Cache> SegmentUploaderTask<C> {
         let segment = req.segment;
         let sid = SegmentId::random();
         let path = Path::from(sid.pretty());
-        let (segment, offsets) = segment.serialize(sid.clone());
+        let (segment, grafts) = segment.serialize(sid.clone());
 
         self.metrics
             .segment_size_bytes
@@ -128,7 +128,7 @@ impl<C: Cache> SegmentUploaderTask<C> {
         tokio::try_join!(upload_task, cache_task)?;
 
         self.output
-            .publish(CommitSegmentReq { sid, offsets: Arc::new(offsets) });
+            .publish(CommitSegmentReq { sid, grafts: Arc::new(grafts) });
 
         Ok(())
     }

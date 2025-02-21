@@ -104,7 +104,7 @@ impl SegmentWriterTask {
         }
 
         self.segment
-            .insert(req.vid, req.offset, req.page)
+            .insert(req.vid, req.pageidx, req.page)
             .expect("segment is not full");
 
         Ok(())
@@ -160,7 +160,7 @@ mod tests {
         input_tx
             .send(WritePageReq {
                 vid: vid.clone(),
-                offset: pageidx!(1),
+                pageidx: pageidx!(1),
                 page: page0.clone(),
             })
             .await
@@ -169,7 +169,7 @@ mod tests {
         input_tx
             .send(WritePageReq {
                 vid: vid.clone(),
-                offset: pageidx!(2),
+                pageidx: pageidx!(2),
                 page: page1.clone(),
             })
             .await

@@ -48,13 +48,13 @@ impl OpenSegment {
     pub fn insert(
         &mut self,
         vid: VolumeId,
-        offset: PageIdx,
+        pageidx: PageIdx,
         page: Page,
     ) -> Result<(), Culprit<SegmentFullErr>> {
         if !self.has_space_for(&vid) {
             return Err(Culprit::new(SegmentFullErr));
         }
-        self.index.entry(vid).or_default().insert(offset, page);
+        self.index.entry(vid).or_default().insert(pageidx, page);
         Ok(())
     }
 
@@ -77,8 +77,8 @@ impl OpenSegment {
     }
 
     #[cfg(test)]
-    pub fn find_page(&self, vid: &VolumeId, offset: PageIdx) -> Option<&Page> {
-        self.index.get(vid)?.get(&offset)
+    pub fn find_page(&self, vid: &VolumeId, pageidx: PageIdx) -> Option<&Page> {
+        self.index.get(vid)?.get(&pageidx)
     }
 
     pub fn serialized_size(&self) -> ByteUnit {
@@ -92,14 +92,14 @@ impl OpenSegment {
         let mut data = BytesVec::with_capacity(pages.to_usize() + 2 + 1);
         dbg!(volumes, pages);
         let mut index_builder = SegmentIndexBuilder::new_with_capacity(volumes, pages);
-        let mut offsets_builder = MultiGraft::builder();
+        let mut multigraft_builder = MultiGraft::builder();
 
         // write pages to buffer while building index
         for (vid, pages) in self.index {
             for (off, page) in pages {
                 data.put(page.into());
                 index_builder.insert(&vid, off);
-                offsets_builder.insert(&vid, off);
+                multigraft_builder.insert(&vid, off);
             }
         }
 
@@ -115,7 +115,7 @@ impl OpenSegment {
         let footer = SegmentFooter::new(sid, volumes, index_size);
         data.put_slice(footer.as_bytes());
 
-        (data, offsets_builder.build())
+        (data, multigraft_builder.build())
     }
 }
 
@@ -149,7 +149,7 @@ mod tests {
         let expected_size = open_segment.serialized_size();
 
         let sid = SegmentId::random();
-        let (buf, offsets) = open_segment.serialize(sid.clone());
+        let (buf, grafts) = open_segment.serialize(sid.clone());
 
         assert_eq!(buf.remaining(), expected_size);
 
@@ -168,12 +168,12 @@ mod tests {
             Some(page1)
         );
 
-        // validate the offsets map
-        assert!(!offsets.is_empty());
-        assert!(offsets.contains(&vid, pageidx!(1)));
-        assert!(offsets.contains(&vid, pageidx!(2)));
-        assert!(!offsets.contains(&vid, pageidx!(3)));
-        assert!(!offsets.contains(&VolumeId::random(), pageidx!(1)));
+        // validate the multigraft
+        assert!(!grafts.is_empty());
+        assert!(grafts.contains(&vid, pageidx!(1)));
+        assert!(grafts.contains(&vid, pageidx!(2)));
+        assert!(!grafts.contains(&vid, pageidx!(3)));
+        assert!(!grafts.contains(&VolumeId::random(), pageidx!(1)));
     }
 
     #[graft_test::test]
@@ -181,10 +181,10 @@ mod tests {
         let open_segment = OpenSegment::default();
         let expected_size = open_segment.serialized_size();
 
-        let (buf, offsets) = open_segment.serialize(SegmentId::random());
+        let (buf, grafts) = open_segment.serialize(SegmentId::random());
 
         assert_eq!(buf.remaining(), expected_size);
-        assert!(offsets.is_empty());
+        assert!(grafts.is_empty());
 
         // an empty segment should just be a footer
         assert_eq!(expected_size, size_of::<SegmentFooter>());
@@ -208,9 +208,9 @@ mod tests {
         // insert SEGMENT_MAX_PAGES pages while cycling through the volumes
         let page = Page::test_filled(1);
         let mut vid_cycle = vids.iter().cycle();
-        for offset in SEGMENT_MAX_PAGES.iter() {
+        for pageidx in SEGMENT_MAX_PAGES.iter() {
             open_segment
-                .insert(vid_cycle.next().unwrap().clone(), offset, page.clone())
+                .insert(vid_cycle.next().unwrap().clone(), pageidx, page.clone())
                 .unwrap();
         }
 
@@ -219,13 +219,13 @@ mod tests {
         assert!(!open_segment.has_space_for(&VolumeId::random()));
 
         let expected_size = open_segment.serialized_size();
-        let (buf, offsets) = open_segment.serialize(SegmentId::random());
+        let (buf, grafts) = open_segment.serialize(SegmentId::random());
         assert_eq!(buf.remaining(), expected_size);
 
-        assert!(!offsets.is_empty());
+        assert!(!grafts.is_empty());
         let mut vid_cycle = vids.iter().cycle();
-        for offset in SEGMENT_MAX_PAGES.iter() {
-            assert!(offsets.contains(vid_cycle.next().unwrap(), offset));
+        for pageidx in SEGMENT_MAX_PAGES.iter() {
+            assert!(grafts.contains(vid_cycle.next().unwrap(), pageidx));
         }
 
         let buf = buf.into_bytes();
@@ -245,9 +245,9 @@ mod tests {
 
         // fill the segment with one fewer page than the max
         let mut vid_cycle = vids.iter().cycle();
-        for offset in SEGMENT_MAX_PAGES.saturating_decr().iter() {
+        for pageidx in SEGMENT_MAX_PAGES.saturating_decr().iter() {
             open_segment
-                .insert(vid_cycle.next().unwrap().clone(), offset, page.clone())
+                .insert(vid_cycle.next().unwrap().clone(), pageidx, page.clone())
                 .unwrap();
         }
 

@@ -30,9 +30,9 @@ enum Commands {
         /// The volume id of the page
         vid: VolumeId,
 
-        /// The offset of the page
+        /// The page index
         #[arg(default_value_t = PageIdx::FIRST)]
-        offset: PageIdx,
+        pageidx: PageIdx,
     },
 }
 
@@ -69,17 +69,17 @@ fn print_segment(segment: &ClosedSegment) {
     println!("Segment ID: {}", segment.sid());
     println!("Pages: {}", segment.pages());
 
-    // print table headers: Volume id, offset, length, page_prefix
+    // print table headers: Volume id, page, length, page_prefix
     println!(
         "{:<10} {:<10} {:<10} Prefix",
-        "Volume ID", "Offset", "Empty"
+        "Volume ID", "PageIdx", "Empty"
     );
 
-    for (vid, offset, page) in segment.iter() {
+    for (vid, pageidx, page) in segment.iter() {
         print!(
             "{:<10} {:<10} {:<10} ",
             vid.short(),
-            offset,
+            pageidx,
             page.is_empty()
         );
         print_page(page, 10);
@@ -105,8 +105,8 @@ fn main_inner() -> Result<(), Culprit<SegmentReaderErr>> {
             println!("Segment size: {}", data.len());
             print_segment(&segment)
         }
-        Commands::Read { vid, offset } => {
-            if let Some(page) = segment.find_page(vid, offset) {
+        Commands::Read { vid, pageidx } => {
+            if let Some(page) = segment.find_page(vid, pageidx) {
                 print_page(page, PAGESIZE.as_usize())
             } else {
                 return Err(Culprit::new(SegmentReaderErr::PageNotFound));

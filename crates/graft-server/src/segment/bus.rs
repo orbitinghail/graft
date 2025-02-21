@@ -11,13 +11,13 @@ use super::{multigraft::MultiGraft, open::OpenSegment};
 #[derive(Debug)]
 pub struct WritePageReq {
     pub vid: VolumeId,
-    pub offset: PageIdx,
+    pub pageidx: PageIdx,
     pub page: Page,
 }
 
 impl WritePageReq {
-    pub fn new(vid: VolumeId, offset: PageIdx, page: Page) -> Self {
-        Self { vid, offset, page }
+    pub fn new(vid: VolumeId, pageidx: PageIdx, page: Page) -> Self {
+        Self { vid, pageidx, page }
     }
 }
 
@@ -29,7 +29,7 @@ pub struct StoreSegmentReq {
 #[derive(Debug, Clone)]
 pub struct CommitSegmentReq {
     pub sid: SegmentId,
-    pub offsets: Arc<MultiGraft>,
+    pub grafts: Arc<MultiGraft>,
 }
 
 #[derive(Debug, Clone)]

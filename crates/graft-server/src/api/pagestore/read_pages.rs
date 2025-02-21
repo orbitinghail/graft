@@ -244,7 +244,7 @@ mod tests {
             assert_eq!(
                 data,
                 Bytes::from(Page::test_filled(expected as u8)),
-                "page data mismatch for offset: {pageidx}",
+                "page data mismatch for pageidx: {pageidx}",
             );
         }
     }

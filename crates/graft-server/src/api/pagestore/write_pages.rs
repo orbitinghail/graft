@@ -39,19 +39,19 @@ pub async fn handler<C>(
 
     let mut seen = HashSet::with_capacity(req.pages.len());
     for page in req.pages {
-        let offset = page.pageidx().or_into_ctx()?;
+        let pageidx = page.pageidx().or_into_ctx()?;
         let page: Page = Page::try_from(page.data).or_into_ctx()?;
 
-        if !seen.insert(offset) {
+        if !seen.insert(pageidx) {
             return Err(Culprit::new_with_note(
                 ApiErrCtx::DuplicatePageIdx,
-                format!("duplicate page offset: {offset}"),
+                format!("page index: {pageidx}"),
             )
             .into());
         }
 
         state
-            .write_page(WritePageReq::new(vid.clone(), offset, page))
+            .write_page(WritePageReq::new(vid.clone(), pageidx, page))
             .await;
     }
 
@@ -65,15 +65,15 @@ pub async fn handler<C>(
             Err(RecvError::Closed) => panic!("commit channel unexpectedly closed"),
         };
 
-        if let Some(offsets) = commit.offsets.get(&vid) {
+        if let Some(graft) = commit.grafts.get(&vid) {
             tracing::debug!("write_pages handler received commit: {commit:?} for volume {vid}");
 
-            count += offsets.cardinality();
+            count += graft.cardinality();
 
             // store the segment
             segments.push(SegmentInfo {
                 sid: commit.sid.copy_to_bytes(),
-                graft: offsets.inner().clone(),
+                graft: graft.inner().clone(),
             });
         }
     }
@@ -196,15 +196,15 @@ mod tests {
 
         let resp1 = WritePagesResponse::decode(resp1.into_bytes()).unwrap();
         assert_eq!(resp1.segments.len(), 1, "expected 1 segment");
-        let offsets = SplinterRef::from_bytes(resp1.segments[0].graft.clone()).unwrap();
-        assert_eq!(offsets.cardinality(), 1);
-        assert!(offsets.contains(1));
+        let graft = SplinterRef::from_bytes(resp1.segments[0].graft.clone()).unwrap();
+        assert_eq!(graft.cardinality(), 1);
+        assert!(graft.contains(1));
 
         let resp2 = WritePagesResponse::decode(resp2.into_bytes()).unwrap();
         assert_eq!(resp2.segments.len(), 1, "expected 1 segment");
-        let offsets = SplinterRef::from_bytes(resp2.segments[0].graft.clone()).unwrap();
-        assert_eq!(offsets.cardinality(), 2);
-        assert!(offsets.contains(1));
-        assert!(offsets.contains(2));
+        let graft = SplinterRef::from_bytes(resp2.segments[0].graft.clone()).unwrap();
+        assert_eq!(graft.cardinality(), 2);
+        assert!(graft.contains(1));
+        assert!(graft.contains(2));
     }
 }
