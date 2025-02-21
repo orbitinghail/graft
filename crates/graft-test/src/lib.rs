@@ -210,12 +210,12 @@ pub struct PageTracker {
 }
 
 impl PageTracker {
-    pub fn upsert(&mut self, offset: PageIdx, hash: PageHash) -> Option<PageHash> {
-        self.pages.insert(offset, hash)
+    pub fn upsert(&mut self, pageidx: PageIdx, hash: PageHash) -> Option<PageHash> {
+        self.pages.insert(pageidx, hash)
     }
 
-    pub fn get_hash(&self, offset: PageIdx) -> Option<&PageHash> {
-        self.pages.get(&offset)
+    pub fn get_hash(&self, pageidx: PageIdx) -> Option<&PageHash> {
+        self.pages.get(&pageidx)
     }
 
     pub fn len(&self) -> usize {

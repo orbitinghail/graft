@@ -50,17 +50,17 @@ fn test_client_sync_sanity() {
     let subscription = handle2.subscribe_to_remote_changes();
 
     let page = Page::test_filled(0x42);
-    let offset = PageIdx::FIRST;
+    let pageidx = PageIdx::FIRST;
 
     // write and wait for replication multiple times
     for i in 1..10 {
         // write multiple times to the volume
         let mut writer = handle.writer().unwrap();
-        writer.write(offset, page.clone());
+        writer.write(pageidx, page.clone());
         writer.commit().unwrap();
 
         let mut writer = handle.writer().unwrap();
-        writer.write(offset, page.clone());
+        writer.write(pageidx, page.clone());
         writer.commit().unwrap();
 
         // wait for client 2 to receive the write
@@ -76,7 +76,7 @@ fn test_client_sync_sanity() {
         assert_eq!(snapshot.pages(), 1);
 
         let reader = handle2.reader_at(Some(snapshot));
-        let received = reader.read(offset).unwrap();
+        let received = reader.read(pageidx).unwrap();
         assert_eq!(received, page, "received page does not match written page");
     }
 

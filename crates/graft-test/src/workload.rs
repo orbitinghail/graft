@@ -252,15 +252,15 @@ fn workload_writer<R: Rng>(
         // open a reader
         let reader = handle.reader().or_into_ctx()?;
 
-        // randomly pick a page offset and a page value.
-        // select the next offset to ensure we don't pick the first page
-        let offset = PageIdx::test_random(&mut env.rng, 15).saturating_next();
+        // randomly pick a pageidx and a page value.
+        // select the next pageidx to ensure we don't pick the first page
+        let pageidx = PageIdx::test_random(&mut env.rng, 15).saturating_next();
         let new_page: Page = env.rng.random();
         let new_hash = PageHash::new(&new_page);
 
         let span = tracing::info_span!(
             "write_page",
-            offset=offset.to_string(),
+            pageidx=pageidx.to_string(),
             snapshot=?reader.snapshot(),
             ?new_hash,
             tracker_hash=field::Empty
@@ -269,10 +269,10 @@ fn workload_writer<R: Rng>(
 
         // load the tracker and the expected page hash
         let mut page_tracker = load_tracker(&reader, &env.cid).or_into_ctx()?;
-        let expected_hash = page_tracker.upsert(offset, new_hash.clone());
+        let expected_hash = page_tracker.upsert(pageidx, new_hash.clone());
 
-        // verify the offset is missing or present as expected
-        let page = reader.read(offset).or_into_ctx()?;
+        // verify the page is missing or present as expected
+        let page = reader.read(pageidx).or_into_ctx()?;
         let actual_hash = PageHash::new(&page);
 
         if let Some(expected_hash) = expected_hash {
@@ -280,7 +280,7 @@ fn workload_writer<R: Rng>(
                 expected_hash == actual_hash,
                 "page should have expected contents",
                 {
-                    "offset": offset,
+                    "pageidx": pageidx,
                     "cid": env.cid,
                     "snapshot": reader.snapshot(),
                     "expected": expected_hash,
@@ -292,7 +292,7 @@ fn workload_writer<R: Rng>(
                 page.is_empty(),
                 "page should be empty as it has never been written to",
                 {
-                    "offset": offset,
+                    "pageidx": pageidx,
                     "cid": env.cid,
                     "snapshot": reader.snapshot(),
                     "actual": actual_hash
@@ -307,7 +307,7 @@ fn workload_writer<R: Rng>(
         // write out the updated page tracker and the new page
         let mut writer = reader.upgrade();
         writer.write(PageIdx::FIRST, tracker_page);
-        writer.write(offset, new_page);
+        writer.write(pageidx, new_page);
 
         // commit the changes
         let pre_commit_remote = writer.snapshot().and_then(|s| s.remote());
@@ -398,29 +398,29 @@ fn workload_reader<R: Rng>(
         let page_tracker = load_tracker(&reader, &env.cid).or_into_ctx()?;
 
         // ensure all pages are either empty or have the expected hash
-        for offset in snapshot.pages().iter() {
-            if offset.is_first_page() {
+        for pageidx in snapshot.pages().iter() {
+            if pageidx.is_first_page() {
                 // skip the page tracker
                 continue;
             }
 
             let span = tracing::info_span!(
                 "read_page",
-                offset = offset.to_string(),
+                pageidx = pageidx.to_string(),
                 hash = field::Empty
             )
             .entered();
 
-            let page = reader.read(offset).or_into_ctx()?;
+            let page = reader.read(pageidx).or_into_ctx()?;
             let actual_hash = PageHash::new(&page);
             span.record("hash", actual_hash.to_string());
 
-            if let Some(expected_hash) = page_tracker.get_hash(offset) {
+            if let Some(expected_hash) = page_tracker.get_hash(pageidx) {
                 expect_always_or_unreachable!(
                     expected_hash == &actual_hash,
                     "page should have expected contents",
                     {
-                        "offset": offset,
+                        "pageidx": pageidx,
                         "cid": env.cid,
                         "snapshot": snapshot,
                         "expected": expected_hash,
@@ -432,7 +432,7 @@ fn workload_reader<R: Rng>(
                     page.is_empty(),
                     "page should be empty as it has never been written to",
                     {
-                        "offset": offset,
+                        "pageidx": pageidx,
                         "cid": env.cid,
                         "snapshot": snapshot,
                         "actual": actual_hash

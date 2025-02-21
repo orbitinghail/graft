@@ -224,35 +224,35 @@ impl TryFrom<Snapshot> for CommitMeta {
 
 #[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[repr(C)]
-pub struct OffsetsHeader {
+pub struct GraftHeader {
     sid: SegmentId,
     size: u32,
 }
 
 pub struct CommitBuilder {
     meta: CommitMeta,
-    offsets: BytesVec,
+    grafts: BytesVec,
 }
 
 impl CommitBuilder {
     pub fn new_with_capacity(meta: CommitMeta, capacity: usize) -> Self {
         Self {
             meta,
-            offsets: BytesVec::with_capacity(capacity),
+            grafts: BytesVec::with_capacity(capacity),
         }
     }
 
     pub fn write_graft(&mut self, sid: SegmentId, graft: Bytes) {
-        let header = OffsetsHeader {
+        let header = GraftHeader {
             sid,
             size: graft.len().try_into().expect("bug: splinter too large"),
         };
-        self.offsets.put_slice(header.as_bytes());
-        self.offsets.put(graft);
+        self.grafts.put_slice(header.as_bytes());
+        self.grafts.put(graft);
     }
 
     pub fn build(self) -> Commit<BytesVec> {
-        Commit { header: self.meta, offsets: self.offsets }
+        Commit { header: self.meta, grafts: self.grafts }
     }
 }
 
@@ -271,7 +271,7 @@ impl<A, S, V> From<ConvertError<A, S, V>> for CommitValidationErr {
 #[derive(Clone)]
 pub struct Commit<T> {
     header: CommitMeta,
-    offsets: T,
+    grafts: T,
 }
 
 impl<T> Commit<T> {
@@ -298,24 +298,24 @@ impl<T: Buf + Clone> Commit<T> {
         let header = data.copy_to_bytes(size_of::<CommitMeta>());
         let header = CommitMeta::try_read_from_bytes(&header)?;
 
-        Ok(Self { header, offsets: data })
+        Ok(Self { header, grafts: data })
     }
 
-    pub fn iter_offsets(&self) -> OffsetsIter<T> {
-        OffsetsIter { offsets: self.offsets.clone() }
+    pub fn iter_grafts(&self) -> GraftIter<T> {
+        GraftIter { grafts: self.grafts.clone() }
     }
 }
 
 impl Commit<BytesVec> {
     pub fn into_payload(self) -> PutPayload {
         let header = Bytes::copy_from_slice(self.header.as_bytes());
-        once(header).chain(self.offsets.into_iter()).collect()
+        once(header).chain(self.grafts.into_iter()).collect()
     }
 }
 
 #[derive(Debug, Error)]
-pub enum OffsetsValidationErr {
-    #[error("corrupt offsets header: {0}")]
+pub enum GraftValidationErr {
+    #[error("corrupt graft header: {0}")]
     CorruptHeader(#[from] ZerocopyErr),
 
     #[error("invalid commit size")]
@@ -325,7 +325,7 @@ pub enum OffsetsValidationErr {
     SplinterDecodeErr(#[from] splinter::DecodeErr),
 }
 
-impl<A, S, V> From<ConvertError<A, S, V>> for OffsetsValidationErr {
+impl<A, S, V> From<ConvertError<A, S, V>> for GraftValidationErr {
     #[inline]
     #[track_caller]
     fn from(value: ConvertError<A, S, V>) -> Self {
@@ -333,47 +333,47 @@ impl<A, S, V> From<ConvertError<A, S, V>> for OffsetsValidationErr {
     }
 }
 
-pub struct OffsetsIter<T> {
-    offsets: T,
+pub struct GraftIter<T> {
+    grafts: T,
 }
 
-impl<T: Buf> OffsetsIter<T> {
+impl<T: Buf> GraftIter<T> {
     fn next_inner(
         &mut self,
-    ) -> Result<Option<(SegmentId, SplinterRef<Bytes>)>, Culprit<OffsetsValidationErr>> {
-        if !self.offsets.has_remaining() {
+    ) -> Result<Option<(SegmentId, SplinterRef<Bytes>)>, Culprit<GraftValidationErr>> {
+        if !self.grafts.has_remaining() {
             return Ok(None);
         }
 
         // read the next header
-        if self.offsets.remaining() < std::mem::size_of::<OffsetsHeader>() {
+        if self.grafts.remaining() < std::mem::size_of::<GraftHeader>() {
             return Err(Culprit::new_with_note(
-                OffsetsValidationErr::InvalidSize,
-                "header size is larger than remaining offsets data",
+                GraftValidationErr::InvalidSize,
+                "header size is larger than remaining data",
             ));
         }
         let header = self
-            .offsets
-            .copy_to_bytes(std::mem::size_of::<OffsetsHeader>());
-        let header = OffsetsHeader::try_read_from_bytes(&header)?;
+            .grafts
+            .copy_to_bytes(std::mem::size_of::<GraftHeader>());
+        let header = GraftHeader::try_read_from_bytes(&header)?;
 
         // read the splinter
         let splinter_len = header.size as usize;
-        if self.offsets.remaining() < splinter_len {
+        if self.grafts.remaining() < splinter_len {
             return Err(Culprit::new_with_note(
-                OffsetsValidationErr::InvalidSize,
-                "splinter size is larger than remaining offsets data",
+                GraftValidationErr::InvalidSize,
+                "graft size is larger than remaining data",
             ));
         }
-        let splinter = self.offsets.copy_to_bytes(splinter_len);
+        let splinter = self.grafts.copy_to_bytes(splinter_len);
         let splinter = SplinterRef::from_bytes(splinter).or_into_ctx()?;
 
         Ok(Some((header.sid, splinter)))
     }
 }
 
-impl<T: Buf> Iterator for OffsetsIter<T> {
-    type Item = Result<(SegmentId, SplinterRef<Bytes>), Culprit<OffsetsValidationErr>>;
+impl<T: Buf> Iterator for GraftIter<T> {
+    type Item = Result<(SegmentId, SplinterRef<Bytes>), Culprit<GraftValidationErr>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_inner().transpose()

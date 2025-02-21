@@ -1,6 +1,5 @@
 Stack:
 
-- rename all instances of "offset" to "pageidx" and "offsets" to "graft" or "PageIdxs"
 - prefetcher
 
   - do we need an index tracking which PageIdxs we have for the latest snapshot? if not, how does the prefetcher avoid re-fetching PageIdxs we already have? or more generally, how can we avoid refetching efficiently?

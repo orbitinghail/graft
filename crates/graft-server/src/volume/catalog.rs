@@ -22,7 +22,7 @@ use tryiter::TryIteratorExt;
 use zerocopy::{ConvertError, IntoBytes, SizeError, TryFromBytes};
 
 use super::{
-    commit::{Commit, CommitMeta, OffsetsValidationErr},
+    commit::{Commit, CommitMeta, GraftValidationErr},
     kv::{CommitKey, SegmentKey},
 };
 
@@ -43,8 +43,8 @@ pub enum VolumeCatalogErr {
     #[error("splinter error")]
     SplinterErr(#[from] splinter::DecodeErr),
 
-    #[error("offsets validation error")]
-    OffsetsValidationErr(#[from] OffsetsValidationErr),
+    #[error("graft validation error")]
+    GraftValidationErr(#[from] GraftValidationErr),
 }
 
 impl<A, S, V> From<ConvertError<A, S, V>> for VolumeCatalogErr {
@@ -104,7 +104,7 @@ pub struct VolumeCatalog {
     /// maps kv::CommitKey to commit::CommitMeta
     volumes: Partition,
 
-    /// maps kv::SegmentKey to OffsetSet
+    /// maps kv::SegmentKey to Graft
     segments: Partition,
 }
 
@@ -216,7 +216,7 @@ impl VolumeCatalog {
     {
         let range = CommitKey::range(vid, lsns);
         let scan = self.segments.snapshot().range(range).rev();
-        SegmentsQueryIter { scan }
+        SegmentsIter { scan }
     }
 
     /// scan the catalog for commits in the specified Volume in order by lsn
@@ -250,7 +250,7 @@ impl VolumeCatalog {
 
                 // scan segments for this commit
                 let segments = self.segments.snapshot_at(seqno).prefix(key);
-                let segments = SegmentsQueryIter { scan: segments };
+                let segments = SegmentsIter { scan: segments };
 
                 Ok((meta, segments))
             })
@@ -276,10 +276,10 @@ impl VolumeCatalogBatch {
             commit.meta().as_bytes(),
         );
 
-        let mut iter = commit.iter_offsets();
-        while let Some((sid, offsets)) = iter.try_next().or_into_ctx()? {
+        let mut iter = commit.iter_grafts();
+        while let Some((sid, graft)) = iter.try_next().or_into_ctx()? {
             let key = SegmentKey::new(commit_key.clone(), sid);
-            self.batch.insert(&self.segments, key, offsets.into_inner());
+            self.batch.insert(&self.segments, key, graft.into_inner());
         }
 
         Ok(())
@@ -308,11 +308,11 @@ impl VolumeCatalogBatch {
     }
 }
 
-pub struct SegmentsQueryIter<I> {
+pub struct SegmentsIter<I> {
     scan: I,
 }
 
-impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> SegmentsQueryIter<I> {
+impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> SegmentsIter<I> {
     fn next_inner(
         &mut self,
         entry: Result<(Slice, Slice), lsm_tree::Error>,
@@ -325,9 +325,7 @@ impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> SegmentsQueryI
     }
 }
 
-impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> Iterator
-    for SegmentsQueryIter<I>
-{
+impl<I: Iterator<Item = Result<(Slice, Slice), lsm_tree::Error>>> Iterator for SegmentsIter<I> {
     type Item = Result<(SegmentKey, SplinterRef<Bytes>), Culprit<VolumeCatalogErr>>;
 
     fn next(&mut self) -> Option<Self::Item> {
