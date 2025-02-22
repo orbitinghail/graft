@@ -1,2 +1,2 @@
 FROM scratch
-COPY docker-compose.yml /docker-compose.yml
+COPY docker-compose.yml /opt/config/docker-compose.yml
