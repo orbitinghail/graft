@@ -1,5 +1,7 @@
 set unstable
 
+GIT_SHA := `git describe --abbrev=40 --always --dirty --match=nevermatch`
+
 # set this argument via: just instrumented=1 ...
 instrumented := ""
 BUILD_ARGS := instrumented && "--build-arg INSTRUMENTED=1" || ""
@@ -63,8 +65,8 @@ antithesis-prep: antithesis-config-image
 
 antithesis-run: antithesis-prep
     antithesis-cli run \
-        --name='graft' \
-        --description='my first antithesis test' \
+        --name='graft test workload' \
+        --description='git sha: {{GIT_SHA}}' \
         --tenant="${ANTITHESIS_TENANT}" \
         --username="${ANTITHESIS_USERNAME}" \
         --password="${ANTITHESIS_PASSWORD}" \
@@ -74,4 +76,4 @@ antithesis-run: antithesis-prep
         --image='{{TEST_WORKLOAD_ANTITHESIS_TAG}}' \
         --image='{{MINIO_ANTITHESIS_TAG}}' \
         --duration=120 \
-        --email='carl@f0a.org'
+        --email='antithesis-results@orbitinghail.dev'
