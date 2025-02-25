@@ -32,6 +32,7 @@ pub enum Expectation {
     Unreachable,
 }
 
+#[derive(Debug)]
 pub struct CatalogEntry {
     // the type of this expectation
     expectation: Expectation,

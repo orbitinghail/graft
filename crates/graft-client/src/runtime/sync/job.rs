@@ -6,7 +6,6 @@ use graft_core::{
     PageIdx, VolumeId,
 };
 use graft_proto::pagestore::v1::PageAtIdx;
-use serde::Serialize;
 use tryiter::TryIteratorExt;
 
 use crate::{runtime::storage::Storage, ClientErr, ClientPair};
@@ -52,7 +51,7 @@ impl PullJob {
     fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         let state = storage.volume_state(&self.vid).or_into_ctx()?;
 
-        // pull starting at the next LSN after the last pulled snapshot
+        // pull starting at the next LSN after the last remote LSN
         let start_lsn = state
             .snapshot()
             .and_then(|s| s.remote())
@@ -95,7 +94,7 @@ impl PullJob {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct PushJob {
     vid: VolumeId,
     cid: ClientId,
@@ -152,11 +151,7 @@ impl PushJob {
         precept::expect_always_or_unreachable!(
             num_commits == expected_num_commits,
             "push job always pushes all expected commits",
-            { "job": self }
-        );
-        debug_assert_eq!(
-            num_commits, expected_num_commits,
-            "push job always pushes all expected commits"
+            { "vid": self.vid, "cid": self.cid, "lsns": format!("{lsns:?}") }
         );
 
         // write the pages to the pagestore if there are any pages
@@ -197,7 +192,7 @@ impl PushJob {
 
         // complete the sync
         storage
-            .complete_sync_to_remote(&self.vid, snapshot, remote_snapshot, lsns)
+            .complete_sync_to_remote(&self.vid, remote_snapshot, lsns)
             .or_into_ctx()?;
 
         Ok(())

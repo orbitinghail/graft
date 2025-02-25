@@ -93,6 +93,7 @@ static_assertions::const_assert_eq!(PAGE_VALUE_EMPTY.len(), PAGE_VALUE_MARK_LEN)
 /// PageValue is used to read and write pages to storage.
 /// It uses the length of the page to determine if the page is available or
 /// pending.
+#[derive(Clone, Debug)]
 pub enum PageValue {
     Pending,
     Empty,

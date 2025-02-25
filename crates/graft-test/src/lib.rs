@@ -260,6 +260,7 @@ pub struct PageHash([u8; 32]);
 impl PageHash {
     pub fn new(page: &Page) -> Self {
         if page.is_empty() {
+            // bs58 encodes to `11111111111111111111111111111111`
             Self([0; 32])
         } else {
             Self(blake3::hash(page.as_ref()).into())

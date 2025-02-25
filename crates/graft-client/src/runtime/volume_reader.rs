@@ -8,7 +8,6 @@ use graft_core::{
     PageIdx, VolumeId,
 };
 use splinter::Splinter;
-use tryiter::TryIteratorExt;
 
 use crate::{oracle::Oracle, ClientErr, ClientPair};
 
@@ -82,8 +81,8 @@ impl VolumeRead for VolumeReader {
                     oracle.observe_cache_hit(pageidx);
                     Ok(EMPTY_PAGE)
                 }
-                (local_lsn, PageValue::Pending) => {
-                    if let Some(remote_lsn) = snapshot.remote() {
+                (_, PageValue::Pending) => {
+                    if let Some((remote_lsn, local_lsn)) = snapshot.remote_mapping().splat() {
                         fetch_page(
                             &self.clients,
                             &self.storage,
@@ -124,27 +123,32 @@ fn fetch_page<O: Oracle>(
     .entered();
 
     // predict future page fetches using the oracle, then eliminate pages we
-    // have already fetched.
+    // have already fetched while building our update hashmap.
     let mut graft = Splinter::default();
-    let pageidxs = once(pageidx).chain(oracle.predict_next(pageidx)).map(Ok);
-    let mut existing_iter = storage.query_pages(vid, local_lsn, pageidxs);
-    while let Some((pageidx, page)) = existing_iter.try_next().or_into_ctx()? {
-        if let None | Some(PageValue::Pending) = page {
-            graft.insert(pageidx.to_u32())
+    let mut pages = HashMap::new();
+    for pageidx in once(pageidx).chain(oracle.predict_next(pageidx)) {
+        let (lsn, page) = storage.read(vid, local_lsn, pageidx).or_into_ctx()?;
+        if matches!(page, PageValue::Pending) {
+            graft.insert(pageidx.to_u32());
+            pages.insert(pageidx, (lsn, PageValue::Empty));
         }
     }
 
-    // process client results and reshape into a hashmap
-    let pages: HashMap<PageIdx, Page> = clients
+    // process client results and update the hashmap
+    let response = clients
         .pagestore()
-        .read_pages(vid, remote_lsn, graft.serialize_to_bytes())?
-        .into_iter()
-        .map(|p| Ok((p.pageidx().or_into_ctx()?, p.page().or_into_ctx()?)))
-        .collect::<Result<_, ClientErr>>()?;
+        .read_pages(vid, remote_lsn, graft.serialize_to_bytes())?;
+    for page in response {
+        if let Some(entry) = pages.get_mut(&page.pageidx().or_into_ctx()?) {
+            entry.1 = page.page().or_into_ctx()?.into();
+        }
+    }
 
-    storage
-        .receive_pages(vid, local_lsn, graft, &pages)
-        .or_into_ctx()?;
+    // update local storage with fetched pages
+    storage.receive_pages(vid, &pages).or_into_ctx()?;
 
-    Ok(pages.get(&pageidx).cloned().unwrap_or(EMPTY_PAGE))
+    // return the requested page
+    Ok(pages
+        .remove(&pageidx)
+        .map_or(EMPTY_PAGE, |(_, p)| p.expect("bug: page not in update set")))
 }

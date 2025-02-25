@@ -22,7 +22,7 @@ impl Dispatch for TestDispatch {
                 );
                 if !passed {
                     tracing::error!(
-                        details = serde_json::to_string(&details).unwrap(),
+                        details = format!("{}", details),
                         location = ?entry.location(),
                         module = ?entry.module(),
                         function = ?entry.function(),

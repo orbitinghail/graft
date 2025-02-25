@@ -15,7 +15,7 @@ use fjall::{KvSeparationOptions, PartitionCreateOptions, Slice};
 use graft_core::{
     byte_unit::ByteUnit,
     lsn::{LSNRangeExt, LSN},
-    page::{Page, PageSizeErr},
+    page::PageSizeErr,
     page_count::PageCount,
     page_idx::ConvertToPageIdxErr,
     zerocopy_ext::ZerocopyErr,
@@ -24,13 +24,13 @@ use graft_core::{
 use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
 use parking_lot::{Mutex, MutexGuard};
-use snapshot::Snapshot;
+use snapshot::{RemoteMapping, Snapshot};
 use splinter::{DecodeErr, Splinter, SplinterRef};
 use tracing::field;
 use tryiter::{TryIterator, TryIteratorExt};
 use volume_state::{
     SyncDirection, VolumeConfig, VolumeQueryIter, VolumeState, VolumeStateKey, VolumeStateTag,
-    VolumeStatus, Watermarks,
+    VolumeStatus,
 };
 use zerocopy::IntoBytes;
 
@@ -281,7 +281,7 @@ impl Storage {
     /// Notably, this function will not return a page at an earlier LSN that is
     /// shadowed by this LSN.
     pub fn query_pages<'a, I>(
-        &'a self,
+        &self,
         vid: &'a VolumeId,
         lsn: LSN,
         pages: I,
@@ -289,9 +289,10 @@ impl Storage {
     where
         I: TryIterator<Ok = PageIdx, Err = Culprit<StorageErr>> + 'a,
     {
+        let snapshot = self.pages.snapshot();
         pages.map_ok(move |pageidx| {
             let key = PageKey::new(vid.clone(), pageidx, lsn);
-            if let Some(page) = self.pages.get(key)? {
+            if let Some(page) = snapshot.get(key)? {
                 Ok((pageidx, Some(PageValue::try_from(page).or_into_ctx()?)))
             } else {
                 Ok((pageidx, None))
@@ -380,7 +381,14 @@ impl Storage {
 
         // persist the new volume snapshot
         let snapshot_key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot);
-        let snapshot = Snapshot::new(commit_lsn, latest.and_then(|l| l.remote()), pages);
+        let snapshot = Snapshot::new(
+            commit_lsn,
+            // don't change the remote mapping during a local commit
+            latest
+                .map(|l| l.remote_mapping().clone())
+                .unwrap_or_default(),
+            pages,
+        );
         batch.insert(&self.volumes, snapshot_key, snapshot.as_bytes());
 
         // commit the changes
@@ -463,24 +471,22 @@ impl Storage {
 
         // compute the next local lsn
         let commit_lsn = snapshot.map_or(LSN::FIRST, |s| s.local().next().expect("lsn overflow"));
+        let remote_mapping = RemoteMapping::new(remote_lsn, commit_lsn);
 
         // persist the new volume snapshot
-        let new_snapshot = Snapshot::new(commit_lsn, Some(remote_lsn), remote_pages);
+        let new_snapshot = Snapshot::new(commit_lsn, remote_mapping, remote_pages);
         batch.insert(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
             new_snapshot.as_bytes(),
         );
 
-        // fast forward the sync watermarks to ensure we don't roundtrip this
+        // fast forward the pending sync watermark to ensure we don't roundtrip this
         // commit back to the server
         batch.insert(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
-            watermarks
-                .clone()
-                .with_last_sync(commit_lsn)
-                .with_pending_sync(commit_lsn),
+            watermarks.clone().with_pending_sync(Some(commit_lsn)),
         );
 
         // mark changed pages
@@ -502,25 +508,17 @@ impl Storage {
         Ok(())
     }
 
-    /// Write a set of pages to storage at a particular vid/lsn
-    /// If a page index appears in the Graft but not in the pages vec, it will be assumed to be empty
+    /// Write a set of PageValue's to storage.
     pub fn receive_pages(
         &self,
         vid: &VolumeId,
-        lsn: LSN,
-        graft: Splinter,
-        pages: &HashMap<PageIdx, Page>,
+        pages: &HashMap<PageIdx, (LSN, PageValue)>,
     ) -> Result<()> {
-        let mut key = PageKey::new(vid.clone(), PageIdx::FIRST, lsn);
         let mut batch = self.keyspace.batch();
-        for idx in graft.iter() {
-            let pageidx = PageIdx::try_from(idx)?;
-            key = key.with_index(pageidx);
-            if let Some(page) = pages.get(&pageidx) {
-                batch.insert(&self.pages, key.as_ref(), PageValue::from(page.clone()));
-            } else {
-                batch.insert(&self.pages, key.as_ref(), PageValue::Empty);
-            }
+        for (&pageidx, (lsn, pagevalue)) in pages {
+            let key = PageKey::new(vid.clone(), pageidx, *lsn);
+            batch.insert(&self.pages, key.as_ref(), pagevalue.clone());
+            tracing::trace!("caching page {pageidx} into lsn {lsn} with value {pagevalue:?}");
         }
         Ok(batch.commit()?)
     }
@@ -551,10 +549,6 @@ impl Storage {
             "the sync push job only runs when we have local commits to push",
             { "vid": vid, "state": state }
         );
-        debug_assert!(
-            state.has_pending_commits(),
-            "the sync push job only runs when we have local commits to push"
-        );
 
         // resolve the snapshot; we can expect it to be available because this
         // function should only run when we have local commits to sync
@@ -569,22 +563,30 @@ impl Storage {
                 .watermarks()
                 .pending_sync()
                 .expect("pending_sync must be set when volume is syncing");
-            tracing::trace!(?vid, ?pending_sync, "resuming previously interrupted sync");
+            tracing::trace!(
+                ?vid,
+                ?pending_sync,
+                ?snapshot,
+                "resuming previously interrupted sync"
+            );
             precept::expect_reachable!("resuming previously interrupted sync", state);
             pending_sync
         } else {
             // update pending_sync to the local LSN
             self.volumes.insert(
                 VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
-                state.watermarks().clone().with_pending_sync(local_lsn),
+                state
+                    .watermarks()
+                    .clone()
+                    .with_pending_sync(Some(local_lsn)),
             )?;
             local_lsn
         };
 
         // calculate the LSN range of commits to sync
         let start_lsn = state
-            .watermarks()
-            .last_sync()
+            .snapshot()
+            .and_then(|s| s.remote_local())
             .map_or(LSN::FIRST, |s| s.next().expect("LSN overflow"));
         let lsns = start_lsn..=end_lsn;
 
@@ -617,13 +619,15 @@ impl Storage {
         let _permit = self.commit_lock.lock();
         let mut batch = self.keyspace.batch();
 
-        // rollback the pending_sync watermark
-        let key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks);
-        let watermarks = match self.volumes.get(&key)? {
-            Some(watermarks) => Watermarks::from_bytes(&watermarks)?,
-            None => Watermarks::default(),
-        };
-        batch.insert(&self.volumes, key, watermarks.rollback_pending_sync());
+        // rollback the pending_sync watermark to the last synced local LSN
+        let state = self.volume_state(vid)?;
+        let last_sync = state.snapshot().and_then(|s| s.remote_local());
+        let watermarks = state.watermarks().clone().with_pending_sync(last_sync);
+        batch.insert(
+            &self.volumes,
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
+            watermarks,
+        );
 
         // update the volume status
         self.set_volume_status(&mut batch, vid, VolumeStatus::RejectedCommit);
@@ -636,7 +640,6 @@ impl Storage {
     pub fn complete_sync_to_remote(
         &self,
         vid: &VolumeId,
-        sync_start_snapshot: Snapshot,
         remote_snapshot: graft_proto::Snapshot,
         synced_lsns: RangeInclusive<LSN>,
     ) -> Result<()> {
@@ -653,10 +656,10 @@ impl Storage {
         let local_lsn = snapshot.local();
         let pages = snapshot.pages();
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
+        let remote_local_lsn = synced_lsns.try_end().expect("lsn range is RangeInclusive");
 
         tracing::trace!(
-            "completing sync to remote: pushed local LSN {} to remote LSN {remote_lsn} for volume {state:?}",
-            sync_start_snapshot.local(),
+            "completing sync to remote: pushed LSNs {synced_lsns:?} to remote LSN {remote_lsn} for volume {state:?}",
         );
 
         // check invariants
@@ -666,22 +669,16 @@ impl Storage {
         );
         assert_eq!(
             state.watermarks().pending_sync(),
-            Some(synced_lsns.try_end().expect("lsn range is RangeInclusive")),
+            Some(remote_local_lsn),
             "the pending_sync watermark doesn't match the synced LSN range"
         );
 
-        // persist the updated remote LSN to the snapshot
+        // persist the new remote mapping to the snapshot
+        let remote_mapping = RemoteMapping::new(remote_lsn, remote_local_lsn);
         batch.insert(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
-            Snapshot::new(local_lsn, Some(remote_lsn), pages),
-        );
-
-        // commit the pending sync
-        batch.insert(
-            &self.volumes,
-            VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
-            state.watermarks().clone().commit_pending_sync(),
+            Snapshot::new(local_lsn, remote_mapping, pages),
         );
 
         // if the status is interrupted push, clear the status
@@ -709,7 +706,7 @@ impl Storage {
         &self,
         vid: &VolumeId,
         remote_snapshot: graft_proto::Snapshot,
-        changed: SplinterRef<Bytes>,
+        remote_graft: SplinterRef<Bytes>,
     ) -> Result<()> {
         // acquire the commit lock and start a new batch
         let permit = self.commit_lock.lock();
@@ -718,70 +715,89 @@ impl Storage {
             "reset_volume_to_remote",
             ?vid,
             local_lsn = field::Empty,
-            target_lsn = field::Empty,
+            reset_lsn = field::Empty,
+            remote_lsn = field::Empty,
+            commit_lsn = field::Empty,
+            result = field::Empty,
         )
         .entered();
 
         // retrieve the current volume state
         let state = self.volume_state(vid)?;
         let snapshot = state.snapshot();
+
+        // the last local lsn
         let local_lsn = snapshot.map(|s| s.local());
-        let target_lsn = state.watermarks().last_sync();
+        // the local lsn we are resetting to
+        let reset_lsn = snapshot.and_then(|s| s.remote_local());
+        // the remote lsn to receive
+        let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
+        // the new local lsn to commit the remote into
+        let commit_lsn = local_lsn.map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
 
         span.record("local_lsn", format!("{:?}", local_lsn));
-        span.record("target_lsn", format!("{:?}", target_lsn));
+        span.record("reset_lsn", format!("{:?}", reset_lsn));
+        span.record("remote_lsn", format!("{:?}", remote_lsn));
+        span.record("commit_lsn", format!("{:?}", commit_lsn));
 
-        if target_lsn == local_lsn {
+        if local_lsn == reset_lsn {
+            // if the local and remote LSNs are the same, we can just receive the
+            // remote commit normally
+            assert!(
+                !state.has_pending_commits(),
+                "bug: local lsn == reset lsn but state has pending commits"
+            );
+            span.record("result", format!("{:?}", snapshot));
             drop(span);
-
-            // no need to reset, we can just receive the remote commit
-            return self.receive_remote_commit_holding_lock(permit, vid, remote_snapshot, changed);
+            return self.receive_remote_commit_holding_lock(
+                permit,
+                vid,
+                remote_snapshot,
+                remote_graft,
+            );
         }
 
-        // invariants
+        // ensure we never reset into the future
         assert!(
-            target_lsn < local_lsn,
+            reset_lsn < local_lsn,
             "refusing to reset to a LSN larger than the current LSN; local={:?}, target={:?}",
             local_lsn,
-            target_lsn
+            reset_lsn
         );
 
         let mut batch = self.keyspace.batch();
 
-        // reset the snapshot
-        if let Some(target_lsn) = target_lsn {
-            batch.insert(
-                &self.volumes,
-                VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
-                Snapshot::new(
-                    target_lsn,
-                    Some(remote_snapshot.lsn().expect("invalid LSN")),
-                    remote_snapshot.pages(),
-                ),
-            );
-        } else {
-            batch.remove(
-                &self.volumes,
-                VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
-            );
-        }
+        // persist the new volume snapshot
+        let remote_mapping = RemoteMapping::new(remote_lsn, commit_lsn);
+        let new_snapshot = Snapshot::new(commit_lsn, remote_mapping, remote_snapshot.pages());
+        batch.insert(
+            &self.volumes,
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
+            new_snapshot.as_bytes(),
+        );
 
-        // clear the status
+        // clear the volume status
         batch.remove(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Status),
         );
 
-        // rollback the pending_sync watermark
+        // update the pending_sync watermark to ensure we don't round trip the
+        // new commit back to the server
         batch.insert(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
-            state.watermarks().clone().rollback_pending_sync(),
+            state
+                .watermarks()
+                .clone()
+                .with_pending_sync(Some(commit_lsn)),
         );
 
         // remove all pending commits
         let mut commits = self.commits.snapshot().prefix(vid);
         while let Some((key, graft)) = commits.try_next().or_into_ctx()? {
+            batch.remove(&self.commits, key.clone());
+
             let key = CommitKey::ref_from_bytes(&key)?;
             assert_eq!(
                 key.vid(),
@@ -789,10 +805,9 @@ impl Storage {
                 "refusing to remove commit from another volume"
             );
             assert!(
-                Some(key.lsn()) > target_lsn,
-                "invariant violation: no commits should exist at or below target_lsn"
+                Some(key.lsn()) > reset_lsn,
+                "invariant violation: no commits should exist at or below reset_lsn"
             );
-            batch.remove(&self.commits, key.as_ref());
 
             // remove the commit's changed PageIdxs
             let graft = SplinterRef::from_bytes(graft).or_into_ctx()?;
@@ -804,15 +819,24 @@ impl Storage {
             }
         }
 
+        // mark remotely changed pages
+        let mut key = PageKey::new(vid.clone(), PageIdx::FIRST, commit_lsn);
+        let pending = Bytes::from(PageValue::Pending);
+        for pageidx in remote_graft.iter() {
+            key = key.with_index(pageidx.try_into()?);
+            batch.insert(&self.pages, key.as_ref(), pending.as_ref());
+        }
+
         // commit the changes
         batch.commit()?;
 
-        // log the reset
-        drop(span);
+        // notify listeners of the new remote commit
+        self.remote_changeset.mark_changed(vid);
 
-        // now that we have reset to the earlier volume state, we can receive
-        // the remote commit
-        self.receive_remote_commit_holding_lock(permit, vid, remote_snapshot, changed)
+        // log the result
+        span.record("result", new_snapshot.to_string());
+
+        Ok(())
     }
 }
 

@@ -221,11 +221,7 @@ impl Display for VolumeStatus {
 )]
 #[repr(C)]
 pub struct Watermarks {
-    /// last_sync is the last local LSN that successfully synced with the server
-    last_sync: MaybeLSN,
-
     /// pending_sync is a local LSN that is in the process of syncing to the server
-    /// when pending_sync > last_sync it means that we are actively syncing (last_sync..=pending_sync)
     pending_sync: MaybeLSN,
 
     /// checkpoint is the last local LSN that represents a volume checkpoint
@@ -234,7 +230,6 @@ pub struct Watermarks {
 
 impl Watermarks {
     pub const DEFAULT: Self = Self {
-        last_sync: MaybeLSN::EMPTY,
         pending_sync: MaybeLSN::EMPTY,
         checkpoint: MaybeLSN::EMPTY,
     };
@@ -245,54 +240,13 @@ impl Watermarks {
     }
 
     #[inline]
-    pub fn last_sync(&self) -> Option<LSN> {
-        self.last_sync.into()
-    }
-
-    #[inline]
-    pub fn with_last_sync(self, lsn: LSN) -> Self {
-        Self { last_sync: MaybeLSN::some(lsn), ..self }
-    }
-
-    #[inline]
     pub fn pending_sync(&self) -> Option<LSN> {
         self.pending_sync.into()
     }
 
     #[inline]
-    pub fn with_pending_sync(self, lsn: LSN) -> Self {
-        Self {
-            pending_sync: MaybeLSN::some(lsn),
-            ..self
-        }
-    }
-
-    #[inline]
-    pub fn commit_pending_sync(self) -> Self {
-        assert!(
-            self.last_sync() <= self.pending_sync(),
-            "refusing to rollback pending sync during commit"
-        );
-        Self { last_sync: self.pending_sync, ..self }
-    }
-
-    #[inline]
-    pub fn rollback_pending_sync(self) -> Self {
-        assert!(
-            self.last_sync() <= self.pending_sync(),
-            "expected pending sync to be ahead of or equal to last sync"
-        );
-        Self { pending_sync: self.last_sync, ..self }
-    }
-
-    pub fn is_syncing(&self) -> bool {
-        let last_sync = self.last_sync();
-        let pending_sync = self.pending_sync();
-        debug_assert!(
-            last_sync <= pending_sync,
-            "invariant violation: last_sync should never be larger than pending_sync"
-        );
-        last_sync < pending_sync
+    pub fn with_pending_sync(self, lsn: Option<LSN>) -> Self {
+        Self { pending_sync: lsn.into(), ..self }
     }
 
     #[inline]
@@ -367,11 +321,17 @@ impl VolumeState {
     }
 
     pub fn is_syncing(&self) -> bool {
-        self.watermarks().is_syncing()
+        let last_sync = self.snapshot().and_then(|s| s.remote_local());
+        let pending_sync = self.watermarks().pending_sync();
+        debug_assert!(
+            last_sync <= pending_sync,
+            "invariant violation: last_sync should never be larger than pending_sync"
+        );
+        last_sync < pending_sync
     }
 
     pub fn has_pending_commits(&self) -> bool {
-        let last_sync = self.watermarks().last_sync();
+        let last_sync = self.snapshot().and_then(|s| s.remote_local());
         let local = self.snapshot().map(|s| s.local());
         debug_assert!(
             last_sync <= local,

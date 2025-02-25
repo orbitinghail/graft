@@ -284,7 +284,7 @@ fn workload_writer<R: Rng>(
                 {
                     "pageidx": pageidx,
                     "cid": env.cid,
-                    "snapshot": reader.snapshot(),
+                    "snapshot": format!("{:?}", reader.snapshot()),
                     "expected": expected_hash,
                     "actual": actual_hash
                 }

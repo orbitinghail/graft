@@ -311,6 +311,15 @@ impl From<Option<LSN>> for MaybeLSN {
     }
 }
 
+impl Display for MaybeLSN {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(lsn) => write!(f, "{}", lsn),
+            None => write!(f, "_"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
