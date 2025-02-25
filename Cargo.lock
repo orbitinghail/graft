@@ -521,6 +521,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "circular-buffer"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4dacb91f972298e70fc507a2ffcaf1545807f1a36da586fb846646030adc542f"
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1132,6 +1138,7 @@ name = "graft-client"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "circular-buffer",
  "clap",
  "crossbeam",
  "culprit",

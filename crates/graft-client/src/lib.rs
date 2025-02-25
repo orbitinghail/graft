@@ -3,13 +3,12 @@
 mod error;
 mod metastore;
 mod net;
+pub mod oracle;
 mod pagestore;
 mod pair;
 
 pub mod runtime {
-    pub mod fetcher;
     pub mod runtime;
-    mod shared;
     pub mod storage;
     pub mod sync;
     pub mod volume_handle;

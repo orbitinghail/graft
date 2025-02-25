@@ -8,6 +8,7 @@ lto = true
 codegen-units = 1
 
 [workspace.dependencies]
+circular-buffer = "1.0.0"
 glob = "0.3"
 anyhow = "1.0"
 assert_matches = "1.5"

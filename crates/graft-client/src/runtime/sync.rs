@@ -9,7 +9,7 @@ use std::{
 use control::{SyncControl, SyncRpc};
 use crossbeam::channel::{bounded, select_biased, Receiver, Sender, TrySendError};
 use culprit::{Culprit, Result, ResultExt};
-use graft_core::VolumeId;
+use graft_core::{ClientId, VolumeId};
 use job::Job;
 use parking_lot::RwLock;
 use thiserror::Error;
@@ -17,13 +17,10 @@ use tryiter::{TryIterator, TryIteratorExt};
 
 use crate::{ClientErr, ClientPair};
 
-use super::{
-    shared::Shared,
-    storage::{
-        changeset::SetSubscriber,
-        volume_state::{SyncDirection, VolumeStatus},
-        StorageErr,
-    },
+use super::storage::{
+    changeset::SetSubscriber,
+    volume_state::{SyncDirection, VolumeStatus},
+    Storage, StorageErr,
 };
 
 pub mod control;
@@ -69,8 +66,9 @@ impl SyncTaskHandle {
 
     pub fn spawn(
         &self,
-        shared: Shared,
-        clients: ClientPair,
+        cid: ClientId,
+        storage: Arc<Storage>,
+        clients: Arc<ClientPair>,
         refresh_interval: Duration,
         control_channel_size: usize,
         autosync: bool,
@@ -81,10 +79,11 @@ impl SyncTaskHandle {
         }
 
         let (control_tx, control_rx) = bounded(control_channel_size);
-        let commits = shared.storage().local_changeset().subscribe_all();
+        let commits = storage.local_changeset().subscribe_all();
 
         let task = SyncTask {
-            shared,
+            cid,
+            storage,
             clients,
             refresh_interval,
             commits,
@@ -173,8 +172,9 @@ impl From<StorageErr> for SyncTaskErr {
 /// A SyncTask is a background task which continuously syncs volumes to and from
 /// a Graft service.
 pub struct SyncTask {
-    shared: Shared,
-    clients: ClientPair,
+    cid: ClientId,
+    storage: Arc<Storage>,
+    clients: Arc<ClientPair>,
     refresh_interval: Duration,
     commits: SetSubscriber<VolumeId>,
     control: Receiver<SyncControl>,
@@ -269,17 +269,17 @@ impl SyncTask {
     /// If dir is SyncDirection::Both, this function will push before it pulls
     fn sync_volume(&mut self, vid: VolumeId, dir: SyncDirection) -> Result<(), ClientErr> {
         if dir.matches(SyncDirection::Push) {
-            let state = self.shared.storage().volume_state(&vid).or_into_ctx()?;
+            let state = self.storage.volume_state(&vid).or_into_ctx()?;
             if state.has_pending_commits() {
-                Job::push(vid.clone(), self.shared.cid().clone())
-                    .run(self.shared.storage(), &self.clients)
+                Job::push(vid.clone(), self.cid.clone())
+                    .run(&self.storage, &self.clients)
                     .or_into_culprit("error while pushing volume")?;
             }
         }
 
         if dir.matches(SyncDirection::Pull) {
             Job::pull(vid)
-                .run(self.shared.storage(), &self.clients)
+                .run(&self.storage, &self.clients)
                 .or_into_culprit("error while pulling volume")?;
         }
 
@@ -290,7 +290,7 @@ impl SyncTask {
     /// be rolled back and the volume status to be cleared.
     fn reset_volume_to_remote(&mut self, vid: VolumeId) -> Result<(), ClientErr> {
         Job::pull_and_reset(vid)
-            .run(self.shared.storage(), &self.clients)
+            .run(&self.storage, &self.clients)
             .or_into_culprit("error while resetting volume to the remote")
     }
 
@@ -301,8 +301,7 @@ impl SyncTask {
 
         let mut jobs = self.jobs(SyncDirection::Both, None);
         while let Some(job) = jobs.try_next()? {
-            job.run(self.shared.storage(), &self.clients)
-                .or_into_ctx()?;
+            job.run(&self.storage, &self.clients).or_into_ctx()?;
         }
         Ok(())
     }
@@ -314,8 +313,7 @@ impl SyncTask {
 
         let mut jobs = self.jobs(SyncDirection::Push, Some(vids));
         while let Some(job) = jobs.try_next()? {
-            job.run(self.shared.storage(), &self.clients)
-                .or_into_ctx()?;
+            job.run(&self.storage, &self.clients).or_into_ctx()?;
         }
         Ok(())
     }
@@ -325,8 +323,7 @@ impl SyncTask {
         sync: SyncDirection,
         vids: Option<HashSet<VolumeId>>,
     ) -> impl TryIterator<Ok = Job, Err = Culprit<SyncTaskErr>> + '_ {
-        self.shared
-            .storage()
+        self.storage
             .query_volumes(sync, vids)
             .map_err(|err| err.map_ctx(SyncTaskErr::from))
             .try_filter_map(move |state| {
@@ -340,10 +337,7 @@ impl SyncTask {
                 let can_pull = config.sync().matches(SyncDirection::Pull);
                 let has_pending_commits = state.has_pending_commits();
                 if can_push && has_pending_commits && sync.matches(SyncDirection::Push) {
-                    Ok(Some(Job::push(
-                        state.vid().clone(),
-                        self.shared.cid().clone(),
-                    )))
+                    Ok(Some(Job::push(state.vid().clone(), self.cid.clone())))
                 } else if can_pull && sync.matches(SyncDirection::Pull) && !state.is_syncing() {
                     Ok(Some(Job::pull(state.vid().clone())))
                 } else {

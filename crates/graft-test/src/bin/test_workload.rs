@@ -5,7 +5,7 @@ use config::Config;
 use culprit::{Culprit, ResultExt};
 use file_lock::{FileLock, FileOptions};
 use graft_client::{
-    runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Storage},
+    runtime::{runtime::Runtime, storage::Storage},
     ClientPair, MetastoreClient, NetClient, PagestoreClient,
 };
 use graft_core::gid::ClientId;
@@ -97,9 +97,9 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
 
     let storage_path = temp_dir().join("storage").join(cid.pretty());
     let storage = Storage::open(storage_path).or_into_ctx()?;
-    let runtime = Runtime::new(cid.clone(), NetFetcher::new(clients.clone()), storage);
+    let runtime = Runtime::new(cid.clone(), clients, storage);
     runtime
-        .start_sync_task(clients, Duration::from_secs(1), 8, true)
+        .start_sync_task(Duration::from_secs(1), 8, true)
         .or_into_ctx()?;
 
     precept::setup_complete!({ "workload": workload });

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use graft_core::page_idx::ConvertToPageIdxErr;
+use graft_core::{page::PageSizeErr, page_idx::ConvertToPageIdxErr};
 use graft_proto::common::v1::{GraftErr, GraftErrCode};
 use thiserror::Error;
 
@@ -28,6 +28,9 @@ pub enum ClientErr {
 
     #[error("invalid page index")]
     ConvertToPageIdxErr(#[from] ConvertToPageIdxErr),
+
+    #[error("invalid page size")]
+    PageSizeErr(#[from] PageSizeErr),
 }
 
 impl From<http::Error> for ClientErr {

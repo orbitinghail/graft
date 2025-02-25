@@ -1,7 +1,7 @@
 use std::{env::temp_dir, ffi::c_void, time::Duration};
 
 use graft_client::{
-    runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Storage},
+    runtime::{runtime::Runtime, storage::Storage},
     ClientPair, MetastoreClient, NetClient, PagestoreClient,
 };
 use graft_core::ClientId;
@@ -45,10 +45,10 @@ pub unsafe extern "C" fn sqlite3_graft_init(
 
     let storage_path = root_dir.join(cid.pretty());
     let storage = Storage::open(&storage_path).unwrap();
-    let runtime = Runtime::new(cid, NetFetcher::new(clients.clone()), storage);
+    let runtime = Runtime::new(cid, clients, storage);
 
     runtime
-        .start_sync_task(clients, Duration::from_secs(1), 8, autosync)
+        .start_sync_task(Duration::from_secs(1), 8, autosync)
         .unwrap();
 
     let vfs = GraftVfs::new(runtime);

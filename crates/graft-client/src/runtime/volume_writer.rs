@@ -1,7 +1,7 @@
 use culprit::{Result, ResultExt};
 use graft_core::{page::Page, page_count::PageCount, PageIdx, VolumeId};
 
-use crate::ClientErr;
+use crate::{oracle::Oracle, ClientErr};
 
 use super::{
     storage::{memtable::Memtable, snapshot::Snapshot},
@@ -59,11 +59,12 @@ impl VolumeRead for VolumeWriter {
     }
 
     /// Read a page; supports read your own writes (RYOW)
-    fn read(&self, pageidx: PageIdx) -> Result<Page, ClientErr> {
+    fn read<O: Oracle>(&self, oracle: &mut O, pageidx: PageIdx) -> Result<Page, ClientErr> {
         if let Some(page) = self.memtable.get(pageidx) {
+            oracle.observe_cache_hit(pageidx);
             return Ok(page.clone());
         }
-        self.reader.read(pageidx)
+        self.reader.read(oracle, pageidx)
     }
 }
 
@@ -81,20 +82,19 @@ impl VolumeWrite for VolumeWriter {
     }
 
     fn commit(self) -> Result<VolumeReader, ClientErr> {
-        let (vid, snapshot, shared) = self.reader.into_parts();
+        let (vid, snapshot, clients, storage) = self.reader.into_parts();
 
         // we have nothing to commit if the page count is equal to the snapshot
         // pagecount *and* the memtable is empty
         let snapshot_pagecount = snapshot.as_ref().map_or(PageCount::ZERO, |s| s.pages());
         let memtable_empty = self.memtable.is_empty();
         if self.pages == snapshot_pagecount && memtable_empty {
-            return Ok(VolumeReader::new(vid, snapshot, shared));
+            return Ok(VolumeReader::new(vid, snapshot, clients, storage));
         }
 
-        let snapshot = shared
-            .storage()
+        let snapshot = storage
             .commit(&vid, snapshot, self.pages, self.memtable)
             .or_into_ctx()?;
-        Ok(VolumeReader::new(vid, Some(snapshot), shared))
+        Ok(VolumeReader::new(vid, Some(snapshot), clients, storage))
     }
 }

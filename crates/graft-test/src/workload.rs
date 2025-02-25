@@ -7,6 +7,7 @@ use config::ConfigError;
 use crossbeam::channel::RecvTimeoutError;
 use culprit::{Culprit, ResultExt};
 use graft_client::{
+    oracle::{LeapOracle, Oracle},
     runtime::{
         runtime::Runtime,
         storage::{
@@ -187,6 +188,7 @@ fn recover_and_sync_volume(handle: &VolumeHandle) -> Result<(), Culprit<Workload
 }
 
 fn load_tracker(
+    oracle: &mut impl Oracle,
     reader: &VolumeReader,
     cid: &ClientId,
 ) -> Result<PageTracker, Culprit<WorkloadErr>> {
@@ -195,7 +197,7 @@ fn load_tracker(
 
     // load the page tracker from the volume, if the volume is empty this will
     // initialize a new page tracker
-    let first_page = reader.read(PageIdx::FIRST).or_into_ctx()?;
+    let first_page = reader.read(oracle, PageIdx::FIRST).or_into_ctx()?;
     let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
 
     // record the hash of the page tracker for debugging
@@ -222,6 +224,7 @@ fn workload_writer<R: Rng>(
     vid: &VolumeId,
     interval: Duration,
 ) -> Result<(), Culprit<WorkloadErr>> {
+    let mut oracle = LeapOracle::default();
     let handle = env
         .runtime
         .open_volume(vid, VolumeConfig::new(SyncDirection::Both))
@@ -267,11 +270,11 @@ fn workload_writer<R: Rng>(
         .entered();
 
         // load the tracker and the expected page hash
-        let mut page_tracker = load_tracker(&reader, &env.cid).or_into_ctx()?;
+        let mut page_tracker = load_tracker(&mut oracle, &reader, &env.cid).or_into_ctx()?;
         let expected_hash = page_tracker.upsert(pageidx, new_hash.clone());
 
         // verify the page is missing or present as expected
-        let page = reader.read(pageidx).or_into_ctx()?;
+        let page = reader.read(&mut oracle, pageidx).or_into_ctx()?;
         let actual_hash = PageHash::new(&page);
 
         if let Some(expected_hash) = expected_hash {
@@ -335,6 +338,7 @@ fn workload_reader<R: Rng>(
     vid: &VolumeId,
     interval: Duration,
 ) -> Result<(), Culprit<WorkloadErr>> {
+    let mut oracle = LeapOracle::default();
     let handle = env
         .runtime
         .open_volume(vid, VolumeConfig::new(SyncDirection::Pull))
@@ -394,7 +398,7 @@ fn workload_reader<R: Rng>(
         }
 
         // load the page index
-        let page_tracker = load_tracker(&reader, &env.cid).or_into_ctx()?;
+        let page_tracker = load_tracker(&mut oracle, &reader, &env.cid).or_into_ctx()?;
 
         // ensure all pages are either empty or have the expected hash
         for pageidx in snapshot.pages().iter() {
@@ -410,7 +414,7 @@ fn workload_reader<R: Rng>(
             )
             .entered();
 
-            let page = reader.read(pageidx).or_into_ctx()?;
+            let page = reader.read(&mut oracle, pageidx).or_into_ctx()?;
             let actual_hash = PageHash::new(&page);
             span.record("hash", actual_hash.to_string());
 

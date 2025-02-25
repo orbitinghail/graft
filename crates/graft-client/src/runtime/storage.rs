@@ -1,4 +1,11 @@
-use std::{collections::HashSet, fmt::Debug, io, ops::RangeInclusive, path::Path, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    io,
+    ops::RangeInclusive,
+    path::Path,
+    sync::Arc,
+};
 
 use bytes::Bytes;
 use changeset::ChangeSet;
@@ -8,13 +15,12 @@ use fjall::{KvSeparationOptions, PartitionCreateOptions, Slice};
 use graft_core::{
     byte_unit::ByteUnit,
     lsn::{LSNRangeExt, LSN},
-    page::PageSizeErr,
+    page::{Page, PageSizeErr},
     page_count::PageCount,
     page_idx::ConvertToPageIdxErr,
     zerocopy_ext::ZerocopyErr,
     PageIdx, VolumeId,
 };
-use graft_proto::pagestore::v1::PageAtIdx;
 use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
 use parking_lot::{Mutex, MutexGuard};
@@ -274,17 +280,16 @@ impl Storage {
     /// Returns an iterator of PageValue's at an exact LSN for a volume.
     /// Notably, this function will not return a page at an earlier LSN that is
     /// shadowed by this LSN.
-    pub fn query_pages<'a, T>(
+    pub fn query_pages<'a, I>(
         &'a self,
         vid: &'a VolumeId,
         lsn: LSN,
-        graft: &'a SplinterRef<T>,
+        pages: I,
     ) -> impl TryIterator<Ok = (PageIdx, Option<PageValue>), Err = Culprit<StorageErr>> + 'a
     where
-        T: AsRef<[u8]> + 'a,
+        I: TryIterator<Ok = PageIdx, Err = Culprit<StorageErr>> + 'a,
     {
-        graft.iter().map(move |pageidx| {
-            let pageidx: PageIdx = pageidx.try_into()?;
+        pages.map_ok(move |pageidx| {
             let key = PageKey::new(vid.clone(), pageidx, lsn);
             if let Some(page) = self.pages.get(key)? {
                 Ok((pageidx, Some(PageValue::try_from(page).or_into_ctx()?)))
@@ -498,13 +503,24 @@ impl Storage {
     }
 
     /// Write a set of pages to storage at a particular vid/lsn
-    pub fn receive_pages(&self, vid: &VolumeId, lsn: LSN, pages: Vec<PageAtIdx>) -> Result<()> {
+    /// If a page index appears in the Graft but not in the pages vec, it will be assumed to be empty
+    pub fn receive_pages(
+        &self,
+        vid: &VolumeId,
+        lsn: LSN,
+        graft: Splinter,
+        pages: &HashMap<PageIdx, Page>,
+    ) -> Result<()> {
         let mut key = PageKey::new(vid.clone(), PageIdx::FIRST, lsn);
         let mut batch = self.keyspace.batch();
-        for page in pages {
-            key = key.with_index(page.pageidx().or_into_ctx()?);
-            let page = page.page().or_into_ctx()?;
-            batch.insert(&self.pages, key.as_ref(), PageValue::from(page));
+        for idx in graft.iter() {
+            let pageidx = PageIdx::try_from(idx)?;
+            key = key.with_index(pageidx);
+            if let Some(page) = pages.get(&pageidx) {
+                batch.insert(&self.pages, key.as_ref(), PageValue::from(page.clone()));
+            } else {
+                batch.insert(&self.pages, key.as_ref(), PageValue::Empty);
+            }
         }
         Ok(batch.commit()?)
     }

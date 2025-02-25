@@ -12,6 +12,21 @@ impl ClientPair {
         Self { metastore, pagestore }
     }
 
+    #[cfg(test)]
+    pub fn test_empty() -> Self {
+        use crate::NetClient;
+        Self {
+            metastore: MetastoreClient::new(
+                "invalid://foo:0".parse().unwrap(),
+                NetClient::default(),
+            ),
+            pagestore: PagestoreClient::new(
+                "invalid://foo:0".parse().unwrap(),
+                NetClient::default(),
+            ),
+        }
+    }
+
     pub fn metastore(&self) -> &MetastoreClient {
         &self.metastore
     }

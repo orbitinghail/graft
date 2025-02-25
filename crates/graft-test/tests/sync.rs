@@ -1,14 +1,16 @@
 use std::time::Duration;
 
-use graft_client::runtime::{
-    fetcher::NetFetcher,
-    runtime::Runtime,
-    storage::{
-        volume_state::{SyncDirection, VolumeConfig},
-        Storage,
+use graft_client::{
+    oracle::NoopOracle,
+    runtime::{
+        runtime::Runtime,
+        storage::{
+            volume_state::{SyncDirection, VolumeConfig},
+            Storage,
+        },
+        volume_reader::VolumeRead,
+        volume_writer::VolumeWrite,
     },
-    volume_reader::VolumeRead,
-    volume_writer::VolumeWrite,
 };
 use graft_core::{gid::ClientId, page::Page, PageIdx, VolumeId};
 use graft_test::start_graft_backend;
@@ -18,24 +20,16 @@ fn test_client_sync_sanity() {
     let (backend, clients) = start_graft_backend();
 
     let storage = Storage::open_temporary().unwrap();
-    let runtime = Runtime::new(
-        ClientId::random(),
-        NetFetcher::new(clients.clone()),
-        storage,
-    );
+    let runtime = Runtime::new(ClientId::random(), clients.clone(), storage);
     runtime
-        .start_sync_task(clients.clone(), Duration::from_secs(1), 8, true)
+        .start_sync_task(Duration::from_secs(1), 8, true)
         .unwrap();
 
     // create a second client to sync to
     let storage2 = Storage::open_temporary().unwrap();
-    let runtime2 = Runtime::new(
-        ClientId::random(),
-        NetFetcher::new(clients.clone()),
-        storage2,
-    );
+    let runtime2 = Runtime::new(ClientId::random(), clients, storage2);
     runtime2
-        .start_sync_task(clients, Duration::from_millis(100), 8, true)
+        .start_sync_task(Duration::from_millis(100), 8, true)
         .unwrap();
 
     // register the volume with both clients, pushing from client 1 to client 2
@@ -76,7 +70,7 @@ fn test_client_sync_sanity() {
         assert_eq!(snapshot.pages(), 1);
 
         let reader = handle2.reader_at(Some(snapshot));
-        let received = reader.read(pageidx).unwrap();
+        let received = reader.read(&mut NoopOracle, pageidx).unwrap();
         assert_eq!(received, page, "received page does not match written page");
     }
 

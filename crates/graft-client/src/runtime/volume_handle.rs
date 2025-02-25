@@ -1,13 +1,15 @@
+use std::sync::Arc;
+
 use culprit::{Result, ResultExt};
 use graft_core::VolumeId;
 
-use crate::ClientErr;
+use crate::{ClientErr, ClientPair};
 
 use super::{
-    shared::Shared,
     storage::{
         snapshot::Snapshot,
         volume_state::{SyncDirection, VolumeStatus},
+        Storage,
     },
     sync::control::SyncRpc,
     volume_reader::VolumeReader,
@@ -17,13 +19,19 @@ use super::{
 #[derive(Clone, Debug)]
 pub struct VolumeHandle {
     vid: VolumeId,
-    shared: Shared,
+    clients: Arc<ClientPair>,
+    storage: Arc<Storage>,
     sync_rpc: SyncRpc,
 }
 
 impl VolumeHandle {
-    pub(crate) fn new(vid: VolumeId, shared: Shared, sync_rpc: SyncRpc) -> Self {
-        Self { vid, shared, sync_rpc }
+    pub(crate) fn new(
+        vid: VolumeId,
+        clients: Arc<ClientPair>,
+        storage: Arc<Storage>,
+        sync_rpc: SyncRpc,
+    ) -> Self {
+        Self { vid, clients, storage, sync_rpc }
     }
 
     #[inline]
@@ -33,15 +41,12 @@ impl VolumeHandle {
 
     /// Retrieve the current volume status
     pub fn status(&self) -> Result<VolumeStatus, ClientErr> {
-        self.shared
-            .storage()
-            .get_volume_status(&self.vid)
-            .or_into_ctx()
+        self.storage.get_volume_status(&self.vid).or_into_ctx()
     }
 
     /// Retrieve the latest snapshot for the volume
     pub fn snapshot(&self) -> Result<Option<Snapshot>, ClientErr> {
-        self.shared.storage().snapshot(&self.vid).or_into_ctx()
+        self.storage.snapshot(&self.vid).or_into_ctx()
     }
 
     /// Open a VolumeReader at the latest snapshot
@@ -49,13 +54,19 @@ impl VolumeHandle {
         Ok(VolumeReader::new(
             self.vid.clone(),
             self.snapshot()?,
-            self.shared.clone(),
+            self.clients.clone(),
+            self.storage.clone(),
         ))
     }
 
     /// Open a VolumeReader at the provided snapshot
     pub fn reader_at(&self, snapshot: Option<Snapshot>) -> VolumeReader {
-        VolumeReader::new(self.vid.clone(), snapshot, self.shared.clone())
+        VolumeReader::new(
+            self.vid.clone(),
+            snapshot,
+            self.clients.clone(),
+            self.storage.clone(),
+        )
     }
 
     /// Open a VolumeWriter at the latest snapshot
@@ -70,18 +81,12 @@ impl VolumeHandle {
 
     /// Subscribe to remote commits to this Volume
     pub fn subscribe_to_remote_changes(&self) -> crossbeam::channel::Receiver<()> {
-        self.shared
-            .storage()
-            .remote_changeset()
-            .subscribe(self.vid.clone())
+        self.storage.remote_changeset().subscribe(self.vid.clone())
     }
 
     /// Subscribe to local commits to this Volume
     pub fn subscribe_to_local_changes(&self) -> crossbeam::channel::Receiver<()> {
-        self.shared
-            .storage()
-            .local_changeset()
-            .subscribe(self.vid.clone())
+        self.storage.local_changeset().subscribe(self.vid.clone())
     }
 
     /// Sync this volume with the remote. This function blocks until the sync

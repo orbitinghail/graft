@@ -10,7 +10,6 @@ use std::{
 use culprit::{Culprit, ResultExt};
 use graft_client::{
     runtime::{
-        fetcher::Fetcher,
         runtime::Runtime,
         storage::volume_state::{SyncDirection, VolumeConfig},
     },

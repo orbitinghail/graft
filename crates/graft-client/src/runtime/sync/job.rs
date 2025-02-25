@@ -135,7 +135,8 @@ impl PushJob {
         // TODO: stream pages directly to the remote
         while let Some((lsn, graft)) = commits.try_next().or_into_ctx()? {
             num_commits += 1;
-            let mut commit_pages = storage.query_pages(&self.vid, lsn, &graft);
+            let pageidxs = graft.iter().map(PageIdx::try_from).err_into();
+            let mut commit_pages = storage.query_pages(&self.vid, lsn, pageidxs);
             while let Some((pageidx, page)) = commit_pages.try_next().or_into_ctx()? {
                 // it's a fatal error if the page is None or Pending
                 let page = page

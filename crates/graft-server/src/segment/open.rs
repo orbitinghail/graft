@@ -90,7 +90,6 @@ impl OpenSegment {
         let pages = self.pages();
         // +2 for the index, +1 for the footer
         let mut data = BytesVec::with_capacity(pages.to_usize() + 2 + 1);
-        dbg!(volumes, pages);
         let mut index_builder = SegmentIndexBuilder::new_with_capacity(volumes, pages);
         let mut multigraft_builder = MultiGraft::builder();
 

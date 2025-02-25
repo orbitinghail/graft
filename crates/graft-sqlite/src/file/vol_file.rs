@@ -2,10 +2,13 @@ use std::{fmt::Debug, mem, sync::Arc};
 
 use bytes::BytesMut;
 use culprit::{Culprit, Result, ResultExt};
-use graft_client::runtime::{
-    volume_handle::VolumeHandle,
-    volume_reader::{VolumeRead, VolumeReader},
-    volume_writer::{VolumeWrite, VolumeWriter},
+use graft_client::{
+    oracle::LeapOracle,
+    runtime::{
+        volume_handle::VolumeHandle,
+        volume_reader::{VolumeRead, VolumeReader},
+        volume_writer::{VolumeWrite, VolumeWriter},
+    },
 };
 use graft_core::{
     page::{Page, PAGESIZE},
@@ -50,6 +53,7 @@ pub struct VolFile {
 
     reserved: Arc<Mutex<()>>,
     state: VolFileState,
+    oracle: Box<LeapOracle>,
 }
 
 impl Debug for VolFile {
@@ -65,6 +69,7 @@ impl VolFile {
             opts,
             reserved,
             state: VolFileState::Idle,
+            oracle: Default::default(),
         }
     }
 
@@ -266,16 +271,16 @@ impl VfsFile for VolFile {
                 self.handle()
                     .reader()
                     .or_into_ctx()?
-                    .read(page_idx)
+                    .read(self.oracle.as_mut(), page_idx)
                     .or_into_ctx()?
             }
             VolFileState::Shared { reader, performed_read } => {
                 *performed_read = true;
-                reader.read(page_idx).or_into_ctx()?
+                reader.read(self.oracle.as_mut(), page_idx).or_into_ctx()?
             }
             VolFileState::Reserved { writer, performed_read } => {
                 *performed_read = true;
-                writer.read(page_idx).or_into_ctx()?
+                writer.read(self.oracle.as_mut(), page_idx).or_into_ctx()?
             }
             VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
         };
@@ -333,7 +338,10 @@ impl VfsFile for VolFile {
         } else {
             // writing a partial page
             // we need to read and then update the page
-            let mut page: BytesMut = writer.read(page_idx).or_into_ctx()?.into();
+            let mut page: BytesMut = writer
+                .read(self.oracle.as_mut(), page_idx)
+                .or_into_ctx()?
+                .into();
             // SAFETY: we already verified that the write does not cross a page boundary
             let range = local_offset.as_usize()..(local_offset + data.len()).as_usize();
             page[range].copy_from_slice(data);

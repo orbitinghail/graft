@@ -15,8 +15,8 @@ use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use culprit::ResultExt;
 use graft_client::{
+    oracle::NoopOracle,
     runtime::{
-        fetcher::NetFetcher,
         runtime::Runtime,
         storage::{
             volume_state::{SyncDirection, VolumeConfig},
@@ -149,7 +149,7 @@ impl<T: Default + TryFromBytes + IntoBytes + Immutable> PageView<T> {
     }
 
     fn load(reader: &impl VolumeRead, idx: PageIdx) -> Result<Self> {
-        let page = reader.read(idx).or_into_ctx()?;
+        let page = reader.read(&mut NoopOracle, idx).or_into_ctx()?;
         let inner = T::try_read_from_bytes(&page).map_err(ZerocopyErr::from)?;
         Ok(Self { idx, inner })
     }
@@ -456,9 +456,9 @@ fn main() -> Result<()> {
 
     let storage_path = temp_dir().join("silly-kv").join(cid.pretty());
     let storage = Storage::open(&storage_path).or_into_ctx()?;
-    let runtime = Runtime::new(cid, NetFetcher::new(clients.clone()), storage);
+    let runtime = Runtime::new(cid, clients, storage);
     runtime
-        .start_sync_task(clients, Duration::from_secs(1), 8, true)
+        .start_sync_task(Duration::from_secs(1), 8, true)
         .or_into_ctx()?;
 
     let handle = runtime

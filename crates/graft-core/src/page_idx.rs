@@ -66,17 +66,27 @@ impl PageIdx {
     }
 
     #[inline]
-    pub const fn saturating_next(self) -> Self {
-        Self(self.0.saturating_add(1))
+    pub const fn saturating_add(self, n: u32) -> Self {
+        Self(self.0.saturating_add(n))
     }
 
     #[inline]
-    pub const fn saturating_prev(self) -> Self {
-        let prev = self.0.get().saturating_sub(1);
+    pub const fn saturating_next(self) -> Self {
+        self.saturating_add(1)
+    }
+
+    #[inline]
+    pub const fn saturating_sub(self, n: u32) -> Self {
+        let prev = self.0.get().saturating_sub(n);
         match NonZero::new(prev) {
             Some(n) => Self(n),
             None => Self::FIRST,
         }
+    }
+
+    #[inline]
+    pub const fn saturating_prev(self) -> Self {
+        self.saturating_sub(1)
     }
 
     #[inline]

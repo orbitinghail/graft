@@ -13,6 +13,7 @@ splinter = { path = "../splinter" }
 precept = { path = "../precept" }
 
 bytes = { workspace = true }
+circular-buffer = { workspace = true }
 culprit = { workspace = true }
 crossbeam = { workspace = true }
 fjall = { workspace = true }

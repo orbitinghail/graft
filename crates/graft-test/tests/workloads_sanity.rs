@@ -4,7 +4,7 @@ use std::{
 };
 
 use culprit::{Culprit, ResultExt};
-use graft_client::runtime::{fetcher::NetFetcher, runtime::Runtime, storage::Storage};
+use graft_client::runtime::{runtime::Runtime, storage::Storage};
 use graft_core::{gid::ClientId, VolumeId};
 use graft_test::{
     start_graft_backend,
@@ -27,9 +27,9 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
     let writer = {
         let cid = ClientId::random();
         let storage = Storage::open_temporary().or_into_ctx()?;
-        let runtime = Runtime::new(cid.clone(), NetFetcher::new(clients.clone()), storage);
+        let runtime = Runtime::new(cid.clone(), clients.clone(), storage);
         runtime
-            .start_sync_task(clients.clone(), Duration::from_millis(10), 8, true)
+            .start_sync_task(Duration::from_millis(10), 8, true)
             .or_into_ctx()?;
         let workload = Workload::Writer { vid: vid.clone(), interval_ms: 10 };
         let r2 = runtime.clone();
@@ -43,9 +43,9 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
     let reader = {
         let cid = ClientId::random();
         let storage = Storage::open_temporary().or_into_ctx()?;
-        let runtime = Runtime::new(cid.clone(), NetFetcher::new(clients.clone()), storage);
+        let runtime = Runtime::new(cid.clone(), clients, storage);
         runtime
-            .start_sync_task(clients.clone(), Duration::from_millis(10), 8, true)
+            .start_sync_task(Duration::from_millis(10), 8, true)
             .or_into_ctx()?;
         let workload = Workload::Reader { vid: vid.clone(), interval_ms: 10 };
         let r2 = runtime.clone();
