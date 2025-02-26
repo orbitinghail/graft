@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: rui314/setup-mold@v1
+      - uses: KyleMayes/install-llvm-action@v2
       - uses: actions/checkout@v4
         with:
           token: ${{secrets.GITHUB_TOKEN}}
