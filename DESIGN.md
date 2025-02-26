@@ -269,11 +269,17 @@ VolumeStatus: Ok | RejectedCommit | Conflict
 
 Snapshot:
   local: LSN
-  remote: Option<LSN>
+  remote: RemoteMapping
   pages: PageCount
 
+RemoteMapping:
+  Unmapped
+  Mapped {
+    remote: LSN,
+    local: LSN
+  }
+
 Watermarks:
-  last_sync: Option<LSN>
   pending_sync: Option<LSN>
   checkpoint: Option<LSN>
 
@@ -316,7 +322,7 @@ The commit process happens atomically via a Fjall batch.
 4. Take the local commit lock
 5. Set `latest` to the latest volume Snapshot
 6. Fail if `latest.local != snapshot.local`
-7. Write out the new snapshot (without changing remote_lsn)
+7. Write out the new snapshot (without changing the remote mapping)
 8. Commit the Fjall batch
 9. release the commit lock
 
@@ -338,19 +344,18 @@ The pull process happens atomically via a Fjall batch.
 
 1. Take the local commit lock
 2. Read the latest Volume Snapshot and Watermarks
-3. If last_sync < pending_sync: FAIL with VolumeNeedsRecovery
-4. If last_sync < snapshot.local: FAIL with RemoteConflict
+3. If remote_mapping.local < pending_sync: FAIL with VolumeNeedsRecovery
+4. If remote_mapping.local < snapshot.local: FAIL with RemoteConflict
 
    - set Volume status to VolumeStatus::Conflict
 
 5. Set `commit_lsn = snapshot.local.next()`
 6. Update the snapshot
 
-   - `local=commit_lsn, remote=remote_lsn, pages=remote_pages`
+   - `local=commit_lsn, remote=(remote_lsn, commit_lsn), pages=remote_pages`
 
 7. Update the watermarks
 
-   - `last_sync=commit_lsn`
    - `pending_sync=commit_lsn`
 
 8. For each changed pageidx in the remote commit, write out PageValue::Pending into the pages partition using `commit_lsn`. This ensures that future reads know to fetch the page from the Pagestore.
@@ -370,11 +375,11 @@ When the Graft runtime detects a local commit has occurred, it tries to push the
 
 1. Take the local commit lock
 2. Read the latest Volume Snapshot and Watermarks
-3. If last_sync < pending_sync: FAIL with VolumeNeedsRecovery
+3. If remote_mapping.local < pending_sync: FAIL with VolumeNeedsRecovery
 4. update `watermarks.pending_sync` to `snapshot.local`
 5. calculate the LSN range to push:
 
-   - `start_lsn = watermarks.last_sync.next()`
+   - `start_lsn = remote_mapping.local.next()`
    - `end_lsn = snapshot.local`
 
 6. release the local commit lock
@@ -392,20 +397,19 @@ When the Graft runtime detects a local commit has occurred, it tries to push the
 2. Read the latest Volume Snapshot and Watermarks
 3. Assert that the new remote LSN is larger than the last remote LSN
 4. Assert that `watermarks.pending_sync == snapshot.local`
-5. Update the snapshot's remote LSN
-6. Update `watermarks.last_sync = watermarks.pending_sync`
-7. Remove all successfully synced commit splinters
-8. Commit the batch
-9. Release the local commit lock
+5. Update the snapshot's remote mapping to (remote_lsn, snapshot.local)
+6. Remove all successfully synced commit grafts
+7. Commit the batch
+8. Release the local commit lock
 
 **On commit failure:**
 
-1. Update `watermarks.pending_sync = watermarks.last_sync`
+1. Update `watermarks.pending_sync = snapshot.remote_mapping.local`
 2. Set Volume status to VolumeStatus::RejectedCommit
 
 ## Crash recovery
 
-The Graft client runtime must be able to crash at any point and recover. Fjall already has it's own recovery mechanisms built in, so we just need to handle failed Pushes. Failed pushes can be detected when `pending_sync` is larger than `last_sync` and no concurrent Push job is running.
+The Graft client runtime must be able to crash at any point and recover. Fjall already has it's own recovery mechanisms built in, so we just need to handle failed Pushes. Failed pushes can be detected when `pending_sync` is larger than `remote_mapping.local` and no concurrent Push job is running.
 
 When a volume is in this failed push state, it needs to determine if the commit was successfully accepted by the Metastore or not. It does so by retrying the commit process with the same idempotency token.
 
