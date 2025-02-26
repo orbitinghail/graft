@@ -212,7 +212,7 @@ impl VolumeCatalog {
         &self,
         vid: &VolumeId,
         lsns: &R,
-    ) -> impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>), Culprit<VolumeCatalogErr>>>
+    ) -> impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>), Culprit<VolumeCatalogErr>>> + use<R>
     {
         let range = CommitKey::range(vid, lsns);
         let scan = self.segments.snapshot().range(range).rev();
