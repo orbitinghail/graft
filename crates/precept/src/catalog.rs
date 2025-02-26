@@ -32,6 +32,18 @@ pub enum Expectation {
     Unreachable,
 }
 
+impl Expectation {
+    pub fn check(self, condition: bool) -> bool {
+        use Expectation::*;
+
+        match (self, condition) {
+            (Always | AlwaysOrUnreachable, out) => out,
+            (Sometimes | Reachable, _) => true,
+            (Unreachable, _) => false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct CatalogEntry {
     // the type of this expectation

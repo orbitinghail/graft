@@ -42,11 +42,11 @@ impl AntithesisDispatch {
                 Self::Voidstar(handler) => handler.output_json(&json),
                 Self::File(handler) => {
                     if let Err(e) = handler.output_json(&json) {
-                        eprintln!("Failed to output json to file: {}", e);
+                        eprintln!("Failed to output json to file: {e}");
                     }
                 }
             },
-            Err(e) => eprintln!("Failed to serialize json: {}", e),
+            Err(e) => eprintln!("Failed to serialize json: {e}"),
         }
     }
 }

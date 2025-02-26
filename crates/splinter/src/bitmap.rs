@@ -54,7 +54,7 @@ where
         None // If all bits are 0
     }
 
-    /// Count the number of 1-bits in the block up to and including the `position``
+    /// Count the number of 1-bits in the block up to and including the `position`
     #[inline]
     fn rank(&self, position: u8) -> usize {
         let key = bitmap_key(position);

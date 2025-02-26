@@ -29,7 +29,7 @@ pub fn init_tracing(consumer: TracingConsumer, process_id: Option<String>) {
     init_tracing_with_writer(consumer, process_id, std::io::stdout);
 }
 
-/// Initialize tracing. If no process_id is specified one will be randomly generated.
+/// Initialize tracing. If no `process_id` is specified one will be randomly generated.
 pub fn init_tracing_with_writer<W>(consumer: TracingConsumer, process_id: Option<String>, writer: W)
 where
     W: for<'writer> MakeWriter<'writer> + 'static + Send + Sync,

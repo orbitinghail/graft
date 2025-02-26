@@ -70,3 +70,6 @@ zerocopy = "0.8"
 
 [workspace.lints.clippy]
 disallowed_methods = "deny"
+uninlined-format-args = "warn"
+doc-markdown = "warn"
+map-unwrap-or = "warn"

@@ -1,7 +1,5 @@
 use core::panic;
 
-use crate::catalog::Expectation;
-
 use super::{Dispatch, Event};
 
 pub struct TestDispatch;
@@ -9,18 +7,11 @@ pub struct TestDispatch;
 impl Dispatch for TestDispatch {
     fn emit(&self, event: Event) {
         match event {
-            Event::RegisterEntry(_) => {
-                // nothing to do
+            Event::RegisterEntry(_) | Event::Fault { .. } => {
+                // registration and faults are not enabled in the test dispatcher
             }
             Event::EmitEntry { entry, condition, details } => {
-                let passed = matches!(
-                    (entry.expectation(), condition),
-                    (Expectation::Always, true)
-                        | (Expectation::AlwaysOrUnreachable, true)
-                        | (Expectation::Sometimes, _)
-                        | (Expectation::Reachable, _)
-                );
-                if !passed {
+                if !entry.expectation().check(condition) {
                     tracing::error!(
                         details = format!("{}", details),
                         location = ?entry.location(),
@@ -45,9 +36,6 @@ impl Dispatch for TestDispatch {
                     value = serde_json::to_string(&value).unwrap(),
                     "custom event"
                 )
-            }
-            Event::Fault { .. } => {
-                // faults are not enabled in the test dispatcher
             }
         }
     }
