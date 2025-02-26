@@ -104,7 +104,7 @@ impl<'a> BlockRef<'a> {
         Self::Partial { segments }
     }
 
-    /// Resolve this BlockRef to either a Bitmap or a slice of segments
+    /// Resolve this `BlockRef` to either a Bitmap or a slice of segments
     #[inline]
     pub(crate) fn resolve_bitmap(&self) -> Either<&Bitmap, &[Segment]> {
         match *self {
@@ -152,7 +152,7 @@ impl<'a> BlockRef<'a> {
         }
     }
 
-    /// Count the number of 1-bits in the block up to and including the `position``
+    /// Count the number of 1-bits in the block up to and including the `position`
     pub fn rank(&self, position: u8) -> usize {
         match self.resolve_bitmap() {
             Either::Left(bitmap) => bitmap.rank(position),

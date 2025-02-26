@@ -74,7 +74,7 @@ enum CliErr {
 #[command(propagate_version = true)]
 struct Cli {
     /// The volume id to operate on
-    /// Uses a default VolumeId if not specified
+    /// Uses a default `VolumeId` if not specified
     #[arg(short, long, default_value = "GontkHa6QVLMYfkyk16wUP")]
     vid: VolumeId,
 
@@ -409,7 +409,7 @@ impl Simulator {
         const KEYS: Range<u8> = 0..32;
         fn gen_key(rng: &mut impl rand::RngCore) -> String {
             let key = rng.random_range(KEYS);
-            format!("{:0>2}", key)
+            format!("{key:0>2}")
         }
 
         for _ in 0..self.ticks {
@@ -420,13 +420,13 @@ impl Simulator {
                 let mut writer = self.handle.writer().or_into_ctx()?;
                 list_set(&mut writer, &key, &val).or_into_ctx()?;
                 writer.commit().or_into_ctx()?;
-                println!("set {} = {}", key, val);
+                println!("set {key} = {val}");
             } else {
                 // del a key at random
                 let key = gen_key(&mut rng);
                 let mut writer = self.handle.writer().or_into_ctx()?;
                 if list_remove(&mut writer, &key).or_into_ctx()? {
-                    println!("del {}", key);
+                    println!("del {key}");
                     writer.commit().or_into_ctx()?;
                 }
             }

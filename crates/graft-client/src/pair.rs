@@ -1,6 +1,6 @@
 use crate::{MetastoreClient, PagestoreClient};
 
-/// Convenience struct wrapping a pair of MetastoreClient and PagestoreClient
+/// Convenience struct wrapping a pair of `MetastoreClient` and `PagestoreClient`
 #[derive(Debug, Clone)]
 pub struct ClientPair {
     metastore: MetastoreClient,

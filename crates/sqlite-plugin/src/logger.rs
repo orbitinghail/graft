@@ -32,9 +32,9 @@ impl SqliteLogger {
         Self { log }
     }
 
-    /// Log bytes to the SQLite3 log handle.
-    /// This function will write each line separately to SQLite3.
-    /// Note that SQLite3 silently truncates log lines larger than roughly
+    /// Log bytes to the `SQLite3` log handle.
+    /// This function will write each line separately to `SQLite3`.
+    /// Note that `SQLite3` silently truncates log lines larger than roughly
     /// 230 bytes by default.
     pub fn log(&self, level: SqliteLogLevel, buf: &[u8]) {
         let code = level.into_err_code();

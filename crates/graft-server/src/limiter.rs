@@ -69,14 +69,14 @@ mod tests {
             limiter: Arc<Limiter<usize, FixedState>>,
             concurrent_count: Arc<AtomicUsize>,
         ) {
-            println!("task {} acquiring permit", id);
+            println!("task {id} acquiring permit");
             let _permit = limiter.acquire(&key).await;
-            println!("task {} acquired permit", id);
+            println!("task {id} acquired permit");
             concurrent_count.fetch_add(1, Ordering::Relaxed);
             assert!(concurrent_count.load(Ordering::Relaxed) <= 2);
             tokio::time::sleep(Duration::from_secs(1)).await;
             concurrent_count.fetch_sub(1, Ordering::Relaxed);
-            println!("task {} released permit", id);
+            println!("task {id} released permit");
         }
 
         // run 10 tasks to completion

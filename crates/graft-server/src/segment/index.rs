@@ -1,16 +1,16 @@
 //! Segment Index
 //!
-//! The Segment Index is made up of two sections. a Volume Index and a list of PageIdxs.
+//! The Segment Index is made up of two sections. a Volume Index and a list of `PageIdxs`.
 //!
-//! The Volume Index is a list of (VolumeId, Start, Pages) tuples.
-//!     VolumeId: The VolumeId for this set of pages
-//!     Start: The position of the first page and PageIdx for this Volume
+//! The Volume Index is a list of (`VolumeId`, Start, Pages) tuples.
+//!     `VolumeId`: The `VolumeId` for this set of pages
+//!     Start: The position of the first page and `PageIdx` for this Volume
 //!     Pages: The number of pages stored in this Segment for this Volume
 //!
-//! The VolumeId Table is sorted by VolumeId.
+//! The `VolumeId` Table is sorted by `VolumeId`.
 //!
-//! The list of PageIdxs is stored in the same order as pages are stored in
-//! this segment, and the index requires that each set of PageIdxs corresponding
+//! The list of `PageIdxs` is stored in the same order as pages are stored in
+//! this segment, and the index requires that each set of `PageIdxs` corresponding
 //! to a Volume is sorted.
 
 use std::mem::size_of;
@@ -77,7 +77,7 @@ impl<'a> SegmentIndex<'a> {
         self.page_idxs.is_empty()
     }
 
-    /// Lookup the local offset of a page by (VolumeId, PageIdx)
+    /// Lookup the local offset of a page by (`VolumeId`, `PageIdx`)
     /// The returned value can be used to index into the segment's page list
     pub fn lookup(&self, vid: &VolumeId, pageidx: PageIdx) -> Option<usize> {
         let meta_idx = self

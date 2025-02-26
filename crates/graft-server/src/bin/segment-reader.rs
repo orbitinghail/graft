@@ -88,7 +88,7 @@ fn print_segment(segment: &ClosedSegment) {
 
 fn main() {
     if let Err(e) = main_inner() {
-        eprintln!("Error: {:?}", e);
+        eprintln!("Error: {e:?}");
         exit(1)
     }
 }

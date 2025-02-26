@@ -30,7 +30,7 @@ pub const DEFAULT_DEVICE_CHARACTERISTICS: i32 =
     // information is written to disk in the same order as calls to xWrite()
     vars::SQLITE_IOCAP_SEQUENTIAL;
 
-/// A SQLite3 extended error code
+/// A `SQLite3` extended error code
 pub type SqliteErr = i32;
 
 pub type VfsResult<T> = Result<T, SqliteErr>;
@@ -74,7 +74,7 @@ impl PragmaErr {
 
 impl<T: Display> From<T> for PragmaErr {
     fn from(value: T) -> Self {
-        PragmaErr::Fail(format!("{}", value))
+        PragmaErr::Fail(format!("{value}"))
     }
 }
 
@@ -235,10 +235,10 @@ pub fn register_static<T: Vfs>(name: &str, vfs: T, opts: RegisterOpts) -> VfsRes
     register_inner(SqliteApi::new_static(), name, vfs, opts)
 }
 
-/// Register a vfs with SQLite using the dynamic API. This API is available when
-/// SQLite is initializing extensions.
+/// Register a vfs with `SQLite` using the dynamic API. This API is available when
+/// `SQLite` is initializing extensions.
 /// # Safety
-/// p_api must be a valid, aligned pointer to a sqlite3_api_routines struct
+/// `p_api` must be a valid, aligned pointer to a `sqlite3_api_routines` struct
 #[cfg(feature = "dynamic")]
 pub unsafe fn register_dynamic<T: Vfs>(
     p_api: *mut ffi::sqlite3_api_routines,

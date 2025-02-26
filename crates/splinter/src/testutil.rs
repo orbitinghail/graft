@@ -38,7 +38,7 @@ where
     let right = mksplinters(right);
     let expected = mksplinter(expected);
     for (lhs, rhs) in left.into_iter().cartesian_product(right) {
-        let label = format!("lhs: {:?}, rhs: {:?}", lhs, rhs);
+        let label = format!("lhs: {lhs:?}, rhs: {rhs:?}");
         let out = test(lhs, rhs);
         assert_eq!(out, expected, "{label}");
     }

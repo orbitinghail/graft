@@ -33,8 +33,7 @@ impl MultiGraft {
     pub fn contains(&self, vid: &VolumeId, pageidx: PageIdx) -> bool {
         self.0
             .get(vid)
-            .map(|graft| graft.contains(pageidx.into()))
-            .unwrap_or(false)
+            .is_some_and(|graft| graft.contains(pageidx.into()))
     }
 }
 

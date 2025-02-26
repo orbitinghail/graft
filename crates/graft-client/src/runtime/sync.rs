@@ -169,7 +169,7 @@ impl From<StorageErr> for SyncTaskErr {
     }
 }
 
-/// A SyncTask is a background task which continuously syncs volumes to and from
+/// A `SyncTask` is a background task which continuously syncs volumes to and from
 /// a Graft service.
 pub struct SyncTask {
     cid: ClientId,
@@ -217,7 +217,7 @@ impl SyncTask {
 
                 recv(self.commits.ready()) -> result => {
                     if let Err(err) = result {
-                        panic!("commit subscriber error: {:?}", err);
+                        panic!("commit subscriber error: {err:?}");
                     }
                     let vids = self.commits.changed();
                     if !vids.is_empty() {
@@ -266,7 +266,7 @@ impl SyncTask {
     }
 
     /// Synchronously sync a volume with the remote
-    /// If dir is SyncDirection::Both, this function will push before it pulls
+    /// If dir is `SyncDirection::Both`, this function will push before it pulls
     fn sync_volume(&mut self, vid: VolumeId, dir: SyncDirection) -> Result<(), ClientErr> {
         if dir.matches(SyncDirection::Push) {
             let state = self.storage.volume_state(&vid).or_into_ctx()?;

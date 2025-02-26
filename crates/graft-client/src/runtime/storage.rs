@@ -106,20 +106,22 @@ pub struct Storage {
     keyspace: fjall::Keyspace,
 
     /// Used to store volume state broken out by tag.
-    /// Keyed by VolumeStateKey.
+    /// Keyed by `VolumeStateKey`.
     ///
+    /// ```
     /// {vid}/VolumeStateTag::Config -> VolumeConfig
     /// {vid}/VolumeStateTag::Status -> VolumeStatus
     /// {vid}/VolumeStateTag::Snapshot -> Snapshot
     /// {vid}/VolumeStateTag::Watermarks -> Watermarks
+    /// ```
     volumes: fjall::Partition,
 
     /// Used to store page contents
-    /// maps from (VolumeId, PageIdx, LSN) to PageValue
+    /// maps from (`VolumeId`, `PageIdx`, LSN) to `PageValue`
     pages: fjall::Partition,
 
     /// Used to track changes made by local commits.
-    /// maps from (VolumeId, LSN) to Graft (Splinter of changed PageIdxs)
+    /// maps from (`VolumeId`, LSN) to Graft (Splinter of changed `PageIdxs`)
     commits: fjall::Partition,
 
     /// Must be held while performing read+write transactions.
@@ -190,13 +192,13 @@ impl Storage {
         Ok(batch.commit()?)
     }
 
-    /// Access the local commit changeset. This ChangeSet is updated whenever a
+    /// Access the local commit changeset. This `ChangeSet` is updated whenever a
     /// Volume receives a local commit.
     pub fn local_changeset(&self) -> &ChangeSet<VolumeId> {
         &self.local_changeset
     }
 
-    /// Access the remote commit changeset. This ChangeSet is updated whenever a
+    /// Access the remote commit changeset. This `ChangeSet` is updated whenever a
     /// Volume receives a remote commit.
     pub fn remote_changeset(&self) -> &ChangeSet<VolumeId> {
         &self.remote_changeset
@@ -277,7 +279,7 @@ impl Storage {
         })
     }
 
-    /// Returns an iterator of PageValue's at an exact LSN for a volume.
+    /// Returns an iterator of `PageValue`'s at an exact LSN for a volume.
     /// Notably, this function will not return a page at an earlier LSN that is
     /// shadowed by this LSN.
     pub fn query_pages<'a, I>(
@@ -301,7 +303,7 @@ impl Storage {
     }
 
     /// Returns the most recent visible page in a volume by LSN at a particular
-    /// PageIdx. Notably, this will return a page from an earlier LSN if the page
+    /// `PageIdx`. Notably, this will return a page from an earlier LSN if the page
     /// hasn't changed since then.
     pub fn read(&self, vid: &VolumeId, lsn: LSN, pageidx: PageIdx) -> Result<(LSN, PageValue)> {
         let first_key = PageKey::new(vid.clone(), pageidx, LSN::FIRST);
@@ -338,9 +340,7 @@ impl Storage {
 
         let mut batch = self.keyspace.batch();
         let read_lsn = snapshot.as_ref().map(|s| s.local());
-        let commit_lsn = read_lsn
-            .map(|lsn| lsn.next().expect("lsn overflow"))
-            .unwrap_or(LSN::FIRST);
+        let commit_lsn = read_lsn.map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
 
         // this Splinter will contain all of the PageIdxs this commit changed
         let mut graft = Splinter::default();
@@ -508,7 +508,7 @@ impl Storage {
         Ok(())
     }
 
-    /// Write a set of PageValue's to storage.
+    /// Write a set of `PageValue`'s to storage.
     pub fn receive_pages(
         &self,
         vid: &VolumeId,
@@ -635,8 +635,8 @@ impl Storage {
         Ok(batch.commit()?)
     }
 
-    /// Complete a push operation by updating the volume snapshot, updating
-    /// Watermarks::last_sync, and removing all synced commits.
+    /// Complete a push operation by updating the volume snapshot and removing
+    /// all synced commits.
     pub fn complete_sync_to_remote(
         &self,
         vid: &VolumeId,
@@ -735,10 +735,10 @@ impl Storage {
         // the new local lsn to commit the remote into
         let commit_lsn = reset_lsn.map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
 
-        span.record("local_lsn", format!("{:?}", local_lsn));
-        span.record("reset_lsn", format!("{:?}", reset_lsn));
-        span.record("remote_lsn", format!("{:?}", remote_lsn));
-        span.record("commit_lsn", format!("{:?}", commit_lsn));
+        span.record("local_lsn", format!("{local_lsn:?}"));
+        span.record("reset_lsn", format!("{reset_lsn:?}"));
+        span.record("remote_lsn", format!("{remote_lsn:?}"));
+        span.record("commit_lsn", format!("{commit_lsn:?}"));
 
         if local_lsn == reset_lsn {
             // if the local and remote LSNs are the same, we can just receive the
@@ -747,7 +747,7 @@ impl Storage {
                 !state.has_pending_commits(),
                 "bug: local lsn == reset lsn but state has pending commits"
             );
-            span.record("result", format!("{:?}", snapshot));
+            span.record("result", format!("{snapshot:?}"));
             drop(span);
             return self.receive_remote_commit_holding_lock(
                 permit,
@@ -760,9 +760,7 @@ impl Storage {
         // ensure we never reset into the future
         assert!(
             reset_lsn < local_lsn,
-            "refusing to reset to a LSN larger than the current LSN; local={:?}, target={:?}",
-            local_lsn,
-            reset_lsn
+            "refusing to reset to a LSN larger than the current LSN; local={local_lsn:?}, target={reset_lsn:?}"
         );
 
         let mut batch = self.keyspace.batch();

@@ -2,11 +2,11 @@ use circular_buffer::CircularBuffer;
 use graft_core::PageIdx;
 
 pub trait Oracle {
-    /// Observe_cache_hit is called whenever Graft satisfies a page read from
+    /// `observe_cache_hit` is called whenever Graft satisfies a page read from
     /// it's local cache. This function is not called on a cache miss.
     fn observe_cache_hit(&mut self, pageidx: PageIdx);
 
-    /// Predict_next is called when Graft has a cache miss, and can be used to
+    /// `predict_next` is called when Graft has a cache miss, and can be used to
     /// hint that Graft should fetch additional pages along with the requested
     /// page. The returned iterator should be empty if no additional pages
     /// should be fetched, and it does not need to include the requested page.
@@ -26,7 +26,7 @@ impl Oracle for NoopOracle {
     }
 }
 
-/// LeapOracle is an implementation of the algorithm described by the paper
+/// `LeapOracle` is an implementation of the algorithm described by the paper
 /// "Effectively Prefetching Remote Memory with Leap". It provides an Oracle
 /// that attempts to predict future page requests based on trends found in
 /// recent history.

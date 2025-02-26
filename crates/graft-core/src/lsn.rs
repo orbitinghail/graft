@@ -279,7 +279,7 @@ impl Iterator for LSNRangeIter {
     Default,
 )]
 #[repr(transparent)]
-/// A MaybeLSN behaves identically to an Option<LSN> and exists for interop with
+/// A `MaybeLSN` behaves identically to an Option<LSN> and exists for interop with
 /// the zerocopy crate.
 pub struct MaybeLSN(Option<NonZero<u64>>);
 
@@ -314,7 +314,7 @@ impl From<Option<LSN>> for MaybeLSN {
 impl Display for MaybeLSN {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
-            Some(lsn) => write!(f, "{}", lsn),
+            Some(lsn) => write!(f, "{lsn}"),
             None => write!(f, "_"),
         }
     }

@@ -221,7 +221,7 @@ impl Display for VolumeStatus {
 )]
 #[repr(C)]
 pub struct Watermarks {
-    /// pending_sync is a local LSN that is in the process of syncing to the server
+    /// `pending_sync` is a local LSN that is in the process of syncing to the server
     pending_sync: MaybeLSN,
 
     /// checkpoint is the last local LSN that represents a volume checkpoint

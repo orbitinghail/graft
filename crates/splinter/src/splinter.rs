@@ -322,7 +322,7 @@ mod tests {
         for &i in &values {
             if !splinter.contains(i) {
                 splinter.contains(i); // break here for debugging
-                panic!("missing key: {}", i);
+                panic!("missing key: {i}");
             }
         }
 
@@ -376,7 +376,7 @@ mod tests {
         for &i in &values {
             if !splinter.contains(i) {
                 splinter.contains(i); // break here for debugging
-                panic!("missing key: {}", i);
+                panic!("missing key: {i}");
             }
         }
 

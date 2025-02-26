@@ -67,7 +67,7 @@ impl<P: Prefix> Gid<P> {
         bs58::encode(self.as_bytes()).into_string()
     }
 
-    /// returns the SHORT_LEN suffix of self.pretty
+    /// returns the `SHORT_LEN` suffix of self.pretty
     pub fn short(&self) -> String {
         let pretty = self.pretty();
         pretty[pretty.len() - SHORT_LEN..].to_owned()
@@ -83,7 +83,7 @@ impl<P: Prefix> Gid<P> {
 }
 
 impl ClientId {
-    /// derive a ClientId from source bytes deterministically
+    /// derive a `ClientId` from source bytes deterministically
     pub fn derive(source: &[u8]) -> ClientId {
         let hash = blake3::hash(source);
         let mut random = [0; 9];
@@ -250,9 +250,7 @@ mod tests {
             println!("{pretty} {short}");
             assert!(
                 pretty.contains(&short),
-                "pretty: {}, short: {}",
-                pretty,
-                short
+                "pretty: {pretty}, short: {short}"
             );
         }
     }

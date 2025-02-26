@@ -101,10 +101,10 @@ impl TryFrom<VolumeCatalogConfig> for Config {
 pub struct VolumeCatalog {
     keyspace: Keyspace,
 
-    /// maps kv::CommitKey to commit::CommitMeta
+    /// maps `kv::CommitKey` to `commit::CommitMeta`
     volumes: Partition,
 
-    /// maps kv::SegmentKey to Graft
+    /// maps `kv::SegmentKey` to Graft
     segments: Partition,
 }
 

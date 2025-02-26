@@ -124,9 +124,9 @@ impl FormatTime for TimeAndPrefix {
     fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
         match (&self.prefix, &self.time) {
             (None, _) => self.write_time(w),
-            (Some(prefix), TimeFormat::None) => write!(w, "{}", prefix),
+            (Some(prefix), TimeFormat::None) => write!(w, "{prefix}"),
             (Some(prefix), _) => {
-                write!(w, "{} ", prefix)?;
+                write!(w, "{prefix} ")?;
                 self.write_time(w)
             }
         }

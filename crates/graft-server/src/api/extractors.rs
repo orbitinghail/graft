@@ -25,8 +25,7 @@ where
             return Err(Culprit::new_with_note(
                 ApiErrCtx::InvalidRequestBody,
                 format!(
-                    "expected content type '{:?}' but received '{:?}'",
-                    CONTENT_TYPE_PROTOBUF, content_type
+                    "expected content type '{CONTENT_TYPE_PROTOBUF:?}' but received '{content_type:?}'"
                 ),
             )
             .into());

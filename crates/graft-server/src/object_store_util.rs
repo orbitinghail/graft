@@ -17,7 +17,7 @@ pub enum ObjectStoreConfig {
 
     /// S3 compatible object store
     /// Can load most config and secrets from environment variables
-    /// See object_store::aws::builder::AmazonS3Builder for env variable names
+    /// See `object_store::aws::builder::AmazonS3Builder` for env variable names
     S3Compatable {
         bucket: String,
         prefix: Option<String>,

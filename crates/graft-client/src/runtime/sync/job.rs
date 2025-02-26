@@ -41,7 +41,7 @@ impl Job {
 pub struct PullJob {
     vid: VolumeId,
 
-    /// when reset is true, the PullJob will reset the volume to the remote
+    /// when reset is true, the `PullJob` will reset the volume to the remote
     /// volume state. This will rollback any pending local commits and clear the
     /// volume status.
     reset: bool,
@@ -55,8 +55,7 @@ impl PullJob {
         let start_lsn = state
             .snapshot()
             .and_then(|s| s.remote())
-            .map(|lsn| lsn.next().expect("lsn overflow"))
-            .unwrap_or(LSN::FIRST);
+            .map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
         let lsns = start_lsn..;
 
         let _span =

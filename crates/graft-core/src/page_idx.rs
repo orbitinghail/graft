@@ -31,7 +31,7 @@ use crate::page_count::PageCount;
 pub struct PageIdx(NonZero<u32>);
 
 #[macro_export]
-/// Create a PageIndex from a literal at compile time.
+/// Create a `PageIndex` from a literal at compile time.
 macro_rules! pageidx {
     ($idx:literal) => {
         $crate::PageIdx::try_new($idx).expect("page index out of range")
@@ -42,7 +42,7 @@ impl PageIdx {
     pub const FIRST: Self = pageidx!(1);
     pub const LAST: Self = pageidx!(0xFFFF_FFFF);
 
-    /// Create a new PageIndex from a u32. Returns None if the PageIndex is 0.
+    /// Create a new `PageIndex` from a u32. Returns None if the `PageIndex` is 0.
     #[inline]
     pub const fn try_new(n: u32) -> Option<Self> {
         match NonZero::new(n) {
@@ -51,7 +51,7 @@ impl PageIdx {
         }
     }
 
-    /// Create a new PageIndex from a u32 without checking if it is 0.
+    /// Create a new `PageIndex` from a u32 without checking if it is 0.
     ///
     /// # Safety
     /// The provided u32 must not be 0.

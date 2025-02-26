@@ -227,8 +227,7 @@ impl FileHandler {
         Err(Error::new(
             ErrorKind::NotFound,
             format!(
-                "No output file specified. Set either {} or {}",
-                ENV_LOCAL_OUTPUT, ENV_OUTPUT_DIR
+                "No output file specified. Set either {ENV_LOCAL_OUTPUT} or {ENV_OUTPUT_DIR}"
             ),
         ))
     }

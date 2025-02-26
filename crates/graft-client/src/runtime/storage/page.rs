@@ -90,7 +90,7 @@ const PAGE_VALUE_MARK_LEN: usize = 8;
 static_assertions::const_assert_eq!(PAGE_VALUE_PENDING.len(), PAGE_VALUE_MARK_LEN);
 static_assertions::const_assert_eq!(PAGE_VALUE_EMPTY.len(), PAGE_VALUE_MARK_LEN);
 
-/// PageValue is used to read and write pages to storage.
+/// `PageValue` is used to read and write pages to storage.
 /// It uses the length of the page to determine if the page is available or
 /// pending.
 #[derive(Clone, Debug)]
@@ -101,7 +101,7 @@ pub enum PageValue {
 }
 
 impl PageValue {
-    /// resolves the PageValue to a Page, panicing if the page is Pending
+    /// resolves the `PageValue` to a Page, panicing if the page is Pending
     pub fn expect(self, msg: &str) -> Page {
         match self {
             PageValue::Pending => panic!("{}", msg),
@@ -130,7 +130,7 @@ impl TryFrom<Bytes> for PageValue {
                 PAGE_VALUE_EMPTY => Ok(PageValue::Empty),
                 _ => Err(Culprit::new_with_note(
                     PageValueConversionErr::InvalidMark,
-                    format!("invalid page value mark: {:?}", value),
+                    format!("invalid page value mark: {value:?}"),
                 )),
             }
         } else {

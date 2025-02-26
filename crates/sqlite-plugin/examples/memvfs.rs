@@ -212,8 +212,8 @@ impl Vfs for MemVfs {
     }
 }
 
-/// This function is called by SQLite when the extension is loaded. It registers
-/// the memvfs VFS with SQLite.
+/// This function is called by `SQLite` when the extension is loaded. It registers
+/// the memvfs VFS with `SQLite`.
 /// # Safety
 /// This function should only be called by sqlite's extension loading mechanism.
 #[no_mangle]

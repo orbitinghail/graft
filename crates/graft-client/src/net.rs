@@ -129,8 +129,7 @@ impl NetClient {
         } else {
             let err = GraftErr::decode(body).map_err(|err| {
                 let note = format!(
-                    "failed to decode response body into GraftErr from buffer of size {}",
-                    body_size
+                    "failed to decode response body into GraftErr from buffer of size {body_size}"
                 );
                 Culprit::from_err(err).with_note(note)
             })?;

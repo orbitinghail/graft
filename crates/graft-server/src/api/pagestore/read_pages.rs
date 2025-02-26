@@ -230,7 +230,7 @@ mod tests {
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         if resp.status_code() != 200 {
             let data = resp.as_bytes();
-            println!("response: {:?}", data);
+            println!("response: {data:?}");
             panic!("unexpected response status: {}", resp.status_code());
         }
         let mut resp = ReadPagesResponse::decode(resp.into_bytes()).unwrap();

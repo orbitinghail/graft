@@ -49,7 +49,7 @@ impl VolumeHandle {
         self.storage.snapshot(&self.vid).or_into_ctx()
     }
 
-    /// Open a VolumeReader at the latest snapshot
+    /// Open a `VolumeReader` at the latest snapshot
     pub fn reader(&self) -> Result<VolumeReader, ClientErr> {
         Ok(VolumeReader::new(
             self.vid.clone(),
@@ -59,7 +59,7 @@ impl VolumeHandle {
         ))
     }
 
-    /// Open a VolumeReader at the provided snapshot
+    /// Open a `VolumeReader` at the provided snapshot
     pub fn reader_at(&self, snapshot: Option<Snapshot>) -> VolumeReader {
         VolumeReader::new(
             self.vid.clone(),
@@ -69,12 +69,12 @@ impl VolumeHandle {
         )
     }
 
-    /// Open a VolumeWriter at the latest snapshot
+    /// Open a `VolumeWriter` at the latest snapshot
     pub fn writer(&self) -> Result<VolumeWriter, ClientErr> {
         self.reader().map(VolumeWriter::from)
     }
 
-    /// Open a VolumeWriter at the provided snapshot
+    /// Open a `VolumeWriter` at the provided snapshot
     pub fn writer_at(&self, snapshot: Option<Snapshot>) -> VolumeWriter {
         VolumeWriter::from(self.reader_at(snapshot))
     }

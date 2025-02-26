@@ -62,10 +62,10 @@ pub enum GraftErrCode {
     ServiceUnavailable = 101,
 }
 impl GraftErrCode {
-    /// String value of the enum field names used in the ProtoBuf definition.
+    /// String value of the enum field names used in the `ProtoBuf` definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    /// (if the `ProtoBuf` definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
             GraftErrCode::Unspecified => "GRAFT_ERR_CODE_UNSPECIFIED",
@@ -76,7 +76,7 @@ impl GraftErrCode {
             GraftErrCode::ServiceUnavailable => "GRAFT_ERR_CODE_SERVICE_UNAVAILABLE",
         }
     }
-    /// Creates an enum from field names used in the ProtoBuf definition.
+    /// Creates an enum from field names used in the `ProtoBuf` definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "GRAFT_ERR_CODE_UNSPECIFIED" => Some(Self::Unspecified),

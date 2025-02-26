@@ -45,7 +45,7 @@ mod tests {
         let expected = mksplinter(expected);
         for rhs in right.into_iter() {
             let mut left = left.clone();
-            let label = format!("lhs: {:?}, rhs: {:?}", left, rhs);
+            let label = format!("lhs: {left:?}, rhs: {rhs:?}");
             left.merge(&rhs);
             assert_eq!(left, expected, "merge: {label}");
         }

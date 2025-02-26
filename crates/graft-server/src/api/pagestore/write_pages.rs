@@ -61,7 +61,7 @@ pub async fn handler<C>(
     while count < expected_pages {
         let commit = match commit_rx.recv().await {
             Ok(commit) => commit,
-            Err(RecvError::Lagged(n)) => panic!("commit channel lagged by {}", n),
+            Err(RecvError::Lagged(n)) => panic!("commit channel lagged by {n}"),
             Err(RecvError::Closed) => panic!("commit channel unexpectedly closed"),
         };
 
@@ -80,8 +80,7 @@ pub async fn handler<C>(
 
     assert_eq!(
         count, expected_pages,
-        "expected {} pages, but got {}",
-        expected_pages, count
+        "expected {expected_pages} pages, but got {count}"
     );
 
     Ok(ProtoResponse::new(WritePagesResponse { segments }))

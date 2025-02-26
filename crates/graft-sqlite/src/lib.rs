@@ -16,7 +16,7 @@ mod file;
 mod pragma;
 mod vfs;
 
-/// Register the VFS with SQLite.
+/// Register the VFS with `SQLite`.
 /// # Safety
 /// This function should only be called by sqlite's extension loading mechanism.
 #[no_mangle]

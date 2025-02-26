@@ -143,7 +143,7 @@ impl From<i32> for AccessFlags {
     }
 }
 
-/// Represents one of the 5 SQLite locking levels.
+/// Represents one of the 5 `SQLite` locking levels.
 /// See [SQLite documentation](https://www.sqlite.org/lockingv3.html) for more information.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum LockLevel {

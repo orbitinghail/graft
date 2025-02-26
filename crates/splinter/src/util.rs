@@ -4,8 +4,8 @@ pub trait FromSuffix<'a> {
     fn from_suffix(data: &'a [u8], cardinality: usize) -> Self;
 }
 
-/// A custom version of ToOwned to get around a conflict with the standard
-/// library's `impl<T> ToOwned for T where T: Clone` and BlockRef.
+/// A custom version of `ToOwned` to get around a conflict with the standard
+/// library's `impl<T> ToOwned for T where T: Clone` and `BlockRef`.
 pub trait CopyToOwned {
     type Owned;
 

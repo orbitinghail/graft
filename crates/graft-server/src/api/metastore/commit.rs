@@ -82,8 +82,7 @@ pub async fn handler(
 
     // checkpoint doesn't change
     let checkpoint = latest_snapshot
-        .map(|s| s.checkpoint())
-        .unwrap_or(LSN::FIRST);
+        .map_or(LSN::FIRST, |s| s.checkpoint());
 
     let mut commit = CommitBuilder::new_with_capacity(
         CommitMeta::new(

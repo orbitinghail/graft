@@ -14,7 +14,7 @@ use measured::{
 pub type SplitGauge = Metric<SplitGaugeState>;
 pub type SplitGaugeVec<L> = MetricVec<SplitGaugeState, L>;
 
-/// SplitGaugeExt provides a set of convenience methods for working with SplitGauge metrics.
+/// `SplitGaugeExt` provides a set of convenience methods for working with `SplitGauge` metrics.
 pub trait SplitGaugeExt {
     fn inc(&self);
     fn inc_by(&self, value: u64);

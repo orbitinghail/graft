@@ -394,9 +394,9 @@ mod tests {
 
         // for each case, check that it roundtrips through display then parse
         for &unit in &cases {
-            let s = format!("{}", unit);
+            let s = format!("{unit}");
             let parsed = s.parse::<ByteUnit>().unwrap();
-            println!("parsed `{}` into {}", s, parsed);
+            println!("parsed `{s}` into {parsed}");
             assert_eq!(unit, parsed);
         }
 
@@ -414,8 +414,8 @@ mod tests {
         // check that each case parses
         for &(s, desc, expected) in &nonstandard_cases {
             let parsed = s.parse::<ByteUnit>().unwrap();
-            println!("parsed `{}` into {}", s, parsed);
-            assert_eq!(parsed, expected, "{}", desc);
+            println!("parsed `{s}` into {parsed}");
+            assert_eq!(parsed, expected, "{desc}");
         }
 
         let invalid_cases = [
@@ -429,7 +429,7 @@ mod tests {
         // check that each case fails to parse, and the error contains the expected message
         for &(s, desc, expected) in &invalid_cases {
             let parsed = s.parse::<ByteUnit>();
-            println!("parsed `{}` into {:?}", s, parsed);
+            println!("parsed `{s}` into {parsed:?}");
             assert!(parsed.is_err(), "{}", desc);
             assert!(
                 parsed.unwrap_err().to_string().contains(expected),

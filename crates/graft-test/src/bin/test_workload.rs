@@ -44,7 +44,7 @@ fn get_or_init_cid() -> (ClientId, FileLock) {
             let file_name = file_name.to_string_lossy();
             let cid: ClientId = file_name
                 .parse()
-                .unwrap_or_else(|_| panic!("failed to parse ClientId from {}", file_name));
+                .unwrap_or_else(|_| panic!("failed to parse ClientId from {file_name}"));
             return (cid, lock);
         }
     }

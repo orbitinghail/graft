@@ -107,7 +107,7 @@ mod tests {
         let expected_out = mksplinter(expected_out);
         for rhs in right.into_iter() {
             let mut left = left.clone();
-            let label = format!("lhs: {:?}, rhs: {:?}", left, rhs);
+            let label = format!("lhs: {left:?}, rhs: {rhs:?}");
             let out = left.cut(&rhs);
             assert_eq!(left, expected_cut, "cut: {label}");
             assert_eq!(out, expected_out, "intersection: {label}");

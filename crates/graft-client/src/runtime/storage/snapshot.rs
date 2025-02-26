@@ -13,7 +13,7 @@ use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 use super::{volume_state::VolumeStateTag, StorageErr};
 
-/// RemoteLSN tracks the relationship between the a server LSN and the local LSN
+/// `RemoteLSN` tracks the relationship between the a server LSN and the local LSN
 /// it maps to.
 #[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq, Serialize)]
 #[repr(u8)]
