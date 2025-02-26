@@ -17,10 +17,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: rui314/setup-mold@v1
-      - uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "18"
+      - name: system dependencies
+        run: apt update && apt install -y clang llvm mold libncurses-dev build-essential
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.85
