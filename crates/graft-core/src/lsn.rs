@@ -54,7 +54,7 @@ impl LSN {
 
     #[inline]
     const unsafe fn new_unchecked(lsn: u64) -> Self {
-        Self(NonZero::new_unchecked(lsn))
+        unsafe { Self(NonZero::new_unchecked(lsn)) }
     }
 
     #[inline]

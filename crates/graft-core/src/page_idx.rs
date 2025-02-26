@@ -58,7 +58,7 @@ impl PageIdx {
     /// The provided u32 must not be 0.
     #[inline]
     pub const unsafe fn new_unchecked(n: u32) -> Self {
-        Self(NonZero::new_unchecked(n))
+        unsafe { Self(NonZero::new_unchecked(n)) }
     }
 
     #[inline]

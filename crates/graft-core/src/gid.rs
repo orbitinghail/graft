@@ -248,10 +248,7 @@ mod tests {
             let pretty = id.pretty();
             let short = id.short();
             println!("{pretty} {short}");
-            assert!(
-                pretty.contains(&short),
-                "pretty: {pretty}, short: {short}"
-            );
+            assert!(pretty.contains(&short), "pretty: {pretty}, short: {short}");
         }
     }
 
