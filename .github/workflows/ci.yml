@@ -33,7 +33,7 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Build
-        run: cargo build --verbose
+        run: cargo build
       - name: Test
         run: cargo nextest run
       - name: SQLite Tests
