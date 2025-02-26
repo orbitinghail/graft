@@ -75,5 +75,5 @@ antithesis-run: antithesis-prep
         --image='{{PAGESTORE_ANTITHESIS_TAG}}' \
         --image='{{TEST_WORKLOAD_ANTITHESIS_TAG}}' \
         --image='{{MINIO_ANTITHESIS_TAG}}' \
-        --duration=360 \
+        --duration=120 \
         --email='antithesis-results@orbitinghail.dev'

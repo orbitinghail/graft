@@ -1,3 +1,8 @@
+// seems like rust analyzer has a bug that causes this warning to spuriously
+// fire on camel case types that also use underscores which is what zerocopy
+// generates for enum struct variants
+#![allow(non_camel_case_types)]
+
 use std::fmt::{Debug, Display};
 
 use culprit::{Culprit, ResultExt};

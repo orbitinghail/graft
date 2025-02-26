@@ -271,7 +271,7 @@ impl Storage {
         let iter = self.volumes.snapshot().iter().err_into();
         let iter = VolumeQueryIter::new(iter);
         iter.try_filter(move |state| {
-            let matches_vid = vids.as_ref().map_or(true, |s| s.contains(state.vid()));
+            let matches_vid = vids.as_ref().is_none_or(|s| s.contains(state.vid()));
             let matches_dir = state.config().sync().matches(sync);
             Ok(matches_vid && matches_dir)
         })
@@ -733,7 +733,7 @@ impl Storage {
         // the remote lsn to receive
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
         // the new local lsn to commit the remote into
-        let commit_lsn = local_lsn.map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
+        let commit_lsn = reset_lsn.map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
 
         span.record("local_lsn", format!("{:?}", local_lsn));
         span.record("reset_lsn", format!("{:?}", reset_lsn));
