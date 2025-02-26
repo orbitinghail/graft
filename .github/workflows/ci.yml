@@ -20,7 +20,11 @@ jobs:
       - uses: rui314/setup-mold@v1
       - uses: KyleMayes/install-llvm-action@v2
         with:
-          version: "19"
+          version: "18"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85
+          components: clippy, rustfmt
       - uses: actions/checkout@v4
         with:
           token: ${{secrets.GITHUB_TOKEN}}
@@ -34,6 +38,9 @@ jobs:
         run: cargo nextest run
       - name: SQLite Tests
         run: ./sqlite_tests.sh
-      - uses: auguwu/clippy-action@1.4.0
+      - name: Clippy
+        uses: auguwu/clippy-action@1.4.0
         with:
           token: ${{secrets.GITHUB_TOKEN}}
+      - name: Cargo fmt
+        run: cargo fmt --check
