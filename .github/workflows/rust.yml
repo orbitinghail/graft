@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  
+permissions:
+    checks: write
+    
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-nextest
+    - name: Build
+      run: cargo build --verbose
+    - name: Test
+      run: cargo nextest run
+    - name: SQLite Tests
+      run: ./sqlite_tests.sh
+    - uses: auguwu/clippy-action@1.4.0
+      with:
+        token: ${{secrets.GITHUB_TOKEN}}
