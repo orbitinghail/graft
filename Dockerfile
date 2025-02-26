@@ -1,7 +1,12 @@
-FROM rust:1.83 AS base
+FROM rust:1.85 AS base
+
+# increment to force rebuild of all layers
+RUN echo "rebuild-deps: 1"
+
+# install deps
 RUN apt-get update && apt-get install -y mold && rm -rf /var/lib/apt/lists/*
-RUN cargo install cargo-chef --version 0.1.68
-RUN cargo install sccache --version 0.9.1
+RUN cargo install cargo-chef --version 0.1.71
+RUN cargo install sccache --version 0.10.0
 ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
 # Enable instrumentation when INSTRUMENTED is set:
