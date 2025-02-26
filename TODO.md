@@ -1,9 +1,6 @@
 Stack:
 
 - sqlite antithesis workload
-- currently we inconsistently use magic numbers and sometimes format versions
-  - we also don't use checksums
-  - consider standardizing magic+version, and adopting checksums
 - garbage collection
 - consider switching pagestore to websockets or http streaming bodies
 - authentication (api keys)

@@ -21,19 +21,18 @@ mod intersection;
 mod merge;
 mod union;
 
-pub const SPLINTER_MAGIC: [u8; 2] = [0x57, 0x16];
+pub const SPLINTER_MAGIC: [u8; 4] = [0xDA, 0xAE, 0x12, 0xDF];
 
 pub const SPLINTER_MAX_VALUE: u32 = u32::MAX;
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
 struct Header {
-    magic: [u8; 2],
-    unused: [u8; 2],
+    magic: [u8; 4],
 }
 
 impl Header {
-    const DEFAULT: Header = Header { magic: SPLINTER_MAGIC, unused: [0; 2] };
+    const DEFAULT: Header = Header { magic: SPLINTER_MAGIC };
 
     fn serialize<B: bytes::BufMut>(&self, out: &mut B) -> usize {
         out.put_slice(self.as_bytes());

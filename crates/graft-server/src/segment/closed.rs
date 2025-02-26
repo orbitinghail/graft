@@ -20,7 +20,7 @@ use crate::segment::index::SegmentIndex;
 
 use super::index::SegmentIndexBuilder;
 
-pub const SEGMENT_MAGIC: U32 = U32::from_bytes([0xB8, 0x3B, 0x41, 0x00]);
+pub const SEGMENT_MAGIC: U32 = U32::from_bytes([0x9E, 0x0F, 0xEE, 0x2D]);
 
 // segments must be no larger than 16 MB
 pub const SEGMENT_MAX_SIZE: ByteUnit = ByteUnit::from_mb(16);

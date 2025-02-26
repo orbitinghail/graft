@@ -1,15 +1,10 @@
-# Future Work <!-- omit from toc -->
+# Future Work
 
 This file documents future work that has been punted to help accelerate Graft to a MvP.
 
-# Outline <!-- omit from toc -->
+# Checksums
 
-- [Time-Travel and Point in Time Restore](#time-travel-and-point-in-time-restore)
-  - [Segment Compaction](#segment-compaction)
-- [Page deltas](#page-deltas)
-- [Low-latency writes](#low-latency-writes)
-- [Request Hedging](#request-hedging)
-- [Performance Optimizations](#performance-optimizations)
+Currently Graft has no way to audit the correctness of underlying storage such as object storage and fjall. It may be prudent to add some strategic checksums to our large serialized formats (segments, splinters, commits) to help detect corruption. Luckily both object storage and fjall already do a lot of work to prevent data corruption, hence why this is in the future work file.
 
 # Time-Travel and Point in Time Restore
 
