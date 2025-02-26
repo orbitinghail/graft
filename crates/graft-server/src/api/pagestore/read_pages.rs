@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use axum::{extract::State, response::IntoResponse};
 use culprit::ResultExt;
-use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
-use graft_core::{lsn::LSN, VolumeId};
+use futures::{FutureExt, TryStreamExt, stream::FuturesUnordered};
+use graft_core::{VolumeId, lsn::LSN};
 use graft_proto::pagestore::v1::{PageAtIdx, ReadPagesRequest, ReadPagesResponse};
-use splinter::{ops::Cut, Splinter};
+use splinter::{Splinter, ops::Cut};
 
 use crate::api::error::ApiErrCtx;
 use crate::segment::cache::Cache;
@@ -101,13 +101,14 @@ mod tests {
     use bytes::Bytes;
     use graft_client::{MetastoreClient, NetClient};
     use graft_core::{
+        PageIdx,
         gid::{ClientId, SegmentId},
         page::Page,
         page_count::PageCount,
-        pageidx, PageIdx,
+        pageidx,
     };
     use graft_proto::common::v1::SegmentInfo;
-    use object_store::{memory::InMemory, path::Path, ObjectStore, PutPayload};
+    use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path};
     use prost::Message;
     use tokio::sync::mpsc;
 

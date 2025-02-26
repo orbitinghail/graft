@@ -7,7 +7,7 @@ use measured::{Counter, MetricGroup};
 use thiserror::Error;
 use tokio::{
     sync::mpsc::{self, error::SendError},
-    time::{sleep_until, Duration, Instant},
+    time::{Duration, Instant, sleep_until},
 };
 
 use super::{
@@ -145,7 +145,7 @@ impl SegmentWriterTask {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{page::Page, pageidx, VolumeId};
+    use graft_core::{VolumeId, page::Page, pageidx};
 
     use super::*;
 

@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use bytes::Bytes;
 
-use crate::{util::CopyToOwned, Splinter, SplinterRef};
+use crate::{Splinter, SplinterRef, util::CopyToOwned};
 use itertools::Itertools;
 
 pub fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {

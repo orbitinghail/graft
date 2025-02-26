@@ -5,15 +5,15 @@ use std::fmt::Debug;
 
 use culprit::{Culprit, ResultExt};
 use graft_core::{
-    byte_unit::ByteUnit,
-    page::{Page, PAGESIZE},
-    zerocopy_ext::ZerocopyErr,
     PageCount, PageIdx, SegmentId, VolumeId,
+    byte_unit::ByteUnit,
+    page::{PAGESIZE, Page},
+    zerocopy_ext::ZerocopyErr,
 };
 use thiserror::Error;
 use zerocopy::{
-    little_endian::{U16, U32},
     Immutable, IntoBytes, KnownLayout, TryFromBytes,
+    little_endian::{U16, U32},
 };
 
 use crate::segment::index::SegmentIndex;
@@ -115,7 +115,12 @@ impl<'a> ClosedSegment<'a> {
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, Culprit<SegmentValidationErr>> {
         if data.len() > SEGMENT_MAX_SIZE {
             let size = ByteUnit::new(data.len() as u64);
-            return Err(Culprit::new_with_note(SegmentValidationErr::TooLarge, format!("closed segment size {size} must be smaller than max segment size {SEGMENT_MAX_SIZE}")));
+            return Err(Culprit::new_with_note(
+                SegmentValidationErr::TooLarge,
+                format!(
+                    "closed segment size {size} must be smaller than max segment size {SEGMENT_MAX_SIZE}"
+                ),
+            ));
         }
 
         let (data, footer) = SegmentFooter::try_ref_from_suffix(data)

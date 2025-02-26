@@ -2,7 +2,7 @@ use std::{sync::Arc, vec};
 
 use axum::{extract::State, response::IntoResponse};
 use culprit::{Culprit, ResultExt};
-use graft_core::{page::Page, VolumeId};
+use graft_core::{VolumeId, page::Page};
 use graft_proto::{
     common::v1::SegmentInfo,
     pagestore::v1::{WritePagesRequest, WritePagesResponse},

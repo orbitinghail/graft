@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use axum::{
-    routing::{get, MethodRouter},
     Router,
+    routing::{MethodRouter, get},
 };
 use tower_http::compression::CompressionLayer;
 

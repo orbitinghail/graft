@@ -3,10 +3,10 @@ use std::io::Write;
 use measured::{
     label::LabelGroupSet,
     metric::{
+        Metric, MetricEncoding, MetricVec,
         counter::CounterState,
         group::Encoding,
         name::{MetricNameEncoder, Suffix},
-        Metric, MetricEncoding, MetricVec,
     },
     text::{MetricType, TextEncoder},
 };

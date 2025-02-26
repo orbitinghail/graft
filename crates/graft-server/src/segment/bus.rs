@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use graft_core::{page::Page, PageIdx, SegmentId, VolumeId};
+use graft_core::{PageIdx, SegmentId, VolumeId, page::Page};
 use tokio::sync::broadcast;
 
 use super::{multigraft::MultiGraft, open::OpenSegment};

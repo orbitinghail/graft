@@ -77,9 +77,9 @@ impl<T: AsRef<[u8]>> Cut<SplinterRef<T>> for Splinter {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ops::Cut,
-        testutil::{mksplinter, mksplinters, TestSplinter},
         Splinter,
+        ops::Cut,
+        testutil::{TestSplinter, mksplinter, mksplinters},
     };
 
     impl Cut<TestSplinter> for Splinter {

@@ -1,7 +1,7 @@
 use crossbeam::channel::{self, Receiver, Sender};
 use graft_core::VolumeId;
 
-use crate::{runtime::storage::volume_state::SyncDirection, ClientErr};
+use crate::{ClientErr, runtime::storage::volume_state::SyncDirection};
 use culprit::Result;
 
 #[derive(Debug)]

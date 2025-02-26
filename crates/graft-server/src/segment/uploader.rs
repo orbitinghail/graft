@@ -4,8 +4,8 @@ use bytes::Buf;
 use culprit::Culprit;
 use futures::{FutureExt, TryFutureExt};
 use graft_core::SegmentId;
-use measured::{metric::histogram::Thresholds, CounterVec, Histogram, MetricGroup};
-use object_store::{path::Path, ObjectStore, PutPayload};
+use measured::{CounterVec, Histogram, MetricGroup, metric::histogram::Thresholds};
+use object_store::{ObjectStore, PutPayload, path::Path};
 use thiserror::Error;
 use tokio::sync::mpsc;
 

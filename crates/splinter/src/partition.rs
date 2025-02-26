@@ -1,5 +1,5 @@
 use std::{
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{BTreeMap, btree_map::Entry},
     convert::TryInto,
     fmt::Debug,
     marker::PhantomData,
@@ -10,13 +10,13 @@ use bytes::BufMut;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::{
+    Segment,
     bitmap::BitmapMutExt,
     block::Block,
     index::IndexRef,
     ops::Merge,
     relational::Relation,
     util::{CopyToOwned, FromSuffix, SerializeContainer},
-    Segment,
 };
 
 #[derive(Clone)]

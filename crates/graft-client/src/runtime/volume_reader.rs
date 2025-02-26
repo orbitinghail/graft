@@ -3,16 +3,16 @@ use std::{collections::HashMap, iter::once, sync::Arc};
 use culprit::{Result, ResultExt};
 
 use graft_core::{
-    lsn::LSN,
-    page::{Page, EMPTY_PAGE},
     PageIdx, VolumeId,
+    lsn::LSN,
+    page::{EMPTY_PAGE, Page},
 };
 use splinter::Splinter;
 
-use crate::{oracle::Oracle, ClientErr, ClientPair};
+use crate::{ClientErr, ClientPair, oracle::Oracle};
 
 use super::{
-    storage::{page::PageValue, snapshot::Snapshot, Storage},
+    storage::{Storage, page::PageValue, snapshot::Snapshot},
     volume_writer::VolumeWriter,
 };
 

@@ -37,7 +37,10 @@ impl<T> Relation for &T
 where
     T: Relation,
 {
-    type ValRef<'a> = T::ValRef<'a> where Self: 'a;
+    type ValRef<'a>
+        = T::ValRef<'a>
+    where
+        Self: 'a;
 
     fn len(&self) -> usize {
         (**self).len()
@@ -65,7 +68,8 @@ mod tests {
     }
 
     impl<T> Relation for TestRelation<T> {
-        type ValRef<'a> = &'a T
+        type ValRef<'a>
+            = &'a T
         where
             Self: 'a;
 

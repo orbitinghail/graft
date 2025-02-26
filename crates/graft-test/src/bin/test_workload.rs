@@ -5,15 +5,15 @@ use config::Config;
 use culprit::{Culprit, ResultExt};
 use file_lock::{FileLock, FileOptions};
 use graft_client::{
-    runtime::{runtime::Runtime, storage::Storage},
     ClientPair, MetastoreClient, NetClient, PagestoreClient,
+    runtime::{runtime::Runtime, storage::Storage},
 };
 use graft_core::gid::ClientId;
 use graft_test::{
-    workload::{WorkloadConfig, WorkloadErr},
     Ticker,
+    workload::{WorkloadConfig, WorkloadErr},
 };
-use graft_tracing::{init_tracing, running_in_antithesis, TracingConsumer};
+use graft_tracing::{TracingConsumer, init_tracing, running_in_antithesis};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rand::Rng;
 

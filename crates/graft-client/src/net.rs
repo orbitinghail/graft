@@ -3,16 +3,16 @@ use culprit::{Culprit, ResultExt};
 use graft_core::byte_unit::ByteUnit;
 use graft_proto::common::v1::GraftErr;
 use http::{
-    uri::{Builder, PathAndQuery},
     HeaderName, HeaderValue, StatusCode, Uri,
+    uri::{Builder, PathAndQuery},
 };
 use std::{any::type_name, sync::Arc, time::Duration};
 use tracing::field;
 use url::Url;
 
-use ureq::{config::AutoHeaderValue, Agent};
+use ureq::{Agent, config::AutoHeaderValue};
 
-use crate::{error::ClientErr, USER_AGENT};
+use crate::{USER_AGENT, error::ClientErr};
 
 use prost::Message;
 

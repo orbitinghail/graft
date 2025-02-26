@@ -2,8 +2,8 @@ use itertools::izip;
 use zerocopy::{FromBytes, Immutable};
 
 use crate::{
-    block::{block_size, BlockRef},
     Segment,
+    block::{BlockRef, block_size},
 };
 
 #[derive(Clone)]

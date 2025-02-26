@@ -287,11 +287,7 @@ mod tests {
                     // inject a huge random read every 15 pages to test algorithm resilience
                     .map(
                         |(i, p): (usize, u32)| {
-                            if i % 15 == 0 {
-                                p + 116589
-                            } else {
-                                p
-                            }
+                            if i % 15 == 0 { p + 116589 } else { p }
                         },
                     )
                     .collect(),

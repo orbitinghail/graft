@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use graft_core::SegmentId;
-use object_store::{path::Path, ObjectStore};
+use object_store::{ObjectStore, path::Path};
 
 use super::cache::Cache;
 use crate::limiter::Limiter;

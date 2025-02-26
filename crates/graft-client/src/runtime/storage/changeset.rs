@@ -2,12 +2,12 @@ use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
-use crossbeam::channel::{bounded, Receiver, Sender, TrySendError};
+use crossbeam::channel::{Receiver, Sender, TrySendError, bounded};
 use parking_lot::{Mutex, RwLock};
 
 type InnerSet<K> = Arc<RwLock<HashMap<K, AtomicU64>>>;

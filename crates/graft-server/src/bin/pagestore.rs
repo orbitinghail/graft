@@ -1,12 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
 use config::Config;
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use graft_client::{MetastoreClient, NetClient};
 use graft_core::byte_unit::ByteUnit;
 use graft_server::{
     api::{
-        pagestore::{pagestore_routes, PagestoreApiState},
+        pagestore::{PagestoreApiState, pagestore_routes},
         routes::build_router,
         task::ApiServerTask,
     },
@@ -25,7 +25,7 @@ use graft_server::{
         updater::VolumeCatalogUpdater,
     },
 };
-use graft_tracing::{init_tracing, TracingConsumer};
+use graft_tracing::{TracingConsumer, init_tracing};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rlimit::Resource;
 use serde::Deserialize;

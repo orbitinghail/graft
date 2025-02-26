@@ -18,8 +18,8 @@ use crate::flags::{self, AccessFlags, OpenOpts};
 use crate::logger::{SqliteLogLevel, SqliteLogger};
 use crate::vars;
 use crate::vfs::{
-    Pragma, PragmaErr, Vfs, VfsHandle, VfsResult, DEFAULT_DEVICE_CHARACTERISTICS,
-    DEFAULT_SECTOR_SIZE,
+    DEFAULT_DEVICE_CHARACTERISTICS, DEFAULT_SECTOR_SIZE, Pragma, PragmaErr, Vfs, VfsHandle,
+    VfsResult,
 };
 
 pub struct File {
@@ -193,10 +193,7 @@ impl Vfs for MockVfs {
         let mut shared = self.shared();
         shared.log(format_args!("file_size: handle={meta:?}"));
         shared.hooks.file_size(*meta);
-        Ok(shared
-            .files
-            .get(meta)
-            .map_or(0, |file| file.data.len()))
+        Ok(shared.files.get(meta).map_or(0, |file| file.data.len()))
     }
 
     fn truncate(&self, meta: &mut Self::Handle, size: usize) -> VfsResult<()> {
@@ -279,9 +276,7 @@ impl Vfs for MockVfs {
         pragma: Pragma<'_>,
     ) -> Result<Option<String>, PragmaErr> {
         let mut shared = self.shared();
-        shared.log(format_args!(
-            "pragma: handle={meta:?} pragma={pragma:?}"
-        ));
+        shared.log(format_args!("pragma: handle={meta:?} pragma={pragma:?}"));
         shared.hooks.pragma(*meta, pragma)
     }
 

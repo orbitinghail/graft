@@ -5,14 +5,14 @@ use graft_client::{
     runtime::{
         runtime::Runtime,
         storage::{
-            volume_state::{SyncDirection, VolumeConfig},
             Storage,
+            volume_state::{SyncDirection, VolumeConfig},
         },
         volume_reader::VolumeRead,
         volume_writer::VolumeWrite,
     },
 };
-use graft_core::{gid::ClientId, page::Page, PageIdx, VolumeId};
+use graft_core::{PageIdx, VolumeId, gid::ClientId, page::Page};
 use graft_test::start_graft_backend;
 
 #[graft_test::test]

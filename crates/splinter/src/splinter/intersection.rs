@@ -67,9 +67,9 @@ impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> Intersection<SplinterRef<T2>> for Splinte
 #[cfg(test)]
 mod tests {
     use crate::{
-        ops::Intersection,
-        testutil::{check_combinations, TestSplinter},
         Splinter,
+        ops::Intersection,
+        testutil::{TestSplinter, check_combinations},
     };
 
     impl Intersection for TestSplinter {

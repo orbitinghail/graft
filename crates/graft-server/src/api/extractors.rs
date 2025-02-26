@@ -1,6 +1,6 @@
 use axum::{
     extract::{FromRequest, Request},
-    http::{header, HeaderValue},
+    http::{HeaderValue, header},
 };
 use bytes::Bytes;
 use culprit::Culprit;

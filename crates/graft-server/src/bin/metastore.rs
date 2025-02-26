@@ -4,7 +4,7 @@ use config::Config;
 use futures::FutureExt;
 use graft_server::{
     api::{
-        metastore::{metastore_routes, MetastoreApiState},
+        metastore::{MetastoreApiState, metastore_routes},
         routes::build_router,
         task::ApiServerTask,
     },
@@ -17,7 +17,7 @@ use graft_server::{
         updater::VolumeCatalogUpdater,
     },
 };
-use graft_tracing::{init_tracing, TracingConsumer};
+use graft_tracing::{TracingConsumer, init_tracing};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use serde::Deserialize;
 use tokio::{net::TcpListener, select, signal::ctrl_c};

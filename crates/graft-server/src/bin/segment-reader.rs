@@ -1,10 +1,10 @@
 use std::{fmt::Debug, io, path::PathBuf, process::exit};
 
-use clap::{arg, Parser, Subcommand};
+use clap::{Parser, Subcommand, arg};
 use culprit::{Culprit, ResultExt};
 use graft_core::{
-    page::{Page, PAGESIZE},
     PageIdx, VolumeId,
+    page::{PAGESIZE, Page},
 };
 use graft_server::segment::closed::{ClosedSegment, SegmentValidationErr};
 use thiserror::Error;

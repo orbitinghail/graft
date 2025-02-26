@@ -1,17 +1,17 @@
 use parking_lot::Once;
 use std::time::Instant;
 use tracing_subscriber::{
-    fmt::{time::SystemTime, MakeWriter},
+    fmt::{MakeWriter, time::SystemTime},
     util::SubscriberInitExt,
 };
 
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
+    EnvFilter,
     fmt::{
         format::{FmtSpan, Writer},
         time::FormatTime,
     },
-    EnvFilter,
 };
 
 pub fn running_in_antithesis() -> bool {

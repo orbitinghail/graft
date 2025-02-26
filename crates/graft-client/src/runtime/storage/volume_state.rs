@@ -1,9 +1,9 @@
 use culprit::{Culprit, ResultExt};
 use fjall::{KvPair, Slice};
 use graft_core::{
-    lsn::{MaybeLSN, LSN},
-    zerocopy_ext::TryFromBytesExt,
     VolumeId,
+    lsn::{LSN, MaybeLSN},
+    zerocopy_ext::TryFromBytesExt,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -13,7 +13,7 @@ use std::{
 use tryiter::TryIteratorExt;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
-use super::{snapshot::Snapshot, StorageErr};
+use super::{StorageErr, snapshot::Snapshot};
 
 #[derive(
     Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned, Clone, Copy, PartialEq, Eq,

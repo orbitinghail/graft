@@ -1,8 +1,8 @@
 use std::{thread::sleep, time::Duration};
 
 use crate::{
-    workload::{load_tracker, recover_and_sync_volume},
     PageHash,
+    workload::{load_tracker, recover_and_sync_volume},
 };
 
 use culprit::{Culprit, ResultExt};
@@ -14,9 +14,9 @@ use graft_client::{
         volume_writer::VolumeWrite,
     },
 };
-use graft_core::{page::Page, PageCount, PageIdx, VolumeId};
+use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
 use precept::{expect_always_or_unreachable, expect_sometimes};
-use rand::{distr::uniform::SampleRange, seq::IndexedRandom, Rng};
+use rand::{Rng, distr::uniform::SampleRange, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};
 use tracing::field;
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use culprit::{Culprit, ResultExt};
-use graft_core::{lsn::LSNRangeExt, VolumeId};
+use graft_core::{VolumeId, lsn::LSNRangeExt};
 use graft_proto::{
     common::v1::{Commit, SegmentInfo},
     metastore::v1::{PullCommitsRequest, PullCommitsResponse},
@@ -95,7 +95,7 @@ mod tests {
 
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
-    use graft_core::{gid::ClientId, lsn::LSN, page_count::PageCount, SegmentId};
+    use graft_core::{SegmentId, gid::ClientId, lsn::LSN, page_count::PageCount};
     use graft_proto::common::v1::LsnRange;
     use object_store::memory::InMemory;
     use prost::Message;

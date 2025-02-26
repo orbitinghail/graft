@@ -7,7 +7,7 @@ use graft_proto::{
     common::v1::LsnRange,
     metastore::v1::{PullGraftRequest, PullGraftResponse},
 };
-use splinter::{ops::Merge, Splinter};
+use splinter::{Splinter, ops::Merge};
 use tryiter::TryIteratorExt;
 
 use crate::api::{
@@ -102,7 +102,7 @@ mod tests {
 
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
-    use graft_core::{gid::ClientId, lsn::LSN, page_count::PageCount, SegmentId};
+    use graft_core::{SegmentId, gid::ClientId, lsn::LSN, page_count::PageCount};
     use object_store::memory::InMemory;
     use prost::Message;
 

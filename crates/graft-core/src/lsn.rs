@@ -95,11 +95,7 @@ impl LSN {
     pub fn since(&self, other: &Self) -> Option<u64> {
         let me = self.0.get();
         let other = other.0.get();
-        if me >= other {
-            Some(me - other)
-        } else {
-            None
-        }
+        if me >= other { Some(me - other) } else { None }
     }
 
     /// Formats the LSN as a fixed-width hexadecimal string.

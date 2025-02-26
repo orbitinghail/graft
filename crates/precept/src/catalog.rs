@@ -1,12 +1,12 @@
 use std::{
     panic::Location,
     sync::{
-        atomic::{self, AtomicUsize},
         LazyLock,
+        atomic::{self, AtomicUsize},
     },
 };
 
-use crate::dispatch::{self, dispatcher, Event};
+use crate::dispatch::{self, Event, dispatcher};
 
 /// Catalog of all antithesis assertions provided
 #[cfg(not(feature = "disabled"))]

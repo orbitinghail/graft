@@ -54,9 +54,9 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        ops::Union,
-        testutil::{check_combinations, TestSplinter},
         Splinter,
+        ops::Union,
+        testutil::{TestSplinter, check_combinations},
     };
 
     impl Union for TestSplinter {

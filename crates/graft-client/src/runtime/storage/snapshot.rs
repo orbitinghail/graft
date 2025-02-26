@@ -11,7 +11,7 @@ use graft_core::{lsn::LSN, page_count::PageCount};
 use serde::Serialize;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-use super::{volume_state::VolumeStateTag, StorageErr};
+use super::{StorageErr, volume_state::VolumeStateTag};
 
 /// `RemoteLSN` tracks the relationship between the a server LSN and the local LSN
 /// it maps to.

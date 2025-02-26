@@ -286,7 +286,7 @@ impl PageIdxRangeExt for std::ops::RangeInclusive<PageIdx> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{page_idx::PageIdxRangeExt, pageidx, PageCount, PageIdx};
+    use crate::{PageCount, PageIdx, page_idx::PageIdxRangeExt, pageidx};
 
     #[test]
     fn test_page_idx_iter() {

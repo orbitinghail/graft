@@ -9,13 +9,13 @@ use std::{
 
 use culprit::{Culprit, ResultExt};
 use graft_client::{
+    ClientErr,
     runtime::{
         runtime::Runtime,
         storage::volume_state::{SyncDirection, VolumeConfig},
     },
-    ClientErr,
 };
-use graft_core::{gid::GidParseErr, VolumeId};
+use graft_core::{VolumeId, gid::GidParseErr};
 use graft_tracing::TracingConsumer;
 use parking_lot::Mutex;
 use sqlite_plugin::{
@@ -31,7 +31,7 @@ use thiserror::Error;
 use tryiter::TryIteratorExt;
 
 use crate::{
-    file::{mem_file::MemFile, vol_file::VolFile, FileHandle, VfsFile},
+    file::{FileHandle, VfsFile, mem_file::MemFile, vol_file::VolFile},
     pragma::GraftPragma,
 };
 

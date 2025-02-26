@@ -8,9 +8,8 @@ use culprit::{Culprit, ResultExt};
 use graft_client::runtime::{runtime::Runtime, storage::Storage};
 use graft_core::gid::ClientId;
 use graft_test::{
-    start_graft_backend,
+    Ticker, start_graft_backend,
     workload::{WorkloadConfig, WorkloadErr},
-    Ticker,
 };
 
 struct WorkloadRunner {

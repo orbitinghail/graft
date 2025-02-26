@@ -1,7 +1,7 @@
 use culprit::{Culprit, ResultExt};
 use fjall::Slice;
-use graft_core::{lsn::LSN, zerocopy_ext::TryFromBytesExt, VolumeId};
-use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, U64};
+use graft_core::{VolumeId, lsn::LSN, zerocopy_ext::TryFromBytesExt};
+use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U64, Unaligned};
 
 use super::StorageErr;
 

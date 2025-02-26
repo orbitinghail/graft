@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{parse::Parse, parse_macro_input, Ident, ItemFn, LitStr, Token};
+use syn::{Ident, ItemFn, LitStr, Token, parse::Parse, parse_macro_input};
 
 #[proc_macro_attribute]
 pub fn test(_args: TokenStream, input: TokenStream) -> TokenStream {

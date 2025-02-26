@@ -3,7 +3,7 @@ use std::ops::RangeBounds;
 use culprit::{Culprit, ResultExt};
 use futures::TryStreamExt;
 use graft_client::MetastoreClient;
-use graft_core::{lsn::LSN, VolumeId};
+use graft_core::{VolumeId, lsn::LSN};
 use tokio::task::spawn_blocking;
 
 use crate::limiter::Limiter;

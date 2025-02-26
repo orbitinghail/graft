@@ -1,14 +1,14 @@
 use culprit::{Result, ResultExt};
 use graft_core::{
-    gid::ClientId,
-    lsn::{LSNRangeExt, LSN},
-    page::Page,
     PageIdx, VolumeId,
+    gid::ClientId,
+    lsn::{LSN, LSNRangeExt},
+    page::Page,
 };
 use graft_proto::pagestore::v1::PageAtIdx;
 use tryiter::TryIteratorExt;
 
-use crate::{runtime::storage::Storage, ClientErr, ClientPair};
+use crate::{ClientErr, ClientPair, runtime::storage::Storage};
 
 #[derive(Debug)]
 pub enum Job {

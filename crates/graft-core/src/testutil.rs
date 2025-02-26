@@ -1,15 +1,15 @@
 use bytes::BytesMut;
 use rand::{
+    Rng,
     distr::{
-        uniform::{self, SampleBorrow, SampleUniform, UniformInt, UniformSampler},
         StandardUniform,
+        uniform::{self, SampleBorrow, SampleUniform, UniformInt, UniformSampler},
     },
     prelude::Distribution,
-    Rng,
 };
 
 use crate::{
-    page::{Page, PAGESIZE},
+    page::{PAGESIZE, Page},
     page_idx::PageIdx,
 };
 

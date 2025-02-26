@@ -2,8 +2,8 @@ use std::{
     future::Future,
     ops::Deref,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 

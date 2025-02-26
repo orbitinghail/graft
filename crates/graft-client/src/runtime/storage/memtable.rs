@@ -1,6 +1,6 @@
-use std::collections::{btree_map::IntoIter, BTreeMap};
+use std::collections::{BTreeMap, btree_map::IntoIter};
 
-use graft_core::{page::Page, PageIdx};
+use graft_core::{PageIdx, page::Page};
 
 #[derive(Default, Debug, Clone)]
 pub struct Memtable {

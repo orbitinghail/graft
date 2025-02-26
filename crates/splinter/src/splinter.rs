@@ -2,17 +2,17 @@ use bytes::{Bytes, BytesMut};
 use culprit::Culprit;
 use std::fmt::Debug;
 use zerocopy::{
-    little_endian::{U16, U32},
     ConvertError, FromBytes, Immutable, IntoBytes, KnownLayout, Ref, Unaligned,
+    little_endian::{U16, U32},
 };
 
 use crate::{
+    DecodeErr, Segment,
     bitmap::{BitmapExt, BitmapMutExt},
     block::{Block, BlockRef},
     partition::{Partition, PartitionRef},
     relational::Relation,
     util::{CopyToOwned, FromSuffix, SerializeContainer},
-    DecodeErr, Segment,
 };
 
 mod cmp;

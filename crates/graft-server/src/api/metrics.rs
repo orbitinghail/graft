@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
-use measured::{metric::name::WithNamespace, text::BufferedTextEncoder, MetricGroup};
+use measured::{MetricGroup, metric::name::WithNamespace, text::BufferedTextEncoder};
 
 use crate::metrics::registry::Registry;
 

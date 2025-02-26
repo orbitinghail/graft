@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fmt::Debug};
 
 use culprit::Culprit;
 use graft_core::{
-    byte_unit::ByteUnit, page::Page, page_count::PageCount, PageIdx, SegmentId, VolumeId,
+    PageIdx, SegmentId, VolumeId, byte_unit::ByteUnit, page::Page, page_count::PageCount,
 };
 use thiserror::Error;
 use zerocopy::IntoBytes;
@@ -12,7 +12,7 @@ use zerocopy::IntoBytes;
 use crate::bytes_vec::BytesVec;
 
 use super::{
-    closed::{closed_segment_size, SegmentFooter, SEGMENT_MAX_PAGES, SEGMENT_MAX_VOLUMES},
+    closed::{SEGMENT_MAX_PAGES, SEGMENT_MAX_VOLUMES, SegmentFooter, closed_segment_size},
     index::SegmentIndexBuilder,
     multigraft::MultiGraft,
 };

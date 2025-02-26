@@ -1,7 +1,7 @@
 use bytes::Bytes;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use roaring::RoaringBitmap;
-use splinter::{ops::Intersection, Splinter, SplinterRef};
+use splinter::{Splinter, SplinterRef, ops::Intersection};
 use std::hint::black_box;
 
 fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {

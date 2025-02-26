@@ -1,14 +1,14 @@
 use std::{env::temp_dir, ffi::c_void, time::Duration};
 
 use graft_client::{
-    runtime::{runtime::Runtime, storage::Storage},
     ClientPair, MetastoreClient, NetClient, PagestoreClient,
+    runtime::{runtime::Runtime, storage::Storage},
 };
 use graft_core::ClientId;
 use sqlite_plugin::{
     sqlite3_api_routines,
     vars::SQLITE_OK_LOAD_PERMANENTLY,
-    vfs::{register_dynamic, RegisterOpts},
+    vfs::{RegisterOpts, register_dynamic},
 };
 use vfs::GraftVfs;
 

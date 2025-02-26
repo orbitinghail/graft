@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use crate::{
-    workload::{load_tracker, recover_and_sync_volume},
     PageHash,
+    workload::{load_tracker, recover_and_sync_volume},
 };
 
 use crossbeam::channel::RecvTimeoutError;
@@ -17,9 +17,9 @@ use graft_client::{
         volume_reader::VolumeRead,
     },
 };
-use graft_core::{page_idx::PageIdxRangeExt, pageidx, PageIdx, VolumeId};
+use graft_core::{PageIdx, VolumeId, page_idx::PageIdxRangeExt, pageidx};
 use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
-use rand::{distr::uniform::SampleRange, seq::IndexedRandom, Rng};
+use rand::{Rng, distr::uniform::SampleRange, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};
 use tracing::field;
 

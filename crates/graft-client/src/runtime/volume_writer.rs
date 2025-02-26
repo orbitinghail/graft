@@ -1,7 +1,7 @@
 use culprit::{Result, ResultExt};
-use graft_core::{page::Page, page_count::PageCount, PageIdx, VolumeId};
+use graft_core::{PageIdx, VolumeId, page::Page, page_count::PageCount};
 
-use crate::{oracle::Oracle, ClientErr};
+use crate::{ClientErr, oracle::Oracle};
 
 use super::{
     storage::{memtable::Memtable, snapshot::Snapshot},

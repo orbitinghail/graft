@@ -19,9 +19,9 @@ impl<T: AsRef<[u8]>> Merge<SplinterRef<T>> for Splinter {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ops::Merge,
-        testutil::{mksplinter, mksplinters, TestSplinter},
         Splinter,
+        ops::Merge,
+        testutil::{TestSplinter, mksplinter, mksplinters},
     };
 
     impl Merge<TestSplinter> for Splinter {

@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use culprit::Culprit;
-use graft_core::lsn::LSN;
 use graft_core::VolumeId;
+use graft_core::lsn::LSN;
 use graft_proto::{
     common::v1::SegmentInfo,
     pagestore::v1::{
@@ -11,7 +11,7 @@ use graft_proto::{
 use url::Url;
 
 use crate::NetClient;
-use crate::{net::EndpointBuilder, ClientErr};
+use crate::{ClientErr, net::EndpointBuilder};
 
 #[derive(Debug, Clone)]
 pub struct PagestoreClient {

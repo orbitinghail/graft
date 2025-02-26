@@ -11,9 +11,9 @@ use graft_client::{
     },
 };
 use graft_core::{
-    page::{Page, PAGESIZE},
-    page_count::PageCount,
     PageIdx,
+    page::{PAGESIZE, Page},
+    page_count::PageCount,
 };
 use parking_lot::{Mutex, MutexGuard};
 use sqlite_plugin::flags::{LockLevel, OpenOpts};

@@ -2,12 +2,12 @@ use std::{
     collections::HashSet,
     fmt::Debug,
     sync::Arc,
-    thread::{self, sleep, JoinHandle},
+    thread::{self, JoinHandle, sleep},
     time::{Duration, Instant},
 };
 
 use control::{SyncControl, SyncRpc};
-use crossbeam::channel::{bounded, select_biased, Receiver, Sender, TrySendError};
+use crossbeam::channel::{Receiver, Sender, TrySendError, bounded, select_biased};
 use culprit::{Culprit, Result, ResultExt};
 use graft_core::{ClientId, VolumeId};
 use job::Job;
@@ -18,9 +18,9 @@ use tryiter::{TryIterator, TryIteratorExt};
 use crate::{ClientErr, ClientPair};
 
 use super::storage::{
+    Storage, StorageErr,
     changeset::SetSubscriber,
     volume_state::{SyncDirection, VolumeStatus},
-    Storage, StorageErr,
 };
 
 pub mod control;

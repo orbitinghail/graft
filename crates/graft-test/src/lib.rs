@@ -10,13 +10,13 @@ use bytes::{Buf, BufMut, BytesMut};
 use culprit::{Culprit, ResultExt};
 use graft_client::{ClientPair, MetastoreClient, NetClient, PagestoreClient};
 use graft_core::{
-    page::{Page, PAGESIZE},
     PageIdx,
+    page::{PAGESIZE, Page},
 };
 use graft_server::{
     api::{
-        metastore::{metastore_routes, MetastoreApiState},
-        pagestore::{pagestore_routes, PagestoreApiState},
+        metastore::{MetastoreApiState, metastore_routes},
+        pagestore::{PagestoreApiState, pagestore_routes},
         routes::build_router,
         task::ApiServerTask,
     },
@@ -29,7 +29,7 @@ use graft_server::{
     supervisor::{ShutdownErr, Supervisor},
     volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
-use graft_tracing::{init_tracing, TracingConsumer};
+use graft_tracing::{TracingConsumer, init_tracing};
 use precept::dispatch::test::TestDispatch;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -311,7 +311,7 @@ impl Display for PageHash {
 
 #[cfg(test)]
 mod test {
-    use graft_core::page::{Page, EMPTY_PAGE};
+    use graft_core::page::{EMPTY_PAGE, Page};
 
     use crate::PageHash;
 

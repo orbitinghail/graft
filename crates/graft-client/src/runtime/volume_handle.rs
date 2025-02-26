@@ -7,9 +7,9 @@ use crate::{ClientErr, ClientPair};
 
 use super::{
     storage::{
+        Storage,
         snapshot::Snapshot,
         volume_state::{SyncDirection, VolumeStatus},
-        Storage,
     },
     sync::control::SyncRpc,
     volume_reader::VolumeReader,

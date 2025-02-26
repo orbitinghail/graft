@@ -48,8 +48,8 @@ impl<K: Hash, H: BuildHasher> Limiter<K, H> {
 #[cfg(test)]
 mod tests {
     use std::sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     };
 
     use foldhash::fast::FixedState;

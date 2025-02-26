@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use object_store::{
-    local::LocalFileSystem, memory::InMemory, path::Path, prefix::PrefixStore, ObjectStore,
+    ObjectStore, local::LocalFileSystem, memory::InMemory, path::Path, prefix::PrefixStore,
 };
 use serde::{Deserialize, Serialize};
 

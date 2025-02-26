@@ -4,9 +4,9 @@ use bytes::BufMut;
 use either::Either;
 
 use crate::{
-    bitmap::{Bitmap, BitmapExt, BitmapMutExt, BITMAP_FULL, BITMAP_SIZE},
-    util::{CopyToOwned, FromSuffix, SerializeContainer},
     Segment,
+    bitmap::{BITMAP_FULL, BITMAP_SIZE, Bitmap, BitmapExt, BitmapMutExt},
+    util::{CopyToOwned, FromSuffix, SerializeContainer},
 };
 
 mod cmp;

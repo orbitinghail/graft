@@ -1,7 +1,7 @@
 use either::Either::{Left, Right};
 
 use crate::{
-    bitmap::{BitmapExt, BitmapMutExt, BITMAP_SIZE},
+    bitmap::{BITMAP_SIZE, BitmapExt, BitmapMutExt},
     ops::Merge,
 };
 

@@ -1,7 +1,7 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use graft_core::{
-    hash_table::{HTEntry, HashTable},
     SegmentId,
+    hash_table::{HTEntry, HashTable},
 };
 use tokio::sync::RwLock;
 

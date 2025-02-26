@@ -2,14 +2,14 @@ use culprit::{Culprit, Result, ResultExt};
 use std::{sync::Arc, time::Duration};
 use tryiter::{TryIterator, TryIteratorExt};
 
-use graft_core::{gid::ClientId, VolumeId};
+use graft_core::{VolumeId, gid::ClientId};
 
 use crate::{ClientErr, ClientPair};
 
 use super::{
     storage::{
-        volume_state::{VolumeConfig, VolumeState},
         Storage,
+        volume_state::{VolumeConfig, VolumeState},
     },
     sync::{ShutdownErr, StartupErr, SyncTaskHandle},
     volume_handle::VolumeHandle,
@@ -94,14 +94,14 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use graft_core::{
-        page::{Page, EMPTY_PAGE},
+        page::{EMPTY_PAGE, Page},
         pageidx,
     };
 
     use crate::{
         oracle::NoopOracle,
         runtime::{
-            storage::{volume_state::SyncDirection, StorageErr},
+            storage::{StorageErr, volume_state::SyncDirection},
             volume_reader::VolumeRead,
             volume_writer::VolumeWrite,
         },

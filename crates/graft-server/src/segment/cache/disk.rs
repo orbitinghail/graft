@@ -2,9 +2,9 @@ use std::{fs::canonicalize, io, ops::Deref, path::PathBuf};
 
 use bytes::Buf;
 use graft_core::{
+    SegmentId,
     byte_unit::ByteUnit,
     hash_table::{HTEntry, HashTable},
-    SegmentId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::{fs::File, sync::RwLock};

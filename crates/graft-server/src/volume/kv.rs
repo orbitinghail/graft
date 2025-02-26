@@ -5,10 +5,10 @@ use std::{
 
 use fjall::Slice;
 use graft_core::{
-    lsn::{LSNRangeExt, LSN},
+    lsn::{LSN, LSNRangeExt},
     {SegmentId, VolumeId},
 };
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, BE, U64};
+use zerocopy::{BE, Immutable, IntoBytes, KnownLayout, TryFromBytes, U64, Unaligned};
 
 #[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned)]
 #[repr(C, packed)]
