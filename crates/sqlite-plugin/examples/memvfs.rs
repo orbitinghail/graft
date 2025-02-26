@@ -7,7 +7,7 @@ use sqlite_plugin::{
     flags::{AccessFlags, LockLevel, OpenOpts},
     logger::{SqliteLogLevel, SqliteLogger},
     sqlite3_api_routines, vars,
-    vfs::{register_dynamic, Pragma, PragmaErr, RegisterOpts, Vfs, VfsHandle, VfsResult},
+    vfs::{Pragma, PragmaErr, RegisterOpts, Vfs, VfsHandle, VfsResult, register_dynamic},
 };
 
 #[derive(Debug, Clone)]
@@ -216,14 +216,16 @@ impl Vfs for MemVfs {
 /// the memvfs VFS with `SQLite`.
 /// # Safety
 /// This function should only be called by sqlite's extension loading mechanism.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sqlite3_memvfs_init(
     _db: *mut c_void,
     _pz_err_msg: *mut *mut c_char,
     p_api: *mut sqlite3_api_routines,
 ) -> std::os::raw::c_int {
     let vfs = MemVfs { files: Default::default() };
-    if let Err(err) = register_dynamic(p_api, "mem", vfs, RegisterOpts { make_default: true }) {
+    if let Err(err) =
+        unsafe { register_dynamic(p_api, "mem", vfs, RegisterOpts { make_default: true }) }
+    {
         return err;
     }
 

@@ -11,7 +11,7 @@ crate-type = ["rlib"]
 
 [dev-dependencies]
 rusqlite = { workspace = true, features = ["blob", "trace"] }
-log = { workspace = true }
+log = { workspace = true, features = ["std"] }
 parking_lot = { workspace = true }
 
 [build-dependencies]
