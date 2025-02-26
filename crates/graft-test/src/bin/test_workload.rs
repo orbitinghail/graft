@@ -10,7 +10,7 @@ use graft_client::{
 };
 use graft_core::gid::ClientId;
 use graft_test::{
-    workload::{Workload, WorkloadErr},
+    workload::{WorkloadConfig, WorkloadErr},
     Ticker,
 };
 use graft_tracing::{init_tracing, running_in_antithesis, TracingConsumer};
@@ -75,7 +75,7 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
     init_tracing(TracingConsumer::Test, Some(cid.short()));
     let args = Args::parse();
 
-    let workload: Workload = Config::builder()
+    let workload: WorkloadConfig = Config::builder()
         .add_source(config::Environment::with_prefix("WORKLOAD").separator("_"))
         .add_source(config::File::with_name(&args.workload))
         .build()?

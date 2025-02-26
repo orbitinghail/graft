@@ -1,5 +1,6 @@
 use std::{
     fmt::{Debug, Display},
+    iter::FusedIterator,
     num::{NonZero, ParseIntError, TryFromIntError},
     str::FromStr,
 };
@@ -213,5 +214,106 @@ impl<E: zerocopy::ByteOrder> TryFrom<zerocopy::U32<E>> for PageIdx {
     fn try_from(value: zerocopy::U32<E>) -> Result<Self, Self::Error> {
         let n = value.get();
         n.try_into()
+    }
+}
+
+pub struct PageIdxIter {
+    /// The inclusive start `pageidx`
+    start: PageIdx,
+    /// The exclusive end `pageidx`
+    end: PageIdx,
+}
+
+impl PageIdxIter {
+    pub const fn new(start: PageIdx, end: PageIdx) -> Self {
+        Self { start, end }
+    }
+}
+
+impl Iterator for PageIdxIter {
+    type Item = PageIdx;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start >= self.end {
+            return None;
+        }
+
+        let next = self.start;
+        self.start = self.start.saturating_next();
+        Some(next)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = if self.start < self.end {
+            self.end.to_u32() - self.start.to_u32()
+        } else {
+            0
+        };
+        (len as usize, Some(len as usize))
+    }
+}
+
+impl ExactSizeIterator for PageIdxIter {}
+impl FusedIterator for PageIdxIter {}
+
+impl DoubleEndedIterator for PageIdxIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.start >= self.end {
+            return None;
+        }
+
+        let prev = self.end.saturating_prev();
+        self.end = prev;
+        Some(prev)
+    }
+}
+
+pub trait PageIdxRangeExt {
+    fn iter(self) -> PageIdxIter;
+}
+
+impl PageIdxRangeExt for std::ops::Range<PageIdx> {
+    fn iter(self) -> PageIdxIter {
+        PageIdxIter::new(self.start, self.end)
+    }
+}
+
+impl PageIdxRangeExt for std::ops::RangeInclusive<PageIdx> {
+    fn iter(self) -> PageIdxIter {
+        PageIdxIter::new(*self.start(), self.end().saturating_next())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{page_idx::PageIdxRangeExt, pageidx, PageCount, PageIdx};
+
+    #[test]
+    fn test_page_idx_iter() {
+        let count = PageCount::new(3);
+        let mut iter = count.iter();
+        assert_eq!(iter.next(), Some(pageidx!(1)));
+        assert_eq!(iter.next(), Some(pageidx!(2)));
+        assert_eq!(iter.next(), Some(pageidx!(3)));
+        assert_eq!(iter.next(), None);
+
+        let count = PageCount::ZERO;
+        let mut iter = count.iter();
+        assert_eq!(iter.next(), None);
+
+        let count = PageCount::new(1);
+        let mut iter = count.iter();
+        assert_eq!(iter.next(), Some(pageidx!(1)));
+        assert_eq!(iter.next(), None);
+
+        let custom = pageidx!(5)..pageidx!(10);
+        for (i, idx) in custom.iter().enumerate() {
+            assert_eq!(idx, PageIdx::new(i as u32 + 5));
+        }
+
+        let custom = pageidx!(5)..=pageidx!(10);
+        for (i, idx) in custom.iter().enumerate() {
+            assert_eq!(idx, PageIdx::new(i as u32 + 5));
+        }
     }
 }

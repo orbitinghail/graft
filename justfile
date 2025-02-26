@@ -15,6 +15,13 @@ CONFIG_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "config:latest"
 TEST_WORKLOAD_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "test_workload:latest"
 MINIO_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "minio:latest"
 
+default:
+  @just --list
+
+[positional-arguments]
+tool *args:
+    @cargo run -q --bin graft-tool -- "$@"
+
 metastore-image:
     docker build \
         --platform {{DOCKER_PLATFORM}} \

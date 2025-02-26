@@ -1,35 +1,35 @@
-use std::{thread::sleep, time::Duration};
-
 use crate::{PageHash, Ticker};
 
 use super::{PageTracker, PageTrackerErr};
 use config::ConfigError;
-use crossbeam::channel::RecvTimeoutError;
 use culprit::{Culprit, ResultExt};
 use graft_client::{
-    oracle::{LeapOracle, Oracle},
+    oracle::Oracle,
     runtime::{
         runtime::Runtime,
         storage::{
-            snapshot::Snapshot,
-            volume_state::{SyncDirection, VolumeConfig, VolumeStatus},
+            volume_state::{SyncDirection, VolumeStatus},
             StorageErr,
         },
         sync::{ShutdownErr, StartupErr},
         volume_handle::VolumeHandle,
         volume_reader::{VolumeRead, VolumeReader},
-        volume_writer::VolumeWrite,
     },
     ClientErr,
 };
-use graft_core::{gid::ClientId, page::Page, PageIdx, VolumeId};
+use graft_core::{gid::ClientId, PageIdx};
 use graft_proto::GraftErrCode;
 use graft_server::supervisor;
-use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
+use precept::expect_always_or_unreachable;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use simple_reader::SimpleReader;
+use simple_writer::SimpleWriter;
 use thiserror::Error;
 use tracing::field;
+
+pub mod simple_reader;
+pub mod simple_writer;
 
 #[derive(Debug, Error)]
 pub enum WorkloadErr {
@@ -50,6 +50,9 @@ pub enum WorkloadErr {
 
     #[error("supervisor shutdown error: {0}")]
     SupervisorShutdownErr(#[from] supervisor::ShutdownErr),
+
+    #[error("uniform rng error")]
+    RngErr(#[from] rand::distr::uniform::Error),
 }
 
 impl From<StorageErr> for WorkloadErr {
@@ -103,24 +106,27 @@ impl WorkloadErr {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-#[serde(tag = "type")]
-pub enum Workload {
-    Writer { vid: VolumeId, interval_ms: u64 },
-    Reader { vid: VolumeId, interval_ms: u64 },
-}
-
-struct WorkloadEnv<R: Rng> {
+pub struct WorkloadEnv<R: Rng> {
     cid: ClientId,
     runtime: Runtime,
     rng: R,
     ticker: Ticker,
 }
 
-impl Workload {
+pub trait Workload {
+    fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>>;
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "type")]
+pub enum WorkloadConfig {
+    SimpleWriter(SimpleWriter),
+    SimpleReader(SimpleReader),
+}
+
+impl WorkloadConfig {
     pub fn run<R: Rng>(
-        self,
+        mut self,
         cid: ClientId,
         runtime: Runtime,
         rng: R,
@@ -129,13 +135,9 @@ impl Workload {
         let mut env = WorkloadEnv { cid, runtime, rng, ticker };
 
         while env.ticker.tick() {
-            if let Err(err) = match self {
-                Workload::Writer { ref vid, interval_ms: interval } => {
-                    workload_writer(&mut env, vid, Duration::from_millis(interval))
-                }
-                Workload::Reader { ref vid, interval_ms: interval } => {
-                    workload_reader(&mut env, vid, Duration::from_millis(interval))
-                }
+            if let Err(err) = match &mut self {
+                Self::SimpleWriter(workload) => workload.run(&mut env),
+                Self::SimpleReader(workload) => workload.run(&mut env),
             } {
                 if err.ctx().should_retry() {
                     tracing::warn!("retrying workload after error: {:?}", err);
@@ -150,7 +152,7 @@ impl Workload {
     }
 }
 
-fn recover_and_sync_volume(handle: &VolumeHandle) -> Result<(), Culprit<WorkloadErr>> {
+pub fn recover_and_sync_volume(handle: &VolumeHandle) -> Result<(), Culprit<WorkloadErr>> {
     let vid = handle.vid();
     let status = handle.status().or_into_ctx()?;
     let span = tracing::info_span!(
@@ -187,7 +189,7 @@ fn recover_and_sync_volume(handle: &VolumeHandle) -> Result<(), Culprit<Workload
     Ok(())
 }
 
-fn load_tracker(
+pub fn load_tracker(
     oracle: &mut impl Oracle,
     reader: &VolumeReader,
     cid: &ClientId,
@@ -215,236 +217,4 @@ fn load_tracker(
     );
 
     Ok(page_tracker)
-}
-
-/// This workload continuously writes and reads pages to a volume, verifying the
-/// contents of pages are always correct
-fn workload_writer<R: Rng>(
-    env: &mut WorkloadEnv<R>,
-    vid: &VolumeId,
-    interval: Duration,
-) -> Result<(), Culprit<WorkloadErr>> {
-    let mut oracle = LeapOracle::default();
-    let handle = env
-        .runtime
-        .open_volume(vid, VolumeConfig::new(SyncDirection::Both))
-        .or_into_ctx()?;
-
-    let status = handle.status().or_into_ctx()?;
-    expect_sometimes!(status != VolumeStatus::Ok, "volume is not ok when workload starts", { "vid": vid });
-
-    // ensure the volume is recovered and synced with the server
-    recover_and_sync_volume(&handle).or_into_ctx()?;
-
-    while env.ticker.tick() {
-        // check the volume status to see if we need to reset
-        let status = handle.status().or_into_ctx()?;
-        if status != VolumeStatus::Ok {
-            let span = tracing::info_span!("reset_volume", ?status, vid=?handle.vid(), result=field::Empty).entered();
-            precept::expect_always!(
-                status != VolumeStatus::InterruptedPush,
-                "volume needs reset after workload start",
-                { "vid": handle.vid(), "status": status }
-            );
-            // reset the volume to the latest remote snapshot
-            handle.reset_to_remote().or_into_ctx()?;
-            span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
-        }
-
-        // open a reader
-        let reader = handle.reader().or_into_ctx()?;
-
-        // randomly pick a pageidx and a page value.
-        // select the next pageidx to ensure we don't pick the first page
-        let pageidx = PageIdx::test_random(&mut env.rng, 15).saturating_next();
-        let new_page: Page = env.rng.random();
-        let new_hash = PageHash::new(&new_page);
-
-        let span = tracing::info_span!(
-            "write_page",
-            pageidx=pageidx.to_string(),
-            snapshot=?reader.snapshot(),
-            ?new_hash,
-            tracker_hash=field::Empty
-        )
-        .entered();
-
-        // load the tracker and the expected page hash
-        let mut page_tracker = load_tracker(&mut oracle, &reader, &env.cid).or_into_ctx()?;
-        let expected_hash = page_tracker.upsert(pageidx, new_hash.clone());
-
-        // verify the page is missing or present as expected
-        let page = reader.read(&mut oracle, pageidx).or_into_ctx()?;
-        let actual_hash = PageHash::new(&page);
-
-        if let Some(expected_hash) = expected_hash {
-            expect_always_or_unreachable!(
-                expected_hash == actual_hash,
-                "page should have expected contents",
-                {
-                    "pageidx": pageidx,
-                    "cid": env.cid,
-                    "snapshot": format!("{:?}", reader.snapshot()),
-                    "expected": expected_hash,
-                    "actual": actual_hash
-                }
-            );
-        } else {
-            expect_always_or_unreachable!(
-                page.is_empty(),
-                "page should be empty as it has never been written to",
-                {
-                    "pageidx": pageidx,
-                    "cid": env.cid,
-                    "snapshot": reader.snapshot(),
-                    "actual": actual_hash
-                }
-            );
-        }
-
-        // serialize the page tracker with the updated page and output it's hash for debugging
-        let tracker_page = page_tracker.serialize_into_page().or_into_ctx()?;
-        span.record("tracker_hash", PageHash::new(&tracker_page).to_string());
-
-        // write out the updated page tracker and the new page
-        let mut writer = reader.upgrade();
-        writer.write(PageIdx::FIRST, tracker_page);
-        writer.write(pageidx, new_page);
-
-        // commit the changes
-        let pre_commit_remote = writer.snapshot().and_then(|s| s.remote());
-        let reader = writer.commit().or_into_ctx()?;
-        let post_commit_remote = reader.snapshot().and_then(|s| s.remote());
-
-        expect_sometimes!(
-            pre_commit_remote != post_commit_remote,
-            "remote LSN changed concurrently with local commit",
-            {
-                "pre_commit": pre_commit_remote,
-                "snapshot": reader.snapshot(),
-                "cid": env.cid
-            }
-        );
-
-        drop(span);
-
-        sleep(interval);
-    }
-    Ok(())
-}
-
-fn workload_reader<R: Rng>(
-    env: &mut WorkloadEnv<R>,
-    vid: &VolumeId,
-    interval: Duration,
-) -> Result<(), Culprit<WorkloadErr>> {
-    let mut oracle = LeapOracle::default();
-    let handle = env
-        .runtime
-        .open_volume(vid, VolumeConfig::new(SyncDirection::Pull))
-        .or_into_ctx()?;
-
-    // ensure the volume is recovered and synced with the server
-    recover_and_sync_volume(&handle).or_into_ctx()?;
-
-    let subscription = handle.subscribe_to_remote_changes();
-
-    let mut last_snapshot: Option<Snapshot> = None;
-    let mut seen_nonempty = false;
-
-    while env.ticker.tick() {
-        // wait for the next commit
-        match subscription.recv_timeout(interval) {
-            Ok(()) => (),
-            Err(RecvTimeoutError::Timeout) => {
-                tracing::info!("timeout while waiting for next commit, looping");
-                continue;
-            }
-            Err(RecvTimeoutError::Disconnected) => panic!("subscription closed"),
-        }
-
-        expect_reachable!(
-            "reader workload received commit",
-            { "cid": env.cid }
-        );
-
-        let reader = handle.reader().or_into_ctx()?;
-        let snapshot = reader.snapshot().expect("snapshot missing");
-
-        tracing::info!(snapshot=?snapshot, "received commit for volume {:?}", vid);
-
-        expect_sometimes!(
-            last_snapshot
-                .replace(snapshot.clone())
-                .is_none_or(|last| &last != snapshot),
-            "the snapshot is different after receiving a commit notification",
-            { "snapshot": snapshot, "cid": env.cid }
-        );
-
-        let page_count = snapshot.pages();
-        if seen_nonempty {
-            expect_always_or_unreachable!(
-                page_count > 0,
-                "the snapshot should never be empty after we have seen a non-empty snapshot",
-                { "snapshot": snapshot, "cid": env.cid }
-            );
-        }
-
-        if page_count.is_empty() {
-            tracing::info!("volume is empty, waiting for the next commit");
-            continue;
-        } else {
-            seen_nonempty = true;
-        }
-
-        // load the page index
-        let page_tracker = load_tracker(&mut oracle, &reader, &env.cid).or_into_ctx()?;
-
-        // ensure all pages are either empty or have the expected hash
-        for pageidx in snapshot.pages().iter() {
-            if pageidx.is_first_page() {
-                // skip the page tracker
-                continue;
-            }
-
-            let span = tracing::info_span!(
-                "read_page",
-                pageidx = pageidx.to_string(),
-                hash = field::Empty
-            )
-            .entered();
-
-            let page = reader.read(&mut oracle, pageidx).or_into_ctx()?;
-            let actual_hash = PageHash::new(&page);
-            span.record("hash", actual_hash.to_string());
-
-            if let Some(expected_hash) = page_tracker.get_hash(pageidx) {
-                expect_always_or_unreachable!(
-                    expected_hash == &actual_hash,
-                    "page should have expected contents",
-                    {
-                        "pageidx": pageidx,
-                        "cid": env.cid,
-                        "snapshot": snapshot,
-                        "expected": expected_hash,
-                        "actual": actual_hash
-                    }
-                );
-            } else {
-                expect_always_or_unreachable!(
-                    page.is_empty(),
-                    "page should be empty as it has never been written to",
-                    {
-                        "pageidx": pageidx,
-                        "cid": env.cid,
-                        "snapshot": snapshot,
-                        "actual": actual_hash
-                    }
-                );
-            }
-
-            drop(span);
-        }
-    }
-    Ok(())
 }

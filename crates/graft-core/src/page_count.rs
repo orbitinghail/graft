@@ -1,9 +1,13 @@
-use std::{fmt::Display, num::TryFromIntError};
+use std::{fmt::Display, num::TryFromIntError, ops::Range};
 
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::{byte_unit::ByteUnit, page::PAGESIZE, page_idx::PageIdx};
+use crate::{
+    byte_unit::ByteUnit,
+    page::PAGESIZE,
+    page_idx::{PageIdx, PageIdxIter},
+};
 
 #[derive(
     Debug,
@@ -40,9 +44,17 @@ impl PageCount {
         self.0 == 0
     }
 
+    pub const fn pageidxs(self) -> Range<PageIdx> {
+        PageIdx::FIRST..match self.last_index() {
+            Some(p) => p.saturating_next(),
+            None => PageIdx::FIRST,
+        }
+    }
+
     #[inline]
-    pub const fn iter(self) -> PageCountIter {
-        PageCountIter { idx: 0, limit: self.0 }
+    pub const fn iter(self) -> PageIdxIter {
+        let pageidxs = self.pageidxs();
+        PageIdxIter::new(pageidxs.start, pageidxs.end)
     }
 
     #[inline]
@@ -156,48 +168,5 @@ impl<E: zerocopy::ByteOrder> From<zerocopy::U32<E>> for PageCount {
     #[inline]
     fn from(value: zerocopy::U32<E>) -> Self {
         Self::new(value.get())
-    }
-}
-
-pub struct PageCountIter {
-    idx: u32,
-    limit: u32,
-}
-
-impl Iterator for PageCountIter {
-    type Item = PageIdx;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.idx = self.idx.saturating_add(1);
-        if self.idx <= self.limit {
-            // SAFETY: self.idx was just incremented and saturates at numeric bounds
-            Some(unsafe { PageIdx::new_unchecked(self.idx) })
-        } else {
-            None
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::pageidx;
-
-    #[test]
-    fn test_page_count_iter() {
-        let count = super::PageCount::new(3);
-        let mut iter = count.iter();
-        assert_eq!(iter.next(), Some(pageidx!(1)));
-        assert_eq!(iter.next(), Some(pageidx!(2)));
-        assert_eq!(iter.next(), Some(pageidx!(3)));
-        assert_eq!(iter.next(), None);
-
-        let count = super::PageCount::default();
-        let mut iter = count.iter();
-        assert_eq!(iter.next(), None);
-
-        let count = super::PageCount::new(1);
-        let mut iter = count.iter();
-        assert_eq!(iter.next(), Some(pageidx!(1)));
-        assert_eq!(iter.next(), None);
     }
 }

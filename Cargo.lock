@@ -1304,6 +1304,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "graft-tool"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "graft-core",
+]
+
+[[package]]
 name = "graft-tracing"
 version = "0.1.0"
 dependencies = [

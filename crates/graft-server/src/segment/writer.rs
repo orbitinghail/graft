@@ -115,6 +115,16 @@ impl SegmentWriterTask {
         // only flush non-empty segments
         if !self.segment.is_empty() {
             tracing::debug!("flushing segment with {} pages", self.segment.pages());
+
+            precept::expect_sometimes!(
+                self.segment.volumes() > 1,
+                "flushed segment has more than one volume",
+                {
+                    "volumes": self.segment.volumes(),
+                    "pages": self.segment.pages(),
+                }
+            );
+
             // send the current segment to the output
             self.output
                 .send(StoreSegmentReq {

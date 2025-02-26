@@ -3,12 +3,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+use config::File;
 use culprit::{Culprit, ResultExt};
 use graft_client::runtime::{runtime::Runtime, storage::Storage};
-use graft_core::{gid::ClientId, VolumeId};
+use graft_core::gid::ClientId;
 use graft_test::{
     start_graft_backend,
-    workload::{Workload, WorkloadErr},
+    workload::{WorkloadConfig, WorkloadErr},
     Ticker,
 };
 
@@ -17,11 +18,23 @@ struct WorkloadRunner {
     workload: JoinHandle<Result<(), Culprit<WorkloadErr>>>,
 }
 
+const WRITER_CONFIG: &str = r#"
+type = "SimpleWriter"
+vids = [ "GonuUEmt4XLJuHpcg7X35N", "GonuUEmtx9iM4EdCWtg2eK" ]
+interval_ms = 10
+pages = 16
+"#;
+
+const READER_CONFIG: &str = r#"
+type = "SimpleReader"
+vids = [ "GonuUEmt4XLJuHpcg7X35N", "GonuUEmtx9iM4EdCWtg2eK" ]
+recv_timeout_ms = 10
+"#;
+
 #[graft_test::test]
 fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
     let (backend, clients) = start_graft_backend();
 
-    let vid = VolumeId::random();
     let ticker = Ticker::new(10);
 
     let writer = {
@@ -31,7 +44,10 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
         runtime
             .start_sync_task(Duration::from_millis(10), 8, true)
             .or_into_ctx()?;
-        let workload = Workload::Writer { vid: vid.clone(), interval_ms: 10 };
+        let workload: WorkloadConfig = config::Config::builder()
+            .add_source(File::from_str(WRITER_CONFIG, config::FileFormat::Toml))
+            .build()?
+            .try_deserialize()?;
         let r2 = runtime.clone();
         let workload = thread::Builder::new()
             .name("writer".into())
@@ -47,7 +63,10 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
         runtime
             .start_sync_task(Duration::from_millis(10), 8, true)
             .or_into_ctx()?;
-        let workload = Workload::Reader { vid: vid.clone(), interval_ms: 10 };
+        let workload: WorkloadConfig = config::Config::builder()
+            .add_source(File::from_str(READER_CONFIG, config::FileFormat::Toml))
+            .build()?
+            .try_deserialize()?;
         let r2 = runtime.clone();
         let workload = thread::Builder::new()
             .name("reader".into())
