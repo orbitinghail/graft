@@ -19,7 +19,7 @@ mod vfs;
 /// Register the VFS with `SQLite`.
 /// # Safety
 /// This function should only be called by sqlite's extension loading mechanism.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sqlite3_graft_init(
     _db: *mut c_void,
     _pz_err_msg: *mut *mut c_void,
@@ -53,7 +53,9 @@ pub unsafe extern "C" fn sqlite3_graft_init(
 
     let vfs = GraftVfs::new(runtime);
 
-    if let Err(err) = register_dynamic(p_api, "graft", vfs, RegisterOpts { make_default: false }) {
+    if let Err(err) =
+        unsafe { register_dynamic(p_api, "graft", vfs, RegisterOpts { make_default: false }) }
+    {
         return err;
     }
     SQLITE_OK_LOAD_PERMANENTLY
