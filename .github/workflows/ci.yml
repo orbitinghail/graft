@@ -19,6 +19,8 @@ jobs:
     steps:
       - uses: rui314/setup-mold@v1
       - uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "19"
       - uses: actions/checkout@v4
         with:
           token: ${{secrets.GITHUB_TOKEN}}
