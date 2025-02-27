@@ -1286,11 +1286,13 @@ dependencies = [
  "serde",
  "serde_json",
  "splinter",
+ "static_assertions",
  "thiserror",
  "tokio",
  "tracing",
  "ureq",
  "url",
+ "zerocopy 0.8.20",
 ]
 
 [[package]]

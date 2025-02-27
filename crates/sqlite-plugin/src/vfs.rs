@@ -14,6 +14,10 @@ use core::{
     ptr::null_mut,
 };
 
+/// The minimim supported SQLite version.
+// If you need to make this earlier, make sure the tests are testing the earlier version
+pub const MIN_SQLITE_VERSION_NUMBER: i32 = 3044000;
+
 const DEFAULT_MAX_PATH_LEN: i32 = 512;
 pub const DEFAULT_SECTOR_SIZE: i32 = 4096;
 
@@ -214,6 +218,7 @@ pub(crate) struct SqliteApi {
     find: unsafe extern "C" fn(arg1: *const c_char) -> *mut ffi::sqlite3_vfs,
     mprintf: unsafe extern "C" fn(arg1: *const c_char, ...) -> *mut c_char,
     log: unsafe extern "C" fn(arg1: c_int, arg2: *const c_char, ...),
+    libversion_number: unsafe extern "C" fn() -> c_int,
 }
 
 impl SqliteApi {
@@ -224,6 +229,7 @@ impl SqliteApi {
             find: ffi::sqlite3_vfs_find,
             mprintf: ffi::sqlite3_mprintf,
             log: ffi::sqlite3_log,
+            libversion_number: ffi::sqlite3_libversion_number,
         }
     }
 
@@ -234,6 +240,7 @@ impl SqliteApi {
             find: api.vfs_find.ok_or(vars::SQLITE_INTERNAL)?,
             mprintf: api.mprintf.ok_or(vars::SQLITE_INTERNAL)?,
             log: api.log.ok_or(vars::SQLITE_INTERNAL)?,
+            libversion_number: api.libversion_number.ok_or(vars::SQLITE_INTERNAL)?,
         })
     }
 }
@@ -269,6 +276,14 @@ fn register_inner<T: Vfs>(
     vfs: T,
     opts: RegisterOpts,
 ) -> VfsResult<()> {
+    let version = unsafe { (sqlite_api.libversion_number)() };
+    if version < MIN_SQLITE_VERSION_NUMBER {
+        panic!(
+            "sqlite3 must be at least version {}, found version {}",
+            MIN_SQLITE_VERSION_NUMBER, version
+        );
+    }
+
     let io_methods = ffi::sqlite3_io_methods {
         iVersion: 3,
         xClose: Some(x_close::<T>),

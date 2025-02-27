@@ -17,7 +17,7 @@ use graft_client::{
         volume_reader::{VolumeRead, VolumeReader},
     },
 };
-use graft_core::{PageIdx, gid::ClientId};
+use graft_core::{gid::ClientId, page::PageSizeErr, zerocopy_ext::ZerocopyErr};
 use graft_proto::GraftErrCode;
 use graft_server::supervisor;
 use precept::expect_always_or_unreachable;
@@ -27,6 +27,7 @@ use simple_reader::SimpleReader;
 use simple_writer::SimpleWriter;
 use thiserror::Error;
 use tracing::field;
+use zerocopy::{CastError, FromBytes, SizeError};
 
 pub mod simple_reader;
 pub mod simple_writer;
@@ -53,6 +54,12 @@ pub enum WorkloadErr {
 
     #[error("uniform rng error")]
     RngErr(#[from] rand::distr::uniform::Error),
+
+    #[error(transparent)]
+    ZerocopyErr(#[from] ZerocopyErr),
+
+    #[error(transparent)]
+    PageSizeErr(#[from] PageSizeErr),
 }
 
 impl From<StorageErr> for WorkloadErr {
@@ -64,6 +71,18 @@ impl From<StorageErr> for WorkloadErr {
 impl From<ConfigError> for WorkloadErr {
     fn from(_: ConfigError) -> Self {
         WorkloadErr::InvalidConfig
+    }
+}
+
+impl<A, B> From<CastError<A, B>> for WorkloadErr {
+    fn from(err: CastError<A, B>) -> Self {
+        WorkloadErr::ZerocopyErr(err.into())
+    }
+}
+
+impl<A, B> From<SizeError<A, B>> for WorkloadErr {
+    fn from(err: SizeError<A, B>) -> Self {
+        WorkloadErr::ZerocopyErr(err.into())
     }
 }
 
@@ -197,13 +216,13 @@ pub fn load_tracker(
     let span = tracing::info_span!("load_tracker", snapshot=?reader.snapshot(), hash=field::Empty)
         .entered();
 
-    // load the page tracker from the volume, if the volume is empty this will
-    // initialize a new page tracker
-    let first_page = reader.read(oracle, PageIdx::FIRST).or_into_ctx()?;
-    let page_tracker = PageTracker::deserialize_from_page(&first_page).or_into_ctx()?;
+    // load the page tracker from the volume
+    let first_page = reader.read(oracle, PageTracker::PAGEIDX).or_into_ctx()?;
 
     // record the hash of the page tracker for debugging
     span.record("hash", PageHash::new(&first_page).to_string());
+
+    let page_tracker = PageTracker::read_from_bytes(&first_page)?;
 
     // ensure the page tracker is only empty when we expect it to be
     expect_always_or_unreachable!(
@@ -211,7 +230,6 @@ pub fn load_tracker(
         "page tracker should only be empty when the snapshot is missing",
         {
             "snapshot": reader.snapshot(),
-            "tracker_len": page_tracker.len(),
             "cid": cid
         }
     );

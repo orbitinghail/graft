@@ -1,7 +1,7 @@
 use std::{thread::sleep, time::Duration};
 
 use crate::{
-    PageHash,
+    PageHash, PageTracker,
     workload::{load_tracker, recover_and_sync_volume},
 };
 
@@ -14,11 +14,12 @@ use graft_client::{
         volume_writer::VolumeWrite,
     },
 };
-use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
+use graft_core::{PageCount, VolumeId, page::Page};
 use precept::{expect_always_or_unreachable, expect_sometimes};
 use rand::{Rng, distr::uniform::SampleRange, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};
 use tracing::field;
+use zerocopy::IntoBytes;
 
 use super::{Workload, WorkloadEnv, WorkloadErr};
 
@@ -85,8 +86,7 @@ impl Workload for SimpleWriter {
 
             // randomly pick a pageidx
             // select the next pageidx to ensure we don't pick the first page
-            let pageidx = self
-                .pages
+            let pageidx = PageTracker::MAX_PAGES
                 .pageidxs()
                 .sample_single(&mut env.rng)?
                 .saturating_next();
@@ -106,7 +106,7 @@ impl Workload for SimpleWriter {
 
             // load the tracker and the expected page hash
             let mut page_tracker = load_tracker(&mut oracle, &reader, &env.cid).or_into_ctx()?;
-            let expected_hash = page_tracker.upsert(pageidx, new_hash.clone());
+            let expected_hash = page_tracker.insert(pageidx, new_hash.clone());
 
             // verify the page is missing or present as expected
             let page = reader.read(&mut oracle, pageidx).or_into_ctx()?;
@@ -121,8 +121,8 @@ impl Workload for SimpleWriter {
                         "cid": env.cid,
                         "vid": vid,
                         "snapshot": format!("{:?}", reader.snapshot()),
-                        "expected": expected_hash,
-                        "actual": actual_hash
+                        "expected": expected_hash.to_string(),
+                        "actual": actual_hash.to_string()
                     }
                 );
             } else {
@@ -134,18 +134,18 @@ impl Workload for SimpleWriter {
                         "cid": env.cid,
                         "vid": vid,
                         "snapshot": reader.snapshot(),
-                        "actual": actual_hash
+                        "actual": actual_hash.to_string()
                     }
                 );
             }
 
             // serialize the page tracker with the updated page and output it's hash for debugging
-            let tracker_page = page_tracker.serialize_into_page().or_into_ctx()?;
+            let tracker_page = Page::try_from(page_tracker.as_bytes()).or_into_ctx()?;
             span.record("tracker_hash", PageHash::new(&tracker_page).to_string());
 
             // write out the updated page tracker and the new page
             let mut writer = reader.upgrade();
-            writer.write(PageIdx::FIRST, tracker_page);
+            writer.write(PageTracker::PAGEIDX, tracker_page);
             writer.write(pageidx, new_page);
 
             // commit the changes

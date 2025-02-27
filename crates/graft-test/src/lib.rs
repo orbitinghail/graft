@@ -1,17 +1,16 @@
 use std::{
-    collections::HashMap,
     fmt::{Debug, Display},
     sync::{Arc, Once},
     thread::JoinHandle,
     time::Duration,
 };
 
-use bytes::{Buf, BufMut, BytesMut};
-use culprit::{Culprit, ResultExt};
+use culprit::Culprit;
 use graft_client::{ClientPair, MetastoreClient, NetClient, PagestoreClient};
 use graft_core::{
-    PageIdx,
+    PageCount, PageIdx,
     page::{PAGESIZE, Page},
+    pageidx,
 };
 use graft_server::{
     api::{
@@ -31,7 +30,6 @@ use graft_server::{
 };
 use graft_tracing::{TracingConsumer, init_tracing};
 use precept::dispatch::test::TestDispatch;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
     net::TcpListener,
@@ -44,6 +42,7 @@ use url::Url;
 
 pub use graft_test_macro::datatest;
 pub use graft_test_macro::test;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 pub mod workload;
 
@@ -204,57 +203,58 @@ pub enum PageTrackerErr {
     Deserialize,
 }
 
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, Unaligned, KnownLayout)]
+#[repr(transparent)]
 pub struct PageTracker {
-    pages: HashMap<PageIdx, PageHash>,
+    // 128 pages, indexed by page index
+    pages: [PageHash; 128],
+}
+
+// ensure that the size of PageTracker is equal to the size of a page
+static_assertions::const_assert!(std::mem::size_of::<PageTracker>() == PAGESIZE.as_usize());
+
+impl Default for PageTracker {
+    fn default() -> Self {
+        Self { pages: [PageHash::default(); 128] }
+    }
 }
 
 impl PageTracker {
-    pub fn upsert(&mut self, pageidx: PageIdx, hash: PageHash) -> Option<PageHash> {
-        self.pages.insert(pageidx, hash)
+    // the page tracker is stored after the data pages
+    pub const PAGEIDX: PageIdx = pageidx!(129);
+    pub const MAX_PAGES: PageCount = PageCount::new(128);
+
+    pub fn insert(&mut self, pageidx: PageIdx, hash: PageHash) -> Option<PageHash> {
+        let index = (pageidx.to_u32() - 1) as usize;
+        if index > self.pages.len() {
+            panic!("page index out of bounds: {}", index);
+        }
+
+        let out = std::mem::replace(&mut self.pages[index], hash);
+        (!out.is_empty()).then(|| out)
     }
 
     pub fn get_hash(&self, pageidx: PageIdx) -> Option<&PageHash> {
-        self.pages.get(&pageidx)
-    }
-
-    pub fn len(&self) -> usize {
-        self.pages.len()
+        let index = (pageidx.to_u32() - 1) as usize;
+        if index > self.pages.len() {
+            panic!("page index out of bounds: {}", index);
+        }
+        if self.pages[index].is_empty() {
+            None
+        } else {
+            Some(&self.pages[index])
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.pages.is_empty()
-    }
-
-    pub fn serialize_into_page(&self) -> Result<Page, Culprit<PageTrackerErr>> {
-        let mut bytes = BytesMut::with_capacity(PAGESIZE.as_usize());
-        let json = serde_json::to_vec(self).unwrap();
-        if json.len() > (PAGESIZE.as_usize() - 8) {
-            return Err(Culprit::new_with_note(
-                PageTrackerErr::Serialize,
-                "page size exceeded",
-            ));
-        }
-        bytes.put_u64_le(json.len() as u64);
-        bytes.put_slice(&json);
-        bytes.resize(PAGESIZE.as_usize(), 0);
-        Page::try_from(bytes.freeze()).or_ctx(|_| PageTrackerErr::Serialize)
-    }
-
-    pub fn deserialize_from_page(page: &Page) -> Result<Self, Culprit<PageTrackerErr>> {
-        if page.is_empty() {
-            tracing::warn!("empty page, initializing new page tracker");
-            return Ok(Self::default());
-        }
-
-        let mut bytes = page.as_ref();
-        let len = bytes.get_u64_le() as usize;
-        let (json, _) = bytes.split_at(len);
-        serde_json::from_slice(json).or_ctx(|_| PageTrackerErr::Deserialize)
+        self.pages.iter().all(|hash| hash.is_empty())
     }
 }
 
-#[derive(Default, PartialEq, Eq, Clone)]
+#[derive(
+    Default, PartialEq, Eq, Clone, Copy, IntoBytes, FromBytes, Immutable, Unaligned, KnownLayout,
+)]
+#[repr(transparent)]
 pub struct PageHash([u8; 32]);
 
 impl PageHash {
@@ -266,34 +266,10 @@ impl PageHash {
             Self(blake3::hash(page.as_ref()).into())
         }
     }
-}
 
-impl Serialize for PageHash {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if serializer.is_human_readable() {
-            serializer.serialize_str(&bs58::encode(&self.0).into_string())
-        } else {
-            serializer.serialize_bytes(&self.0)
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for PageHash {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        if deserializer.is_human_readable() {
-            let s = <&'de str>::deserialize(deserializer)?;
-            let bytes = bs58::decode(s)
-                .into_vec()
-                .map_err(serde::de::Error::custom)?;
-            if bytes.len() != 32 {
-                return Err(serde::de::Error::custom("invalid hash length"));
-            }
-            let mut hash = [0; 32];
-            hash.copy_from_slice(&bytes);
-            Ok(Self(hash))
-        } else {
-            Ok(Self(<[u8; 32]>::deserialize(deserializer)?))
-        }
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.iter().all(|&b| b == 0)
     }
 }
 
@@ -311,21 +287,33 @@ impl Display for PageHash {
 
 #[cfg(test)]
 mod test {
-    use graft_core::page::{EMPTY_PAGE, Page};
+    use graft_core::{
+        PageIdx,
+        page::{PAGESIZE, Page},
+    };
+    use zerocopy::{FromBytes, IntoBytes};
 
-    use crate::PageHash;
+    use crate::{PageHash, PageTracker};
 
     #[test]
-    fn page_hash_serializes() {
-        let mut pages = (0..100).map(|_| rand::random::<Page>()).collect::<Vec<_>>();
-        pages.push(EMPTY_PAGE);
+    fn exercise_page_tracker() {
+        let pages = (0..PageTracker::MAX_PAGES.to_u32())
+            .map(|_| rand::random::<Page>())
+            .collect::<Vec<_>>();
 
-        // round trip each one through serialize/deserialize
-        for page in pages {
+        let mut tracker = PageTracker::default();
+
+        for (i, page) in pages.into_iter().enumerate() {
             let hash = PageHash::new(&page);
-            let json = serde_json::to_string(&hash).unwrap();
-            let hash2: PageHash = serde_json::from_str(&json).unwrap();
-            assert_eq!(hash, hash2);
+            let pageidx = PageIdx::new(i as u32 + 1);
+            assert!(tracker.insert(pageidx, hash).is_none());
+            assert_eq!(tracker.get_hash(pageidx), Some(&hash));
         }
+
+        // round trip tracker
+        let bytes = tracker.as_bytes();
+        assert_eq!(bytes.len(), PAGESIZE.as_usize());
+        let tracker2 = PageTracker::read_from_bytes(tracker.as_bytes()).unwrap();
+        assert_eq!(tracker, tracker2);
     }
 }

@@ -33,3 +33,5 @@ config = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
 bs58 = { workspace = true }
+zerocopy = { workspace = true }
+static_assertions = { workspace = true }

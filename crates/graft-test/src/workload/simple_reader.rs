@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    PageHash,
+    PageHash, PageTracker,
     workload::{load_tracker, recover_and_sync_volume},
 };
 
@@ -17,7 +17,7 @@ use graft_client::{
         volume_reader::VolumeRead,
     },
 };
-use graft_core::{PageIdx, VolumeId, page_idx::PageIdxRangeExt, pageidx};
+use graft_core::{VolumeId, page_idx::PageIdxRangeExt};
 use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
 use rand::{Rng, distr::uniform::SampleRange, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};
@@ -116,12 +116,12 @@ impl Workload for SimpleReader {
 
             // pick a random subset of pages to read starting from the second
             // page, ending at the last page, and always at least one page
-            let pageidxs = page_count.pageidxs();
+            let pageidxs = PageTracker::MAX_PAGES.pageidxs();
             let num_idxs = pageidxs.clone().sample_single(&mut env.rng)?.to_u32();
-            let start_idx = pageidxs.sample_single(&mut env.rng)?.max(pageidx!(2));
+            let start_idx = pageidxs.sample_single(&mut env.rng)?;
             let end_idx = start_idx
                 .saturating_add(num_idxs)
-                .min(page_count.last_index().unwrap_or(pageidx!(2)));
+                .min(PageTracker::MAX_PAGES.last_index().unwrap());
             let pageidxs = start_idx..=end_idx;
 
             tracing::info!(?vid, ?pageidxs, "validating pages in range");
@@ -130,8 +130,8 @@ impl Workload for SimpleReader {
             for pageidx in pageidxs.iter() {
                 assert_ne!(
                     pageidx,
-                    PageIdx::FIRST,
-                    "pageidxs should not return PageIdx(1)"
+                    PageTracker::PAGEIDX,
+                    "pageidxs should not include the page tracker"
                 );
 
                 let span =
@@ -150,8 +150,8 @@ impl Workload for SimpleReader {
                             "cid": env.cid,
                             "vid": vid,
                             "snapshot": snapshot,
-                            "expected": expected_hash,
-                            "actual": actual_hash
+                            "expected": expected_hash.to_string(),
+                            "actual": actual_hash.to_string()
                         }
                     );
                 } else {
@@ -163,7 +163,7 @@ impl Workload for SimpleReader {
                             "cid": env.cid,
                             "vid": vid,
                             "snapshot": snapshot,
-                            "actual": actual_hash
+                            "actual": actual_hash.to_string()
                         }
                     );
                 }
