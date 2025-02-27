@@ -84,11 +84,9 @@ impl Workload for SimpleWriter {
             let reader = handle.reader().or_into_ctx()?;
 
             // randomly pick a pageidx
-            // select the next pageidx to ensure we don't pick the first page
             let pageidx = PageTracker::MAX_PAGES
                 .pageidxs()
-                .sample_single(&mut env.rng)?
-                .saturating_next();
+                .sample_single(&mut env.rng)?;
 
             // generate a new page and hash it
             let new_page: Page = env.rng.random();

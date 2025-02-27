@@ -226,7 +226,7 @@ impl PageTracker {
 
     pub fn insert(&mut self, pageidx: PageIdx, hash: PageHash) -> Option<PageHash> {
         let index = (pageidx.to_u32() - 1) as usize;
-        if index > self.pages.len() {
+        if index >= self.pages.len() {
             panic!("page index out of bounds: {index}");
         }
 
@@ -236,7 +236,7 @@ impl PageTracker {
 
     pub fn get_hash(&self, pageidx: PageIdx) -> Option<&PageHash> {
         let index = (pageidx.to_u32() - 1) as usize;
-        if index > self.pages.len() {
+        if index >= self.pages.len() {
             panic!("page index out of bounds: {index}");
         }
         if self.pages[index].is_empty() {
