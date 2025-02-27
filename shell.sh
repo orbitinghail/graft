@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_PATH="${SCRIPT_DIR}/target/debug"
+GIT_ROOT="$(git rev-parse --show-toplevel)"
 
 VID="GontkHa6QVLMYnkyk16wUP"
 
 GDB=${GDB:-0}
 export RUST_LOG=${RUST_LOG:-warn}
-
-# make sure sqlite can find the vfs
-export LD_LIBRARY_PATH=${LIB_PATH}:$LD_LIBRARY_PATH
-export DYLD_LIBRARY_PATH=${LIB_PATH}:$DYLD_LIBRARY_PATH
 
 cargo build
 
@@ -63,5 +58,5 @@ if [ "${GDB}" == 1 ]; then
     )
     exec rust-gdb "${GDB_ARGS[@]}"
 else
-    exec sqlite3 "${ARGS[@]}"
+    exec ${GIT_ROOT}/sqlite3.sh "${ARGS[@]}"
 fi

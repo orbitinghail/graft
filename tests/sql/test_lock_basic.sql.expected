@@ -3,9 +3,25 @@
 -- initialize two connections to the same database
 .connection 0
 .open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+pragma graft_status;
++------------------------+
+|      Graft Status      |
++------------------------+
+| Graft Status           |
+| Current snapshot: None |
+| Autosync: false        |
++------------------------+
 
 .connection 1
 .open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+pragma graft_status;
++------------------------+
+|      Graft Status      |
++------------------------+
+| Graft Status           |
+| Current snapshot: None |
+| Autosync: false        |
++------------------------+
 
 -- load the sample dataset
 .read datasets/simple.sql
@@ -21,16 +37,16 @@ COMMIT;
 .connection 0
 begin immediate;
 .connection 1
+Runtime error near line 19: database is locked (5)
 begin immediate;
-Runtime error near line 17: database is locked (5)
 
 -- reset
 .connection 0
 rollback;
 .connection 1
-rollback;
 (1) statement aborts at 1: [rollback;] cannot rollback - no transaction is active
-Runtime error near line 23: cannot rollback - no transaction is active
+Runtime error near line 25: cannot rollback - no transaction is active
+rollback;
 
 -- scenario: verify that upgrading is refused if a read snapshot is outdated
 .connection 0
@@ -49,16 +65,16 @@ insert into t values(1);
 
 .connection 0
 -- try to upgrade the lock via performing a write; this should fail
+Runtime error near line 39: database is locked (5)
 insert into t values(2);
-Runtime error near line 37: database is locked (5)
 
 -- reset
 .connection 0
 rollback;
 .connection 1
-rollback;
 (1) statement aborts at 1: [rollback;] cannot rollback - no transaction is active
-Runtime error near line 43: cannot rollback - no transaction is active
+Runtime error near line 45: cannot rollback - no transaction is active
+rollback;
 
 -- scenario: verify that we can commit a write tx while another tx holds a read lock
 

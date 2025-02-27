@@ -20,13 +20,14 @@ pub mod logger;
 pub mod vfs;
 pub use ffi::sqlite3_api_routines;
 
+const MIN_SQLITE_VERSION: i32 = 3044000;
+
 pub fn assert_min_sqlite_version() {
-    let min_version = vars::SQLITE_VERSION_NUMBER;
     let version = unsafe { ffi::sqlite3_libversion_number() };
-    if version < min_version {
+    if version < MIN_SQLITE_VERSION {
         panic!(
             "sqlite3 version mismatch: expected at least {}, got {}",
-            min_version, version
+            MIN_SQLITE_VERSION, version
         );
     }
 }

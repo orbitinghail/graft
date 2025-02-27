@@ -2,8 +2,6 @@
 set -uo pipefail
 
 GIT_ROOT="$(git rev-parse --show-toplevel)"
-EXAMPLES_LIB_PATH="${GIT_ROOT}/target/debug/examples"
-LIB_PATH="${GIT_ROOT}/target/debug"
 
 # invert diff colors so that expected lines are green
 DIFF_PALETTE="ad=1;38;5;9:de=1;38;5;154"
@@ -12,10 +10,6 @@ FILTER="${1:-}"
 
 # set the PWD to the git root directory - sql tests expect this
 cd "${GIT_ROOT}"
-
-# make sure sqlite can find the vfs
-export LD_LIBRARY_PATH=${LIB_PATH}:${EXAMPLES_LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-export DYLD_LIBRARY_PATH=${LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
 
 cargo build
 if [ $? -ne 0 ]; then
@@ -28,6 +22,9 @@ if [ $? -ne 0 ]; then
     echo "Cargo build failed"
     exit 1
 fi
+
+# run sqlite3.sh to ensure it's installed and print the version
+./sqlite3.sh --version
 
 # select tests from *.sql files in GIT_ROOT, filtered by the first argument (substring)
 declare TESTS=$(find "${GIT_ROOT}" -name "test_*.sql" | grep "${FILTER}")
@@ -52,7 +49,7 @@ for TEST in ${TESTS}; do
     # We add the exit code to the output since SQLite returns the number of
     # errors encountered while executing, and some of the tests want to trigger
     # errors on purpose (thus we can't just fail on non-zero exit code).
-    OUTPUT=$(sqlite3 -cmd '.log stderr' -header -table -echo 2>&1 <"${TEST}")
+    OUTPUT=$(./sqlite3.sh -cmd '.log stderr' -header -table -echo 2>&1 <"${TEST}")
     EXIT_CODE=$?
     OUTPUT=$(printf "%s\n\n%s\n" "${OUTPUT}" "SQLite Exit Code = ${EXIT_CODE}")
 

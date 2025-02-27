@@ -4,7 +4,6 @@
 
 .databases
 .vfsinfo
-.vfsname
 pragma graft_status;
 
 CREATE TABLE t1(a, b);

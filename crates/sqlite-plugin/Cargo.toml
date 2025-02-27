@@ -10,7 +10,7 @@ workspace = true
 crate-type = ["rlib"]
 
 [dev-dependencies]
-rusqlite = { workspace = true, features = ["blob", "trace"] }
+rusqlite = { workspace = true, features = ["blob", "trace", "bundled"] }
 log = { workspace = true, features = ["std"] }
 parking_lot = { workspace = true }
 

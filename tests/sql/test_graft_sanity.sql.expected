@@ -9,7 +9,6 @@ vfs.zName      = "graft"
 vfs.iVersion   = 3
 vfs.szOsFile   = 200
 vfs.mxPathname = 512
-.vfsname
 pragma graft_status;
 +------------------------+
 |      Graft Status      |

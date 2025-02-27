@@ -3,9 +3,11 @@
 -- initialize two connections to the same database
 .connection 0
 .open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+pragma graft_status;
 
 .connection 1
 .open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+pragma graft_status;
 
 -- load the sample dataset
 .read datasets/simple.sql

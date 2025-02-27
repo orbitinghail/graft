@@ -29,8 +29,4 @@ fn main() {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
-
-    // Uncomment to track down generated files
-    // println!("cargo:warning=generated {}/vars.rs", out_path.display());
-    // println!("cargo:warning=generated {}/bindings.rs", out_path.display());
 }
