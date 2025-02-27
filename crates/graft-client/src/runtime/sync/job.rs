@@ -127,7 +127,6 @@ impl PushJob {
         let page_count = snapshot.pages();
 
         let mut num_commits = 0;
-        let expected_num_commits = lsns.try_len().expect("lsns is RangeInclusive");
 
         // load all of the pages into memory
         // TODO: stream pages directly to the remote
@@ -147,8 +146,9 @@ impl PushJob {
                 }
             }
         }
+
         precept::expect_always_or_unreachable!(
-            num_commits == expected_num_commits,
+            num_commits == lsns.try_len().expect("lsns is RangeInclusive"),
             "push job always pushes all expected commits",
             { "vid": self.vid, "cid": self.cid, "lsns": format!("{lsns:?}") }
         );

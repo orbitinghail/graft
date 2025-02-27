@@ -84,3 +84,9 @@ antithesis-run: antithesis-prep
         --image='{{MINIO_ANTITHESIS_TAG}}' \
         --duration=120 \
         --email='antithesis-results@orbitinghail.dev'
+
+deploy:
+    @./deploy/deploy.sh
+
+restart:
+    @./deploy/restart.sh
