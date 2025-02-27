@@ -33,7 +33,7 @@ recv_timeout_ms = 10
 fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
     let (backend, clients) = start_graft_backend();
 
-    let ticker = Ticker::new(10);
+    let ticker = Ticker::new(50);
 
     let writer = {
         let cid = ClientId::random();
