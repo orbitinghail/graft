@@ -14,7 +14,7 @@ use core::{
     ptr::null_mut,
 };
 
-/// The minimim supported SQLite version.
+/// The minimim supported `SQLite` version.
 // If you need to make this earlier, make sure the tests are testing the earlier version
 pub const MIN_SQLITE_VERSION_NUMBER: i32 = 3044000;
 

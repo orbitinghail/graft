@@ -227,17 +227,17 @@ impl PageTracker {
     pub fn insert(&mut self, pageidx: PageIdx, hash: PageHash) -> Option<PageHash> {
         let index = (pageidx.to_u32() - 1) as usize;
         if index > self.pages.len() {
-            panic!("page index out of bounds: {}", index);
+            panic!("page index out of bounds: {index}");
         }
 
         let out = std::mem::replace(&mut self.pages[index], hash);
-        (!out.is_empty()).then(|| out)
+        (!out.is_empty()).then_some(out)
     }
 
     pub fn get_hash(&self, pageidx: PageIdx) -> Option<&PageHash> {
         let index = (pageidx.to_u32() - 1) as usize;
         if index > self.pages.len() {
-            panic!("page index out of bounds: {}", index);
+            panic!("page index out of bounds: {index}");
         }
         if self.pages[index].is_empty() {
             None

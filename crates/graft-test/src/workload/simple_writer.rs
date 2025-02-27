@@ -105,7 +105,7 @@ impl Workload for SimpleWriter {
 
             // load the tracker and the expected page hash
             let mut page_tracker = load_tracker(&mut oracle, &reader, &env.cid).or_into_ctx()?;
-            let expected_hash = page_tracker.insert(pageidx, new_hash.clone());
+            let expected_hash = page_tracker.insert(pageidx, new_hash);
 
             // verify the page is missing or present as expected
             let page = reader.read(&mut oracle, pageidx).or_into_ctx()?;
