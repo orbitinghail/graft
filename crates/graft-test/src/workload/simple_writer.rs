@@ -14,7 +14,7 @@ use graft_client::{
         volume_writer::VolumeWrite,
     },
 };
-use graft_core::{PageCount, VolumeId, page::Page};
+use graft_core::{VolumeId, page::Page};
 use precept::{expect_always_or_unreachable, expect_sometimes};
 use rand::{Rng, distr::uniform::SampleRange, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};
@@ -23,8 +23,8 @@ use zerocopy::IntoBytes;
 
 use super::{Workload, WorkloadEnv, WorkloadErr};
 
-/// The `SimpleWriter` workload mutates a set of pages in the range `2..=pages+1`
-/// while maintaining an index page at `PageIdx(1)`.
+/// The `SimpleWriter` workload mutates a set of pages in the range `1..=128`
+/// while maintaining an index page at `PageIdx(129)`.
 ///
 /// Every `interval_ms` ms, the workload picks a random page, verifies it
 /// matches it's hash in the index, and then randomly mutates it along with it's
@@ -34,7 +34,6 @@ use super::{Workload, WorkloadEnv, WorkloadErr};
 pub struct SimpleWriter {
     vids: Vec<VolumeId>,
     interval_ms: u64,
-    pages: PageCount,
 
     #[serde(skip)]
     vid: Option<VolumeId>,

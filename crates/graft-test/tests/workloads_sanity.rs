@@ -21,7 +21,6 @@ const WRITER_CONFIG: &str = r#"
 type = "SimpleWriter"
 vids = [ "GonuUEmt4XLJuHpcg7X35N", "GonuUEmtx9iM4EdCWtg2eK" ]
 interval_ms = 10
-pages = 16
 "#;
 
 const READER_CONFIG: &str = r#"

@@ -26,7 +26,7 @@ use tracing::field;
 use super::{Workload, WorkloadEnv, WorkloadErr};
 
 /// The `SimpleReader` workload validates that a subset of the pages in volume
-/// are consistent with the index page at `PageIdx(1)`. It expects the volume is
+/// are consistent with the index page at `PageIdx(129)`. It expects the volume is
 /// only written to by the `SimpleWriter` workload.
 ///
 /// The workload subscribes to changes for the volume. On change, the workload
