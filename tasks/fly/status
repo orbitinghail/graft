@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fly --config deploy/metastore/fly.toml status
+fly --config deploy/pagestore/fly.toml status

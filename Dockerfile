@@ -11,7 +11,7 @@ ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
 # Enable instrumentation when INSTRUMENTED is set:
 #   --build-arg INSTRUMENTED=1
-COPY ./antithesis/libvoidstar.so /usr/lib/libvoidstar.so
+COPY ./tests/antithesis/libvoidstar.so /usr/lib/libvoidstar.so
 ARG INSTRUMENTED
 ENV LD_LIBRARY_PATH=${INSTRUMENTED:+"/usr/lib/libvoidstar.so"}
 ENV RUSTFLAGS=${INSTRUMENTED:+"-Ccodegen-units=1 -Cpasses=sancov-module -Cllvm-args=-sanitizer-coverage-level=3 -Cllvm-args=-sanitizer-coverage-trace-pc-guard -Clink-args=-Wl,--build-id -L/usr/lib/libvoidstar.so -lvoidstar"}
@@ -42,7 +42,7 @@ RUN mv ${TARGET_DIR} /artifacts
 
 FROM gcr.io/distroless/cc:debug AS runtime
 ARG INSTRUMENTED
-COPY ./antithesis/libvoidstar.so /usr/lib/libvoidstar.so
+COPY ./tests/antithesis/libvoidstar.so /usr/lib/libvoidstar.so
 ENV LD_LIBRARY_PATH=${INSTRUMENTED:+"/usr/lib/libvoidstar.so"}
 
 FROM runtime AS metastore
@@ -60,7 +60,7 @@ ENTRYPOINT ["/pagestore"]
 FROM runtime AS test_workload
 COPY --from=builder /artifacts/test_workload /test_workload
 COPY ./crates/graft-test/workloads /workloads
-COPY ./antithesis/workloads /opt/antithesis/test
+COPY ./tests/antithesis/workloads /opt/antithesis/test
 RUN ["sh", "-c", "mkdir /symbols && ln -s /test_workload /symbols/test_workload"]
 ENTRYPOINT ["sleep", "infinity"]
 

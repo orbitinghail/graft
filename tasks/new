@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# usage: just task new -g <group> <task-name>
+# writes out a template executable bash script to tasks[/<group>]/<task-name>
+# if <group> is not provided, the task will be written to the root tasks directory
+
+GROUP=""
+
+while getopts ":g:" opt; do
+    case ${opt} in
+        g )
+            GROUP="${OPTARG}"
+            ;;
+        \? )
+            echo "Invalid option: $OPTARG" 1>&2
+            ;;
+        : )
+            echo "Invalid option: $OPTARG requires an argument" 1>&2
+            ;;
+    esac
+done
+shift $((OPTIND -1))
+
+NAME=$(echo "${@}" | tr '[:upper:]' '[:lower:]' | tr -d '[:punct:]' | tr ' ' '-')
+
+if [[ -z "${NAME}" ]]; then
+    echo "Usage: just task new -g <group> <task-name>"
+    exit 1
+fi
+
+TEMPLATE=$(cat <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+EOF
+)
+
+DIR="./tasks"
+if [[ -n "${GROUP}" ]]; then
+    DIR="${DIR}/${GROUP}"
+fi
+
+mkdir -p "${DIR}"
+
+SCRIPT="${DIR}/${NAME}"
+if [[ -f "${SCRIPT}" ]]; then
+    echo "Task '${SCRIPT}' already exists"
+    exit 1
+fi
+
+echo "Creating task '${SCRIPT}'"
+
+echo "${TEMPLATE}" > "${SCRIPT}"
+chmod +x "${SCRIPT}"

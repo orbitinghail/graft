@@ -18,9 +18,34 @@ MINIO_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "minio:latest"
 default:
   @just --list
 
+[no-exit-message]
 [positional-arguments]
 tool *args:
     @cargo run -q --bin graft-tool -- "$@"
+
+[positional-arguments]
+[no-exit-message]
+task *args:
+    #!/usr/bin/env sh
+    SCRIPT="./tasks"
+    if [[ -d "$SCRIPT/$1" ]]; then
+        SCRIPT="$SCRIPT/$1"
+        shift
+    fi
+    if [[ $# -lt 1 ]]; then
+        echo "Usage: just task [group] task *args"
+        tree tasks
+        exit 1
+    fi
+    SCRIPT="$SCRIPT/$1"
+    shift
+
+    if [[ -x "$SCRIPT" ]]; then
+        exec "$SCRIPT" "${@}"
+    else
+        echo "'$SCRIPT' either missing or not executable"
+        exit 1
+    fi
 
 metastore-image:
     docker build \
@@ -42,7 +67,7 @@ antithesis-config-image:
     docker build \
         --platform {{DOCKER_PLATFORM}} \
         -t {{CONFIG_ANTITHESIS_TAG}} \
-        {{BUILD_ARGS}} antithesis
+        {{BUILD_ARGS}} tests/antithesis
 
 test-workload-image:
     docker build \
@@ -84,9 +109,3 @@ antithesis-run: antithesis-prep
         --image='{{MINIO_ANTITHESIS_TAG}}' \
         --duration=120 \
         --email='antithesis-results@orbitinghail.dev'
-
-deploy:
-    @./deploy/deploy.sh
-
-restart:
-    @./deploy/restart.sh

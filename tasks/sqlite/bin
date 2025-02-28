@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 GIT_ROOT="$(git rev-parse --show-toplevel)"
 EXAMPLES_LIB_PATH="${GIT_ROOT}/target/debug/examples"
