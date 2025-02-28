@@ -16,31 +16,44 @@ TEST_WORKLOAD_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "test_workload:latest"
 MINIO_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "minio:latest"
 
 default:
-  @just --list
+    @just --list
 
 [positional-arguments]
 [no-exit-message]
 run *args:
     #!/usr/bin/env bash
-    SCRIPT="./tasks"
-    if [[ -d "$SCRIPT/$1" ]]; then
-        SCRIPT="$SCRIPT/$1"
-        shift
-    fi
-    if [[ $# -lt 1 ]]; then
-        echo "Usage: just task [group] task *args"
-        tree tasks
+    if [ "$#" -eq 0 ]; then
+        echo "Usage: run <task> [arguments...]" >&2
         exit 1
     fi
-    SCRIPT="$SCRIPT/$1"
-    shift
 
-    if [[ -x "$SCRIPT" ]]; then
-        exec "$SCRIPT" "${@}"
-    else
-        echo "'$SCRIPT' either missing or not executable"
+    # Store all command-line arguments in an array.
+    args=("$@")
+    num_args=$#
+
+    found=""
+    found_index=0
+
+    # Try the longest possible prefix down to a single argument.
+    for (( i = num_args; i > 0; i-- )); do
+        candidate="./tasks"
+        for (( j = 0; j < i; j++ )); do
+             candidate="${candidate}/${args[j]}"
+        done
+        if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+             found="$candidate"
+             found_index=$i
+             break
+        fi
+    done
+
+    if [ -z "$found" ]; then
+        echo "Error: No valid executable found matching the given arguments in ./tasks." >&2
         exit 1
     fi
+
+    # Execute the found file with any remaining arguments.
+    exec "$found" "${args[@]:$found_index}"
 
 metastore-image:
     docker build \

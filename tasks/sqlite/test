@@ -28,7 +28,7 @@ export SQLITE_YEAR=2023
 export SQLITE_VERSION=3440000
 
 # run sqlite3.sh to ensure it's installed and print the version
-just task sqlite bin --version
+just run sqlite bin --version
 
 # select tests from *.sql files in GIT_ROOT, filtered by the first argument (substring)
 declare TESTS=$(find "${GIT_ROOT}" -name "test_*.sql" | grep "${FILTER}")
@@ -53,7 +53,7 @@ for TEST in ${TESTS}; do
     # We add the exit code to the output since SQLite returns the number of
     # errors encountered while executing, and some of the tests want to trigger
     # errors on purpose (thus we can't just fail on non-zero exit code).
-    OUTPUT=$(just task sqlite bin -cmd '.log stderr' -header -table -echo 2>&1 <"${TEST}")
+    OUTPUT=$(just run sqlite bin -cmd '.log stderr' -header -table -echo 2>&1 <"${TEST}")
     EXIT_CODE=$?
     OUTPUT=$(printf "%s\n\n%s\n" "${OUTPUT}" "SQLite Exit Code = ${EXIT_CODE}")
 

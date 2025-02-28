@@ -38,7 +38,7 @@ jobs:
       - name: Test
         run: cargo nextest run
       - name: SQLite Tests
-        run: just task sqlite test
+        run: just run sqlite test
       - name: Clippy
         uses: auguwu/clippy-action@1.4.0
         with:
