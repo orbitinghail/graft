@@ -5,13 +5,13 @@ use std::fmt::Write;
 use crate::file::vol_file::VolFile;
 
 pub enum GraftPragma {
-    /// pragma graft_status;
+    /// `pragma graft_status;`
     Status,
 
-    /// pragma graft_snapshot;
+    /// `pragma graft_snapshot;`
     Snapshot,
 
-    /// pragma graft_sync = true|false;
+    /// `pragma graft_sync = true|false;`
     SetAutosync(bool),
 }
 

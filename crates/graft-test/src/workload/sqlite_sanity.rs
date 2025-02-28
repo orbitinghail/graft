@@ -81,7 +81,7 @@ impl Workload for SqliteSanity {
 
         let handle = env
             .runtime
-            .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
+            .open_volume(vid, VolumeConfig::new(SyncDirection::Both))
             .or_into_ctx()?;
 
         while env.ticker.tick() {
@@ -174,7 +174,7 @@ impl Actions {
 
         match self {
             Actions::CreateAccount => {
-                let (source, balance) = find_nonzero_account(rng, &txn, max_account_id)?;
+                let (source, balance) = find_nonzero_account(rng, txn, max_account_id)?;
                 let amount = rng.random_range(1..=balance);
                 txn.execute(
                     "UPDATE accounts SET balance = balance - ? WHERE id = ?",
@@ -183,9 +183,9 @@ impl Actions {
                 txn.execute("INSERT INTO accounts (balance) VALUES (?)", [amount])?;
             }
             Actions::Transfer => {
-                let (source, balance) = find_nonzero_account(rng, &txn, max_account_id)?;
+                let (source, balance) = find_nonzero_account(rng, txn, max_account_id)?;
                 let target = rng.random_range(1..=max_account_id);
-                if balance > 0 && account_exists(&txn, target)? {
+                if balance > 0 && account_exists(txn, target)? {
                     let amount = rng.random_range(1..=balance);
                     txn.execute(
                         "UPDATE accounts SET balance = balance - ? WHERE id = ?",

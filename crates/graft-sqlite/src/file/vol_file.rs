@@ -79,7 +79,7 @@ impl VolFile {
             VolFileState::Idle => self.handle().snapshot().or_into_ctx(),
             VolFileState::Shared { reader, .. } => Ok(reader.snapshot().cloned()),
             VolFileState::Reserved { writer, .. } => Ok(writer.snapshot().cloned()),
-            VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
+            VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
         }
     }
 
