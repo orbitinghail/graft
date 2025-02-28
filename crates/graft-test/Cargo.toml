@@ -18,6 +18,7 @@ sqlite-plugin = { path = "../sqlite-plugin", features = [ "static" ]}
 splinter = { path = "../splinter" }
 precept = { path = "../precept", features = ["antithesis"] }
 
+enum_dispatch = { workspace = true }
 culprit = { workspace = true }
 crossbeam = { workspace = true }
 file-lock = { workspace = true }

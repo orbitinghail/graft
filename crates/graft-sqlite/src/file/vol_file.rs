@@ -26,14 +26,8 @@ use super::VfsFile;
 #[derive(Debug)]
 enum VolFileState {
     Idle,
-    Shared {
-        reader: VolumeReader,
-        performed_read: bool,
-    },
-    Reserved {
-        writer: VolumeWriter,
-        performed_read: bool,
-    },
+    Shared { reader: VolumeReader },
+    Reserved { writer: VolumeWriter },
     Committing,
 }
 
@@ -115,7 +109,7 @@ impl VfsFile for VolFile {
                 if let VolFileState::Idle = self.state {
                     // Transition Idle -> Shared
                     let reader = self.handle.reader().or_into_ctx()?;
-                    self.state = VolFileState::Shared { reader, performed_read: false };
+                    self.state = VolFileState::Shared { reader };
                 } else {
                     return Err(Culprit::new_with_note(
                         ErrCtx::InvalidLockTransition,
@@ -124,7 +118,7 @@ impl VfsFile for VolFile {
                 }
             }
             LockLevel::Reserved => {
-                if let VolFileState::Shared { ref reader, performed_read } = self.state {
+                if let VolFileState::Shared { ref reader } = self.state {
                     // Transition Shared -> Reserved
 
                     // Ensure that this VolFile is not readonly
@@ -150,23 +144,18 @@ impl VfsFile for VolFile {
                     let writer = if reader.snapshot().map(|s| s.local())
                         != latest_snapshot.as_ref().map(|s| s.local())
                     {
-                        // The snapshot has changed
-                        if performed_read {
-                            // if a read occurred in this transaction, we can't
-                            // upgrade to a reserved state
-                            return Err(Culprit::new_with_note(
-                                ErrCtx::BusySnapshot,
-                                "unable to lock: Shared -> Reserved: snapshot changed",
-                            ));
-                        } else {
-                            self.handle.writer_at(latest_snapshot)
-                        }
+                        // if a read occurred in this transaction, we can't
+                        // upgrade to a reserved state
+                        return Err(Culprit::new_with_note(
+                            ErrCtx::BusySnapshot,
+                            "unable to lock: Shared -> Reserved: snapshot changed",
+                        ));
                     } else {
                         // The snapshot has not changed
                         reader.clone().upgrade()
                     };
 
-                    self.state = VolFileState::Reserved { writer, performed_read };
+                    self.state = VolFileState::Reserved { writer };
 
                     // Explicitly leak the reserved lock
                     // SAFETY: we depend on SQLite to release the lock when it's done
@@ -209,7 +198,7 @@ impl VfsFile for VolFile {
                 }
             },
             LockLevel::Shared => {
-                if let VolFileState::Reserved { writer, performed_read } =
+                if let VolFileState::Reserved { writer } =
                     mem::replace(&mut self.state, VolFileState::Committing)
                 {
                     // Transition Reserved -> Shared through the Committing state
@@ -218,7 +207,7 @@ impl VfsFile for VolFile {
 
                     // Commit the writer, downgrading to a reader
                     let reader = writer.commit().or_into_ctx()?;
-                    self.state = VolFileState::Shared { reader, performed_read };
+                    self.state = VolFileState::Shared { reader };
 
                     // release the reserved lock
                     // SAFETY: we are in the Reserved state, thus we are holding the lock
@@ -291,12 +280,10 @@ impl VfsFile for VolFile {
                     .read(self.oracle.as_mut(), page_idx)
                     .or_into_ctx()?
             }
-            VolFileState::Shared { reader, performed_read } => {
-                *performed_read = true;
+            VolFileState::Shared { reader } => {
                 reader.read(self.oracle.as_mut(), page_idx).or_into_ctx()?
             }
-            VolFileState::Reserved { writer, performed_read } => {
-                *performed_read = true;
+            VolFileState::Reserved { writer } => {
                 writer.read(self.oracle.as_mut(), page_idx).or_into_ctx()?
             }
             VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),

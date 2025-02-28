@@ -2,16 +2,15 @@ use culprit::{Result, ResultExt};
 use graft_client::runtime::storage::volume_state::{SyncDirection, VolumeConfig, VolumeStatus};
 use graft_core::VolumeId;
 use graft_sqlite::vfs::GraftVfs;
+use precept::expect_sometimes;
 use rand::{Rng, seq::IndexedRandom};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use sqlite_plugin::vfs::{RegisterOpts, register_static};
-use std::{
-    fmt::Debug,
-    thread::{self, sleep},
-    time::Duration,
-};
+use std::{fmt::Debug, thread::sleep, time::Duration};
 use tracing::field;
+
+use crate::workload::recover_and_sync_volume;
 
 use super::{Workload, WorkloadEnv, WorkloadErr};
 
@@ -21,68 +20,67 @@ pub struct SqliteSanity {
     vids: Vec<VolumeId>,
     interval_ms: u64,
     initial_accounts: u64,
+    vfs_name: String,
 
     #[serde(skip)]
     vid: Option<VolumeId>,
 }
 
-fn thread_vfs_name() -> String {
-    let thread_name = thread::current().name().unwrap().to_owned();
-    format!("{thread_name}-graft")
-}
-
 impl Workload for SqliteSanity {
     fn setup<R: rand::Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), WorkloadErr> {
-        // pick volume id randomly and store in self.vid
-        let vid = self
-            .vid
-            .get_or_insert_with(|| self.vids.choose(&mut env.rng).unwrap().clone());
-        tracing::info!("SqliteNode workload is using volume: {}", vid);
-
         // register graft vfs
         let vfs = GraftVfs::new(env.runtime.clone());
-        register_static(
-            &thread_vfs_name(),
-            vfs,
-            RegisterOpts { make_default: false },
-        )
-        .expect("failed to register vfs");
-
-        let mut sqlite = Connection::open_with_flags_and_vfs(
-            vid.pretty(),
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-            &thread_vfs_name(),
-        )?;
-
-        // create schema and initial accounts
-        let txn = sqlite.transaction()?;
-
-        txn.execute(SQL_ACCOUNTS_TABLE, [])?;
-        txn.execute("INSERT INTO accounts (balance) VALUES (?)", [TOTAL_BALANCE])?;
-
-        for _ in 0..self.initial_accounts {
-            Actions::CreateAccount
-                .run(&mut env.rng, &txn)
-                .or_into_ctx()?;
-        }
-        txn.commit()?;
+        register_static(&self.vfs_name, vfs, RegisterOpts { make_default: false })
+            .expect("failed to register vfs");
 
         Ok(())
     }
 
     fn run<R: rand::Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), WorkloadErr> {
         let interval = Duration::from_millis(self.interval_ms);
-        let vid = self.vid.as_ref().expect("volume id not set");
+
+        // pick volume id randomly and store in self.vid to handle workload retries
+        let vid = self
+            .vid
+            .get_or_insert_with(|| self.vids.choose(&mut env.rng).unwrap().clone());
+        tracing::info!("SqliteSanity workload is using volume: {}", vid);
+
         let mut sqlite = Connection::open_with_flags_and_vfs(
             vid.pretty(),
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-            &thread_vfs_name(),
+            &self.vfs_name,
         )?;
 
         let handle = env
             .runtime
             .open_volume(vid, VolumeConfig::new(SyncDirection::Both))
             .or_into_ctx()?;
+
+        let status = handle.status().or_into_ctx()?;
+        expect_sometimes!(
+            status != VolumeStatus::Ok,
+            "volume is not ok when workload starts",
+            { "cid": env.cid, "vid": vid }
+        );
+
+        // ensure the volume is recovered and synced with the server
+        recover_and_sync_volume(&handle).or_into_ctx()?;
+
+        // if the snapshot is empty attempt to initialize the schema and initial accounts
+        let txn = sqlite.transaction()?;
+        if get_snapshot(&txn)?.is_none() {
+            txn.execute(SQL_ACCOUNTS_TABLE, [])?;
+            txn.execute("INSERT INTO accounts (balance) VALUES (?)", [TOTAL_BALANCE])?;
+
+            for _ in 0..self.initial_accounts {
+                Actions::CreateAccount
+                    .run(&mut env.rng, &txn)
+                    .or_into_ctx()?;
+            }
+            txn.commit()?;
+        } else {
+            txn.rollback()?;
+        }
 
         while env.ticker.tick() {
             // check the volume status to see if we need to reset
@@ -100,14 +98,13 @@ impl Workload for SqliteSanity {
             }
 
             let txn = sqlite.transaction()?;
-            let snapshot =
-                txn.pragma_query_value(None, "graft_snapshot", |row| row.get::<_, String>(0))?;
+            let snapshot = get_snapshot(&txn)?;
             let action = Actions::random(&mut env.rng);
 
             let span = tracing::info_span!("running action", ?vid, ?action, ?snapshot).entered();
             action
                 .run(&mut env.rng, &txn)
-                .map_err(|err| err.with_note(format!("current snapshot: {snapshot}")))
+                .map_err(|err| err.with_note(format!("txn snapshot: {snapshot:?}")))
                 .or_into_ctx()?;
             txn.commit()?;
             drop(span);
@@ -123,7 +120,7 @@ impl Workload for SqliteSanity {
 const TOTAL_BALANCE: u64 = 1_000_000;
 
 const SQL_ACCOUNTS_TABLE: &str = r#"
-CREATE TABLE IF NOT EXISTS accounts (
+CREATE TABLE accounts (
     id INTEGER PRIMARY KEY,
     balance INTEGER NOT NULL,
     CHECK (balance >= 0)
@@ -249,4 +246,9 @@ fn find_nonzero_account<R: Rng>(
             return Ok((id, balance));
         }
     }
+}
+
+fn get_snapshot(txn: &Transaction<'_>) -> rusqlite::Result<Option<String>> {
+    txn.pragma_query_value(None, "graft_snapshot", |row| row.get(0))
+        .optional()
 }

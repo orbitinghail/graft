@@ -3,6 +3,7 @@ use crate::{PageHash, Ticker};
 use super::{PageTracker, PageTrackerErr};
 use config::ConfigError;
 use culprit::{Culprit, ResultExt};
+use enum_dispatch::enum_dispatch;
 use graft_client::{
     ClientErr,
     oracle::Oracle,
@@ -137,6 +138,7 @@ pub struct WorkloadEnv<R: Rng> {
     ticker: Ticker,
 }
 
+#[enum_dispatch]
 #[allow(unused_variables)]
 pub trait Workload {
     fn setup<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>> {
@@ -146,16 +148,17 @@ pub trait Workload {
     fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>>;
 }
 
+#[enum_dispatch(Workload)]
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum WorkloadConfig {
-    SimpleWriter(SimpleWriter),
-    SimpleReader(SimpleReader),
-    SqliteSanity(SqliteSanity),
+    SimpleWriter,
+    SimpleReader,
+    SqliteSanity,
 }
 
 impl WorkloadConfig {
-    pub fn run<R: Rng>(
+    pub fn execute<R: Rng>(
         mut self,
         cid: ClientId,
         runtime: Runtime,
@@ -164,18 +167,10 @@ impl WorkloadConfig {
     ) -> Result<(), Culprit<WorkloadErr>> {
         let mut env = WorkloadEnv { cid, runtime, rng, ticker };
 
-        match &mut self {
-            Self::SimpleWriter(workload) => workload.setup(&mut env)?,
-            Self::SimpleReader(workload) => workload.setup(&mut env)?,
-            Self::SqliteSanity(workload) => workload.setup(&mut env)?,
-        }
+        self.setup(&mut env)?;
 
         while env.ticker.tick() {
-            if let Err(err) = match &mut self {
-                Self::SimpleWriter(workload) => workload.run(&mut env),
-                Self::SimpleReader(workload) => workload.run(&mut env),
-                Self::SqliteSanity(workload) => workload.run(&mut env),
-            } {
+            if let Err(err) = self.run(&mut env) {
                 if err.ctx().should_retry() {
                     tracing::warn!("retrying workload after error: {:?}", err);
                     precept::expect_reachable!("retryable error occurred");

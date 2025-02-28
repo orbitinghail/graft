@@ -115,7 +115,7 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
 
     tracing::info!(?ticker, "running test workload");
     workload
-        .run(cid.clone(), runtime.clone(), rng, ticker)
+        .execute(cid.clone(), runtime.clone(), rng, ticker)
         .or_into_ctx()?;
 
     tracing::info!("workload finished");

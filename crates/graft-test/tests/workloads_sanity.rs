@@ -27,12 +27,17 @@ vids = [ "GonuUEmt4XLJuHpcg7X35N" ]
 recv_timeout_ms = 10
 "#;
 
-const SQLITE_CONFIG: &str = r#"
+fn sqlite_sanity_config(vfs_name: &str) -> String {
+    format!(
+        r#"
 type = "SqliteSanity"
 vids = [ "GonuUrdaXZTJVDLgbSg3cs" ]
 interval_ms = 10
 initial_accounts = 1000
-"#;
+vfs_name = "{vfs_name}"
+    "#
+    )
+}
 
 struct WorkloadRunner {
     runtime: Runtime,
@@ -59,7 +64,7 @@ impl WorkloadRunner {
         let r2 = runtime.clone();
         let workload = thread::Builder::new()
             .name(name.into())
-            .spawn(move || workload.run(cid, r2, rand::rng(), ticker).unwrap())
+            .spawn(move || workload.execute(cid, r2, rand::rng(), ticker).unwrap())
             .unwrap();
         Ok(WorkloadRunner { runtime, workload })
     }
@@ -117,8 +122,18 @@ fn test_sqlite_sanity() -> Result<(), Culprit<WorkloadErr>> {
     let ticker = Ticker::new(50);
 
     let runners = vec![
-        WorkloadRunner::run("node-1", clients.clone(), ticker, SQLITE_CONFIG)?,
-        WorkloadRunner::run("node-2", clients.clone(), ticker, SQLITE_CONFIG)?,
+        WorkloadRunner::run(
+            "node-1",
+            clients.clone(),
+            ticker,
+            &sqlite_sanity_config("node-1-vfs"),
+        )?,
+        WorkloadRunner::run(
+            "node-2",
+            clients.clone(),
+            ticker,
+            &sqlite_sanity_config("node-2-vfs"),
+        )?,
     ];
 
     test_runners(runners)?;
