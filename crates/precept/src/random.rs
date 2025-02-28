@@ -2,7 +2,7 @@ use rand::RngCore;
 
 #[cfg(feature = "disabled")]
 pub fn rng() -> impl RngCore {
-    rand::thread_rng()
+    rand::rng()
 }
 
 #[cfg(not(feature = "disabled"))]

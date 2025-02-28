@@ -1,10 +1,5 @@
 use culprit::{Result, ResultExt};
-use graft_core::{
-    PageIdx, VolumeId,
-    gid::ClientId,
-    lsn::{LSN, LSNRangeExt},
-    page::Page,
-};
+use graft_core::{PageIdx, VolumeId, gid::ClientId, lsn::LSN, page::Page};
 use graft_proto::pagestore::v1::PageAtIdx;
 use tryiter::TryIteratorExt;
 
@@ -126,6 +121,7 @@ impl PushJob {
 
         let page_count = snapshot.pages();
 
+        #[allow(unused)]
         let mut num_commits = 0;
 
         // load all of the pages into memory
@@ -148,7 +144,7 @@ impl PushJob {
         }
 
         precept::expect_always_or_unreachable!(
-            num_commits == lsns.try_len().expect("lsns is RangeInclusive"),
+            num_commits == graft_core::lsn::LSNRangeExt::try_len(&lsns).expect("lsns is RangeInclusive"),
             "push job always pushes all expected commits",
             { "vid": self.vid, "cid": self.cid, "lsns": format!("{lsns:?}") }
         );

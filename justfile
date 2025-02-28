@@ -85,10 +85,10 @@ minio-image:
         -t {{MINIO_ANTITHESIS_TAG}} \
         {{BUILD_ARGS}} .
 
-build-images: metastore-image pagestore-image test-workload-image minio-image
+build-images: metastore-image pagestore-image
 
 antithesis-prep: antithesis-config-image
-    just instrumented=1 build-images
+    just instrumented=1 build-images test-workload-image minio-image
     docker push {{METASTORE_ANTITHESIS_TAG}}
     docker push {{PAGESTORE_ANTITHESIS_TAG}}
     docker push {{CONFIG_ANTITHESIS_TAG}}

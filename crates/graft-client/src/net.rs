@@ -3,7 +3,7 @@ use culprit::{Culprit, ResultExt};
 use graft_core::byte_unit::ByteUnit;
 use graft_proto::common::v1::GraftErr;
 use http::{
-    HeaderName, HeaderValue, StatusCode, Uri,
+    HeaderName, HeaderValue, Uri,
     uri::{Builder, PathAndQuery},
 };
 use std::{any::type_name, sync::Arc, time::Duration};
@@ -134,7 +134,7 @@ impl NetClient {
                 Culprit::from_err(err).with_note(note)
             })?;
             precept::expect_always_or_unreachable!(
-                !(500..600).contains(&status.as_u16()) || status == StatusCode::SERVICE_UNAVAILABLE,
+                !(500..600).contains(&status.as_u16()) || status == http::StatusCode::SERVICE_UNAVAILABLE,
                 "client requests should not return 5xx errors",
                 {
                     "status": status.as_u16(),
