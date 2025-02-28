@@ -5,29 +5,90 @@ use std::{
 
 use config::File;
 use culprit::{Culprit, ResultExt};
-use graft_client::runtime::{runtime::Runtime, storage::Storage};
+use graft_client::{
+    ClientPair,
+    runtime::{runtime::Runtime, storage::Storage},
+};
 use graft_core::gid::ClientId;
 use graft_test::{
     Ticker, start_graft_backend,
     workload::{WorkloadConfig, WorkloadErr},
 };
 
-struct WorkloadRunner {
-    runtime: Runtime,
-    workload: JoinHandle<Result<(), Culprit<WorkloadErr>>>,
-}
-
 const WRITER_CONFIG: &str = r#"
 type = "SimpleWriter"
-vids = [ "GonuUEmt4XLJuHpcg7X35N", "GonuUEmtx9iM4EdCWtg2eK" ]
+vids = [ "GonuUEmt4XLJuHpcg7X35N" ]
 interval_ms = 10
 "#;
 
 const READER_CONFIG: &str = r#"
 type = "SimpleReader"
-vids = [ "GonuUEmt4XLJuHpcg7X35N", "GonuUEmtx9iM4EdCWtg2eK" ]
+vids = [ "GonuUEmt4XLJuHpcg7X35N" ]
 recv_timeout_ms = 10
 "#;
+
+const SQLITE_CONFIG: &str = r#"
+type = "SqliteSanity"
+vids = [ "GonuUrdaXZTJVDLgbSg3cs" ]
+interval_ms = 10
+initial_accounts = 1000
+"#;
+
+struct WorkloadRunner {
+    runtime: Runtime,
+    workload: JoinHandle<()>,
+}
+
+impl WorkloadRunner {
+    fn run(
+        name: &str,
+        clients: ClientPair,
+        ticker: Ticker,
+        workload_conf: &str,
+    ) -> Result<Self, Culprit<WorkloadErr>> {
+        let cid = ClientId::random();
+        let storage = Storage::open_temporary().or_into_ctx()?;
+        let runtime = Runtime::new(cid.clone(), clients, storage);
+        runtime
+            .start_sync_task(Duration::from_millis(100), 8, true, &format!("{name}-sync"))
+            .or_into_ctx()?;
+        let workload: WorkloadConfig = config::Config::builder()
+            .add_source(File::from_str(workload_conf, config::FileFormat::Toml))
+            .build()?
+            .try_deserialize()?;
+        let r2 = runtime.clone();
+        let workload = thread::Builder::new()
+            .name(name.into())
+            .spawn(move || workload.run(cid, r2, rand::rng(), ticker).unwrap())
+            .unwrap();
+        Ok(WorkloadRunner { runtime, workload })
+    }
+}
+
+fn test_runners(runners: Vec<WorkloadRunner>) -> Result<(), Culprit<WorkloadErr>> {
+    // run all workloads to completion or timeout
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut finished = false;
+    while !finished && Instant::now() < deadline {
+        finished = runners.iter().all(|r| r.workload.is_finished());
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    if !finished {
+        panic!("workloads did not finish within timeout");
+    }
+
+    // shutdown runners
+    for runner in runners {
+        runner.workload.join().expect("workload failed");
+        runner
+            .runtime
+            .shutdown_sync_task(Duration::from_secs(5))
+            .or_into_ctx()?;
+    }
+
+    Ok(())
+}
 
 #[graft_test::test]
 fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
@@ -35,73 +96,34 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
 
     let ticker = Ticker::new(50);
 
-    let writer = {
-        let cid = ClientId::random();
-        let storage = Storage::open_temporary().or_into_ctx()?;
-        let runtime = Runtime::new(cid.clone(), clients.clone(), storage);
-        runtime
-            .start_sync_task(Duration::from_millis(10), 8, true)
-            .or_into_ctx()?;
-        let workload: WorkloadConfig = config::Config::builder()
-            .add_source(File::from_str(WRITER_CONFIG, config::FileFormat::Toml))
-            .build()?
-            .try_deserialize()?;
-        let r2 = runtime.clone();
-        let workload = thread::Builder::new()
-            .name("writer".into())
-            .spawn(move || workload.run(cid, r2, rand::rng(), ticker))
-            .unwrap();
-        WorkloadRunner { runtime, workload }
-    };
+    let runners = vec![
+        WorkloadRunner::run("writer-1", clients.clone(), ticker, WRITER_CONFIG)?,
+        WorkloadRunner::run("writer-2", clients.clone(), ticker, WRITER_CONFIG)?,
+        WorkloadRunner::run("reader", clients.clone(), ticker, READER_CONFIG)?,
+    ];
 
-    let reader = {
-        let cid = ClientId::random();
-        let storage = Storage::open_temporary().or_into_ctx()?;
-        let runtime = Runtime::new(cid.clone(), clients, storage);
-        runtime
-            .start_sync_task(Duration::from_millis(10), 8, true)
-            .or_into_ctx()?;
-        let workload: WorkloadConfig = config::Config::builder()
-            .add_source(File::from_str(READER_CONFIG, config::FileFormat::Toml))
-            .build()?
-            .try_deserialize()?;
-        let r2 = runtime.clone();
-        let workload = thread::Builder::new()
-            .name("reader".into())
-            .spawn(move || workload.run(cid, r2, rand::rng(), ticker))
-            .unwrap();
-        WorkloadRunner { runtime, workload }
-    };
+    test_runners(runners)?;
 
-    // run both tasks to completion or timeout
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let mut finished = false;
-    while !finished && Instant::now() < deadline {
-        finished = writer.workload.is_finished() && reader.workload.is_finished();
-        thread::sleep(Duration::from_millis(100));
-    }
+    // shutdown backend
+    backend.shutdown(Duration::from_secs(5)).or_into_ctx()?;
 
-    // join and raise if either workload finished
-    if writer.workload.is_finished() {
-        writer.workload.join().unwrap().or_into_ctx()?
-    }
-    if reader.workload.is_finished() {
-        reader.workload.join().unwrap().or_into_ctx()?
-    }
+    Ok(())
+}
 
-    if !finished {
-        panic!("workloads did not finish within timeout");
-    }
+#[graft_test::test]
+fn test_sqlite_sanity() -> Result<(), Culprit<WorkloadErr>> {
+    let (backend, clients) = start_graft_backend();
 
-    // shutdown everything
-    writer
-        .runtime
-        .shutdown_sync_task(Duration::from_secs(5))
-        .or_into_ctx()?;
-    reader
-        .runtime
-        .shutdown_sync_task(Duration::from_secs(5))
-        .or_into_ctx()?;
+    let ticker = Ticker::new(50);
+
+    let runners = vec![
+        WorkloadRunner::run("node-1", clients.clone(), ticker, SQLITE_CONFIG)?,
+        WorkloadRunner::run("node-2", clients.clone(), ticker, SQLITE_CONFIG)?,
+    ];
+
+    test_runners(runners)?;
+
+    // shutdown backend
     backend.shutdown(Duration::from_secs(5)).or_into_ctx()?;
 
     Ok(())

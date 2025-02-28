@@ -1252,14 +1252,22 @@ dependencies = [
  "enum_dispatch",
  "graft-client",
  "graft-core",
- "graft-proto",
  "graft-tracing",
  "parking_lot",
- "rusqlite",
  "sqlite-plugin",
  "thiserror",
  "tracing",
  "tryiter",
+]
+
+[[package]]
+name = "graft-sqlite-extension"
+version = "0.1.0"
+dependencies = [
+ "graft-client",
+ "graft-core",
+ "graft-sqlite",
+ "sqlite-plugin",
 ]
 
 [[package]]
@@ -1279,13 +1287,16 @@ dependencies = [
  "graft-core",
  "graft-proto",
  "graft-server",
+ "graft-sqlite",
  "graft-test-macro",
  "graft-tracing",
  "precept",
  "rand 0.9.0",
+ "rusqlite",
  "serde",
  "serde_json",
  "splinter",
+ "sqlite-plugin",
  "static_assertions",
  "thiserror",
  "tokio",

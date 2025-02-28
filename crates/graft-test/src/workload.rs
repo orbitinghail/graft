@@ -25,12 +25,14 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use simple_reader::SimpleReader;
 use simple_writer::SimpleWriter;
+use sqlite_sanity::SqliteSanity;
 use thiserror::Error;
 use tracing::field;
 use zerocopy::{CastError, FromBytes, SizeError};
 
 pub mod simple_reader;
 pub mod simple_writer;
+pub mod sqlite_sanity;
 
 #[derive(Debug, Error)]
 pub enum WorkloadErr {
@@ -60,6 +62,9 @@ pub enum WorkloadErr {
 
     #[error(transparent)]
     PageSizeErr(#[from] PageSizeErr),
+
+    #[error(transparent)]
+    RusqliteErr(#[from] rusqlite::Error),
 }
 
 impl From<StorageErr> for WorkloadErr {
@@ -132,7 +137,12 @@ pub struct WorkloadEnv<R: Rng> {
     ticker: Ticker,
 }
 
+#[allow(unused_variables)]
 pub trait Workload {
+    fn setup<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>> {
+        Ok(())
+    }
+
     fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>>;
 }
 
@@ -141,6 +151,7 @@ pub trait Workload {
 pub enum WorkloadConfig {
     SimpleWriter(SimpleWriter),
     SimpleReader(SimpleReader),
+    SqliteSanity(SqliteSanity),
 }
 
 impl WorkloadConfig {
@@ -153,10 +164,17 @@ impl WorkloadConfig {
     ) -> Result<(), Culprit<WorkloadErr>> {
         let mut env = WorkloadEnv { cid, runtime, rng, ticker };
 
+        match &mut self {
+            Self::SimpleWriter(workload) => workload.setup(&mut env)?,
+            Self::SimpleReader(workload) => workload.setup(&mut env)?,
+            Self::SqliteSanity(workload) => workload.setup(&mut env)?,
+        }
+
         while env.ticker.tick() {
             if let Err(err) = match &mut self {
                 Self::SimpleWriter(workload) => workload.run(&mut env),
                 Self::SimpleReader(workload) => workload.run(&mut env),
+                Self::SqliteSanity(workload) => workload.run(&mut env),
             } {
                 if err.ctx().should_retry() {
                     tracing::warn!("retrying workload after error: {:?}", err);

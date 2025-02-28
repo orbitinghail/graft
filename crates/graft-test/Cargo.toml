@@ -13,6 +13,8 @@ graft-core = { path = "../graft-core", features = ["testutil"] }
 graft-proto = { path = "../graft-proto" }
 graft-tracing = { path = "../graft-tracing" }
 graft-test-macro = { path = "../graft-test-macro" }
+graft-sqlite = { path = "../graft-sqlite" }
+sqlite-plugin = { path = "../sqlite-plugin", features = [ "static" ]}
 splinter = { path = "../splinter" }
 precept = { path = "../precept", features = ["antithesis"] }
 
@@ -35,3 +37,4 @@ bytes = { workspace = true }
 bs58 = { workspace = true }
 zerocopy = { workspace = true }
 static_assertions = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }

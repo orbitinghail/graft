@@ -39,6 +39,11 @@ impl SqliteLogger {
     pub fn log(&self, level: SqliteLogLevel, buf: &[u8]) {
         let code = level.into_err_code();
         for line in buf.split(|b| *b == b'\n') {
+            // skip if line only contains whitespace
+            if line.iter().all(|b| b.is_ascii_whitespace()) {
+                continue;
+            }
+
             let z_format = CString::new(line).unwrap();
             unsafe { (self.log)(code, z_format.as_ptr()) }
         }

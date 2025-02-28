@@ -72,6 +72,7 @@ impl SyncTaskHandle {
         refresh_interval: Duration,
         control_channel_size: usize,
         autosync: bool,
+        thrad_name: &str,
     ) -> Result<(), StartupErr> {
         let mut inner = self.inner.write();
         if inner.is_some() {
@@ -92,7 +93,7 @@ impl SyncTaskHandle {
         };
 
         let handle = thread::Builder::new()
-            .name("graft-sync".into())
+            .name(thrad_name.into())
             .spawn(move || task.run())
             .expect("failed to spawn sync task");
 

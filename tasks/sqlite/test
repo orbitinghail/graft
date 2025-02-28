@@ -23,6 +23,10 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# test against our min supported sqlite version
+export SQLITE_YEAR=2023
+export SQLITE_VERSION=3440000
+
 # run sqlite3.sh to ensure it's installed and print the version
 just task sqlite bin --version
 

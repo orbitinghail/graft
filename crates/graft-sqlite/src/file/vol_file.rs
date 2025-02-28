@@ -5,6 +5,7 @@ use culprit::{Culprit, Result, ResultExt};
 use graft_client::{
     oracle::LeapOracle,
     runtime::{
+        storage::snapshot::Snapshot,
         volume_handle::VolumeHandle,
         volume_reader::{VolumeRead, VolumeReader},
         volume_writer::{VolumeWrite, VolumeWriter},
@@ -73,6 +74,15 @@ impl VolFile {
         }
     }
 
+    pub fn snapshot_or_latest(&self) -> Result<Option<Snapshot>, ErrCtx> {
+        match &self.state {
+            VolFileState::Idle => self.handle().snapshot().or_into_ctx(),
+            VolFileState::Shared { reader, .. } => Ok(reader.snapshot().cloned()),
+            VolFileState::Reserved { writer, .. } => Ok(writer.snapshot().cloned()),
+            VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
+        }
+    }
+
     pub fn handle(&self) -> &VolumeHandle {
         &self.handle
     }
@@ -132,7 +142,14 @@ impl VfsFile for VolFile {
 
                     // upgrade the reader to a writer if possible
                     let latest_snapshot = self.handle.snapshot().or_into_ctx()?;
-                    let writer = if reader.snapshot() != latest_snapshot.as_ref() {
+
+                    // check to see if the local LSN has changed since the transaction started.
+                    // We can ignore checking the remote lsn because:
+                    //  -> if the remote lsn changes due to a Pull, the local LSN will also change
+                    //  -> if the remote lsn changes due to a Push, the logical state will not change
+                    let writer = if reader.snapshot().map(|s| s.local())
+                        != latest_snapshot.as_ref().map(|s| s.local())
+                    {
                         // The snapshot has changed
                         if performed_read {
                             // if a read occurred in this transaction, we can't

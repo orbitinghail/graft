@@ -1,0 +1,4 @@
+type = "SqliteSanity"
+vids = [ "GonuUrdaXZTJVDLgbSg3cs", "GonuUuReyKtRVsQvqRv5aH" ]
+interval_ms = 100
+initial_accounts = 20000

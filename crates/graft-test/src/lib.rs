@@ -87,9 +87,10 @@ pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
     let handle = builder
         .spawn(move || {
             runtime.block_on(async {
-                let timeout = shutdown_rx.await.expect("shutdown channel closed");
+                // if the shutdown channel closes, try to shutdown the superviser with a default timeout
+                let timeout = shutdown_rx.await.unwrap_or(Duration::from_secs(5));
                 let result = supervisor.shutdown(timeout).await;
-                result_tx.send(result).expect("result channel closed");
+                let _ = result_tx.send(result);
             })
         })
         .expect("failed to spawn backend thread");

@@ -658,10 +658,6 @@ impl Storage {
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
         let remote_local_lsn = synced_lsns.try_end().expect("lsn range is RangeInclusive");
 
-        tracing::trace!(
-            "completing sync to remote: pushed LSNs {synced_lsns:?} to remote LSN {remote_lsn} for volume {state:?}",
-        );
-
         // check invariants
         assert!(
             snapshot.remote() < Some(remote_lsn),
@@ -675,10 +671,11 @@ impl Storage {
 
         // persist the new remote mapping to the snapshot
         let remote_mapping = RemoteMapping::new(remote_lsn, remote_local_lsn);
+        let new_snapshot = Snapshot::new(local_lsn, remote_mapping, pages);
         batch.insert(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
-            Snapshot::new(local_lsn, remote_mapping, pages),
+            new_snapshot.as_bytes(),
         );
 
         // if the status is interrupted push, clear the status
@@ -696,7 +693,13 @@ impl Storage {
             batch.remove(&self.commits, key.as_ref());
         }
 
-        Ok(batch.commit()?)
+        batch.commit()?;
+
+        tracing::trace!(
+            "completed sync to remote: pushed LSNs {synced_lsns:?} to remote LSN {remote_lsn} creating snapshot {new_snapshot}",
+        );
+
+        Ok(())
     }
 
     /// Reset the volume to the provided remote snapshot.

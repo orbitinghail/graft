@@ -18,7 +18,6 @@ parking_lot = { workspace = true }
 bindgen = { workspace = true }
 
 [features]
-default = ["static"]
 static = []
 dynamic = []
 

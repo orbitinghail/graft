@@ -458,7 +458,7 @@ fn main() -> Result<()> {
     let storage = Storage::open(&storage_path).or_into_ctx()?;
     let runtime = Runtime::new(cid, clients, storage);
     runtime
-        .start_sync_task(Duration::from_secs(1), 8, true)
+        .start_sync_task(Duration::from_secs(1), 8, true, "graft-sync")
         .or_into_ctx()?;
 
     let handle = runtime

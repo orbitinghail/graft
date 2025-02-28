@@ -38,6 +38,7 @@ impl Runtime {
         refresh_interval: Duration,
         control_channel_size: usize,
         autosync: bool,
+        thread_name: &str,
     ) -> Result<(), StartupErr> {
         self.sync.spawn(
             self.cid.clone(),
@@ -46,6 +47,7 @@ impl Runtime {
             refresh_interval,
             control_channel_size,
             autosync,
+            thread_name,
         )
     }
 

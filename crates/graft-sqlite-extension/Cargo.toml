@@ -1,0 +1,17 @@
+[package]
+name = "graft-sqlite-extension"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "graft"
+crate-type = ["cdylib"]
+
+[dependencies]
+graft-core = { path = "../graft-core" }
+graft-client = { path = "../graft-client" }
+graft-sqlite = { path = "../graft-sqlite" }
+sqlite-plugin = { path = "../sqlite-plugin", features = ["dynamic"] }
+
+[lints]
+workspace = true
