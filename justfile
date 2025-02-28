@@ -26,7 +26,7 @@ tool *args:
 [positional-arguments]
 [no-exit-message]
 task *args:
-    #!/usr/bin/env sh
+    #!/usr/bin/env bash
     SCRIPT="./tasks"
     if [[ -d "$SCRIPT/$1" ]]; then
         SCRIPT="$SCRIPT/$1"
@@ -95,7 +95,7 @@ antithesis-prep: antithesis-config-image
     docker push {{TEST_WORKLOAD_ANTITHESIS_TAG}}
     docker push {{MINIO_ANTITHESIS_TAG}}
 
-antithesis-run: antithesis-prep
+antithesis-run duration='120': antithesis-prep
     antithesis-cli run \
         --name='graft test workload' \
         --description='git sha: {{GIT_SHA}}' \
@@ -107,5 +107,5 @@ antithesis-run: antithesis-prep
         --image='{{PAGESTORE_ANTITHESIS_TAG}}' \
         --image='{{TEST_WORKLOAD_ANTITHESIS_TAG}}' \
         --image='{{MINIO_ANTITHESIS_TAG}}' \
-        --duration=120 \
+        --duration={{duration}} \
         --email='antithesis-results@orbitinghail.dev'
