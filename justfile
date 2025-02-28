@@ -18,14 +18,9 @@ MINIO_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "minio:latest"
 default:
   @just --list
 
-[no-exit-message]
-[positional-arguments]
-tool *args:
-    @cargo run -q --bin graft-tool -- "$@"
-
 [positional-arguments]
 [no-exit-message]
-task *args:
+run *args:
     #!/usr/bin/env bash
     SCRIPT="./tasks"
     if [[ -d "$SCRIPT/$1" ]]; then
