@@ -91,7 +91,7 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
     tracing::info!(workload = args.workload, ?cid, "STARTING TEST WORKLOAD");
     println!(
         "Workload Config:\n{}",
-        serde_json::to_string_pretty(&workload).unwrap()
+        toml::to_string_pretty(&workload).unwrap(),
     );
 
     let client = NetClient::new();
