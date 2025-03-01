@@ -50,7 +50,7 @@ async fn main() {
     precept::init_boxed(dispatcher, |_| true).expect("failed to setup precept");
 
     init_tracing(TracingConsumer::Server, None);
-    tracing::info!("starting metastore");
+    tracing::info!("starting Graft metastore");
 
     precept::setup_complete!();
 

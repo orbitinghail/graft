@@ -41,7 +41,7 @@ pub async fn handler<C: Cache>(
     // ensure we've replayed the catalog up to the requested LSN
     state
         .updater()
-        .update_catalog_from_client(state.metastore_client(), state.catalog(), &vid, lsn)
+        .update_catalog_from_metastore(state.metastore_client(), state.catalog(), &vid, lsn)
         .await
         .or_into_ctx()?;
 

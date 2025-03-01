@@ -142,7 +142,10 @@ impl IntoResponse for ApiErr {
         let message = self.0.ctx().to_string();
 
         match code {
-            GraftErrCode::Client | GraftErrCode::SnapshotMissing => {
+            GraftErrCode::SnapshotMissing | GraftErrCode::CommitRejected => {
+                tracing::trace!(culprit = ?self.0, "client error")
+            }
+            GraftErrCode::Client => {
                 tracing::debug!(culprit = ?self.0, "client error")
             }
             _ => tracing::error!(culprit = ?self.0, "api error"),

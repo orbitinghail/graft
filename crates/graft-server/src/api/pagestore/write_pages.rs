@@ -66,7 +66,7 @@ pub async fn handler<C>(
         };
 
         if let Some(graft) = commit.grafts.get(&vid) {
-            tracing::debug!("write_pages handler received commit: {commit:?} for volume {vid}");
+            tracing::trace!("write_pages handler received commit: {commit:?} for volume {vid}");
 
             count += graft.cardinality();
 

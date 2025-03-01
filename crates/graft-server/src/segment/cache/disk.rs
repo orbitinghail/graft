@@ -94,7 +94,7 @@ impl Cache for DiskCache {
     async fn put<T: Buf + Send + 'static>(&self, sid: &SegmentId, data: T) -> std::io::Result<()> {
         let path = self.dir.join(sid.pretty());
 
-        tracing::debug!("writing segment {:?} to disk at path {:?}", sid, path);
+        tracing::trace!("writing segment {:?} to disk at path {:?}", sid, path);
 
         let data_size = data.remaining().into();
 

@@ -73,7 +73,7 @@ pub async fn handler(
     // calculate the resolved lsn range
     let lsns = start_lsn..=snapshot.lsn();
 
-    tracing::trace!(?lsns, "resolved LSN range");
+    tracing::debug!(?lsns, "resolved LSN range");
 
     // ensure the catalog contains the requested LSNs
     state

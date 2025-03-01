@@ -95,7 +95,7 @@ impl SegmentWriterTask {
     }
 
     async fn handle_page_request(&mut self, req: WritePageReq) -> Result<(), Culprit<WriterErr>> {
-        tracing::debug!("handling request: {:?}", req);
+        tracing::trace!("writing page {} to volume {:?}", req.pageidx, req.vid);
         self.metrics.page_writes.inc();
 
         // if the segment is full, flush it and start a new one
@@ -114,7 +114,11 @@ impl SegmentWriterTask {
     async fn handle_flush(&mut self) -> Result<(), Culprit<WriterErr>> {
         // only flush non-empty segments
         if !self.segment.is_empty() {
-            tracing::debug!("flushing segment with {} pages", self.segment.pages());
+            tracing::trace!(
+                "flushing segment to uploader with {} pages and {} volumes",
+                self.segment.pages(),
+                self.segment.volumes()
+            );
 
             precept::expect_sometimes!(
                 self.segment.volumes() > 1,

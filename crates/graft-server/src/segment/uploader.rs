@@ -101,12 +101,11 @@ impl<C: Cache> SegmentUploaderTask<C> {
         Self { metrics, input, output, store, cache }
     }
 
+    #[tracing::instrument(name = "upload segment", skip(self))]
     async fn handle_store_request(
         &mut self,
         req: StoreSegmentReq,
     ) -> Result<(), Culprit<UploaderErr>> {
-        tracing::debug!("handling request: {:?}", req);
-
         let segment = req.segment;
         let sid = SegmentId::random();
         let path = Path::from(sid.pretty());

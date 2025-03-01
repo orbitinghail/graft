@@ -68,6 +68,14 @@ pub async fn handler(
             };
             // if the commit snapshot's cid matches the cid, return a successful response
             if commit_snapshot.as_ref().map(|s| s.cid()) == Some(&cid) {
+                precept::expect_reachable!(
+                    "detected idempotent commit request and reused previous response",
+                    {
+                        "vid": vid,
+                        "cid": cid,
+                        "commit_lsn": commit_lsn,
+                    }
+                );
                 return Ok(ProtoResponse::new(CommitResponse {
                     snapshot: commit_snapshot.map(|s| s.into_snapshot()),
                 }));
@@ -157,7 +165,7 @@ mod tests {
 
         // let's commit and validate the store 10 times
         for i in 1..10 {
-            tracing::info!(i);
+            println!("iteration: {i}");
 
             let snapshot_lsn = (i != 1).then(|| i - 1);
             let lsn = LSN::new(i);

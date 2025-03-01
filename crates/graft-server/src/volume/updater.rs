@@ -1,12 +1,16 @@
-use std::ops::RangeBounds;
+use std::{fmt::Debug, ops::RangeBounds};
 
 use culprit::{Culprit, ResultExt};
 use futures::TryStreamExt;
 use graft_client::MetastoreClient;
-use graft_core::{VolumeId, lsn::LSN};
+use graft_core::{
+    VolumeId,
+    lsn::{LSN, LSNRangeExt},
+};
 use tokio::task::spawn_blocking;
+use tracing::{Instrument, Level, field};
 
-use crate::limiter::Limiter;
+use crate::limiter::{Limiter, Permit};
 
 use super::{
     catalog::{VolumeCatalog, VolumeCatalogErr},
@@ -69,22 +73,17 @@ impl VolumeCatalogUpdater {
         vid: &VolumeId,
         min_lsn: Option<LSN>,
     ) -> Result<(), Culprit<UpdateErr>> {
-        tracing::debug!(
-            ?min_lsn,
-            "updating catalog for volume {vid:?} from object store"
-        );
-
         // read the latest lsn for the volume in the catalog
         let initial_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
 
         // if catalog lsn >= lsn_at_least, then no update is needed
         if initial_lsn.is_some_and(|l1| min_lsn.is_some_and(|l2| l1 >= l2)) {
-            tracing::debug!(?initial_lsn, "catalog for volume {vid:?} is up-to-date");
+            tracing::trace!(latest_lsn=?initial_lsn, ?min_lsn, ?vid, "catalog is already up-to-date");
             return Ok(());
         }
 
         // acquire a permit to update the volume
-        let _permit = self.limiter.acquire(vid).await;
+        let permit = self.limiter.acquire(vid).await;
 
         // check the catalog again in case another task has updated the volume
         let catalog_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
@@ -103,9 +102,16 @@ impl VolumeCatalogUpdater {
             (Some(catalog_lsn), Some(min_lsn)) => catalog_lsn >= min_lsn,
         } {
             tracing::debug!(
-                ?catalog_lsn,
-                ?min_lsn,
-                "catalog for volume {vid:?} is up-to-date"
+                latest_lsn=?catalog_lsn, ?min_lsn, ?vid,
+                "reused concurrent catalog update from store"
+            );
+            precept::expect_reachable!(
+                "reused concurrent catalog update from store",
+                {
+                    "latest_lsn": catalog_lsn,
+                    "min_lsn": min_lsn,
+                    "vid": vid,
+                }
             );
             return Ok(());
         }
@@ -115,23 +121,11 @@ impl VolumeCatalogUpdater {
         let lsns = start_lsn..;
 
         // update the catalog from the store
-        let mut commits = store.replay_unordered(vid.clone(), &lsns);
-
-        // only create a transaction if we have commits to replay
-        if let Some(commit) = commits.try_next().await.or_into_ctx()? {
-            let mut batch = catalog.batch_insert();
-            batch.insert_commit(&commit).or_into_ctx()?;
-            while let Some(commit) = commits.try_next().await.or_into_ctx()? {
-                batch.insert_commit(&commit).or_into_ctx()?;
-            }
-            batch.commit().or_into_ctx()?;
-        }
-
-        // return; dropping the permit and allowing other updates to proceed
-        Ok(())
+        self.replay_commits_from_store(store, catalog, permit, vid, &lsns)
+            .await
     }
 
-    pub async fn update_catalog_from_store_in_range<R: RangeBounds<LSN>>(
+    pub async fn update_catalog_from_store_in_range<R: RangeBounds<LSN> + Debug>(
         &self,
         store: &VolumeStore,
         catalog: &VolumeCatalog,
@@ -140,30 +134,65 @@ impl VolumeCatalogUpdater {
     ) -> Result<(), Culprit<UpdateErr>> {
         // we can return early if the catalog already contains the requested LSNs
         if catalog.contains_range(vid, lsns).or_into_ctx()? {
+            tracing::trace!(?lsns, ?vid, "catalog is already up-to-date");
             return Ok(());
         }
 
         // acquire a permit to update the volume
-        let _permit = self.limiter.acquire(vid).await;
+        let permit = self.limiter.acquire(vid).await;
 
-        // check the catalog again in case another task has updated the volume
+        // check the catalog again in case another task has concurrently retrieved the requested lsns
         if catalog.contains_range(vid, lsns).or_into_ctx()? {
+            tracing::debug!(
+                ?lsns,
+                ?vid,
+                "reused concurrent catalog update from store in range"
+            );
+            precept::expect_reachable!(
+                "reused concurrent catalog update from store in range",
+                {
+                    "lsns": format!("{lsns:?}"),
+                    "vid": vid,
+                }
+            );
             return Ok(());
         }
 
-        // update the catalog
-        let mut batch = catalog.batch_insert();
-        let mut commits = store.replay_unordered(vid.clone(), lsns);
-        while let Some(commit) = commits.try_next().await.or_into_ctx()? {
-            batch.insert_commit(&commit).or_into_ctx()?;
-        }
-        batch.commit().or_into_ctx()?;
+        // update the catalog from the store
+        self.replay_commits_from_store(store, catalog, permit, vid, lsns)
+            .await
+    }
 
-        // return; dropping the permit and allowing other updates to proceed
+    #[tracing::instrument(level = Level::DEBUG, skip_all, fields(vid, lsns, latest_lsn))]
+    async fn replay_commits_from_store<R: RangeBounds<LSN> + Debug>(
+        &self,
+        store: &VolumeStore,
+        catalog: &VolumeCatalog,
+        _permit: Permit<'_>,
+        vid: &VolumeId,
+        lsns: &R,
+    ) -> Result<(), Culprit<UpdateErr>> {
+        let mut commits = store.replay_unordered(vid.clone(), lsns);
+
+        let mut latest_lsn = lsns.try_start();
+        if let Some(commit) = commits.try_next().await.or_into_ctx()? {
+            // only create a batch if we have commits to replay
+            let mut batch = catalog.batch_insert();
+            latest_lsn = latest_lsn.max(Some(commit.meta().lsn()));
+            batch.insert_commit(&commit).or_into_ctx()?;
+            while let Some(commit) = commits.try_next().await.or_into_ctx()? {
+                latest_lsn = latest_lsn.max(Some(commit.meta().lsn()));
+                batch.insert_commit(&commit).or_into_ctx()?;
+            }
+            batch.commit().or_into_ctx()?;
+        }
+
+        tracing::Span::current().record("latest_lsn", latest_lsn.map(u64::from));
+
         Ok(())
     }
 
-    pub async fn update_catalog_from_client(
+    pub async fn update_catalog_from_metastore(
         &self,
         client: &MetastoreClient,
         catalog: &VolumeCatalog,
@@ -175,6 +204,7 @@ impl VolumeCatalogUpdater {
 
         // if catalog lsn >= min_lsn, then no update is needed
         if catalog_lsn >= Some(min_lsn) {
+            tracing::trace!(latest_lsn=?catalog_lsn, ?min_lsn, ?vid, "catalog is already up-to-date");
             return Ok(());
         }
 
@@ -185,43 +215,64 @@ impl VolumeCatalogUpdater {
         // while we were waiting for a permit
         let catalog_lsn = catalog.latest_snapshot(vid).or_into_ctx()?.map(|s| s.lsn());
         if catalog_lsn >= Some(min_lsn) {
+            tracing::debug!(latest_lsn=?catalog_lsn, ?min_lsn, ?vid, "reused concurrent catalog update from metastore");
+            precept::expect_reachable!(
+                "reused concurrent catalog update from metastore",
+                {
+                    "latest_lsn": catalog_lsn,
+                    "min_lsn": min_lsn,
+                    "vid": vid,
+                }
+            );
             return Ok(());
         }
 
         // we only need to reply commits that happened after the last snapshot
         let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or(LSN::FIRST);
+        let lsns = start_lsn..;
 
-        tracing::trace!(
-            ?min_lsn,
-            ?catalog_lsn,
-            ?start_lsn,
-            "updating catalog for volume {vid:?} from metastore"
+        let span = tracing::debug_span!(
+            "updating catalog from metastore",
+            ?vid,
+            ?lsns,
+            latest_lsn = field::Empty,
         );
 
-        // update the catalog from the client
-        // TODO: switch this to an async client once one exists
-        let commits = {
-            let client = client.clone();
-            let vid = vid.clone();
-            spawn_blocking(move || client.pull_commits(&vid, start_lsn..))
-                .await
-                .expect("spawn_blocking failed")
-                .or_into_ctx()?
-        };
+        // use an async block in order to leverage Future::instrument
+        async move {
+            // update the catalog from the client
+            // TODO: switch this to an async client once one exists
+            let commits = {
+                let client = client.clone();
+                let vid = vid.clone();
+                spawn_blocking(move || client.pull_commits(&vid, lsns))
+                    .await
+                    .expect("spawn_blocking failed")
+                    .or_into_ctx()?
+            };
 
-        let mut batch = catalog.batch_insert();
-        for commit in commits {
-            let snapshot = commit.snapshot.expect("missing snapshot");
-            let meta: CommitMeta = snapshot.try_into().expect("invalid snapshot");
+            if !commits.is_empty() {
+                // only create a batch if we have commits to replay
+                let mut batch = catalog.batch_insert();
+                let mut latest_lsn = start_lsn;
+                for commit in commits {
+                    let snapshot = commit.snapshot.expect("missing snapshot");
+                    let meta: CommitMeta = snapshot.try_into().expect("invalid snapshot");
+                    latest_lsn = latest_lsn.max(meta.lsn());
 
-            batch
-                .insert_snapshot(vid.clone(), meta, commit.segments)
-                .or_into_ctx()?;
+                    batch
+                        .insert_snapshot(vid.clone(), meta, commit.segments)
+                        .or_into_ctx()?;
+                }
+
+                batch.commit().or_into_ctx()?;
+                tracing::Span::current().record("latest_lsn", u64::from(latest_lsn));
+            }
+
+            // return; dropping the permit and allowing other updates to proceed
+            Ok(())
         }
-
-        batch.commit().or_into_ctx()?;
-
-        // return; dropping the permit and allowing other updates to proceed
-        Ok(())
+        .instrument(span)
+        .await
     }
 }

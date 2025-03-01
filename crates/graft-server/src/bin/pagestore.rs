@@ -76,7 +76,7 @@ async fn main() {
     precept::init_boxed(dispatcher, |_| true).expect("failed to setup precept");
 
     init_tracing(TracingConsumer::Server, None);
-    tracing::info!("starting pagestore");
+    tracing::info!("starting Graft pagestore");
 
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
