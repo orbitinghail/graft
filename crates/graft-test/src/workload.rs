@@ -141,8 +141,6 @@ pub struct WorkloadEnv<R: Rng> {
 #[enum_dispatch]
 #[allow(unused_variables)]
 pub trait Workload {
-    fn module_path(&self) -> &'static str;
-
     fn setup<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>> {
         Ok(())
     }

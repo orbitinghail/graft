@@ -47,7 +47,7 @@ impl Default for MetastoreConfig {
 async fn main() {
     let dispatcher =
         AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
-    precept::init_boxed(dispatcher, |_| true).expect("failed to setup precept");
+    precept::init_boxed(dispatcher).expect("failed to setup precept");
 
     init_tracing(TracingConsumer::Server, None);
     tracing::info!("starting Graft metastore");

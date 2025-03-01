@@ -20,29 +20,17 @@ pub mod macros;
 #[cfg(feature = "disabled")]
 pub mod macros_stubs;
 
-pub fn init<F>(
-    dispatcher: &'static dyn Dispatch,
-    should_register: F,
-) -> Result<(), SetDispatchError>
-where
-    F: FnMut(&catalog::CatalogEntry) -> bool,
-{
+pub fn init(dispatcher: &'static dyn Dispatch) -> Result<(), SetDispatchError> {
     if cfg!(not(feature = "disabled")) {
         dispatch::set_dispatcher(dispatcher)?;
-        catalog::init_catalog(should_register);
+        catalog::init_catalog();
     }
     Ok(())
 }
 
-pub fn init_boxed<F>(
-    dispatcher: Box<dyn Dispatch>,
-    should_register: F,
-) -> Result<(), SetDispatchError>
-where
-    F: FnMut(&catalog::CatalogEntry) -> bool,
-{
+pub fn init_boxed(dispatcher: Box<dyn Dispatch>) -> Result<(), SetDispatchError> {
     if cfg!(not(feature = "disabled")) {
-        init(Box::leak(dispatcher), should_register)
+        init(Box::leak(dispatcher))
     } else {
         Ok(())
     }

@@ -154,7 +154,7 @@ macro_rules! maybe_fault {
 
 #[cfg(test)]
 mod tests {
-    use crate::catalog::{Expectation, init_catalog};
+    use crate::catalog::Expectation;
 
     #[test]
     fn test_entry_gen() {
@@ -171,13 +171,11 @@ mod tests {
 
     #[test]
     fn test_entry_emit() {
-        init_catalog(|_| true);
         define_and_emit_entry!(Expectation::Always, "test property", true);
     }
 
     #[test]
     fn test_expect() {
-        init_catalog(|_| true);
         expect_always!(true, "this should always pass");
         expect_always!(true, "this should always pass", { "key": 123 });
 
@@ -207,7 +205,6 @@ mod tests {
 
     #[test]
     fn test_fault() {
-        init_catalog(|_| true);
         maybe_fault!(0.0, "this should never fault");
         maybe_fault!(1.0, "this should always fault");
         maybe_fault!(0.5, "this should sometimes fault");
