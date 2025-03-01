@@ -40,6 +40,10 @@ pub struct SimpleWriter {
 }
 
 impl Workload for SimpleWriter {
+    fn module_path(&self) -> &'static str {
+        module_path!()
+    }
+
     fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>> {
         let interval = Duration::from_millis(self.interval_ms);
 

@@ -11,7 +11,7 @@ use graft_client::{
 use graft_core::gid::ClientId;
 use graft_test::{
     Ticker,
-    workload::{WorkloadConfig, WorkloadErr},
+    workload::{Workload, WorkloadConfig, WorkloadErr},
 };
 use graft_tracing::{TracingConsumer, init_tracing, running_in_antithesis};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
@@ -66,10 +66,6 @@ fn main() {
 }
 
 fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
-    let dispatcher =
-        AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
-    precept::init(Box::leak(dispatcher)).expect("failed to setup precept");
-
     let mut rng = precept::random::rng();
     let (cid, _worker_lock) = get_or_init_cid();
     init_tracing(TracingConsumer::Test, Some(cid.short()));
@@ -80,6 +76,17 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
         .add_source(config::File::with_name(&args.workload))
         .build()?
         .try_deserialize()?;
+
+    let dispatcher =
+        AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
+    precept::init_boxed(dispatcher, |entry| {
+        // filter out catalog entries in workloads we aren't running
+        if entry.module().starts_with("graft-test::workload") {
+            return entry.module().starts_with(workload.module_path());
+        }
+        true
+    })
+    .expect("failed to setup precept");
 
     tracing::info!(
         workload_file = args.workload,

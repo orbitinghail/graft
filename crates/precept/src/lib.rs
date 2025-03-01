@@ -4,7 +4,6 @@ pub mod deps {
     pub use serde_json;
 }
 
-#[doc(hidden)]
 pub mod catalog;
 
 #[doc(hidden)]
@@ -21,26 +20,30 @@ pub mod macros;
 #[cfg(feature = "disabled")]
 pub mod macros_stubs;
 
-#[cfg(not(feature = "disabled"))]
-pub fn init(dispatcher: &'static dyn Dispatch) -> Result<(), SetDispatchError> {
-    dispatch::set_dispatcher(dispatcher)?;
-    catalog::init_catalog();
+pub fn init<F>(
+    dispatcher: &'static dyn Dispatch,
+    should_register: F,
+) -> Result<(), SetDispatchError>
+where
+    F: FnMut(&catalog::CatalogEntry) -> bool,
+{
+    if cfg!(not(feature = "disabled")) {
+        dispatch::set_dispatcher(dispatcher)?;
+        catalog::init_catalog(should_register);
+    }
     Ok(())
 }
 
-#[cfg(feature = "disabled")]
-pub fn init(_dispatcher: &'static dyn Dispatch) -> Result<(), SetDispatchError> {
-    Ok(())
-}
-
-#[cfg(not(feature = "disabled"))]
-pub fn init_boxed(dispatcher: Box<dyn Dispatch>) -> Result<(), SetDispatchError> {
-    dispatch::set_dispatcher(Box::leak(dispatcher))?;
-    catalog::init_catalog();
-    Ok(())
-}
-
-#[cfg(feature = "disabled")]
-pub fn init_boxed(_dispatcher: Box<dyn Dispatch>) -> Result<(), SetDispatchError> {
-    Ok(())
+pub fn init_boxed<F>(
+    dispatcher: Box<dyn Dispatch>,
+    should_register: F,
+) -> Result<(), SetDispatchError>
+where
+    F: FnMut(&catalog::CatalogEntry) -> bool,
+{
+    if cfg!(not(feature = "disabled")) {
+        init(Box::leak(dispatcher), should_register)
+    } else {
+        Ok(())
+    }
 }

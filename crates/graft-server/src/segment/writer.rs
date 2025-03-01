@@ -149,7 +149,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    #[graft_test::test]
     async fn test_writer_sanity() {
         let (input_tx, input_rx) = mpsc::channel(1);
         let (output_tx, mut output_rx) = mpsc::channel(1);

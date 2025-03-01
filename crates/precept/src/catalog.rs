@@ -2,7 +2,7 @@ use std::{
     panic::Location,
     sync::{
         LazyLock,
-        atomic::{self, AtomicUsize},
+        atomic::{self, AtomicBool, AtomicUsize},
     },
 };
 
@@ -16,10 +16,16 @@ pub static PRECEPT_CATALOG: [CatalogEntry];
 #[cfg(feature = "disabled")]
 pub static PRECEPT_CATALOG: [&CatalogEntry; 0] = [];
 
-pub fn init_catalog() {
+pub fn init_catalog<F>(mut should_register: F)
+where
+    F: FnMut(&CatalogEntry) -> bool,
+{
     let dispatch = dispatcher();
     for entry in PRECEPT_CATALOG {
-        dispatch.emit(Event::RegisterEntry(entry));
+        if should_register(entry) {
+            dispatch.emit(Event::RegisterEntry(entry));
+            entry.registered.store(true, atomic::Ordering::Release);
+        }
     }
 }
 
@@ -61,6 +67,10 @@ pub struct CatalogEntry {
     pass_count: AtomicUsize,
     // the number of times this entry has been encountered with a false condition
     fail_count: AtomicUsize,
+
+    // whether or not this entry was registered during precept initialiation
+    // if this value is false, trying to emit this entry will panic
+    registered: AtomicBool,
 }
 
 impl CatalogEntry {
@@ -80,10 +90,15 @@ impl CatalogEntry {
             function,
             pass_count: AtomicUsize::new(0),
             fail_count: AtomicUsize::new(0),
+            registered: AtomicBool::new(false),
         }
     }
 
     pub fn emit(&'static self, condition: bool, details: serde_json::Value) {
+        if !self.registered.load(atomic::Ordering::Acquire) {
+            panic!("attempted to emit unregistered catalog entry: {:?}", self);
+        }
+
         let count = if condition {
             self.pass_count.fetch_add(1, atomic::Ordering::AcqRel)
         } else {

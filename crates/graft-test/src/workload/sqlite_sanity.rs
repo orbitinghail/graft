@@ -27,6 +27,10 @@ pub struct SqliteSanity {
 }
 
 impl Workload for SqliteSanity {
+    fn module_path(&self) -> &'static str {
+        module_path!()
+    }
+
     fn setup<R: rand::Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), WorkloadErr> {
         // register graft vfs
         let vfs = GraftVfs::new(env.runtime.clone());

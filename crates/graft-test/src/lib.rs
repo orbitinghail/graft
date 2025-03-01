@@ -51,7 +51,7 @@ pub fn setup_test() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         init_tracing(TracingConsumer::Test, None);
-        precept::init(&TestDispatch).expect("failed to setup precept");
+        precept::init(&TestDispatch, |_| true).expect("failed to setup precept");
     });
 }
 
