@@ -150,7 +150,11 @@ impl<T: Default + TryFromBytes + IntoBytes + Immutable> PageView<T> {
 
     fn load(reader: &impl VolumeRead, idx: PageIdx) -> Result<Self> {
         let page = reader.read(&mut NoopOracle, idx).or_into_ctx()?;
-        let inner = T::try_read_from_bytes(&page).map_err(ZerocopyErr::from)?;
+        let inner = if page.is_empty() {
+            T::default()
+        } else {
+            T::try_read_from_bytes(&page[..size_of::<T>()]).map_err(ZerocopyErr::from)?
+        };
         Ok(Self { idx, inner })
     }
 
