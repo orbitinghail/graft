@@ -131,7 +131,7 @@ impl Vfs for GraftVfs {
         handle: &mut Self::Handle,
         pragma: Pragma<'_>,
     ) -> Result<Option<String>, PragmaErr> {
-        tracing::debug!("pragma: file={handle:?}, pragma={pragma:?}");
+        tracing::trace!("pragma: file={handle:?}, pragma={pragma:?}");
         if let FileHandle::VolFile(file) = handle {
             GraftPragma::try_from(&pragma)?.eval(&self.runtime, file)
         } else {
@@ -140,7 +140,7 @@ impl Vfs for GraftVfs {
     }
 
     fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
-        tracing::debug!("access: path={path:?}; flags={flags:?}");
+        tracing::trace!("access: path={path:?}; flags={flags:?}");
         ErrCtx::wrap(move || {
             if let Ok(vid) = path.parse::<VolumeId>() {
                 Ok(self
@@ -157,7 +157,7 @@ impl Vfs for GraftVfs {
     }
 
     fn open(&self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle> {
-        tracing::debug!("open: path={path:?}, opts={opts:?}");
+        tracing::trace!("open: path={path:?}, opts={opts:?}");
         ErrCtx::wrap(move || {
             // we only open a Volume for main database files named after a Volume ID
             if opts.kind() == OpenKind::MainDb {
@@ -181,7 +181,7 @@ impl Vfs for GraftVfs {
     }
 
     fn close(&self, handle: Self::Handle) -> VfsResult<()> {
-        tracing::debug!("close: file={handle:?}");
+        tracing::trace!("close: file={handle:?}");
         ErrCtx::wrap(move || {
             match handle {
                 FileHandle::MemFile(_) => Ok(()),
@@ -218,7 +218,7 @@ impl Vfs for GraftVfs {
     }
 
     fn delete(&self, path: &str) -> VfsResult<()> {
-        tracing::debug!("delete: path={path:?}");
+        tracing::trace!("delete: path={path:?}");
         ErrCtx::wrap(|| {
             if let Ok(vid) = path.parse() {
                 // TODO: do we want to actually delete volumes? or mark them for deletion?
@@ -231,27 +231,27 @@ impl Vfs for GraftVfs {
     }
 
     fn lock(&self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
-        tracing::debug!("lock: file={handle:?}, level={level:?}");
+        tracing::trace!("lock: file={handle:?}, level={level:?}");
         ErrCtx::wrap(move || handle.lock(level))
     }
 
     fn unlock(&self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
-        tracing::debug!("unlock: file={handle:?}, level={level:?}");
+        tracing::trace!("unlock: file={handle:?}, level={level:?}");
         ErrCtx::wrap(move || handle.unlock(level))
     }
 
     fn file_size(&self, handle: &mut Self::Handle) -> VfsResult<usize> {
-        tracing::debug!("file_size: handle={handle:?}");
+        tracing::trace!("file_size: handle={handle:?}");
         ErrCtx::wrap(move || handle.file_size())
     }
 
     fn truncate(&self, handle: &mut Self::Handle, size: usize) -> VfsResult<()> {
-        tracing::debug!("truncate: handle={handle:?}, size={size}");
+        tracing::trace!("truncate: handle={handle:?}, size={size}");
         ErrCtx::wrap(move || handle.truncate(size))
     }
 
     fn write(&self, handle: &mut Self::Handle, offset: usize, data: &[u8]) -> VfsResult<usize> {
-        tracing::debug!(
+        tracing::trace!(
             "write: handle={handle:?}, offset={offset}, len={}",
             data.len()
         );
@@ -259,7 +259,7 @@ impl Vfs for GraftVfs {
     }
 
     fn read(&self, handle: &mut Self::Handle, offset: usize, data: &mut [u8]) -> VfsResult<usize> {
-        tracing::debug!(
+        tracing::trace!(
             "read: handle={handle:?}, offset={offset}, len={}",
             data.len()
         );
