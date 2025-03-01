@@ -75,7 +75,7 @@ enum CliErr {
 struct Cli {
     /// The volume id to operate on
     /// Uses a default `VolumeId` if not specified
-    #[arg(short, long, default_value = "GontkHa6QVLMYfkyk16wUP")]
+    #[arg(short, long)]
     vid: VolumeId,
 
     /// Specify a client name to differentiate between multiple clients

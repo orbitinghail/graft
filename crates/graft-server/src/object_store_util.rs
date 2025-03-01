@@ -1,7 +1,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use object_store::{
-    ObjectStore, local::LocalFileSystem, memory::InMemory, path::Path, prefix::PrefixStore,
+    ObjectStore, aws::S3ConditionalPut, local::LocalFileSystem, memory::InMemory, path::Path,
+    prefix::PrefixStore,
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +34,7 @@ impl ObjectStoreConfig {
                 let store = object_store::aws::AmazonS3Builder::from_env()
                     .with_allow_http(true)
                     .with_bucket_name(bucket)
+                    .with_conditional_put(S3ConditionalPut::ETagMatch)
                     .build()?;
                 if let Some(prefix) = prefix {
                     let prefix = Path::parse(prefix)?;
