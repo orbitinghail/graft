@@ -53,9 +53,7 @@ impl PullJob {
             .map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
         let lsns = start_lsn..;
 
-        let _span =
-            tracing::trace_span!("PullJob", vid = ?self.vid, snapshot = ?state.snapshot(), ?lsns)
-                .entered();
+        let _span = tracing::debug_span!("PullJob", vid = ?self.vid, ?lsns).entered();
 
         if let Some((snapshot, _, changed)) = clients
             .metastore()
@@ -71,7 +69,6 @@ impl PullJob {
                 snapshot_lsn,
                 state.snapshot()
             );
-            tracing::trace!("received remote snapshot at LSN {snapshot_lsn}");
 
             if self.reset {
                 storage
@@ -100,7 +97,7 @@ impl PushJob {
         let (snapshot, lsns, mut commits) =
             storage.prepare_sync_to_remote(&self.vid).or_into_ctx()?;
 
-        let _span = tracing::trace_span!("PushJob", vid=?self.vid, ?snapshot, ?lsns).entered();
+        let _span = tracing::trace_span!("PushJob", vid=?self.vid, ?lsns).entered();
 
         // setup temporary storage for pages
         // TODO: we will eventually stream pages directly to the remote

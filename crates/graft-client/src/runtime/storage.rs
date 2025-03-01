@@ -182,10 +182,7 @@ impl Storage {
         let mut iter = VolumeQueryIter::new(iter);
         while let Some(state) = iter.try_next()? {
             if state.is_syncing() {
-                tracing::warn!(
-                    "detected interrupted push for volume {vid:?}",
-                    vid = state.vid(),
-                );
+                tracing::warn!(?state, "detected interrupted push for volume");
                 self.set_volume_status(&mut batch, state.vid(), VolumeStatus::InterruptedPush);
             }
         }
@@ -333,7 +330,7 @@ impl Storage {
             "volume_commit",
             ?vid,
             ?snapshot,
-            ?pages,
+            %pages,
             result = field::Empty
         )
         .entered();
@@ -563,10 +560,10 @@ impl Storage {
                 .watermarks()
                 .pending_sync()
                 .expect("pending_sync must be set when volume is syncing");
-            tracing::trace!(
+            tracing::debug!(
                 ?vid,
-                ?pending_sync,
-                ?snapshot,
+                %pending_sync,
+                %snapshot,
                 "resuming previously interrupted sync"
             );
             precept::expect_reachable!("resuming previously interrupted sync", state);
@@ -695,9 +692,7 @@ impl Storage {
 
         batch.commit()?;
 
-        tracing::trace!(
-            "completed sync to remote: pushed LSNs {synced_lsns:?} to remote LSN {remote_lsn} creating snapshot {new_snapshot}",
-        );
+        tracing::debug!(?synced_lsns, %remote_lsn, %new_snapshot, "completed sync to remote");
 
         Ok(())
     }

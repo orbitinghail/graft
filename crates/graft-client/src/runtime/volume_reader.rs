@@ -116,9 +116,9 @@ fn fetch_page<O: Oracle>(
     let _span = tracing::trace_span!(
         "fetching page from pagestore",
         ?vid,
-        ?remote_lsn,
-        ?local_lsn,
-        ?pageidx,
+        %remote_lsn,
+        %local_lsn,
+        %pageidx,
     )
     .entered();
 
