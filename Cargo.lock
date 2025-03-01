@@ -1301,6 +1301,7 @@ dependencies = [
  "static_assertions",
  "thiserror",
  "tokio",
+ "toml",
  "tracing",
  "ureq",
  "url",

@@ -88,11 +88,10 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
     })
     .expect("failed to setup precept");
 
-    tracing::info!(
-        workload_file = args.workload,
-        ?workload,
-        ?cid,
-        "STARTING TEST WORKLOAD"
+    tracing::info!(workload = args.workload, ?cid, "STARTING TEST WORKLOAD");
+    println!(
+        "Workload Config:\n{}",
+        serde_json::to_string_pretty(&workload).unwrap()
     );
 
     let client = NetClient::new();

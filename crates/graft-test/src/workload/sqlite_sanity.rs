@@ -192,7 +192,6 @@ impl Actions {
             Actions::CreateAccount => {
                 let (source, balance) = find_nonzero_account(&mut env.rng, txn, max_account_id)?;
                 let amount = env.rng.random_range(1..=balance);
-                tracing::info!("creating account with {} from {}", amount, source);
                 txn.execute(
                     "UPDATE accounts SET balance = balance - ? WHERE id = ?",
                     [amount, source],
@@ -204,7 +203,6 @@ impl Actions {
                 let target = env.rng.random_range(1..=max_account_id);
                 if balance > 0 && account_exists(txn, target)? {
                     let amount = env.rng.random_range(1..=balance);
-                    tracing::info!("transferring {} from {} to {}", amount, source, target);
                     txn.execute(
                         "UPDATE accounts SET balance = balance - ? WHERE id = ?",
                         [amount, source],

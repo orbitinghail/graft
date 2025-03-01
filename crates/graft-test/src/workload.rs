@@ -190,7 +190,7 @@ pub fn recover_and_sync_volume(handle: &VolumeHandle) -> Result<(), Culprit<Work
     let vid = handle.vid();
     let status = handle.status().or_into_ctx()?;
     let span = tracing::info_span!(
-        "verify_and_pull_volume",
+        "recover_and_sync_volume",
         ?status,
         ?vid,
         result = field::Empty
