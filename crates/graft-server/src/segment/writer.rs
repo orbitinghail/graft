@@ -11,7 +11,7 @@ use tokio::{
 };
 
 use super::{
-    bus::{StoreSegmentReq, WritePageReq},
+    bus::{StoreSegmentMsg, WritePageMsg},
     open::OpenSegment,
 };
 use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
@@ -39,8 +39,8 @@ pub struct SegmentWriterMetrics {
 
 pub struct SegmentWriterTask {
     metrics: Arc<SegmentWriterMetrics>,
-    input: mpsc::Receiver<WritePageReq>,
-    output: mpsc::Sender<StoreSegmentReq>,
+    input: mpsc::Receiver<WritePageMsg>,
+    output: mpsc::Sender<StoreSegmentMsg>,
 
     segment: OpenSegment,
     flush_interval: Duration,
@@ -80,8 +80,8 @@ impl SupervisedTask for SegmentWriterTask {
 impl SegmentWriterTask {
     pub fn new(
         metrics: Arc<SegmentWriterMetrics>,
-        input: mpsc::Receiver<WritePageReq>,
-        output: mpsc::Sender<StoreSegmentReq>,
+        input: mpsc::Receiver<WritePageMsg>,
+        output: mpsc::Sender<StoreSegmentMsg>,
         flush_interval: Duration,
     ) -> Self {
         Self {
@@ -94,7 +94,7 @@ impl SegmentWriterTask {
         }
     }
 
-    async fn handle_page_request(&mut self, req: WritePageReq) -> Result<(), Culprit<WriterErr>> {
+    async fn handle_page_request(&mut self, req: WritePageMsg) -> Result<(), Culprit<WriterErr>> {
         tracing::trace!("writing page {} to volume {:?}", req.pageidx, req.vid);
         self.metrics.page_writes.inc();
 
@@ -131,7 +131,7 @@ impl SegmentWriterTask {
 
             // send the current segment to the output
             self.output
-                .send(StoreSegmentReq {
+                .send(StoreSegmentMsg {
                     segment: std::mem::take(&mut self.segment),
                 })
                 .await
@@ -172,7 +172,7 @@ mod tests {
         let page1 = Page::test_filled(2);
 
         input_tx
-            .send(WritePageReq {
+            .send(WritePageMsg {
                 vid: vid.clone(),
                 pageidx: pageidx!(1),
                 page: page0.clone(),
@@ -181,7 +181,7 @@ mod tests {
             .unwrap();
 
         input_tx
-            .send(WritePageReq {
+            .send(WritePageMsg {
                 vid: vid.clone(),
                 pageidx: pageidx!(2),
                 page: page1.clone(),

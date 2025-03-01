@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    bus::{Bus, CommitSegmentReq, StoreSegmentReq},
+    bus::{Bus, SegmentUploadedMsg, StoreSegmentMsg},
     cache::Cache,
 };
 
@@ -60,8 +60,8 @@ impl Default for SegmentUploaderMetrics {
 
 pub struct SegmentUploaderTask<C> {
     metrics: Arc<SegmentUploaderMetrics>,
-    input: mpsc::Receiver<StoreSegmentReq>,
-    output: Bus<CommitSegmentReq>,
+    input: mpsc::Receiver<StoreSegmentMsg>,
+    output: Bus<SegmentUploadedMsg>,
     store: Arc<dyn ObjectStore>,
     cache: Arc<C>,
 }
@@ -93,8 +93,8 @@ impl<C: Cache> SupervisedTask for SegmentUploaderTask<C> {
 impl<C: Cache> SegmentUploaderTask<C> {
     pub fn new(
         metrics: Arc<SegmentUploaderMetrics>,
-        input: mpsc::Receiver<StoreSegmentReq>,
-        output: Bus<CommitSegmentReq>,
+        input: mpsc::Receiver<StoreSegmentMsg>,
+        output: Bus<SegmentUploadedMsg>,
         store: Arc<dyn ObjectStore>,
         cache: Arc<C>,
     ) -> Self {
@@ -104,7 +104,7 @@ impl<C: Cache> SegmentUploaderTask<C> {
     #[tracing::instrument(name = "upload segment", skip(self))]
     async fn handle_store_request(
         &mut self,
-        req: StoreSegmentReq,
+        req: StoreSegmentMsg,
     ) -> Result<(), Culprit<UploaderErr>> {
         let segment = req.segment;
         let sid = SegmentId::random();
@@ -127,7 +127,7 @@ impl<C: Cache> SegmentUploaderTask<C> {
         tokio::try_join!(upload_task, cache_task)?;
 
         self.output
-            .publish(CommitSegmentReq { sid, grafts: Arc::new(grafts) });
+            .publish(SegmentUploadedMsg { sid, grafts: Arc::new(grafts) });
 
         Ok(())
     }
@@ -173,7 +173,7 @@ mod tests {
             .insert(vid.clone(), pageidx!(2), page1.clone())
             .unwrap();
 
-        input_tx.send(StoreSegmentReq { segment }).await.unwrap();
+        input_tx.send(StoreSegmentMsg { segment }).await.unwrap();
 
         let commit = commit_rx.recv().await.unwrap();
 

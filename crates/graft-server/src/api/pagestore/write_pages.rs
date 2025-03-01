@@ -12,7 +12,7 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::{
     api::{error::ApiErrCtx, response::ProtoResponse},
-    segment::bus::WritePageReq,
+    segment::bus::WritePageMsg,
 };
 
 use crate::api::{error::ApiErr, extractors::Protobuf};
@@ -33,7 +33,7 @@ pub async fn handler<C>(
     let _permit = state.volume_write_limiter().acquire(&vid).await;
 
     // subscribe to the broadcast channel
-    let mut commit_rx = state.subscribe_commits();
+    let mut segment_rx = state.subscribe_to_uploaded_segments();
 
     tracing::info!(?vid, expected_pages);
 
@@ -51,7 +51,7 @@ pub async fn handler<C>(
         }
 
         state
-            .write_page(WritePageReq::new(vid.clone(), pageidx, page))
+            .write_page(WritePageMsg::new(vid.clone(), pageidx, page))
             .await;
     }
 
@@ -59,20 +59,20 @@ pub async fn handler<C>(
 
     let mut count = 0;
     while count < expected_pages {
-        let commit = match commit_rx.recv().await {
+        let segment = match segment_rx.recv().await {
             Ok(commit) => commit,
             Err(RecvError::Lagged(n)) => panic!("commit channel lagged by {n}"),
             Err(RecvError::Closed) => panic!("commit channel unexpectedly closed"),
         };
 
-        if let Some(graft) = commit.grafts.get(&vid) {
-            tracing::trace!("write_pages handler received commit: {commit:?} for volume {vid}");
+        if let Some(graft) = segment.grafts.get(&vid) {
+            tracing::trace!("write_pages handler received commit: {segment:?} for volume {vid}");
 
             count += graft.cardinality();
 
             // store the segment
             segments.push(SegmentInfo {
-                sid: commit.sid.copy_to_bytes(),
+                sid: segment.sid.copy_to_bytes(),
                 graft: graft.inner().clone(),
             });
         }

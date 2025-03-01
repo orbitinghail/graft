@@ -8,7 +8,7 @@ use axum::routing::post;
 use crate::{
     limiter::Limiter,
     segment::{
-        bus::{Bus, CommitSegmentReq, WritePageReq},
+        bus::{Bus, SegmentUploadedMsg, WritePageMsg},
         cache::Cache,
         loader::SegmentLoader,
     },
@@ -21,8 +21,8 @@ mod read_pages;
 mod write_pages;
 
 pub struct PagestoreApiState<C> {
-    page_tx: mpsc::Sender<WritePageReq>,
-    commit_bus: Bus<CommitSegmentReq>,
+    page_tx: mpsc::Sender<WritePageMsg>,
+    segment_upload_bus: Bus<SegmentUploadedMsg>,
     catalog: VolumeCatalog,
     loader: SegmentLoader<C>,
     metastore: MetastoreClient,
@@ -32,8 +32,8 @@ pub struct PagestoreApiState<C> {
 
 impl<C> PagestoreApiState<C> {
     pub fn new(
-        page_tx: mpsc::Sender<WritePageReq>,
-        commit_bus: Bus<CommitSegmentReq>,
+        page_tx: mpsc::Sender<WritePageMsg>,
+        segment_upload_bus: Bus<SegmentUploadedMsg>,
         catalog: VolumeCatalog,
         loader: SegmentLoader<C>,
         metastore: MetastoreClient,
@@ -42,7 +42,7 @@ impl<C> PagestoreApiState<C> {
     ) -> Self {
         Self {
             page_tx,
-            commit_bus,
+            segment_upload_bus,
             catalog,
             loader,
             metastore,
@@ -51,12 +51,12 @@ impl<C> PagestoreApiState<C> {
         }
     }
 
-    pub async fn write_page(&self, req: WritePageReq) {
+    pub async fn write_page(&self, req: WritePageMsg) {
         self.page_tx.send(req).await.unwrap();
     }
 
-    pub fn subscribe_commits(&self) -> broadcast::Receiver<CommitSegmentReq> {
-        self.commit_bus.subscribe()
+    pub fn subscribe_to_uploaded_segments(&self) -> broadcast::Receiver<SegmentUploadedMsg> {
+        self.segment_upload_bus.subscribe()
     }
 
     pub fn catalog(&self) -> &VolumeCatalog {

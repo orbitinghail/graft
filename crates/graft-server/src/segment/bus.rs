@@ -9,25 +9,25 @@ use tokio::sync::broadcast;
 use super::{multigraft::MultiGraft, open::OpenSegment};
 
 #[derive(Debug)]
-pub struct WritePageReq {
+pub struct WritePageMsg {
     pub vid: VolumeId,
     pub pageidx: PageIdx,
     pub page: Page,
 }
 
-impl WritePageReq {
+impl WritePageMsg {
     pub fn new(vid: VolumeId, pageidx: PageIdx, page: Page) -> Self {
         Self { vid, pageidx, page }
     }
 }
 
 #[derive(Debug)]
-pub struct StoreSegmentReq {
+pub struct StoreSegmentMsg {
     pub segment: OpenSegment,
 }
 
 #[derive(Debug, Clone)]
-pub struct CommitSegmentReq {
+pub struct SegmentUploadedMsg {
     pub sid: SegmentId,
     pub grafts: Arc<MultiGraft>,
 }
