@@ -5,6 +5,7 @@
 //! a feeling for how it behaves in different scenarios.
 
 use std::{
+    cell::RefCell,
     env::temp_dir,
     fmt::Debug,
     ops::{Deref, DerefMut, Range},
@@ -16,7 +17,7 @@ use clap::{Parser, Subcommand};
 use culprit::ResultExt;
 use graft_client::{
     ClientPair, MetastoreClient, NetClient, PagestoreClient,
-    oracle::NoopOracle,
+    oracle::LeapOracle,
     runtime::{
         runtime::Runtime,
         storage::{
@@ -149,7 +150,12 @@ impl<T: Default + TryFromBytes + IntoBytes + Immutable> PageView<T> {
     }
 
     fn load(reader: &impl VolumeRead, idx: PageIdx) -> Result<Self> {
-        let page = reader.read(&mut NoopOracle, idx).or_into_ctx()?;
+        // use a thread local oracle
+        thread_local! {
+            static ORACLE: RefCell<LeapOracle> = RefCell::new(LeapOracle::default());
+        }
+        let page = ORACLE.with_borrow_mut(|o| reader.read(o, idx).or_into_ctx())?;
+
         let inner = if page.is_empty() {
             T::default()
         } else {
