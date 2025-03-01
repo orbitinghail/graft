@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use config::Config;
+use config::{Config, FileFormat};
 use futures::{FutureExt, select};
 use graft_client::{MetastoreClient, NetClient};
 use graft_core::byte_unit::ByteUnit;
@@ -28,11 +28,11 @@ use graft_server::{
 use graft_tracing::{TracingConsumer, init_tracing};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rlimit::Resource;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, signal::ctrl_c, sync::mpsc};
 use url::Url;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
 struct PagestoreConfig {
@@ -83,7 +83,7 @@ async fn main() {
     let mut registry = Registry::default();
 
     let config = Config::builder()
-        .add_source(config::File::with_name("pagestore").required(false))
+        .add_source(config::File::new("pagestore.toml", FileFormat::Toml).required(false))
         .add_source(config::Environment::with_prefix("PAGESTORE").separator("_"))
         .build()
         .expect("failed to load config");
@@ -91,7 +91,8 @@ async fn main() {
         .try_deserialize()
         .expect("failed to deserialize config");
 
-    tracing::info!(?config, "loaded configuration");
+    let toml_config = toml::to_string_pretty(&config).expect("failed to serialize config");
+    tracing::info!("loaded configuration:\n{toml_config}");
 
     assert!(config.cache.open_limit > 128, "cache_open_limit is too low");
 

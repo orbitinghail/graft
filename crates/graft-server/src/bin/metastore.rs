@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use config::Config;
+use config::{Config, FileFormat};
 use futures::FutureExt;
 use graft_server::{
     api::{
@@ -19,10 +19,10 @@ use graft_server::{
 };
 use graft_tracing::{TracingConsumer, init_tracing};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, select, signal::ctrl_c};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
 struct MetastoreConfig {
@@ -57,7 +57,7 @@ async fn main() {
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
     let config = Config::builder()
-        .add_source(config::File::with_name("metastore").required(false))
+        .add_source(config::File::new("metastore.toml", FileFormat::Toml).required(false))
         .add_source(config::Environment::with_prefix("METASTORE").separator("_"))
         .build()
         .expect("failed to load config");
@@ -65,7 +65,8 @@ async fn main() {
         .try_deserialize()
         .expect("failed to deserialize config");
 
-    tracing::info!(?config, "loaded configuration");
+    let toml_config = toml::to_string_pretty(&config).expect("failed to serialize config");
+    tracing::info!("loaded configuration:\n{toml_config}");
 
     let store = config
         .objectstore

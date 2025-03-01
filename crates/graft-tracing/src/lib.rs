@@ -60,6 +60,7 @@ where
                 .add_directive("graft_core=trace".parse().unwrap())
                 .add_directive("graft_server=trace".parse().unwrap())
                 .add_directive("graft_test=trace".parse().unwrap())
+                .add_directive("graft_sqlite=trace".parse().unwrap())
         }
 
         let prefix = if antithesis || testing {

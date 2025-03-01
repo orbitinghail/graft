@@ -47,10 +47,11 @@ tempfile = { workspace = true }
 foldhash = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-config = { workspace = true }
+config = { workspace = true, features = ["toml"] }
 url = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }
 measured = { workspace = true }
+toml = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
