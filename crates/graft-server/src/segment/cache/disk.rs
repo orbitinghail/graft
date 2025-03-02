@@ -91,7 +91,11 @@ impl DiskCache {
 impl Cache for DiskCache {
     type Item<'a> = MappedSegment<'a>;
 
-    async fn put<T: Buf + Send + 'static>(&self, sid: &SegmentId, data: T) -> std::io::Result<()> {
+    async fn put<T: Buf + Send + 'static>(
+        &self,
+        sid: &SegmentId,
+        data: T,
+    ) -> culprit::Result<(), io::Error> {
         let path = self.dir.join(sid.pretty());
 
         tracing::trace!("writing segment {:?} to disk at path {:?}", sid, path);
@@ -105,7 +109,7 @@ impl Cache for DiskCache {
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
             Err(e) => {
                 tracing::error!("failed to write segment {:?} to disk: {:?}", sid, e);
-                return Err(e);
+                return Err(e.into());
             }
         }
 
@@ -119,7 +123,7 @@ impl Cache for DiskCache {
         Ok(())
     }
 
-    async fn get(&self, sid: &SegmentId) -> std::io::Result<Option<Self::Item<'_>>> {
+    async fn get(&self, sid: &SegmentId) -> culprit::Result<Option<Self::Item<'_>>, io::Error> {
         let segments = self.segments.read().await;
 
         if let Some(segment) = segments.find(sid) {

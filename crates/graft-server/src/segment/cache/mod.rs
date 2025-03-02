@@ -21,10 +21,10 @@ pub trait Cache: Send + Sync {
         &self,
         sid: &SegmentId,
         data: T,
-    ) -> impl Future<Output = io::Result<()>> + Send;
+    ) -> impl Future<Output = culprit::Result<(), io::Error>> + Send;
 
     fn get(
         &self,
         sid: &SegmentId,
-    ) -> impl Future<Output = io::Result<Option<Self::Item<'_>>>> + Send;
+    ) -> impl Future<Output = culprit::Result<Option<Self::Item<'_>>, io::Error>> + Send;
 }

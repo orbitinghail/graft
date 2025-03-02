@@ -1,3 +1,5 @@
+use std::io;
+
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use graft_core::{
     SegmentId,
@@ -32,7 +34,11 @@ impl Cache for MemCache {
     where
         Self: 'a;
 
-    async fn put<T: Buf + Send + 'static>(&self, sid: &SegmentId, data: T) -> std::io::Result<()> {
+    async fn put<T: Buf + Send + 'static>(
+        &self,
+        sid: &SegmentId,
+        data: T,
+    ) -> culprit::Result<(), io::Error> {
         let mut segments = self.segments.write().await;
         let mut buf = BytesMut::with_capacity(data.remaining());
         buf.put(data);
@@ -41,7 +47,7 @@ impl Cache for MemCache {
         Ok(())
     }
 
-    async fn get(&self, sid: &SegmentId) -> std::io::Result<Option<Self::Item<'_>>> {
+    async fn get(&self, sid: &SegmentId) -> culprit::Result<Option<Self::Item<'_>>, io::Error> {
         let segments = self.segments.read().await;
         Ok(segments.find(sid).map(|s| s.data.clone()))
     }

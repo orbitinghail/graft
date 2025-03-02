@@ -68,6 +68,9 @@ pub enum ApiErrCtx {
     #[error("failed to upload segment")]
     SegmentUploadErr,
 
+    #[error("failed to download segment")]
+    SegmentDownloadErr,
+
     #[error("volume commit rejected")]
     RejectedCommit,
 
@@ -140,7 +143,9 @@ impl IntoResponse for ApiErr {
             ZeroPageIdx => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             GraftTooLarge => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             InvalidLSN => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            SegmentUploadErr => (StatusCode::BAD_GATEWAY, GraftErrCode::ServiceUnavailable),
+            SegmentDownloadErr | SegmentUploadErr => {
+                (StatusCode::BAD_GATEWAY, GraftErrCode::ServiceUnavailable)
+            }
             VolumeStoreErr(store::VolumeStoreErr::ObjectStoreErr) => {
                 (StatusCode::BAD_GATEWAY, GraftErrCode::ServiceUnavailable)
             }

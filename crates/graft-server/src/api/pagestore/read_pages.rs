@@ -78,7 +78,7 @@ pub async fn handler<C: Cache>(
     }
 
     let mut result = ReadPagesResponse { pages: Vec::with_capacity(num_pages) };
-    while let Some((segment, cut)) = loading.try_next().await? {
+    while let Some((segment, cut)) = loading.try_next().await.or_into_ctx()? {
         let segment = ClosedSegment::from_bytes(&segment).or_into_ctx()?;
 
         for pageidx in cut.iter() {
