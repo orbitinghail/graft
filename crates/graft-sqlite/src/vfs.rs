@@ -12,7 +12,10 @@ use graft_client::{
     ClientErr,
     runtime::{
         runtime::Runtime,
-        storage::volume_state::{SyncDirection, VolumeConfig},
+        storage::{
+            StorageErr,
+            volume_state::{SyncDirection, VolumeConfig},
+        },
     },
 };
 use graft_core::{VolumeId, gid::GidParseErr};
@@ -73,6 +76,9 @@ impl ErrCtx {
                     ErrCtx::CantOpen => SQLITE_CANTOPEN,
                     ErrCtx::Busy => SQLITE_BUSY,
                     ErrCtx::BusySnapshot => SQLITE_BUSY_SNAPSHOT,
+                    ErrCtx::Client(ClientErr::StorageErr(StorageErr::ConcurrentWrite)) => {
+                        SQLITE_BUSY_SNAPSHOT
+                    }
                     _ => SQLITE_INTERNAL,
                 };
                 if code == SQLITE_INTERNAL {
