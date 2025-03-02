@@ -21,7 +21,7 @@ clap = "4.5"
 config = { version = "0.15", features = ["toml"] }
 criterion = "0.5"
 crossbeam = "0.8"
-culprit = "0.3"
+culprit = "0.4"
 either = "1.14"
 enum_dispatch = "0.3"
 event-listener = "5.4"
@@ -36,7 +36,7 @@ itertools = "0.14"
 libloading = "0.8"
 linkme = "0.3"
 log = "0.4"
-lsm-tree  = { version = "2.6", features = ["bytes"] }
+lsm-tree = { version = "2.6", features = ["bytes"] }
 measured = "0.0.22"
 memmap2 = "0.9"
 nix = "0.29"
@@ -65,7 +65,10 @@ tower-http = "0.6"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tryiter = "0.6"
-ureq = { version = "3.0", default-features = false, features = ["rustls", "brotli"]}
+ureq = { version = "3.0", default-features = false, features = [
+    "rustls",
+    "brotli",
+] }
 url = "2.5"
 zerocopy = "0.8"
 

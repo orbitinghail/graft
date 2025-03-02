@@ -8,7 +8,7 @@ use axum::routing::post;
 use crate::{
     limiter::Limiter,
     segment::{
-        bus::{Bus, SegmentUploadedMsg, WritePageMsg},
+        bus::{Bus, SegmentUploadMsg, WritePageMsg},
         cache::Cache,
         loader::SegmentLoader,
     },
@@ -22,7 +22,7 @@ mod write_pages;
 
 pub struct PagestoreApiState<C> {
     page_tx: mpsc::Sender<WritePageMsg>,
-    segment_upload_bus: Bus<SegmentUploadedMsg>,
+    segment_upload_bus: Bus<SegmentUploadMsg>,
     catalog: VolumeCatalog,
     loader: SegmentLoader<C>,
     metastore: MetastoreClient,
@@ -33,7 +33,7 @@ pub struct PagestoreApiState<C> {
 impl<C> PagestoreApiState<C> {
     pub fn new(
         page_tx: mpsc::Sender<WritePageMsg>,
-        segment_upload_bus: Bus<SegmentUploadedMsg>,
+        segment_upload_bus: Bus<SegmentUploadMsg>,
         catalog: VolumeCatalog,
         loader: SegmentLoader<C>,
         metastore: MetastoreClient,
@@ -55,7 +55,7 @@ impl<C> PagestoreApiState<C> {
         self.page_tx.send(req).await.unwrap();
     }
 
-    pub fn subscribe_to_uploaded_segments(&self) -> broadcast::Receiver<SegmentUploadedMsg> {
+    pub fn subscribe_to_uploaded_segments(&self) -> broadcast::Receiver<SegmentUploadMsg> {
         self.segment_upload_bus.subscribe()
     }
 

@@ -1,4 +1,4 @@
-use std::{sync::Arc, vec};
+use std::{sync::Arc, time::Duration, vec};
 
 use axum::{extract::State, response::IntoResponse};
 use culprit::{Culprit, ResultExt};
@@ -8,7 +8,10 @@ use graft_proto::{
     pagestore::v1::{WritePagesRequest, WritePagesResponse},
 };
 use hashbrown::HashSet;
-use tokio::sync::broadcast::error::RecvError;
+use tokio::{
+    sync::broadcast::error::RecvError,
+    time::{Instant, timeout_at},
+};
 
 use crate::{
     api::{error::ApiErrCtx, response::ProtoResponse},
@@ -18,6 +21,8 @@ use crate::{
 use crate::api::{error::ApiErr, extractors::Protobuf};
 
 use super::PagestoreApiState;
+
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[tracing::instrument(name = "pagestore/v1/write_pages", skip(state, req))]
 pub async fn handler<C>(
@@ -57,22 +62,39 @@ pub async fn handler<C>(
 
     let mut segments: Vec<SegmentInfo> = vec![];
 
+    // fail if we don't receive all segments by this deadline
+    let deadline = Instant::now() + WRITE_TIMEOUT;
+
     let mut count = 0;
     while count < expected_pages {
-        let segment = match segment_rx.recv().await {
-            Ok(commit) => commit,
-            Err(RecvError::Lagged(n)) => panic!("commit channel lagged by {n}"),
-            Err(RecvError::Closed) => panic!("commit channel unexpectedly closed"),
+        let segment = match timeout_at(deadline, segment_rx.recv()).await {
+            Ok(result) => match result {
+                Ok(segment) => segment,
+                Err(RecvError::Lagged(n)) => {
+                    tracing::warn!("segment channel lagged by {n} messages");
+                    continue;
+                }
+                Err(RecvError::Closed) => panic!("segment channel unexpectedly closed"),
+            },
+            Err(_) => {
+                return Err(Culprit::new_with_note(
+                    ApiErrCtx::Timeout,
+                    "timeout while waiting for segments to upload",
+                )
+                .into());
+            }
         };
 
-        if let Some(graft) = segment.grafts.get(&vid) {
-            tracing::trace!("write_pages handler received commit: {segment:?} for volume {vid}");
+        // check to see if this segment contains any offsets for our vid
+        if let Some(graft) = segment.graft(&vid) {
+            let sid = segment.sid().or_into_ctx()?;
+            tracing::trace!("write_pages handler received segment {sid} for volume {vid}",);
 
             count += graft.cardinality();
 
             // store the segment
             segments.push(SegmentInfo {
-                sid: segment.sid.copy_to_bytes(),
+                sid: sid.copy_to_bytes(),
                 graft: graft.inner().clone(),
             });
         }

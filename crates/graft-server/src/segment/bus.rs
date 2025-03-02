@@ -3,10 +3,11 @@
 
 use std::sync::Arc;
 
+use culprit::Culprit;
 use graft_core::{PageIdx, SegmentId, VolumeId, page::Page};
 use tokio::sync::broadcast;
 
-use super::{multigraft::MultiGraft, open::OpenSegment};
+use super::{multigraft::MultiGraft, open::OpenSegment, uploader::SegmentUploadErr};
 
 #[derive(Debug)]
 pub struct WritePageMsg {
@@ -27,9 +28,31 @@ pub struct StoreSegmentMsg {
 }
 
 #[derive(Debug, Clone)]
-pub struct SegmentUploadedMsg {
-    pub sid: SegmentId,
-    pub grafts: Arc<MultiGraft>,
+pub enum SegmentUploadMsg {
+    Success {
+        grafts: Arc<MultiGraft>,
+        sid: SegmentId,
+    },
+    Failure {
+        grafts: Arc<MultiGraft>,
+        err: Culprit<SegmentUploadErr>,
+    },
+}
+
+impl SegmentUploadMsg {
+    pub fn graft(&self, vid: &VolumeId) -> Option<&splinter::SplinterRef<bytes::Bytes>> {
+        match self {
+            Self::Success { grafts, .. } => grafts.get(vid),
+            Self::Failure { grafts, .. } => grafts.get(vid),
+        }
+    }
+
+    pub fn sid(&self) -> Result<&SegmentId, Culprit<SegmentUploadErr>> {
+        match self {
+            Self::Success { sid, .. } => Ok(sid),
+            Self::Failure { err, .. } => Err(err.clone()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

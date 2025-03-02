@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use crate::{
     api::response::ProtoResponse,
-    segment::closed::SegmentValidationErr,
+    segment::{closed::SegmentValidationErr, uploader::SegmentUploadErr},
     volume::{catalog::VolumeCatalogErr, store::VolumeStoreErr, updater::UpdateErr},
 };
 
@@ -58,8 +58,11 @@ pub enum ApiErrCtx {
     #[error("io error")]
     IoErr(io::ErrorKind),
 
-    #[error("failed to load segment")]
+    #[error("failed to validate segment")]
     SegmentValidationErr(#[from] SegmentValidationErr),
+
+    #[error("failed to upload segment")]
+    SegmentUploadErr(#[from] SegmentUploadErr),
 
     #[error("volume commit rejected")]
     RejectedCommit,
@@ -84,6 +87,9 @@ pub enum ApiErrCtx {
 
     #[error("invalid LSN")]
     InvalidLSN,
+
+    #[error("timeout")]
+    Timeout,
 }
 
 impl From<io::Error> for ApiErrCtx {
@@ -133,7 +139,7 @@ impl IntoResponse for ApiErr {
             ZeroPageIdx => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             GraftTooLarge => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             InvalidLSN => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            ClientErr(graft_client::ClientErr::HttpErr(_)) => (
+            Timeout | ClientErr(graft_client::ClientErr::HttpErr(_)) => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 GraftErrCode::ServiceUnavailable,
             ),

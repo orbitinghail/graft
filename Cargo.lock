@@ -805,9 +805,9 @@ dependencies = [
 
 [[package]]
 name = "culprit"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97a8cfe6442569585dc3f3b4e5ebc2fa07f1850a25420dd79560305d401e4e86"
+checksum = "91da57f31052de4df497178bdeea96a5d005691abb2dd973978c0f6a50ac1b85"
 dependencies = [
  "smallvec",
 ]
