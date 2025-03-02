@@ -128,33 +128,44 @@ macro_rules! expect_unreachable {
 
 /// emit a fault with a probability p to the dispatcher
 /// p should be in the range [0.0, 1.0]
+/// fault is a block that will be executed when the fault triggers
+///
+/// # Example
+/// ```
+/// use precept::maybe_fault;
+/// maybe_fault!(
+///     0.5,
+///     "triggers 50% of the time",
+///     println!("this will run when the fault triggers"),
+///     { "optional": "details" }
+/// );
+/// ```
 #[macro_export]
 macro_rules! maybe_fault {
-    ($p:expr, $name:expr) => {
-        $crate::maybe_fault!($p, $name, null);
+    ($p:expr, $name:expr, $fault:expr) => {
+        $crate::maybe_fault!($p, $name, $fault, null);
     };
 
-    ($p:expr, $name:expr, $($details:tt)+) => {{
-        static THRESHOLD: u64 = (u64::MAX as f64 * $p) as u64;
-        let should_fault = $crate::dispatch::get_random() < THRESHOLD;
-        if should_fault {
-            $crate::expect_reachable!(
-                concat!("fault is reachable: ", $name),
-                $($details)+
-            );
-            $crate::dispatch::emit(
-                $crate::dispatch::Event::Fault{
-                    name: $name,
-                    details: $crate::deps::serde_json::json!($($details)+),
-                }
-            );
+    ($p:expr, $name:expr, $fault:expr, $($details:tt)+) => {{
+        if $crate::faults_enabled() {
+            static THRESHOLD: u64 = (u64::MAX as f64 * $p) as u64;
+            let should_fault = $crate::dispatch::get_random() < THRESHOLD;
+            if should_fault {
+                $crate::expect_reachable!(
+                    concat!("fault is reachable: ", $name),
+                    $($details)+
+                );
+                $crate::emit_event!("precept_fault", { "name": $name, "details": $($details)+ });
+                $fault
+            }
         }
     }};
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::catalog::Expectation;
+
+    use crate::{catalog::Expectation, disable_faults};
 
     #[test]
     fn test_entry_gen() {
@@ -205,9 +216,22 @@ mod tests {
 
     #[test]
     fn test_fault() {
-        maybe_fault!(0.0, "this should never fault");
-        maybe_fault!(1.0, "this should always fault");
-        maybe_fault!(0.5, "this should sometimes fault");
-        maybe_fault!(0.5, "this should sometimes fault", { "key": 123 });
+        maybe_fault!(0.0, "this should never fault", unreachable!("never faults"));
+
+        let mut faults = false;
+        maybe_fault!(1.0, "this should always fault", faults = true);
+        assert!(faults);
+
+        maybe_fault!(0.5, "this should sometimes fault", ());
+
+        // supports details
+        maybe_fault!(0.5, "this should sometimes fault", (), { "key": 123 });
+
+        disable_faults();
+        maybe_fault!(
+            1.0,
+            "this should not fault because disabled",
+            unreachable!("never faults")
+        );
     }
 }

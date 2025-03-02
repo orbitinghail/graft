@@ -28,7 +28,7 @@ use graft_server::{
     supervisor::{ShutdownErr, Supervisor},
     volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
 };
-use graft_tracing::{TracingConsumer, init_tracing};
+use graft_tracing::{TracingConsumer, init_tracing_with_writer};
 use precept::dispatch::test::TestDispatch;
 use thiserror::Error;
 use tokio::{
@@ -38,6 +38,7 @@ use tokio::{
         oneshot::{self},
     },
 };
+use tracing_subscriber::fmt::TestWriter;
 use url::Url;
 
 pub use graft_test_macro::datatest;
@@ -50,8 +51,9 @@ pub mod workload;
 pub fn setup_test() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        init_tracing(TracingConsumer::Test, None);
+        init_tracing_with_writer(TracingConsumer::Test, None, TestWriter::default());
         precept::init(&TestDispatch).expect("failed to setup precept");
+        precept::disable_faults();
     });
 }
 

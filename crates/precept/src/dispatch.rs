@@ -24,10 +24,6 @@ pub enum Event {
         name: &'static str,
         value: serde_json::Value,
     },
-    Fault {
-        name: &'static str,
-        details: serde_json::Value,
-    },
 }
 
 pub trait Dispatch: Sync + Send {

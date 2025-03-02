@@ -4,7 +4,6 @@ use std::{
     fs::File,
     io::{Error, ErrorKind, Write},
     path::{Path, PathBuf},
-    process,
 };
 
 use super::{Dispatch, Event};
@@ -71,17 +70,6 @@ impl Dispatch for AntithesisDispatch {
                 }
             })),
             Event::Custom { name, value } => self.emit_json(json!({ name: value })),
-            Event::Fault { name, details } => {
-                self.emit_json(json!({
-                    "precept_fault": { "name": name, "details": details }
-                }));
-
-                // it would be nice if we could ask antithesis to crash us,
-                // but for now we exit 0 to simulate immediate power loss
-                // while not triggering the "workload commands always exit 0"
-                // antithesis expectation
-                process::exit(0)
-            }
         }
     }
 

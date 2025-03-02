@@ -10,6 +10,8 @@ pub mod catalog;
 pub mod function_name;
 
 pub mod dispatch;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use dispatch::{Dispatch, SetDispatchError};
 
 pub mod random;
@@ -34,4 +36,23 @@ pub fn init_boxed(dispatcher: Box<dyn Dispatch>) -> Result<(), SetDispatchError>
     } else {
         Ok(())
     }
+}
+
+// Precept Faults are enabled by default
+static FAULTS_ENABLED: AtomicBool = AtomicBool::new(true);
+
+#[inline]
+pub fn faults_enabled() -> bool {
+    FAULTS_ENABLED.load(Ordering::Acquire)
+}
+
+#[inline]
+pub fn disable_faults() {
+    tracing::warn!("Precept Faults disabled");
+    FAULTS_ENABLED.store(false, Ordering::Release);
+}
+
+#[inline]
+pub fn enable_faults() {
+    FAULTS_ENABLED.store(true, Ordering::Release);
 }

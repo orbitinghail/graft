@@ -108,7 +108,7 @@ pub struct Storage {
     /// Used to store volume state broken out by tag.
     /// Keyed by `VolumeStateKey`.
     ///
-    /// ```
+    /// ```text
     /// {vid}/VolumeStateTag::Config -> VolumeConfig
     /// {vid}/VolumeStateTag::Status -> VolumeStatus
     /// {vid}/VolumeStateTag::Snapshot -> Snapshot

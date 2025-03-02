@@ -7,8 +7,8 @@ pub struct TestDispatch;
 impl Dispatch for TestDispatch {
     fn emit(&self, event: Event) {
         match event {
-            Event::RegisterEntry(_) | Event::Fault { .. } => {
-                // registration and faults are not enabled in the test dispatcher
+            Event::RegisterEntry(_) => {
+                // noop
             }
             Event::EmitEntry { entry, condition, details } => {
                 if !entry.expectation().check(condition) {
