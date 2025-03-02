@@ -1,7 +1,7 @@
 use bytes::{BufMut, BytesMut};
 use culprit::{Culprit, ResultExt};
 use graft_core::byte_unit::ByteUnit;
-use graft_proto::common::v1::GraftErr;
+use graft_proto::{GraftErrCode, common::v1::GraftErr};
 use http::{
     HeaderName, HeaderValue, Uri,
     uri::{Builder, PathAndQuery},
@@ -130,8 +130,11 @@ impl NetClient {
                 );
                 Culprit::from_err(err).with_note(note)
             })?;
+
+            // 5xx errors are not expected from client requests unless the graft
+            // error signals that the service is temporarily unavailable
             precept::expect_always_or_unreachable!(
-                !(500..600).contains(&status.as_u16()) || status == http::StatusCode::SERVICE_UNAVAILABLE,
+                !(500..600).contains(&status.as_u16()) || err.code() == GraftErrCode::ServiceUnavailable,
                 "client requests should not return 5xx errors",
                 {
                     "status": status.as_u16(),

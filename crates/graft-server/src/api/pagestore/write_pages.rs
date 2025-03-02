@@ -15,7 +15,7 @@ use tokio::{
 
 use crate::{
     api::{error::ApiErrCtx, response::ProtoResponse},
-    segment::writer::WritePageMsg,
+    segment::{uploader::SegmentUploadErr, writer::WritePageMsg},
 };
 
 use crate::api::{error::ApiErr, extractors::Protobuf};
@@ -77,8 +77,12 @@ pub async fn handler<C>(
                 Err(RecvError::Closed) => panic!("segment channel unexpectedly closed"),
             },
             Err(_) => {
+                precept::expect_reachable!(
+                    "timeout while waiting for segments to upload",
+                    { "vid": vid }
+                );
                 return Err(Culprit::new_with_note(
-                    ApiErrCtx::Timeout,
+                    SegmentUploadErr.into(),
                     "timeout while waiting for segments to upload",
                 )
                 .into());

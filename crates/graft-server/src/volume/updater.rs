@@ -148,13 +148,6 @@ impl VolumeCatalogUpdater {
                 ?vid,
                 "reused concurrent catalog update from store in range"
             );
-            precept::expect_reachable!(
-                "reused concurrent catalog update from store in range",
-                {
-                    "lsns": format!("{lsns:?}"),
-                    "vid": vid,
-                }
-            );
             return Ok(());
         }
 

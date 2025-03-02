@@ -99,7 +99,7 @@ impl PushJob {
         let (snapshot, lsns, mut commits) =
             storage.prepare_sync_to_remote(&self.vid).or_into_ctx()?;
 
-        let _span = tracing::trace_span!("PushJob", vid=?self.vid, ?lsns).entered();
+        let _span = tracing::debug_span!("PushJob", vid=?self.vid, ?lsns).entered();
 
         // setup temporary storage for pages
         // TODO: we will eventually stream pages directly to the remote

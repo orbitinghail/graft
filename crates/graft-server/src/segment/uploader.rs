@@ -1,4 +1,4 @@
-use std::{convert::Infallible, error::Error, process, sync::Arc};
+use std::{convert::Infallible, process, sync::Arc};
 
 use bytes::Buf;
 use culprit::Culprit;
@@ -11,6 +11,7 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 
 use crate::{
+    api::error::ApiErrCtx,
     metrics::labels::ResultLabelSet,
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
 };
@@ -36,22 +37,18 @@ impl Default for SegmentUploaderMetrics {
 }
 
 #[derive(Debug, Clone, Error)]
-pub enum SegmentUploadErr {
-    #[error("io error occurred while uploading segment")]
-    IoErr(std::io::ErrorKind),
+#[error("object store error occurred while uploading segment")]
+pub struct SegmentUploadErr;
 
-    #[error("object store error occurred while uploading segment")]
-    ObjectStoreErr,
+impl From<SegmentUploadErr> for ApiErrCtx {
+    fn from(_: SegmentUploadErr) -> Self {
+        ApiErrCtx::SegmentUploadErr
+    }
 }
 
 impl From<object_store::Error> for SegmentUploadErr {
-    fn from(err: object_store::Error) -> Self {
-        if let Some(source) = err.source() {
-            if let Some(ioerr) = source.downcast_ref::<std::io::Error>() {
-                return Self::IoErr(ioerr.kind());
-            }
-        }
-        Self::ObjectStoreErr
+    fn from(_: object_store::Error) -> Self {
+        Self
     }
 }
 
@@ -151,6 +148,12 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
             let sid = sid.clone();
             let segment = segment.clone();
             tokio::spawn(async move {
+                // 20% chance that we don't cache the segment, forcing a future
+                // request to pull the segment from the store
+                precept::maybe_fault!(0.2, "skipping segment cache when uploading segment", {
+                    return;
+                });
+
                 if let Err(err) = cache.put(&sid, segment).await {
                     tracing::error!("failed to cache segment {:?}\n{:?}", sid, err);
 
