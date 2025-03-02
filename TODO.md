@@ -1,7 +1,5 @@
 Stack:
 
-FIX object storage in antithesis - I was using memory before :cry:
-
 - garbage collection
 - consider switching pagestore to websockets or http streaming bodies
 - authentication (api keys)

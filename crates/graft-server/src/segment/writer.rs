@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use culprit::{Culprit, ResultExt};
+use graft_core::{PageIdx, VolumeId, page::Page};
 use measured::{Counter, MetricGroup};
 use thiserror::Error;
 use tokio::{
@@ -10,10 +11,7 @@ use tokio::{
     time::{Duration, Instant, sleep_until},
 };
 
-use super::{
-    bus::{StoreSegmentMsg, WritePageMsg},
-    open::OpenSegment,
-};
+use super::{open::OpenSegment, uploader::StoreSegmentMsg};
 use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
 
 #[derive(Debug, Error)]
@@ -35,6 +33,19 @@ pub struct SegmentWriterMetrics {
 
     /// Number of segments that have been flushed
     flushed_segments: Counter,
+}
+
+#[derive(Debug)]
+pub struct WritePageMsg {
+    pub vid: VolumeId,
+    pub pageidx: PageIdx,
+    pub page: Page,
+}
+
+impl WritePageMsg {
+    pub fn new(vid: VolumeId, pageidx: PageIdx, page: Page) -> Self {
+        Self { vid, pageidx, page }
+    }
 }
 
 pub struct SegmentWriterTask {

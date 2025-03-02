@@ -15,7 +15,7 @@ use tokio::{
 
 use crate::{
     api::{error::ApiErrCtx, response::ProtoResponse},
-    segment::bus::WritePageMsg,
+    segment::writer::WritePageMsg,
 };
 
 use crate::api::{error::ApiErr, extractors::Protobuf};

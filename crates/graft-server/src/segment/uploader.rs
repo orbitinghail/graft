@@ -3,7 +3,7 @@ use std::{convert::Infallible, error::Error, process, sync::Arc};
 use bytes::Buf;
 use culprit::Culprit;
 use futures::FutureExt;
-use graft_core::SegmentId;
+use graft_core::{SegmentId, VolumeId};
 use graft_tracing::running_in_antithesis;
 use measured::{CounterVec, Histogram, MetricGroup, metric::histogram::Thresholds};
 use object_store::{ObjectStore, PutPayload, path::Path};
@@ -15,10 +15,7 @@ use crate::{
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
 };
 
-use super::{
-    bus::{Bus, SegmentUploadMsg, StoreSegmentMsg},
-    cache::Cache,
-};
+use super::{bus::Bus, cache::Cache, multigraft::MultiGraft, open::OpenSegment};
 
 #[derive(MetricGroup)]
 #[metric(new())]
@@ -55,6 +52,39 @@ impl From<object_store::Error> for SegmentUploadErr {
             }
         }
         Self::ObjectStoreErr
+    }
+}
+
+#[derive(Debug)]
+pub struct StoreSegmentMsg {
+    pub segment: OpenSegment,
+}
+
+#[derive(Debug, Clone)]
+pub enum SegmentUploadMsg {
+    Success {
+        grafts: Arc<MultiGraft>,
+        sid: SegmentId,
+    },
+    Failure {
+        grafts: Arc<MultiGraft>,
+        err: Culprit<SegmentUploadErr>,
+    },
+}
+
+impl SegmentUploadMsg {
+    pub fn graft(&self, vid: &VolumeId) -> Option<&splinter::SplinterRef<bytes::Bytes>> {
+        match self {
+            Self::Success { grafts, .. } => grafts.get(vid),
+            Self::Failure { grafts, .. } => grafts.get(vid),
+        }
+    }
+
+    pub fn sid(&self) -> Result<&SegmentId, Culprit<SegmentUploadErr>> {
+        match self {
+            Self::Success { sid, .. } => Ok(sid),
+            Self::Failure { err, .. } => Err(err.clone()),
+        }
     }
 }
 

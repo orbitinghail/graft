@@ -8,9 +8,8 @@ use axum::routing::post;
 use crate::{
     limiter::Limiter,
     segment::{
-        bus::{Bus, SegmentUploadMsg, WritePageMsg},
-        cache::Cache,
-        loader::SegmentLoader,
+        bus::Bus, cache::Cache, loader::SegmentLoader, uploader::SegmentUploadMsg,
+        writer::WritePageMsg,
     },
     volume::{catalog::VolumeCatalog, updater::VolumeCatalogUpdater},
 };
