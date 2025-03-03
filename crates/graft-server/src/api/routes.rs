@@ -4,7 +4,7 @@ use axum::{
     Router,
     routing::{MethodRouter, get},
 };
-use tower_http::compression::CompressionLayer;
+use tower_http::{catch_panic::CatchPanicLayer, compression::CompressionLayer};
 
 use crate::metrics::registry::Registry;
 
@@ -33,9 +33,12 @@ pub fn build_router<S: Send + Sync + Clone + 'static>(
         .br(true)
         .zstd(true);
 
+    let panic_layer = CatchPanicLayer::custom(crate::api::error::handle_panic);
+
     router
         .route("/health", get(health::handler))
         .route("/metrics", get(metrics::handler))
         .with_state(Arc::new(registry))
         .layer(compression_layer)
+        .layer(panic_layer)
 }

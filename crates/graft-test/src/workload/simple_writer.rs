@@ -130,7 +130,7 @@ impl Workload for SimpleWriter {
                         "pageidx": pageidx,
                         "cid": env.cid,
                         "vid": vid,
-                        "snapshot": reader.snapshot(),
+                        "snapshot": format!("{:?}", reader.snapshot()),
                         "actual": actual_hash.to_string()
                     }
                 );

@@ -4,6 +4,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
+    io::ErrorKind,
     sync::Arc,
 };
 
@@ -25,10 +26,10 @@ use sqlite_plugin::{
     flags::{AccessFlags, LockLevel, OpenKind, OpenOpts},
     logger::{SqliteLogLevel, SqliteLogger},
     vars::{
-        self, SQLITE_BUSY, SQLITE_BUSY_SNAPSHOT, SQLITE_CANTOPEN, SQLITE_INTERNAL, SQLITE_NOTFOUND,
-        SQLITE_READONLY,
+        self, SQLITE_BUSY, SQLITE_BUSY_SNAPSHOT, SQLITE_CANTOPEN, SQLITE_INTERNAL, SQLITE_IOERR,
+        SQLITE_IOERR_ACCESS, SQLITE_NOTFOUND, SQLITE_READONLY,
     },
-    vfs::{Pragma, PragmaErr, Vfs, VfsHandle, VfsResult},
+    vfs::{Pragma, PragmaErr, SqliteErr, Vfs, VfsHandle, VfsResult},
 };
 use thiserror::Error;
 use tryiter::TryIteratorExt;
@@ -76,9 +77,7 @@ impl ErrCtx {
                     ErrCtx::CantOpen => SQLITE_CANTOPEN,
                     ErrCtx::Busy => SQLITE_BUSY,
                     ErrCtx::BusySnapshot => SQLITE_BUSY_SNAPSHOT,
-                    ErrCtx::Client(ClientErr::StorageErr(StorageErr::ConcurrentWrite)) => {
-                        SQLITE_BUSY_SNAPSHOT
-                    }
+                    ErrCtx::Client(err) => Self::map_client_err(err),
                     _ => SQLITE_INTERNAL,
                 };
                 if code == SQLITE_INTERNAL {
@@ -87,6 +86,39 @@ impl ErrCtx {
                 Err(code)
             }
         }
+    }
+
+    fn map_client_err(err: &ClientErr) -> SqliteErr {
+        match err {
+            ClientErr::GraftErr(err) => {
+                if err.code().is_client() {
+                    SQLITE_INTERNAL
+                } else {
+                    SQLITE_IOERR
+                }
+            }
+            ClientErr::HttpErr(_) => SQLITE_IOERR,
+            ClientErr::StorageErr(store_err) => match store_err {
+                StorageErr::ConcurrentWrite => SQLITE_BUSY_SNAPSHOT,
+                StorageErr::FjallErr(err) => match Self::extract_ioerr(err) {
+                    Some(_) => SQLITE_IOERR,
+                    None => SQLITE_INTERNAL,
+                },
+                StorageErr::IoErr(err) => SQLITE_IOERR,
+                _ => SQLITE_INTERNAL,
+            },
+            ClientErr::IoErr(kind) => SQLITE_IOERR,
+            _ => SQLITE_INTERNAL,
+        }
+    }
+
+    fn extract_ioerr<'a>(
+        mut err: &'a (dyn std::error::Error + 'static),
+    ) -> Option<&'a std::io::Error> {
+        while let Some(source) = err.source() {
+            err = source;
+        }
+        err.downcast_ref::<std::io::Error>()
     }
 }
 

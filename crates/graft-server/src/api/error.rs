@@ -1,4 +1,4 @@
-use std::{fmt::Debug, io};
+use std::{any::Any, fmt::Debug, io};
 
 use axum::{
     http::StatusCode,
@@ -173,4 +173,33 @@ impl IntoResponse for ApiErr {
         )
             .into_response()
     }
+}
+
+pub(crate) fn handle_panic(err: Box<dyn Any + Send + 'static>) -> Response {
+    let details = if let Some(s) = err.downcast_ref::<String>() {
+        s.clone()
+    } else if let Some(s) = err.downcast_ref::<&str>() {
+        s.to_string()
+    } else {
+        "Unknown panic occurred".to_string()
+    };
+
+    let backtrace = std::backtrace::Backtrace::capture();
+    tracing::error!(
+        "panic occurred while handling api request: {details}\n\nbacktrace:\n{backtrace}"
+    );
+
+    precept::expect_unreachable!(
+        "panic occurred while handling api request",
+        { "details": details }
+    );
+
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        ProtoResponse::new(GraftErr {
+            code: GraftErrCode::Server as i32,
+            message: "internal server error".into(),
+        }),
+    )
+        .into_response()
 }

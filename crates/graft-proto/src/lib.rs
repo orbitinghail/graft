@@ -27,6 +27,13 @@ impl Display for GraftErr {
     }
 }
 
+impl GraftErrCode {
+    pub fn is_client(self) -> bool {
+        let code = self as i32;
+        code >= GraftErrCode::Client as i32 && code < GraftErrCode::Server as i32
+    }
+}
+
 impl Commit {
     pub fn snapshot(&self) -> &Snapshot {
         self.snapshot.as_ref().expect("snapshot is required")

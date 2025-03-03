@@ -10,6 +10,7 @@ workspace = true
 graft-core = { path = "../graft-core" }
 graft-client = { path = "../graft-client" }
 graft-tracing = { path = "../graft-tracing" }
+graft-proto = { path = "../graft-proto" }
 sqlite-plugin = { path = "../sqlite-plugin" }
 
 tracing = { workspace = true }

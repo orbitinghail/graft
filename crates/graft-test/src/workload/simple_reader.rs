@@ -149,7 +149,7 @@ impl Workload for SimpleReader {
                             "pageidx": pageidx,
                             "cid": env.cid,
                             "vid": vid,
-                            "snapshot": snapshot,
+                            "snapshot": snapshot.to_string(),
                             "expected": expected_hash.to_string(),
                             "actual": actual_hash.to_string()
                         }
@@ -162,7 +162,7 @@ impl Workload for SimpleReader {
                             "pageidx": pageidx,
                             "cid": env.cid,
                             "vid": vid,
-                            "snapshot": snapshot,
+                            "snapshot": snapshot.to_string(),
                             "actual": actual_hash.to_string()
                         }
                     );

@@ -1252,6 +1252,7 @@ dependencies = [
  "enum_dispatch",
  "graft-client",
  "graft-core",
+ "graft-proto",
  "graft-tracing",
  "parking_lot",
  "sqlite-plugin",
@@ -3360,13 +3361,16 @@ dependencies = [
  "bitflags",
  "bytes",
  "futures-core",
+ "futures-util",
  "http",
  "http-body",
+ "http-body-util",
  "pin-project-lite",
  "tokio",
  "tokio-util",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

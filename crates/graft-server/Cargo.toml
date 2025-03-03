@@ -36,7 +36,7 @@ nix = { workspace = true }
 hashbrown = { workspace = true }
 futures = { workspace = true }
 axum = { workspace = true, features = ["http2"] }
-tower-http = { workspace = true, features = ["compression-full"] }
+tower-http = { workspace = true, features = ["compression-full", "catch-panic"] }
 prost = { workspace = true }
 prost-types = { workspace = true }
 assert_matches = { workspace = true }

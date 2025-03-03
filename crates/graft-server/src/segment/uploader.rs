@@ -128,12 +128,14 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
         Self { metrics, input, output, store, cache }
     }
 
-    #[tracing::instrument(name = "upload segment", skip(self))]
+    #[tracing::instrument(name = "upload segment", skip(self), fields(sid))]
     async fn handle_store_request(&mut self, req: StoreSegmentMsg) {
         let segment = req.segment;
         let sid = SegmentId::random();
         let path = Path::from(sid.pretty());
         let (segment, grafts) = segment.serialize(sid.clone());
+
+        tracing::Span::current().record("sid", sid.short());
 
         self.metrics
             .segment_size_bytes
@@ -150,17 +152,15 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
             tokio::spawn(async move {
                 // 20% chance that we don't cache the segment, forcing a future
                 // request to pull the segment from the store
-                precept::maybe_fault!(0.2, "skipping segment cache when uploading segment", {
+                precept::maybe_fault!(0.1, "skipping segment cache when uploading segment", {
                     return;
-                });
+                }, { "sid": sid });
 
                 if let Err(err) = cache.put(&sid, segment).await {
                     tracing::error!("failed to cache segment {:?}\n{:?}", sid, err);
 
                     // for now, we inject a process crash when running in antithesis
                     // as it's not clear yet if antithesis can cause the cache to fail
-                    // TODO: replace this with a precept::fault once confirmed
-                    // that antithesis can't reach this failure
                     if running_in_antithesis() {
                         tracing::error!("crashing process on cache failure");
                         process::exit(1);

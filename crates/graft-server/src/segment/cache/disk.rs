@@ -102,23 +102,26 @@ impl Cache for DiskCache {
 
         let data_size = data.remaining().into();
 
-        // optimistically write the file to disk, aborting if it already exists
+        // atomically write the file to disk, potentially racing with another task
         match write_file_atomic(&path, data).await {
             Ok(()) => (),
-            // we don't need to update self.segments if the file already exists
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
             Err(e) => {
                 tracing::error!("failed to write segment {:?} to disk: {:?}", sid, e);
                 return Err(e.into());
             }
         }
 
-        // insert the segment into the cache
-        self.segments.write().await.insert(Segment {
-            sid: sid.clone(),
-            _size: data_size,
-            mmap_handle: Default::default(),
-        });
+        // update the segment index if needed
+        self.segments
+            .write()
+            .await
+            .entry(&sid)
+            .or_insert_with(|| Segment {
+                sid: sid.clone(),
+                _size: data_size,
+                mmap_handle: Default::default(),
+            });
 
         Ok(())
     }
