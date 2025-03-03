@@ -116,12 +116,13 @@ impl Splinter {
             .flat_map(|(a, b, c, p)| p.segments().map(move |d| combine_segments(a, b, c, d)))
     }
 
-    pub fn insert(&mut self, key: u32) {
+    /// attempts to insert a key into the Splinter, returning true if a key was inserted
+    pub fn insert(&mut self, key: u32) -> bool {
         let (a, b, c, d) = segments(key);
         let partition = self.partitions.get_or_init(a);
         let partition = partition.get_or_init(b);
         let block = partition.get_or_init(c);
-        block.insert(d);
+        block.insert(d)
     }
 
     fn insert_block(&mut self, a: u8, b: u8, c: u8, block: Block) {

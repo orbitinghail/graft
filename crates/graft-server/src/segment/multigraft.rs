@@ -45,7 +45,9 @@ pub struct MultiGraftBuilder {
 }
 
 impl MultiGraftBuilder {
-    pub fn insert(&mut self, vid: &VolumeId, pageidx: PageIdx) {
+    /// attempts to insert a page into the MultiGraftBuilder, returning true if the
+    /// page was inserted, false if the builder already contained the page
+    pub fn insert(&mut self, vid: &VolumeId, pageidx: PageIdx) -> bool {
         if let Some(current) = &self.vid {
             if current != vid {
                 assert!(vid > current, "Volumes must be inserted in order by ID");

@@ -80,6 +80,15 @@ impl Workload for SimpleWriter {
                 span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
             }
 
+            let span = tracing::info_span!(
+                "write_page",
+                pageidx = field::Empty,
+                snapshot = field::Empty,
+                new_hash = field::Empty,
+                tracker_hash = field::Empty
+            )
+            .entered();
+
             // open a reader
             let reader = handle.reader().or_into_ctx()?;
 
@@ -92,14 +101,9 @@ impl Workload for SimpleWriter {
             let new_page: Page = env.rng.random();
             let new_hash = PageHash::new(&new_page);
 
-            let span = tracing::info_span!(
-                "write_page",
-                pageidx=pageidx.to_string(),
-                snapshot=?reader.snapshot(),
-                ?new_hash,
-                tracker_hash=field::Empty
-            )
-            .entered();
+            span.record("pageidx", pageidx.to_u32());
+            span.record("snapshot", format!("{:?}", reader.snapshot()));
+            span.record("new_hash", new_hash.to_string());
 
             // load the tracker and the expected page hash
             let mut page_tracker = load_tracker(&mut oracle, &reader, &env.cid).or_into_ctx()?;
