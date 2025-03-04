@@ -82,10 +82,11 @@ pub async fn handler(
             }
         }
         // otherwise reject this commit
-        return Err(Culprit::new_with_note(
-            ApiErrCtx::RejectedCommit,
-            format!("commit rejected for volume {vid}: client snapshot lsn {snapshot_lsn:?} is out of sync with latest lsn {latest_lsn:?}")
-        ).into());
+        let note = format!(
+            "commit rejected for volume {vid}: client snapshot lsn {snapshot_lsn:?} is out of sync with latest lsn {latest_lsn:?}"
+        );
+        tracing::debug!("{note}");
+        return Err(Culprit::new_with_note(ApiErrCtx::RejectedCommit, note).into());
     }
 
     // checkpoint doesn't change
@@ -117,6 +118,11 @@ pub async fn handler(
     let mut batch = state.catalog.batch_insert();
     batch.insert_commit(&commit).or_into_ctx()?;
     batch.commit().or_into_ctx()?;
+
+    tracing::debug!(
+        "successful commit to volume {vid}: new snapshot lsn {}",
+        commit.meta().lsn()
+    );
 
     // the commit was successful, return the new snapshot
     Ok(ProtoResponse::new(CommitResponse {

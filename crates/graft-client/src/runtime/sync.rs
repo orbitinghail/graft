@@ -198,7 +198,7 @@ impl SyncTask {
                     tracing::error!("sync task error: {:?}", err);
                     // we want to explore system states that include sync task errors
                     precept::expect_reachable!("error occurred in sync task");
-                    sleep(Duration::from_secs(1));
+                    sleep(Duration::from_millis(100));
                 }
             }
         }

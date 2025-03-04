@@ -70,10 +70,25 @@ impl Workload for SqliteSanity {
         let txn = sqlite.transaction()?;
         if get_snapshot(&txn)?.is_none() {
             txn.execute(SQL_ACCOUNTS_TABLE, [])?;
-            txn.execute("INSERT INTO accounts (balance) VALUES (?)", [TOTAL_BALANCE])?;
+
+            let balance_per_account = TOTAL_BALANCE / self.initial_accounts;
+            assert_eq!(
+                TOTAL_BALANCE % self.initial_accounts,
+                0,
+                "total balance must be some multiple of initial accounts"
+            );
+
+            tracing::info!(
+                "initializing {} accounts with balance {}",
+                self.initial_accounts,
+                balance_per_account
+            );
 
             for _ in 0..self.initial_accounts {
-                Actions::CreateAccount.run(env, &txn).or_into_ctx()?;
+                txn.execute(
+                    "INSERT INTO accounts (balance) VALUES (?)",
+                    [balance_per_account],
+                )?;
             }
             txn.commit()?;
         } else {
@@ -100,7 +115,7 @@ impl Workload for SqliteSanity {
             let action = Actions::random(&mut env.rng);
 
             let span = tracing::info_span!("running action", ?vid, ?action, ?snapshot).entered();
-            if let Err(err) = action.run(env, &txn) {
+            if let Err(err) = action.run(&vid, env, &txn) {
                 if matches!(
                     err.ctx().sqlite_error_code(),
                     Some(rusqlite::ErrorCode::DatabaseBusy)
@@ -123,6 +138,21 @@ impl Workload for SqliteSanity {
             sleep(interval);
         }
 
+        // run a final set of checks
+        let txn = sqlite.transaction()?;
+        let snapshot = get_snapshot(&txn)?;
+        let _span = tracing::info_span!("performing final checks", ?vid, ?snapshot).entered();
+        let final_actions = [
+            Actions::CheckBalance,
+            Actions::IntegrityCheck,
+            Actions::CountAccounts,
+        ];
+        for action in &final_actions {
+            let _span = tracing::info_span!("running action", ?action).entered();
+            action.run(&vid, env, &txn).or_into_ctx()?;
+        }
+        txn.commit()?;
+
         Ok(())
     }
 }
@@ -132,7 +162,7 @@ const TOTAL_BALANCE: u64 = 1_000_000;
 
 const SQL_ACCOUNTS_TABLE: &str = r#"
 CREATE TABLE accounts (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     balance INTEGER NOT NULL,
     CHECK (balance >= 0)
 )
@@ -151,6 +181,9 @@ enum Actions {
 
     // Prints out the total number of accounts
     CountAccounts,
+
+    // Verifies the integrity of the database
+    IntegrityCheck,
 }
 
 impl Actions {
@@ -159,7 +192,8 @@ impl Actions {
             (Actions::CreateAccount, 8),
             (Actions::Transfer, 16),
             (Actions::CheckBalance, 4),
-            (Actions::CountAccounts, 1),
+            (Actions::CountAccounts, 2),
+            (Actions::IntegrityCheck, 1),
         ];
 
         let sum = probabilities.iter().map(|(_, p)| p).sum();
@@ -173,11 +207,12 @@ impl Actions {
             }
         }
 
-        unreachable!("random value should always be less than 1.0");
+        unreachable!("bug in random action selection");
     }
 
     fn run<R: Rng>(
         self,
+        vid: &VolumeId,
         env: &mut WorkloadEnv<R>,
         txn: &Transaction<'_>,
     ) -> Result<(), rusqlite::Error> {
@@ -215,7 +250,7 @@ impl Actions {
                 precept::expect_always_or_unreachable!(
                     total_balance == TOTAL_BALANCE,
                     "total balance does not match expected value",
-                    { "cid": env.cid, "total_balance": total_balance, "expected": TOTAL_BALANCE }
+                    { "vid": vid, "cid": env.cid, "total_balance": total_balance, "expected": TOTAL_BALANCE }
                 );
             }
             Actions::CountAccounts => {
@@ -225,7 +260,16 @@ impl Actions {
                 precept::expect_always_or_unreachable!(
                     count > 0,
                     "there should never be zero accounts",
-                    { "cid": env.cid, "count": count }
+                    { "vid": vid, "cid": env.cid, "count": count }
+                );
+            }
+            Actions::IntegrityCheck => {
+                let mut results: Vec<String> = vec![];
+                txn.pragma_query(None, "integrity_check", |r| Ok(results.push(r.get(0)?)))?;
+                precept::expect_always_or_unreachable!(
+                    results == ["ok"],
+                    "sqlite database is corrupt",
+                    { "vid": vid, "cid": env.cid, "results": results }
                 );
             }
         }
@@ -240,7 +284,6 @@ fn account_exists(txn: &Transaction<'_>, id: u64) -> rusqlite::Result<bool> {
         .map(|r| r.is_some())
 }
 
-/// returns the account id and balance of the first nonempty account found through random guessing
 fn find_nonzero_account<R: Rng>(
     rng: &mut R,
     txn: &Transaction<'_>,
@@ -248,30 +291,26 @@ fn find_nonzero_account<R: Rng>(
 ) -> rusqlite::Result<(u64, u64)> {
     // find the first non-zero balance account starting from a random account id
     let start = rng.random_range(1..=max_account_id);
-    if let Some((id, balance)) = first_nonzero_account_starting_at(txn, start)? {
-        assert!(balance > 0, "balance should be greater than zero");
-        return Ok((id, balance));
-    }
-
-    // fall back to scanning the whole table
-    if let Some((id, balance)) = first_nonzero_account_starting_at(txn, 1)? {
-        assert!(balance > 0, "balance should be greater than zero");
-        return Ok((id, balance));
-    }
-
-    unreachable!("unable to find any nonzero accounts")
+    let (id, balance) = first_nonzero_account_starting_at(txn, start)?;
+    assert!(balance > 0, "balance should be greater than zero");
+    return Ok((id, balance));
 }
+
+// start scanning for nonzero account at the provided id, wrapping around if
+// needed
+const FIRST_NONZERO_ACCOUNT_SQL: &str = r#"
+SELECT id, balance FROM accounts WHERE balance > 0 and id >= ?
+UNION ALL
+SELECT id, balance FROM accounts WHERE balance > 0
+"#;
 
 fn first_nonzero_account_starting_at(
     txn: &Transaction<'_>,
     start: u64,
-) -> rusqlite::Result<Option<(u64, u64)>> {
-    txn.query_row(
-        "SELECT id, balance FROM accounts WHERE balance > 0 and id >= ?",
-        [start],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-    .optional()
+) -> rusqlite::Result<(u64, u64)> {
+    txn.query_row(FIRST_NONZERO_ACCOUNT_SQL, [start], |r| {
+        Ok((r.get(0)?, r.get(1)?))
+    })
 }
 
 fn get_snapshot(txn: &Transaction<'_>) -> rusqlite::Result<Option<String>> {
