@@ -1,14 +1,13 @@
-use std::{convert::Infallible, process, sync::Arc};
+use std::{convert::Infallible, sync::Arc};
 
 use bytes::Buf;
 use culprit::Culprit;
 use futures::FutureExt;
 use graft_core::{SegmentId, VolumeId};
-use graft_tracing::running_in_antithesis;
 use measured::{CounterVec, Histogram, MetricGroup, metric::histogram::Thresholds};
 use object_store::{ObjectStore, PutPayload, path::Path};
 use thiserror::Error;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, Sender};
 
 use crate::{
     api::error::ApiErrCtx,
@@ -16,7 +15,7 @@ use crate::{
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
 };
 
-use super::{bus::Bus, cache::Cache, multigraft::MultiGraft, open::OpenSegment};
+use super::{cache::Cache, multigraft::MultiGraft, open::OpenSegment};
 
 #[derive(MetricGroup)]
 #[metric(new())]
@@ -37,7 +36,7 @@ impl Default for SegmentUploaderMetrics {
 }
 
 #[derive(Debug, Clone, Error)]
-#[error("object store error occurred while uploading segment")]
+#[error("failed to upload segment")]
 pub struct SegmentUploadErr;
 
 impl From<SegmentUploadErr> for ApiErrCtx {
@@ -52,9 +51,18 @@ impl From<object_store::Error> for SegmentUploadErr {
     }
 }
 
-#[derive(Debug)]
 pub struct StoreSegmentMsg {
     pub segment: OpenSegment,
+    pub writers: Vec<Sender<SegmentUploadMsg>>,
+}
+
+impl std::fmt::Debug for StoreSegmentMsg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoreSegmentMsg")
+            .field("segment", &self.segment)
+            .field("num_writers", &self.writers.len())
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -88,7 +96,6 @@ impl SegmentUploadMsg {
 pub struct SegmentUploaderTask<C> {
     metrics: Arc<SegmentUploaderMetrics>,
     input: mpsc::Receiver<StoreSegmentMsg>,
-    output: Bus<SegmentUploadMsg>,
     store: Arc<dyn ObjectStore>,
     cache: Arc<C>,
 }
@@ -121,11 +128,10 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
     pub fn new(
         metrics: Arc<SegmentUploaderMetrics>,
         input: mpsc::Receiver<StoreSegmentMsg>,
-        output: Bus<SegmentUploadMsg>,
         store: Arc<dyn ObjectStore>,
         cache: Arc<C>,
     ) -> Self {
-        Self { metrics, input, output, store, cache }
+        Self { metrics, input, store, cache }
     }
 
     #[tracing::instrument(name = "upload segment", skip(self), fields(sid))]
@@ -150,7 +156,7 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
             let sid = sid.clone();
             let segment = segment.clone();
             tokio::spawn(async move {
-                // 20% chance that we don't cache the segment, forcing a future
+                // small chance that we don't cache the segment, forcing a future
                 // request to pull the segment from the store
                 precept::maybe_fault!(0.1, "skipping segment cache when uploading segment", {
                     return;
@@ -158,13 +164,6 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
 
                 if let Err(err) = cache.put(&sid, segment).await {
                     tracing::error!("failed to cache segment {:?}\n{:?}", sid, err);
-
-                    // for now, we inject a process crash when running in antithesis
-                    // as it's not clear yet if antithesis can cause the cache to fail
-                    if running_in_antithesis() {
-                        tracing::error!("crashing process on cache failure");
-                        process::exit(1);
-                    }
                 }
             });
         }
@@ -179,11 +178,19 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
             })
             .await
         {
-            self.output
-                .publish(SegmentUploadMsg::Failure { grafts, err: Culprit::from_err(err) });
+            Self::multisend(
+                req.writers,
+                SegmentUploadMsg::Failure { grafts, err: Culprit::from_err(err) },
+            )
+            .await;
         } else {
-            self.output
-                .publish(SegmentUploadMsg::Success { grafts, sid });
+            Self::multisend(req.writers, SegmentUploadMsg::Success { grafts, sid }).await;
+        }
+    }
+
+    async fn multisend(writers: Vec<Sender<SegmentUploadMsg>>, msg: SegmentUploadMsg) {
+        for writer in writers {
+            let _ = writer.send(msg.clone()).await;
         }
     }
 }
@@ -200,19 +207,12 @@ mod tests {
     #[graft_test::test]
     async fn test_uploader_sanity() {
         let (input_tx, input_rx) = mpsc::channel(1);
-        let segment_upload_bus = Bus::new(1);
-        let mut segment_rx = segment_upload_bus.subscribe();
 
         let store = Arc::new(InMemory::default());
         let cache = Arc::new(MemCache::default());
 
-        let task = SegmentUploaderTask::new(
-            Default::default(),
-            input_rx,
-            segment_upload_bus,
-            store.clone(),
-            cache.clone(),
-        );
+        let task =
+            SegmentUploaderTask::new(Default::default(), input_rx, store.clone(), cache.clone());
         task.testonly_spawn();
 
         let mut segment = OpenSegment::default();
@@ -228,7 +228,11 @@ mod tests {
             .insert(vid.clone(), pageidx!(2), page1.clone())
             .unwrap();
 
-        input_tx.send(StoreSegmentMsg { segment }).await.unwrap();
+        let (segment_tx, mut segment_rx) = mpsc::channel(1);
+        input_tx
+            .send(StoreSegmentMsg { segment, writers: vec![segment_tx] })
+            .await
+            .unwrap();
 
         let segment = segment_rx.recv().await.unwrap();
 

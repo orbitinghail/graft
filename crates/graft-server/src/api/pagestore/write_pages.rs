@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration, vec};
+use std::sync::Arc;
 
 use axum::{extract::State, response::IntoResponse};
 use culprit::{Culprit, ResultExt};
@@ -8,21 +8,15 @@ use graft_proto::{
     pagestore::v1::{WritePagesRequest, WritePagesResponse},
 };
 use hashbrown::HashSet;
-use tokio::{
-    sync::broadcast::error::RecvError,
-    time::{Instant, timeout_at},
-};
 
 use crate::{
     api::{error::ApiErrCtx, response::ProtoResponse},
-    segment::{uploader::SegmentUploadErr, writer::WritePageMsg},
+    segment::uploader::SegmentUploadErr,
 };
 
 use crate::api::{error::ApiErr, extractors::Protobuf};
 
 use super::PagestoreApiState;
-
-const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[tracing::instrument(name = "pagestore/v1/write_pages", skip(state, req))]
 pub async fn handler<C>(
@@ -37,12 +31,10 @@ pub async fn handler<C>(
     // can concurrently write pages into this volume.
     let _permit = state.volume_write_limiter().acquire(&vid).await;
 
-    // subscribe to the broadcast channel
-    let mut segment_rx = state.subscribe_to_uploaded_segments();
-
     tracing::info!(?vid, expected_pages);
 
     let mut seen = HashSet::with_capacity(req.pages.len());
+    let mut pages = Vec::with_capacity(req.pages.len());
     for page in req.pages {
         let pageidx = page.pageidx().or_into_ctx()?;
         let page: Page = Page::try_from(page.data).or_into_ctx()?;
@@ -55,58 +47,50 @@ pub async fn handler<C>(
             .into());
         }
 
-        state
-            .write_page(WritePageMsg::new(vid.clone(), pageidx, page))
-            .await;
+        pages.push((pageidx, page));
     }
+
+    // send pages to the writer
+    let mut segment_rx = state.write_pages(vid.clone(), pages).await;
 
     let mut segments: Vec<SegmentInfo> = vec![];
 
-    // fail if we don't receive all segments by this deadline
-    let deadline = Instant::now() + WRITE_TIMEOUT;
-
-    let mut count = 0;
-    while count < expected_pages {
-        let segment = match timeout_at(deadline, segment_rx.recv()).await {
-            Ok(result) => match result {
-                Ok(segment) => segment,
-                Err(RecvError::Lagged(n)) => {
-                    tracing::warn!("segment channel lagged by {n} messages");
-                    continue;
-                }
-                Err(RecvError::Closed) => panic!("segment channel unexpectedly closed"),
-            },
-            Err(_) => {
-                precept::expect_reachable!(
-                    "timeout while waiting for segments to upload",
-                    { "vid": vid }
-                );
-                return Err(Culprit::new_with_note(
-                    SegmentUploadErr.into(),
-                    "timeout while waiting for segments to upload",
-                )
-                .into());
-            }
+    let mut received_pages = 0;
+    while received_pages < expected_pages {
+        let Some(segment) = segment_rx.recv().await else {
+            precept::expect_unreachable!(
+                "segment upload channel closed prematurely",
+                { "vid": vid }
+            );
+            return Err(Culprit::new_with_note(
+                SegmentUploadErr.into(),
+                "segment upload channel closed prematurely",
+            )
+            .into());
         };
 
-        // check to see if this segment contains any offsets for our vid
-        if let Some(graft) = segment.graft(&vid) {
-            let sid = segment.sid().or_into_ctx()?;
-            tracing::trace!("write_pages handler received segment {sid} for volume {vid}",);
+        let sid = segment.sid().or_into_ctx()?;
+        tracing::trace!("write_pages handler received segment {sid} for volume {vid}",);
 
-            count += graft.cardinality();
+        if let Some(graft) = segment.graft(&vid) {
+            received_pages += graft.cardinality();
 
             // store the segment
             segments.push(SegmentInfo {
                 sid: sid.copy_to_bytes(),
                 graft: graft.inner().clone(),
             });
+        } else {
+            // the writer/uploader should never send us segments we don't care about
+            unreachable!(
+                "write_pages handler received segment that is missing the requested volume"
+            );
         }
     }
 
     assert_eq!(
-        count, expected_pages,
-        "expected {expected_pages} pages, but got {count}"
+        received_pages, expected_pages,
+        "expected {expected_pages} pages, but got {received_pages}"
     );
 
     Ok(ProtoResponse::new(WritePagesResponse { segments }))
@@ -129,7 +113,7 @@ mod tests {
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
         segment::{
-            bus::Bus, cache::mem::MemCache, loader::SegmentLoader, uploader::SegmentUploaderTask,
+            cache::mem::MemCache, loader::SegmentLoader, uploader::SegmentUploaderTask,
             writer::SegmentWriterTask,
         },
         supervisor::SupervisedTask,
@@ -147,7 +131,6 @@ mod tests {
 
         let (page_tx, page_rx) = mpsc::channel(128);
         let (store_tx, store_rx) = mpsc::channel(8);
-        let commit_bus = Bus::new(128);
 
         SegmentWriterTask::new(
             Default::default(),
@@ -157,21 +140,14 @@ mod tests {
         )
         .testonly_spawn();
 
-        SegmentUploaderTask::new(
-            Default::default(),
-            store_rx,
-            commit_bus.clone(),
-            store.clone(),
-            cache.clone(),
-        )
-        .testonly_spawn();
+        SegmentUploaderTask::new(Default::default(), store_rx, store.clone(), cache.clone())
+            .testonly_spawn();
 
         let client = NetClient::new();
         let metastore_uri = "http://localhost:3000".parse().unwrap();
 
         let state = Arc::new(PagestoreApiState::new(
             page_tx,
-            commit_bus,
             catalog,
             loader,
             MetastoreClient::new(metastore_uri, client),

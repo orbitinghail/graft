@@ -1,15 +1,14 @@
 use graft_client::MetastoreClient;
-use graft_core::VolumeId;
+use graft_core::{PageIdx, VolumeId, page::Page};
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc::{self, Receiver};
 
 use axum::routing::post;
 
 use crate::{
     limiter::Limiter,
     segment::{
-        bus::Bus, cache::Cache, loader::SegmentLoader, uploader::SegmentUploadMsg,
-        writer::WritePageMsg,
+        cache::Cache, loader::SegmentLoader, uploader::SegmentUploadMsg, writer::WritePagesMsg,
     },
     volume::{catalog::VolumeCatalog, updater::VolumeCatalogUpdater},
 };
@@ -20,8 +19,7 @@ mod read_pages;
 mod write_pages;
 
 pub struct PagestoreApiState<C> {
-    page_tx: mpsc::Sender<WritePageMsg>,
-    segment_upload_bus: Bus<SegmentUploadMsg>,
+    page_tx: mpsc::Sender<WritePagesMsg>,
     catalog: VolumeCatalog,
     loader: SegmentLoader<C>,
     metastore: MetastoreClient,
@@ -31,8 +29,7 @@ pub struct PagestoreApiState<C> {
 
 impl<C> PagestoreApiState<C> {
     pub fn new(
-        page_tx: mpsc::Sender<WritePageMsg>,
-        segment_upload_bus: Bus<SegmentUploadMsg>,
+        page_tx: mpsc::Sender<WritePagesMsg>,
         catalog: VolumeCatalog,
         loader: SegmentLoader<C>,
         metastore: MetastoreClient,
@@ -41,7 +38,6 @@ impl<C> PagestoreApiState<C> {
     ) -> Self {
         Self {
             page_tx,
-            segment_upload_bus,
             catalog,
             loader,
             metastore,
@@ -50,12 +46,17 @@ impl<C> PagestoreApiState<C> {
         }
     }
 
-    pub async fn write_page(&self, req: WritePageMsg) {
-        self.page_tx.send(req).await.unwrap();
-    }
-
-    pub fn subscribe_to_uploaded_segments(&self) -> broadcast::Receiver<SegmentUploadMsg> {
-        self.segment_upload_bus.subscribe()
+    pub async fn write_pages(
+        &self,
+        vid: VolumeId,
+        pages: Vec<(PageIdx, Page)>,
+    ) -> Receiver<SegmentUploadMsg> {
+        let (segment_tx, segment_rx) = tokio::sync::mpsc::channel(4);
+        self.page_tx
+            .send(WritePagesMsg::new(vid, pages, segment_tx))
+            .await
+            .unwrap();
+        segment_rx
     }
 
     pub fn catalog(&self) -> &VolumeCatalog {

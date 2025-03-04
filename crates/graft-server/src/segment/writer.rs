@@ -7,12 +7,18 @@ use graft_core::{PageIdx, VolumeId, page::Page};
 use measured::{Counter, MetricGroup};
 use thiserror::Error;
 use tokio::{
-    sync::mpsc::{self, error::SendError},
+    sync::mpsc::{self, Sender, error::SendError},
     time::{Duration, Instant, sleep_until},
 };
 
-use super::{open::OpenSegment, uploader::StoreSegmentMsg};
-use crate::supervisor::{SupervisedTask, TaskCfg, TaskCtx};
+use super::{
+    open::OpenSegment,
+    uploader::{SegmentUploadMsg, StoreSegmentMsg},
+};
+use crate::{
+    segment::closed::SEGMENT_MAX_PAGES,
+    supervisor::{SupervisedTask, TaskCfg, TaskCtx},
+};
 
 #[derive(Debug, Error)]
 pub enum WriterErr {
@@ -28,7 +34,7 @@ impl<T> From<SendError<T>> for WriterErr {
 
 #[derive(MetricGroup, Default)]
 pub struct SegmentWriterMetrics {
-    /// Number of page writes
+    /// Number of pages written to segments
     page_writes: Counter,
 
     /// Number of segments that have been flushed
@@ -36,24 +42,32 @@ pub struct SegmentWriterMetrics {
 }
 
 #[derive(Debug)]
-pub struct WritePageMsg {
-    pub vid: VolumeId,
-    pub pageidx: PageIdx,
-    pub page: Page,
+pub struct WritePagesMsg {
+    vid: VolumeId,
+    pages: Vec<(PageIdx, Page)>,
+    segment_tx: Sender<SegmentUploadMsg>,
 }
 
-impl WritePageMsg {
-    pub fn new(vid: VolumeId, pageidx: PageIdx, page: Page) -> Self {
-        Self { vid, pageidx, page }
+impl WritePagesMsg {
+    pub fn new(
+        vid: VolumeId,
+        pages: Vec<(PageIdx, Page)>,
+        segment_tx: Sender<SegmentUploadMsg>,
+    ) -> Self {
+        Self { vid, pages, segment_tx }
     }
 }
 
 pub struct SegmentWriterTask {
     metrics: Arc<SegmentWriterMetrics>,
-    input: mpsc::Receiver<WritePageMsg>,
-    output: mpsc::Sender<StoreSegmentMsg>,
+    input: mpsc::Receiver<WritePagesMsg>,
+    output: Sender<StoreSegmentMsg>,
 
+    // the active open segment being written to
     segment: OpenSegment,
+    // a list of writer's waiting for the segment to upload
+    writers: Vec<Sender<SegmentUploadMsg>>,
+
     flush_interval: Duration,
     next_flush: Instant,
 }
@@ -76,7 +90,7 @@ impl SupervisedTask for SegmentWriterTask {
                 }
 
                 Some(req) = self.input.recv() => {
-                    self.handle_page_request(req).await?;
+                    self.handle_write(req).await?;
                 }
 
                 _ = sleep_until(self.next_flush) => {
@@ -91,8 +105,8 @@ impl SupervisedTask for SegmentWriterTask {
 impl SegmentWriterTask {
     pub fn new(
         metrics: Arc<SegmentWriterMetrics>,
-        input: mpsc::Receiver<WritePageMsg>,
-        output: mpsc::Sender<StoreSegmentMsg>,
+        input: mpsc::Receiver<WritePagesMsg>,
+        output: Sender<StoreSegmentMsg>,
         flush_interval: Duration,
     ) -> Self {
         Self {
@@ -100,23 +114,39 @@ impl SegmentWriterTask {
             input,
             output,
             segment: Default::default(),
+            writers: Default::default(),
             flush_interval,
             next_flush: Instant::now() + flush_interval,
         }
     }
 
-    async fn handle_page_request(&mut self, req: WritePageMsg) -> Result<(), Culprit<WriterErr>> {
-        tracing::trace!("writing page {} to volume {:?}", req.pageidx, req.vid);
-        self.metrics.page_writes.inc();
+    async fn handle_write(&mut self, req: WritePagesMsg) -> Result<(), Culprit<WriterErr>> {
+        tracing::trace!("writing {} pages to volume {:?}", req.pages.len(), req.vid);
+        self.metrics.page_writes.inc_by(req.pages.len() as u64);
 
-        // if the segment is full, flush it and start a new one
-        if !self.segment.has_space_for(&req.vid) {
-            self.handle_flush().await?;
+        let mut pages = req.pages.into_iter();
+        loop {
+            // flush current segment if needed
+            if !self.segment.has_space_for(&req.vid) {
+                self.handle_flush().await?
+            }
+
+            // write as many pages as possible to the current segment
+            self.segment
+                .batch_insert(req.vid.clone(), &mut pages)
+                .expect("segment is not full");
+            self.writers.push(req.segment_tx.clone());
+
+            // if the iterator is exhausted we are done
+            if pages.len() == 0 {
+                break;
+            }
         }
 
-        self.segment
-            .insert(req.vid, req.pageidx, req.page)
-            .expect("segment is not full");
+        // if the segment is full of pages, we can trigger an early flush
+        if self.segment.pages() == SEGMENT_MAX_PAGES {
+            self.handle_flush().await?;
+        }
 
         Ok(())
     }
@@ -144,6 +174,7 @@ impl SegmentWriterTask {
             self.output
                 .send(StoreSegmentMsg {
                     segment: std::mem::take(&mut self.segment),
+                    writers: std::mem::take(&mut self.writers),
                 })
                 .await
                 .or_into_ctx()?;
@@ -182,20 +213,13 @@ mod tests {
         let page0 = Page::test_filled(1);
         let page1 = Page::test_filled(2);
 
-        input_tx
-            .send(WritePageMsg {
-                vid: vid.clone(),
-                pageidx: pageidx!(1),
-                page: page0.clone(),
-            })
-            .await
-            .unwrap();
+        let (tx, _) = mpsc::channel(1);
 
         input_tx
-            .send(WritePageMsg {
+            .send(WritePagesMsg {
                 vid: vid.clone(),
-                pageidx: pageidx!(2),
-                page: page1.clone(),
+                pages: vec![(pageidx!(1), page0.clone()), (pageidx!(2), page1.clone())],
+                segment_tx: tx,
             })
             .await
             .unwrap();

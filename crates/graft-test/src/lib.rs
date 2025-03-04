@@ -22,7 +22,7 @@ use graft_server::{
     metrics::registry::Registry,
     object_store_util::ObjectStoreConfig,
     segment::{
-        bus::Bus, cache::mem::MemCache, loader::SegmentLoader, uploader::SegmentUploaderTask,
+        cache::mem::MemCache, loader::SegmentLoader, uploader::SegmentUploaderTask,
         writer::SegmentWriterTask,
     },
     supervisor::{ShutdownErr, Supervisor},
@@ -145,7 +145,6 @@ pub async fn run_pagestore(
 
     let (page_tx, page_rx) = mpsc::channel(128);
     let (store_tx, store_rx) = mpsc::channel(8);
-    let commit_bus = Bus::new(128);
 
     supervisor.spawn(SegmentWriterTask::new(
         registry.segment_writer(),
@@ -157,14 +156,12 @@ pub async fn run_pagestore(
     supervisor.spawn(SegmentUploaderTask::new(
         registry.segment_uploader(),
         store_rx,
-        commit_bus.clone(),
         obj_store,
         cache,
     ));
 
     let state = Arc::new(PagestoreApiState::new(
         page_tx,
-        commit_bus,
         catalog.clone(),
         loader,
         metastore,

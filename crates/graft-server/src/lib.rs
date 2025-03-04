@@ -1,5 +1,4 @@
 pub mod segment {
-    pub mod bus;
     pub mod cache;
     pub mod closed;
     pub mod index;

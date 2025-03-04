@@ -45,6 +45,28 @@ impl OpenSegment {
         }
     }
 
+    /// inserts pages into the segment from the iterator returning when the
+    /// segment is full or the iterator is empty, whichever happens first
+    pub fn batch_insert(
+        &mut self,
+        vid: VolumeId,
+        pages: impl Iterator<Item = (PageIdx, Page)> + ExactSizeIterator,
+    ) -> Result<(), Culprit<SegmentFullErr>> {
+        // early exit if segment can't fit a write to this volume
+        if !self.has_space_for(&vid) {
+            return Err(Culprit::new(SegmentFullErr));
+        }
+
+        // calculate how many pages we can insert
+        let space = SEGMENT_MAX_PAGES.to_usize() - self.pages().to_usize();
+
+        // insert pages
+        let index = self.index.entry(vid).or_default();
+        index.extend(pages.take(space));
+
+        Ok(())
+    }
+
     pub fn insert(
         &mut self,
         vid: VolumeId,

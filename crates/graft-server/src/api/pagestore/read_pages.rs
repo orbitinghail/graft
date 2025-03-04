@@ -116,8 +116,7 @@ mod tests {
         api::extractors::CONTENT_TYPE_PROTOBUF,
         bytes_vec::BytesVec,
         segment::{
-            bus::Bus, cache::mem::MemCache, loader::SegmentLoader, multigraft::MultiGraft,
-            open::OpenSegment,
+            cache::mem::MemCache, loader::SegmentLoader, multigraft::MultiGraft, open::OpenSegment,
         },
         volume::{catalog::VolumeCatalog, commit::CommitMeta, updater::VolumeCatalogUpdater},
     };
@@ -140,14 +139,12 @@ mod tests {
         let loader = SegmentLoader::new(store.clone(), cache.clone(), 8);
 
         let (page_tx, _) = mpsc::channel(128);
-        let commit_bus = Bus::new(128);
 
         let client = NetClient::new();
         let metastore_uri = "http://localhost:3000".parse().unwrap();
 
         let state = Arc::new(PagestoreApiState::new(
             page_tx,
-            commit_bus,
             catalog.clone(),
             loader,
             MetastoreClient::new(metastore_uri, client),

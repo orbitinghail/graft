@@ -73,7 +73,7 @@ Technically, the above write protocol can be coordinated entirely by the client 
 
 # Request Hedging
 
-According to the [AnyBlob paper], hedging requests to blob storage can help dramatically reduce tail latency. For S3, the paper suggests hedging if you haven't received the first byte within 200ms. Slightly more aggressive hedging may also be desirable, like hedging if you haven't completly downloaded the file within 600ms. Making this configurable and testing is important.
+According to the go, hedging requests to blob storage can help dramatically reduce tail latency. For S3, the paper suggests hedging if you haven't received the first byte within 200ms. Slightly more aggressive hedging may also be desirable, like hedging if you haven't completly downloaded the file within 600ms. Making this configurable and testing is important.
 
 [AnyBlob paper]: https://www.vldb.org/pvldb/vol16/p2769-durner.pdf
 

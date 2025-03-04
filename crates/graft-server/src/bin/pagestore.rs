@@ -13,7 +13,6 @@ use graft_server::{
     metrics::registry::Registry,
     object_store_util::ObjectStoreConfig,
     segment::{
-        bus::Bus,
         cache::disk::{DiskCache, DiskCacheConfig},
         loader::SegmentLoader,
         uploader::SegmentUploaderTask,
@@ -111,7 +110,6 @@ async fn main() {
 
     let (page_tx, page_rx) = mpsc::channel(128);
     let (store_tx, store_rx) = mpsc::channel(8);
-    let commit_bus = Bus::new(128);
 
     let client = NetClient::new();
     let metastore = MetastoreClient::new(config.metastore, client);
@@ -126,14 +124,12 @@ async fn main() {
     supervisor.spawn(SegmentUploaderTask::new(
         registry.segment_uploader(),
         store_rx,
-        commit_bus.clone(),
         store,
         cache,
     ));
 
     let state = Arc::new(PagestoreApiState::new(
         page_tx,
-        commit_bus,
         catalog,
         loader,
         metastore,
