@@ -60,7 +60,7 @@ impl Workload for SqliteSanity {
         expect_sometimes!(
             status != VolumeStatus::Ok,
             "volume is not ok when workload starts",
-            { "cid": env.cid, "vid": vid }
+            { "cid": env.cid, "vid": vid, "status": status }
         );
 
         // ensure the volume is recovered and synced with the server
@@ -115,23 +115,13 @@ impl Workload for SqliteSanity {
             let action = Actions::random(&mut env.rng);
 
             let span = tracing::info_span!("running action", ?vid, ?action, ?snapshot).entered();
-            if let Err(err) = action.run(&vid, env, &txn) {
-                if matches!(
-                    err.ctx().sqlite_error_code(),
-                    Some(rusqlite::ErrorCode::DatabaseBusy)
-                ) {
-                    precept::expect_reachable!(
-                        "database concurrently modified by sync",
-                        { "cid": env.cid, "vid": vid, "snapshot": snapshot }
-                    );
-                    tracing::info!("database concurrently modified by sync");
-                    txn.rollback()?;
-                    continue;
-                }
-                return Err(err
-                    .map_ctx(WorkloadErr::from)
-                    .with_note(format!("txn snapshot: {snapshot:?}")));
-            }
+            action
+                .run(&vid, env, &txn)
+                .or_into_culprit(format!("txn snapshot: {snapshot:?}"))?;
+
+            // run check balance after every action to help debug antithesis bug
+            Actions::CheckBalance.run(&vid, env, &txn).or_into_ctx()?;
+
             txn.commit()?;
             drop(span);
 

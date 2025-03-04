@@ -152,7 +152,7 @@ impl VfsFile for VolFile {
                         ));
                     } else {
                         // The snapshot has not changed
-                        reader.clone().upgrade()
+                        self.handle.writer_at(latest_snapshot)
                     };
 
                     self.state = VolFileState::Reserved { writer };
