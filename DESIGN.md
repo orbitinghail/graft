@@ -26,7 +26,7 @@ Transactional blob storage engine supporting lazy partial replication to the edg
   The number of logical pages in a Volume. This does not take into account sparseness. This means that if a page is written to PageIdx(1000) in an empty Volume, the Volume's size will immediately jump to 1000 pages.
 
 - **LSN** (Log Sequence Number)
-  A monotonically increasing number that tracks changes to a Volume. Each transaction results in a new LSN, which is greater than all previous LSNs for the Volume.
+  A sequentially increasing number that tracks changes to a Volume. Each transaction results in a new LSN, which is greater than all previous LSNs for the Volume. The commit process ensures that the sequence of LSNs never has gaps and is monotonic.
 
 - **Snapshot**
   A tuple (volume id, lsn, PageCount) that defines a fixed point in time for the state of a volume.
