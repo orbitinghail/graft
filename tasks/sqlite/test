@@ -48,7 +48,7 @@ for TEST in ${TESTS}; do
     EXPECTED="${TEST}.expected"
 
     export GRAFT_DIR="$(mktemp -d)"
-    export GRAFT_AUTOSYNC=0;
+    export GRAFT_AUTOSYNC=0
 
     # We add the exit code to the output since SQLite returns the number of
     # errors encountered while executing, and some of the tests want to trigger
