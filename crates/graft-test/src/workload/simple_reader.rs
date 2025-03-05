@@ -59,7 +59,7 @@ impl Workload for SimpleReader {
             .or_into_ctx()?;
 
         // ensure the volume is recovered and synced with the server
-        recover_and_sync_volume(&handle).or_into_ctx()?;
+        recover_and_sync_volume(&env.cid, &handle).or_into_ctx()?;
 
         let subscription = handle.subscribe_to_remote_changes();
 

@@ -64,7 +64,7 @@ impl Workload for SqliteSanity {
         );
 
         // ensure the volume is recovered and synced with the server
-        recover_and_sync_volume(&handle).or_into_ctx()?;
+        recover_and_sync_volume(&env.cid, &handle).or_into_ctx()?;
 
         // if the snapshot is empty attempt to initialize the schema and initial accounts
         let txn = sqlite.transaction()?;

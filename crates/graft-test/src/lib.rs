@@ -192,6 +192,10 @@ impl Ticker {
         self.remaining = self.remaining.saturating_sub(1);
         self.remaining != 0
     }
+
+    pub fn is_done(&self) -> bool {
+        self.remaining == 0
+    }
 }
 
 #[derive(Debug, Error)]

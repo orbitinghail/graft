@@ -63,7 +63,7 @@ impl Workload for SimpleWriter {
         );
 
         // ensure the volume is recovered and synced with the server
-        recover_and_sync_volume(&handle).or_into_ctx()?;
+        recover_and_sync_volume(&env.cid, &handle).or_into_ctx()?;
 
         while env.ticker.tick() {
             // check the volume status to see if we need to reset

@@ -188,35 +188,50 @@ impl WorkloadConfig {
     }
 }
 
-pub fn recover_and_sync_volume(handle: &VolumeHandle) -> Result<(), Culprit<WorkloadErr>> {
+pub fn recover_and_sync_volume(
+    cid: &ClientId,
+    handle: &VolumeHandle,
+) -> Result<(), Culprit<WorkloadErr>> {
     let vid = handle.vid();
     let status = handle.status().or_into_ctx()?;
     let span = tracing::info_span!(
         "recover_and_sync_volume",
         ?status,
         ?vid,
+        ?cid,
         result = field::Empty
     )
     .entered();
 
     match status {
-        VolumeStatus::Ok => {
-            // retrieve the latest remote snapshot
-            handle.sync_with_remote(SyncDirection::Pull).or_into_ctx()?;
+        VolumeStatus::Ok | VolumeStatus::InterruptedPush => {
+            precept::expect_sometimes!(
+                status == VolumeStatus::InterruptedPush,
+                "volume has an interrupted push",
+                { "vid": handle.vid(), "cid": cid, "status": status }
+            );
+
+            // attempt to sync with the remote, resetting the volume on conflict
+            if let Err(err) = handle.sync_with_remote(SyncDirection::Both) {
+                match err.ctx() {
+                    ClientErr::GraftErr(err) if err.code() == GraftErrCode::CommitRejected => {
+                        handle.reset_to_remote().or_into_ctx()?;
+                    }
+                    ClientErr::StorageErr(
+                        StorageErr::VolumeIsSyncing | StorageErr::RemoteConflict,
+                    ) => {
+                        handle.reset_to_remote().or_into_ctx()?;
+                    }
+                    _ => return Err(err.map_ctx(WorkloadErr::from)),
+                }
+            }
         }
         VolumeStatus::RejectedCommit | VolumeStatus::Conflict => {
             precept::expect_reachable!("volume needs reset", {
-                "vid": handle.vid(), "status": status
+                "vid": handle.vid(), "cid": cid, "status": status
             });
             // reset the volume to the latest remote snapshot
             handle.reset_to_remote().or_into_ctx()?;
-        }
-        VolumeStatus::InterruptedPush => {
-            precept::expect_reachable!("volume has an interrupted push", {
-                "vid": handle.vid(), "status": status
-            });
-            // finish the sync to the remote and then update
-            handle.sync_with_remote(SyncDirection::Both).or_into_ctx()?;
         }
     }
 
