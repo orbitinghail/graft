@@ -126,7 +126,7 @@ impl SegmentWriterTask {
 
         let mut pages = req.pages.into_iter();
         loop {
-            // flush current segment if needed
+            // flush current segment if full
             if !self.segment.has_space_for(&req.vid) {
                 self.handle_flush().await?
             }

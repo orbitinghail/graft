@@ -184,10 +184,7 @@ pub(crate) fn handle_panic(err: Box<dyn Any + Send + 'static>) -> Response {
         "Unknown panic occurred".to_string()
     };
 
-    let backtrace = std::backtrace::Backtrace::capture();
-    tracing::error!(
-        "panic occurred while handling api request: {details}\n\nbacktrace:\n{backtrace}"
-    );
+    tracing::error!("panic occurred while handling api request: {details}");
 
     precept::expect_unreachable!(
         "panic occurred while handling api request",

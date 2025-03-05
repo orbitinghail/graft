@@ -136,6 +136,12 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
 
     #[tracing::instrument(name = "upload segment", skip(self), fields(sid))]
     async fn handle_store_request(&mut self, req: StoreSegmentMsg) {
+        // skip uploading segment if all writers are closed
+        if req.writers.iter().all(|w| w.is_closed()) {
+            tracing::trace!("skipping segment upload, all writers are closed");
+            return;
+        }
+
         let segment = req.segment;
         let sid = SegmentId::random();
         let path = Path::from(sid.pretty());

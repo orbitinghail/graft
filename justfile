@@ -1,6 +1,7 @@
 set unstable
 
 GIT_SHA := `git describe --abbrev=40 --always --dirty --match=nevermatch`
+GIT_SUMMARY := `git show -s`
 
 # set this argument via: just instrumented=1 ...
 instrumented := ""
@@ -110,7 +111,7 @@ antithesis-prep: antithesis-config-image
 antithesis-run duration='120': antithesis-prep
     antithesis-cli run \
         --name='graft test workload' \
-        --description='git sha: {{GIT_SHA}}' \
+        --description='{{GIT_SUMMARY}}' \
         --tenant="${ANTITHESIS_TENANT}" \
         --username="${ANTITHESIS_USERNAME}" \
         --password="${ANTITHESIS_PASSWORD}" \
