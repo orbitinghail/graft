@@ -28,6 +28,7 @@ path = "/health"
 [env]
 RUST_LOG = "debug"
 RUST_BACKTRACE = "1"
+GRAFT_PRODUCTION = "1"
 
 [metrics]
 port = 3000

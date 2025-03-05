@@ -74,6 +74,13 @@ async fn main() {
         AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
     precept::init_boxed(dispatcher).expect("failed to setup precept");
 
+    // sanity check that we don't enable precept in production
+    let is_production = std::env::var("GRAFT_PRODUCTION").is_ok();
+    assert!(
+        !(is_production && precept::ENABLED),
+        "precept is enabled in production"
+    );
+
     init_tracing(TracingConsumer::Server, None);
     tracing::info!("starting Graft pagestore");
 

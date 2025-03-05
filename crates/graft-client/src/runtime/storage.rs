@@ -826,9 +826,30 @@ impl Storage {
         // commit the changes
         batch.commit()?;
 
-        // TODO: perform sanity checks (under a precept enabled macro)
-        // 1. all pages at commit_lsn must be pending
-        // 2. no pages exist at a later lsn than commit_lsn
+        // post reset invariants
+        // these are expensive so we only run them when precept is enabled
+        if precept::ENABLED {
+            // scan all of the pages in the volume to verify two invariants:
+            // 1. all pages at commit_lsn must be pending
+            // 2. no pages exist at an lsn > commit_lsn
+            let mut iter = self.pages.snapshot().prefix(vid);
+            while let Some((key, val)) = iter.try_next().or_into_ctx()? {
+                let key = PageKey::try_ref_from_bytes(&key)?;
+                if key.lsn() == commit_lsn {
+                    // invariant 1: all pages at commit_lsn must be pending
+                    assert!(
+                        PageValue::is_pending(&val),
+                        "all pages at commit_lsn must be pending after reset"
+                    );
+                } else {
+                    // invariant 2: no pages exist at an lsn > commit_lsn
+                    assert!(
+                        key.lsn() < commit_lsn,
+                        "no pages should exist at a lsn > commit_lsn after reset"
+                    );
+                }
+            }
+        }
 
         // notify listeners of the new remote commit
         self.remote_changeset.mark_changed(vid);

@@ -55,6 +55,10 @@ run *args:
     # Execute the found file with any remaining arguments.
     exec "$found" "${args[@]:$found_index}"
 
+test:
+    cargo nextest run
+    just run sqlite test
+
 metastore-image:
     docker build \
         --platform {{DOCKER_PLATFORM}} \

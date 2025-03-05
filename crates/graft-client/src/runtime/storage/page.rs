@@ -109,6 +109,10 @@ impl PageValue {
             PageValue::Available(page) => page,
         }
     }
+
+    pub fn is_pending(value: &[u8]) -> bool {
+        value.len() == PAGE_VALUE_MARK_LEN && value == PAGE_VALUE_PENDING
+    }
 }
 
 impl TryFrom<Slice> for PageValue {

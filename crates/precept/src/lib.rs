@@ -22,6 +22,9 @@ pub mod macros;
 #[cfg(feature = "disabled")]
 pub mod macros_stubs;
 
+/// If ENABLED is false, all precept macros and faults are disabled
+pub const ENABLED: bool = cfg!(not(feature = "disabled"));
+
 pub fn init(dispatcher: &'static dyn Dispatch) -> Result<(), SetDispatchError> {
     if cfg!(not(feature = "disabled")) {
         dispatch::set_dispatcher(dispatcher)?;
@@ -38,8 +41,8 @@ pub fn init_boxed(dispatcher: Box<dyn Dispatch>) -> Result<(), SetDispatchError>
     }
 }
 
-// Precept Faults are enabled by default
-static FAULTS_ENABLED: AtomicBool = AtomicBool::new(true);
+// Precept Faults are enabled by default when precept is enabled
+static FAULTS_ENABLED: AtomicBool = AtomicBool::new(ENABLED);
 
 #[inline]
 pub fn faults_enabled() -> bool {
@@ -54,5 +57,6 @@ pub fn disable_faults() {
 
 #[inline]
 pub fn enable_faults() {
+    assert!(ENABLED, "Precept is disabled");
     FAULTS_ENABLED.store(true, Ordering::Release);
 }
