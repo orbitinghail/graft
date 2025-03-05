@@ -115,11 +115,15 @@ impl Workload for SqliteSanity {
             let action = Actions::random(&mut env.rng);
 
             let span = tracing::info_span!("running action", ?vid, ?action, ?snapshot).entered();
+
+            // run check balance before each action to help debug antithesis bug
+            Actions::CheckBalance.run(&vid, env, &txn).or_into_ctx()?;
+
             action
                 .run(&vid, env, &txn)
                 .or_into_culprit(format!("txn snapshot: {snapshot:?}"))?;
 
-            // run check balance after every action to help debug antithesis bug
+            // run check balance after each action to help debug antithesis bug
             Actions::CheckBalance.run(&vid, env, &txn).or_into_ctx()?;
 
             txn.commit()?;

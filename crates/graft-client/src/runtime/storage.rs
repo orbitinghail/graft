@@ -820,11 +820,15 @@ impl Storage {
         let pending = Bytes::from(PageValue::Pending);
         for pageidx in remote_graft.iter() {
             key = key.with_index(pageidx.try_into()?);
-            batch.insert(&self.pages, key.as_ref(), pending.as_ref());
+            batch.insert(&self.pages, key.as_ref(), pending.clone());
         }
 
         // commit the changes
         batch.commit()?;
+
+        // TODO: perform sanity checks (under a precept enabled macro)
+        // 1. all pages at commit_lsn must be pending
+        // 2. no pages exist at a later lsn than commit_lsn
 
         // notify listeners of the new remote commit
         self.remote_changeset.mark_changed(vid);
