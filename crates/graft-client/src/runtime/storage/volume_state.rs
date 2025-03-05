@@ -388,6 +388,11 @@ where
                 .get_or_insert_with(|| VolumeState::new(key.vid.clone()));
 
             if current.vid != key.vid {
+                assert!(
+                    key.vid > current.vid,
+                    "iterator must return volume ids in ascending order"
+                );
+
                 // this key corresponds to the next volume, so let's initialize
                 // a new volume state and return the current state
                 let mut next_state = VolumeState::new(key.vid.clone());
