@@ -55,7 +55,8 @@ impl PullJob {
             .map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
         let lsns = start_lsn..;
 
-        let _span = tracing::debug_span!("PullJob", vid = ?self.vid, ?lsns).entered();
+        let _span =
+            tracing::debug_span!("PullJob", vid = ?self.vid, ?lsns, reset=self.reset).entered();
 
         if let Some((snapshot, _, changed)) = clients
             .metastore()

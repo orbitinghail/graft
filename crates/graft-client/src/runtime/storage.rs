@@ -493,7 +493,7 @@ impl Storage {
         let pending = Bytes::from(PageValue::Pending);
         for pageidx in graft.iter() {
             key = key.with_index(pageidx.try_into()?);
-            batch.insert(&self.pages, key.as_ref(), pending.as_ref());
+            batch.insert(&self.pages, key.as_ref(), pending.clone());
         }
 
         batch.commit()?;

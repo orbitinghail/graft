@@ -3,15 +3,23 @@ use std::path::PathBuf;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{Ident, ItemFn, LitStr, Token, parse::Parse, parse_macro_input};
+use syn::{Ident, ItemFn, LitStr, Path, Token, parse::Parse, parse_macro_input};
 
 #[proc_macro_attribute]
 pub fn test(_args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ItemFn);
     let ItemFn { attrs, vis, sig, block } = input;
 
+    let tokio_test_attr = syn::parse_str::<Path>("tokio::test").unwrap();
+    // detect existing test attributes
+    let has_test_attr = attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("test") || attr.path() == &tokio_test_attr);
+
     // automatic async detection!
-    let test_attr = if sig.asyncness.is_some() {
+    let test_attr = if has_test_attr {
+        quote!()
+    } else if sig.asyncness.is_some() {
         quote!(#[tokio::test(start_paused = true)])
     } else {
         quote!(#[test])
