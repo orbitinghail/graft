@@ -4,6 +4,7 @@ use axum::extract::State;
 use culprit::{Culprit, ResultExt};
 use graft_core::{VolumeId, gid::ClientId, lsn::LSN, page_count::PageCount};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
+use tryiter::TryIteratorExt;
 
 use crate::{
     api::{
@@ -66,19 +67,63 @@ pub async fn handler(
                     .await
                     .or_into_ctx()?
             };
-            // if the commit snapshot's cid matches the cid, return a successful response
-            if commit_snapshot.as_ref().map(|s| s.cid()) == Some(&cid) {
-                precept::expect_reachable!(
-                    "detected idempotent commit request and reused previous response",
-                    {
-                        "vid": vid,
-                        "cid": cid,
-                        "commit_lsn": commit_lsn,
+
+            // if we have a commit snapshot and the cid matches, return a successful response
+            if let Some(commit_snapshot) = commit_snapshot {
+                if commit_snapshot.cid() == &cid {
+                    tracing::info!(
+                        "received segments: {:?}",
+                        req.segments
+                            .iter()
+                            .map(|s| s.sid().unwrap())
+                            .collect::<Vec<_>>()
+                    );
+
+                    if commit_snapshot.page_count() != page_count {
+                        return Err(ApiErrCtx::InvalidIdempotentCommit.into());
                     }
-                );
-                return Ok(ProtoResponse::new(CommitResponse {
-                    snapshot: commit_snapshot.map(|s| s.into_snapshot()),
-                }));
+
+                    // verify that the segments being committed matches the
+                    // segments which were committed last time
+                    let mut commit_segments = state
+                        .catalog()
+                        .scan_segments(&vid, &(commit_lsn..=commit_lsn));
+                    while let Some((key, graft)) = commit_segments.try_next().or_into_ctx()? {
+                        tracing::info!("searching for segment {}", key.sid());
+                        if let Some(segment) = req
+                            .segments
+                            .iter()
+                            .find(|s| s.sid.as_ref() == key.sid().as_ref())
+                        {
+                            if segment.graft.as_ref() != graft.inner().as_ref() {
+                                return Err(Culprit::new_with_note(
+                                    ApiErrCtx::InvalidIdempotentCommit,
+                                    "graft changed for segment",
+                                )
+                                .into());
+                            }
+                        } else {
+                            return Err(Culprit::new_with_note(
+                                ApiErrCtx::InvalidIdempotentCommit,
+                                "missing segment",
+                            )
+                            .into());
+                        }
+                    }
+
+                    precept::expect_reachable!(
+                        "detected idempotent commit request and reused previous response",
+                        {
+                            "vid": vid,
+                            "cid": cid,
+                            "commit_lsn": commit_lsn,
+                        }
+                    );
+
+                    return Ok(ProtoResponse::new(CommitResponse {
+                        snapshot: Some(commit_snapshot.into_snapshot()),
+                    }));
+                }
             }
         }
         // otherwise reject this commit
@@ -106,6 +151,9 @@ pub async fn handler(
     for segment in req.segments {
         let sid = segment.sid().or_into_ctx()?;
         let graft = segment.graft().or_into_ctx()?;
+        if graft.contains(0) {
+            return Err(ApiErrCtx::ZeroPageIdx.into());
+        }
         commit.write_graft(sid.clone(), graft.into_inner());
     }
 
@@ -167,7 +215,10 @@ mod tests {
 
         let vid = VolumeId::random();
         let cid = ClientId::random();
-        let graft = Splinter::from_iter([0u32]).serialize_to_bytes();
+        let graft = Splinter::from_iter([1u32]).serialize_to_bytes();
+
+        // store commit requests to test idempotency later
+        let mut commits = vec![];
 
         // let's commit and validate the store 10 times
         for i in 1..10 {
@@ -183,6 +234,7 @@ mod tests {
                 page_count: 1,
                 segments: vec![SegmentInfo::new(&SegmentId::random(), graft.clone())],
             };
+            commits.push(commit.clone());
 
             // commit
             let resp = server.post("/").bytes(commit.encode_to_vec().into()).await;
@@ -209,18 +261,38 @@ mod tests {
         }
 
         // ensure that an older commit is still idempotent
-        let commit = CommitRequest {
-            vid: vid.copy_to_bytes(),
-            cid: cid.copy_to_bytes(),
-            snapshot_lsn: Some(5),
-            // Currently idempotency does not care about segments or pages
-            page_count: 1,
-            segments: vec![],
-        };
+        let commit = commits[5].clone();
         let resp = server.post("/").bytes(commit.encode_to_vec().into()).await;
         let resp = CommitResponse::decode(resp.into_bytes()).unwrap();
         let snapshot = resp.snapshot.unwrap();
-        assert_eq!(snapshot.lsn().expect("invalid LSN"), 6);
+        assert_eq!(snapshot.lsn().unwrap(), 6);
+
+        // ensure that commit can detect an invalid page count during an idempotent commit
+        let mut commit = commits[5].clone();
+        commit.page_count = 2;
+        server
+            .post("/")
+            .expect_failure()
+            .bytes(commit.encode_to_vec().into())
+            .await;
+
+        // ensure that commit can detect a missing segment during an idempotent commit
+        let mut commit = commits[5].clone();
+        commit.segments.clear();
+        server
+            .post("/")
+            .expect_failure()
+            .bytes(commit.encode_to_vec().into())
+            .await;
+
+        // ensure that commit can detect an invalid segment graft during an idempotent commit
+        let mut commit = commits[5].clone();
+        commit.segments[0].graft = Splinter::from_iter([2u32]).serialize_to_bytes();
+        server
+            .post("/")
+            .expect_failure()
+            .bytes(commit.encode_to_vec().into())
+            .await;
 
         // ensure that an out of sync client is rejected
         let commit = CommitRequest {

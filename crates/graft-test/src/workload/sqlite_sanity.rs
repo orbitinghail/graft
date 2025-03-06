@@ -95,6 +95,11 @@ impl Workload for SqliteSanity {
             txn.rollback()?;
         }
 
+        // perform a balance and corruption check before starting the workload
+        let txn = sqlite.transaction()?;
+        check_db(env, vid, &txn)?;
+        txn.commit()?;
+
         while env.ticker.tick() {
             // check the volume status to see if we need to reset
             let status = handle.status().or_into_ctx()?;
@@ -108,18 +113,21 @@ impl Workload for SqliteSanity {
                 // reset the volume to the latest remote snapshot
                 handle.reset_to_remote().or_into_ctx()?;
                 span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
+                drop(span);
+
+                // perform a balance and corruption check after resetting the volume
+                let txn = sqlite.transaction()?;
+                check_db(env, vid, &txn)?;
+                txn.commit()?;
             }
 
             let txn = sqlite.transaction()?;
             let snapshot = get_snapshot(&txn)?;
             let action = Actions::random(&mut env.rng);
-
             let span = tracing::info_span!("running action", ?vid, ?action, ?snapshot).entered();
-
             action
                 .run(&vid, env, &txn)
                 .or_into_culprit(format!("txn snapshot: {snapshot:?}"))?;
-
             txn.commit()?;
             drop(span);
 
@@ -128,17 +136,7 @@ impl Workload for SqliteSanity {
 
         // run a final set of checks
         let txn = sqlite.transaction()?;
-        let snapshot = get_snapshot(&txn)?;
-        let _span = tracing::info_span!("performing final checks", ?vid, ?snapshot).entered();
-        let final_actions = [
-            Actions::CheckBalance,
-            Actions::IntegrityCheck,
-            Actions::CountAccounts,
-        ];
-        for action in &final_actions {
-            let _span = tracing::info_span!("running action", ?action).entered();
-            action.run(&vid, env, &txn).or_into_ctx()?;
-        }
+        check_db(env, vid, &txn)?;
         txn.commit()?;
 
         Ok(())
@@ -266,10 +264,31 @@ impl Actions {
     }
 }
 
+fn check_db<R: rand::Rng>(
+    env: &mut WorkloadEnv<R>,
+    vid: &VolumeId,
+    txn: &Transaction<'_>,
+) -> Result<(), WorkloadErr> {
+    let snapshot = get_snapshot(&txn)?;
+    let _span = tracing::info_span!("performing initial checks", ?vid, ?snapshot).entered();
+    let checks = [
+        Actions::CheckBalance,
+        Actions::IntegrityCheck,
+        Actions::CountAccounts,
+    ];
+    for action in &checks {
+        let _span = tracing::info_span!("running action", ?action).entered();
+        action.run(&vid, env, &txn).or_into_ctx()?;
+    }
+    Ok(())
+}
+
 fn account_exists(txn: &Transaction<'_>, id: u64) -> rusqlite::Result<bool> {
-    txn.query_row("SELECT 1 FROM accounts WHERE id = ?", [id], |_| Ok(()))
-        .optional()
-        .map(|r| r.is_some())
+    txn.query_row(
+        "select exists(select * from accounts where id = ?)",
+        [id],
+        |row| row.get(0),
+    )
 }
 
 fn find_nonzero_account<R: Rng>(

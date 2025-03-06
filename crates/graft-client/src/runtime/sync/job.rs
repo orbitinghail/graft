@@ -132,7 +132,7 @@ impl PushJob {
             while let Some((pageidx, page)) = commit_pages.try_next().or_into_ctx()? {
                 // it's a fatal error if the page is None or Pending
                 let page = page
-                    .expect("page missing from storage")
+                    .and_then(|p| p.try_into_page())
                     .expect("page missing from storage");
 
                 // if the page is still contained within the page_count, include it

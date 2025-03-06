@@ -101,12 +101,12 @@ pub enum PageValue {
 }
 
 impl PageValue {
-    /// resolves the `PageValue` to a Page, panicing if the page is Pending
-    pub fn expect(self, msg: &str) -> Page {
+    /// resolves the `PageValue` to a Page if it's not pending
+    pub fn try_into_page(self) -> Option<Page> {
         match self {
-            PageValue::Pending => panic!("{}", msg),
-            PageValue::Empty => EMPTY_PAGE,
-            PageValue::Available(page) => page,
+            PageValue::Pending => None,
+            PageValue::Empty => Some(EMPTY_PAGE),
+            PageValue::Available(page) => Some(page),
         }
     }
 

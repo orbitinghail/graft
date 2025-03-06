@@ -141,6 +141,16 @@ fn fetch_page<O: Oracle>(
     for page in response {
         if let Some(entry) = pages.get_mut(&page.pageidx().or_into_ctx()?) {
             entry.1 = page.page().or_into_ctx()?.into();
+        } else {
+            tracing::warn!(?vid, %remote_lsn, pageidx=page.pageidx, "unexpected page");
+            precept::expect_unreachable!(
+                "received unexpected page from pagestore",
+                {
+                    "vid": vid,
+                    "remote_lsn": remote_lsn,
+                    "pageidx": page.pageidx,
+                }
+            )
         }
     }
 
@@ -150,5 +160,6 @@ fn fetch_page<O: Oracle>(
     // return the requested page
     Ok(pages
         .remove(&pageidx)
-        .map_or(EMPTY_PAGE, |(_, p)| p.expect("bug: page not in update set")))
+        .and_then(|(_, p)| p.try_into_page())
+        .expect("requested page not found"))
 }

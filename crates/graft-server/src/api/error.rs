@@ -74,6 +74,9 @@ pub enum ApiErrCtx {
     #[error("volume commit rejected")]
     RejectedCommit,
 
+    #[error("idempotent commit does not match previous request")]
+    InvalidIdempotentCommit,
+
     #[error("graft client request failed")]
     ClientErr(#[from] graft_client::ClientErr),
 
@@ -132,6 +135,7 @@ impl IntoResponse for ApiErr {
         use ApiErrCtx::*;
 
         let (status, code) = match self.0.ctx() {
+            InvalidIdempotentCommit => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             InvalidRequestBody => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             GidParseErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
             PageSizeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),

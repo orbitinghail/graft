@@ -10,11 +10,12 @@ workspace = true
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 rand = { workspace = true }
+rand_core = { workspace = true }
 linkme = { workspace = true }
 serde_json = { workspace = true }
 rustc_version_runtime = { workspace = true }
 
-libloading = { workspace = true, optional = true}
+libloading = { workspace = true, optional = true }
 
 [features]
 # disable all runtime overhead of this crate
