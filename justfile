@@ -109,7 +109,7 @@ antithesis-prep: antithesis-config-image
     docker push {{MINIO_ANTITHESIS_TAG}}
 
 antithesis-run duration='120': antithesis-prep
-    antithesis-cli run \
+    antithesis run \
         --name='graft test workload' \
         --description='{{GIT_SHA}}: {{GIT_SUMMARY}}' \
         --tenant="${ANTITHESIS_TENANT}" \
