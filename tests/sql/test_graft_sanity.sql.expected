@@ -49,13 +49,13 @@ SELECT * FROM t1;
 COMMIT;
 
 pragma graft_status;
-+-----------------------------------+
-|           Graft Status            |
-+-----------------------------------+
-| Graft Status                      |
-| Current snapshot: Snapshot[4/_;2] |
-| Autosync: false                   |
-+-----------------------------------+
++---------------------------------+
+|          Graft Status           |
++---------------------------------+
+| Graft Status                    |
+| Current snapshot: Snapshot[4;2] |
+| Autosync: false                 |
++---------------------------------+
 
 vacuum;
 drop table t1;
