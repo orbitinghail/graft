@@ -126,11 +126,11 @@ fn fetch_page<O: Oracle>(
     // have already fetched while building our update hashmap.
     let mut graft = Splinter::default();
     let mut pages = HashMap::new();
-    for pageidx in once(pageidx).chain(oracle.predict_next(pageidx)) {
-        let (lsn, page) = storage.read(vid, local_lsn, pageidx).or_into_ctx()?;
+    for idx in once(pageidx).chain(oracle.predict_next(pageidx)) {
+        let (lsn, page) = storage.read(vid, local_lsn, idx).or_into_ctx()?;
         if matches!(page, PageValue::Pending) {
-            graft.insert(pageidx.to_u32());
-            pages.insert(pageidx, (lsn, PageValue::Empty));
+            graft.insert(idx.to_u32());
+            pages.insert(idx, (lsn, PageValue::Empty));
         }
     }
 
@@ -154,12 +154,15 @@ fn fetch_page<O: Oracle>(
         }
     }
 
+    let requested_page = pages
+        .get(&pageidx)
+        .cloned()
+        .and_then(|(_, p)| p.try_into_page())
+        .expect("requested page not found");
+
     // update local storage with fetched pages
-    storage.receive_pages(vid, &pages).or_into_ctx()?;
+    storage.receive_pages(vid, pages).or_into_ctx()?;
 
     // return the requested page
-    Ok(pages
-        .remove(&pageidx)
-        .and_then(|(_, p)| p.try_into_page())
-        .expect("requested page not found"))
+    Ok(requested_page)
 }

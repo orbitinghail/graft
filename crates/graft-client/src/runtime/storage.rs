@@ -177,6 +177,7 @@ impl Storage {
     fn check_for_interrupted_push(&self) -> Result<()> {
         let _permit = self.commit_lock.lock();
         let mut batch = self.keyspace.batch();
+        batch = batch.durability(Some(fjall::PersistMode::SyncAll));
 
         let iter = self.volumes.snapshot().iter().err_into();
         let mut iter = VolumeQueryIter::new(iter);
@@ -336,6 +337,8 @@ impl Storage {
         .entered();
 
         let mut batch = self.keyspace.batch();
+        batch = batch.durability(Some(fjall::PersistMode::SyncAll));
+
         let read_lsn = snapshot.as_ref().map(|s| s.local());
         let commit_lsn = read_lsn.map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
 
@@ -438,6 +441,7 @@ impl Storage {
         .entered();
 
         let mut batch = self.keyspace.batch();
+        batch = batch.durability(Some(fjall::PersistMode::SyncAll));
 
         // retrieve the current volume state
         let state = self.volume_state(vid)?;
@@ -511,13 +515,15 @@ impl Storage {
     pub fn receive_pages(
         &self,
         vid: &VolumeId,
-        pages: &HashMap<PageIdx, (LSN, PageValue)>,
+        pages: HashMap<PageIdx, (LSN, PageValue)>,
     ) -> Result<()> {
         let mut batch = self.keyspace.batch();
-        for (&pageidx, (lsn, pagevalue)) in pages {
-            let key = PageKey::new(vid.clone(), pageidx, *lsn);
-            batch.insert(&self.pages, key.as_ref(), pagevalue.clone());
+        batch = batch.durability(Some(fjall::PersistMode::SyncAll));
+
+        for (pageidx, (lsn, pagevalue)) in pages {
             tracing::trace!("caching page {pageidx} into lsn {lsn} with value {pagevalue:?}");
+            let key = PageKey::new(vid.clone(), pageidx, lsn);
+            batch.insert(&self.pages, key.as_ref(), pagevalue);
         }
         Ok(batch.commit()?)
     }
@@ -616,6 +622,7 @@ impl Storage {
         // acquire the commit lock
         let _permit = self.commit_lock.lock();
         let mut batch = self.keyspace.batch();
+        batch = batch.durability(Some(fjall::PersistMode::SyncAll));
 
         // clear the pending sync watermark
         let watermarks_key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks);
@@ -645,6 +652,7 @@ impl Storage {
         // acquire the commit lock and start a new batch
         let _permit = self.commit_lock.lock();
         let mut batch = self.keyspace.batch();
+        batch = batch.durability(Some(fjall::PersistMode::SyncAll));
 
         let state = self.volume_state(vid)?;
 
@@ -774,6 +782,7 @@ impl Storage {
         );
 
         let mut batch = self.keyspace.batch();
+        batch = batch.durability(Some(fjall::PersistMode::SyncAll));
 
         // persist the new volume snapshot
         let remote_mapping = RemoteMapping::new(remote_lsn, commit_lsn);

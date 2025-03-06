@@ -56,10 +56,10 @@ where
 
         if antithesis || testing {
             filter = filter
-                .add_directive("graft_client=debug".parse().unwrap())
-                .add_directive("graft_core=debug".parse().unwrap())
-                .add_directive("graft_server=debug".parse().unwrap())
-                .add_directive("graft_test=debug".parse().unwrap())
+                .add_directive("graft_client=trace".parse().unwrap())
+                .add_directive("graft_core=trace".parse().unwrap())
+                .add_directive("graft_server=trace".parse().unwrap())
+                .add_directive("graft_test=trace".parse().unwrap())
                 .add_directive("graft_sqlite=debug".parse().unwrap())
         }
 
