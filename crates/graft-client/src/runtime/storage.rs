@@ -30,7 +30,7 @@ use tracing::field;
 use tryiter::{TryIterator, TryIteratorExt};
 use volume_state::{
     SyncDirection, VolumeConfig, VolumeQueryIter, VolumeState, VolumeStateKey, VolumeStateTag,
-    VolumeStatus,
+    VolumeStatus, Watermark, Watermarks,
 };
 use zerocopy::IntoBytes;
 
@@ -483,7 +483,9 @@ impl Storage {
         batch.insert(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
-            watermarks.clone().with_pending_sync(Some(commit_lsn)),
+            watermarks
+                .clone()
+                .with_pending_sync(Watermark::new(commit_lsn, remote_pages)),
         );
 
         // mark changed pages
@@ -522,7 +524,8 @@ impl Storage {
 
     /// Prepare to sync a volume to the remote.
     /// Returns:
-    /// - the volume snapshot
+    /// - the last known remote LSN
+    /// - the local page count we are syncing
     /// - the range of LSNs to sync
     /// - an iterator of commits to sync
     #[allow(clippy::type_complexity)]
@@ -530,7 +533,8 @@ impl Storage {
         &self,
         vid: &VolumeId,
     ) -> Result<(
-        Snapshot,
+        Option<LSN>,
+        PageCount,
         RangeInclusive<LSN>,
         impl TryIterator<Ok = (LSN, SplinterRef<Slice>), Err = Culprit<StorageErr>>,
     )> {
@@ -553,21 +557,18 @@ impl Storage {
         let local_lsn = snapshot.local();
 
         // calculate the end of the sync range
-        let end_lsn = if state.is_syncing() {
+        let (end_lsn, page_count) = if state.is_syncing() {
             // if we are resuming a previously interrupted sync, use the
-            // pending_sync watermark
-            let pending_sync = state
-                .watermarks()
-                .pending_sync()
-                .expect("pending_sync must be set when volume is syncing");
+            // existing pending_sync watermark
+            let pending_sync = state.watermarks().pending_sync();
             tracing::debug!(
                 ?vid,
-                %pending_sync,
+                ?pending_sync,
                 %snapshot,
                 "resuming previously interrupted sync"
             );
             precept::expect_reachable!("resuming previously interrupted sync", state);
-            pending_sync
+            pending_sync.splat().expect("pending sync must be mapped")
         } else {
             // update pending_sync to the local LSN
             self.volumes.insert(
@@ -575,9 +576,9 @@ impl Storage {
                 state
                     .watermarks()
                     .clone()
-                    .with_pending_sync(Some(local_lsn)),
+                    .with_pending_sync(Watermark::new(local_lsn, snapshot.pages())),
             )?;
-            local_lsn
+            (local_lsn, snapshot.pages())
         };
 
         // calculate the LSN range of commits to sync
@@ -607,7 +608,7 @@ impl Storage {
                 Ok((lsn, splinter))
             });
 
-        Ok((snapshot, lsns, commits))
+        Ok((snapshot.remote(), page_count, lsns, commits))
     }
 
     /// Update storage after a rejected sync
@@ -616,15 +617,16 @@ impl Storage {
         let _permit = self.commit_lock.lock();
         let mut batch = self.keyspace.batch();
 
-        // rollback the pending_sync watermark to the last synced local LSN
-        let state = self.volume_state(vid)?;
-        let last_sync = state.snapshot().and_then(|s| s.remote_local());
-        let watermarks = state.watermarks().clone().with_pending_sync(last_sync);
-        batch.insert(
-            &self.volumes,
-            VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
-            watermarks,
-        );
+        // clear the pending sync watermark
+        let watermarks_key = VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks);
+        let watermarks = self
+            .volumes
+            .get(&watermarks_key)?
+            .map(|w| Watermarks::from_bytes(&w))
+            .transpose()?
+            .unwrap_or_default()
+            .with_pending_sync(Watermark::default());
+        batch.insert(&self.volumes, watermarks_key, watermarks);
 
         // update the volume status
         self.set_volume_status(&mut batch, vid, VolumeStatus::RejectedCommit);
@@ -661,7 +663,7 @@ impl Storage {
             "remote LSN should be monotonically increasing"
         );
         assert_eq!(
-            state.watermarks().pending_sync(),
+            state.watermarks().pending_sync().lsn(),
             Some(remote_local_lsn),
             "the pending_sync watermark doesn't match the synced LSN range"
         );
@@ -673,6 +675,16 @@ impl Storage {
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Snapshot),
             new_snapshot.as_bytes(),
+        );
+
+        // clear the pending_sync watermark
+        batch.insert(
+            &self.volumes,
+            VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
+            state
+                .watermarks()
+                .clone()
+                .with_pending_sync(Watermark::default()),
         );
 
         // if the status is interrupted push, clear the status
@@ -778,15 +790,14 @@ impl Storage {
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Status),
         );
 
-        // update the pending_sync watermark to ensure we don't round trip the
-        // new commit back to the server
+        // clear the pending_sync watermark
         batch.insert(
             &self.volumes,
             VolumeStateKey::new(vid.clone(), VolumeStateTag::Watermarks),
             state
                 .watermarks()
                 .clone()
-                .with_pending_sync(Some(commit_lsn)),
+                .with_pending_sync(Watermark::default()),
         );
 
         // remove all pending commits

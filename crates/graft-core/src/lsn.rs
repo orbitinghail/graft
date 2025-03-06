@@ -6,9 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use zerocopy::{
-    ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError,
-};
+use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
 
 #[derive(Debug, Error)]
 #[error("LSN must be non-zero")]
@@ -255,64 +253,6 @@ impl Iterator for LSNRangeIter {
             // increasing
             unsafe { LSN::new_unchecked(n) }
         })
-    }
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-    FromBytes,
-    KnownLayout,
-    IntoBytes,
-    Immutable,
-    Default,
-)]
-#[repr(transparent)]
-/// A `MaybeLSN` behaves identically to an Option<LSN> and exists for interop with
-/// the zerocopy crate.
-pub struct MaybeLSN(Option<NonZero<u64>>);
-
-impl MaybeLSN {
-    pub const EMPTY: Self = Self(None);
-
-    #[inline]
-    pub const fn some(lsn: LSN) -> Self {
-        Self(Some(lsn.0))
-    }
-
-    #[inline]
-    pub const fn none() -> Self {
-        Self(None)
-    }
-}
-
-impl From<MaybeLSN> for Option<LSN> {
-    #[inline]
-    fn from(value: MaybeLSN) -> Self {
-        value.0.map(LSN)
-    }
-}
-
-impl From<Option<LSN>> for MaybeLSN {
-    #[inline]
-    fn from(value: Option<LSN>) -> Self {
-        Self(value.map(|lsn| lsn.0))
-    }
-}
-
-impl Display for MaybeLSN {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            Some(lsn) => write!(f, "{lsn}"),
-            None => write!(f, "_"),
-        }
     }
 }
 

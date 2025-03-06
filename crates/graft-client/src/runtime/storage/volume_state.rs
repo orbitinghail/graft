@@ -1,10 +1,11 @@
+// seems like rust analyzer has a bug that causes this warning to spuriously
+// fire on camel case types that also use underscores which is what zerocopy
+// generates for enum struct variants
+#![allow(non_camel_case_types)]
+
 use culprit::{Culprit, ResultExt};
 use fjall::{KvPair, Slice};
-use graft_core::{
-    VolumeId,
-    lsn::{LSN, MaybeLSN},
-    zerocopy_ext::TryFromBytesExt,
-};
+use graft_core::{PageCount, VolumeId, lsn::LSN, zerocopy_ext::TryFromBytesExt};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Debug, Display},
@@ -207,6 +208,79 @@ impl Display for VolumeStatus {
 }
 
 #[derive(
+    KnownLayout,
+    Immutable,
+    TryFromBytes,
+    IntoBytes,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+)]
+#[repr(u8)]
+pub enum Watermark {
+    Unmapped {
+        _padding: [u8; 15],
+    },
+    Mapped {
+        _padding: [u8; 3],
+        pages: PageCount,
+        lsn: LSN,
+    },
+}
+
+impl Watermark {
+    const UNMAPPED: Watermark = Watermark::Unmapped { _padding: [0; 15] };
+
+    pub fn new(lsn: LSN, pages: PageCount) -> Self {
+        Watermark::Mapped { _padding: [0; 3], pages, lsn }
+    }
+
+    #[inline]
+    pub fn pages(&self) -> Option<PageCount> {
+        match self {
+            Watermark::Mapped { pages, .. } => Some(*pages),
+            Watermark::Unmapped { .. } => None,
+        }
+    }
+
+    #[inline]
+    pub fn lsn(&self) -> Option<LSN> {
+        match self {
+            Watermark::Mapped { lsn, .. } => Some(*lsn),
+            Watermark::Unmapped { .. } => None,
+        }
+    }
+
+    #[inline]
+    pub fn splat(&self) -> Option<(LSN, PageCount)> {
+        match self {
+            Watermark::Mapped { lsn, pages, .. } => Some((*lsn, *pages)),
+            Watermark::Unmapped { .. } => None,
+        }
+    }
+}
+
+impl Debug for Watermark {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Watermark::Unmapped { .. } => write!(f, "Watermark::Unmapped"),
+            Watermark::Mapped { pages, lsn, .. } => {
+                write!(f, "Watermark::Mapped(lsn: {lsn}, pages: {pages})")
+            }
+        }
+    }
+}
+
+impl Default for Watermark {
+    fn default() -> Self {
+        Self::UNMAPPED
+    }
+}
+
+#[derive(
     Debug,
     KnownLayout,
     Immutable,
@@ -221,17 +295,17 @@ impl Display for VolumeStatus {
 )]
 #[repr(C)]
 pub struct Watermarks {
-    /// `pending_sync` is a local LSN that is in the process of syncing to the server
-    pending_sync: MaybeLSN,
+    /// `pending_sync` is a local snapshot that is in the process of syncing to the server
+    pending_sync: Watermark,
 
-    /// checkpoint is the last local LSN that represents a volume checkpoint
-    checkpoint: MaybeLSN,
+    /// checkpoint is the last local snapshot that represents a volume checkpoint
+    checkpoint: Watermark,
 }
 
 impl Watermarks {
     pub const DEFAULT: Self = Self {
-        pending_sync: MaybeLSN::EMPTY,
-        checkpoint: MaybeLSN::EMPTY,
+        pending_sync: Watermark::UNMAPPED,
+        checkpoint: Watermark::UNMAPPED,
     };
 
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, Culprit<StorageErr>> {
@@ -240,23 +314,23 @@ impl Watermarks {
     }
 
     #[inline]
-    pub fn pending_sync(&self) -> Option<LSN> {
-        self.pending_sync.into()
+    pub fn pending_sync(&self) -> Watermark {
+        self.pending_sync
     }
 
     #[inline]
-    pub fn with_pending_sync(self, lsn: Option<LSN>) -> Self {
-        Self { pending_sync: lsn.into(), ..self }
+    pub fn with_pending_sync(self, pending_sync: Watermark) -> Self {
+        Self { pending_sync, ..self }
     }
 
     #[inline]
-    pub fn checkpoint(&self) -> Option<LSN> {
-        self.checkpoint.into()
+    pub fn checkpoint(&self) -> Watermark {
+        self.checkpoint
     }
 
     #[inline]
-    pub fn with_checkpoint(self, lsn: LSN) -> Self {
-        Self { checkpoint: MaybeLSN::some(lsn), ..self }
+    pub fn with_checkpoint(self, checkpoint: Watermark) -> Self {
+        Self { checkpoint, ..self }
     }
 }
 
@@ -321,13 +395,16 @@ impl VolumeState {
     }
 
     pub fn is_syncing(&self) -> bool {
-        let last_sync = self.snapshot().and_then(|s| s.remote_local());
-        let pending_sync = self.watermarks().pending_sync();
-        debug_assert!(
-            last_sync <= pending_sync,
-            "invariant violation: last_sync should never be larger than pending_sync"
-        );
-        last_sync < pending_sync
+        if let Some(pending_sync) = self.watermarks().pending_sync().lsn() {
+            let last_sync = self.snapshot().and_then(|s| s.remote_local());
+            debug_assert!(
+                last_sync <= Some(pending_sync),
+                "invariant violation: last_sync should never be larger than pending_sync"
+            );
+            last_sync < Some(pending_sync)
+        } else {
+            false
+        }
     }
 
     pub fn has_pending_commits(&self) -> bool {

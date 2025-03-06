@@ -96,10 +96,12 @@ pub struct PushJob {
 impl PushJob {
     fn run(self, storage: &Storage, clients: &ClientPair) -> Result<(), ClientErr> {
         // prepare the sync
-        let (snapshot, lsns, mut commits) =
+        let (remote_lsn, page_count, lsns, mut commits) =
             storage.prepare_sync_to_remote(&self.vid).or_into_ctx()?;
 
-        let _span = tracing::debug_span!("PushJob", vid=?self.vid, ?lsns).entered();
+        let _span =
+            tracing::debug_span!("PushJob", vid=?self.vid, ?remote_lsn, ?lsns, ?page_count,)
+                .entered();
 
         // setup temporary storage for pages
         // TODO: we will eventually stream pages directly to the remote
@@ -117,8 +119,6 @@ impl PushJob {
                 }
             }
         };
-
-        let page_count = snapshot.pages();
 
         #[allow(unused)]
         let mut num_commits = 0;
@@ -161,13 +161,10 @@ impl PushJob {
         precept::maybe_fault!(0.1, "PushJob: before metastore commit", process::exit(0), { "cid": self.cid });
 
         // commit the segments to the metastore
-        let remote_snapshot = match clients.metastore().commit(
-            &self.vid,
-            &self.cid,
-            snapshot.remote(),
-            page_count,
-            segments,
-        ) {
+        let remote_snapshot = match clients
+            .metastore()
+            .commit(&self.vid, &self.cid, remote_lsn, page_count, segments)
+        {
             Ok(remote_snapshot) => remote_snapshot,
             Err(err) => {
                 tracing::debug!("metastore commit failed: {:?}", err);

@@ -26,10 +26,11 @@ pub enum RemoteMapping {
         #[serde(skip)]
         _padding: [u8; 7],
 
-        /// the server LSN
-        remote: LSN,
         /// the local LSN that maps to the remote LSN
         local: LSN,
+
+        /// the remote LSN
+        remote: LSN,
     },
 }
 
@@ -69,21 +70,6 @@ impl Default for RemoteMapping {
     #[inline]
     fn default() -> Self {
         Self::Unmapped { _padding: [0; 23] }
-    }
-}
-
-impl Debug for RemoteMapping {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(self, f)
-    }
-}
-
-impl Display for RemoteMapping {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RemoteMapping::Unmapped { _padding } => write!(f, "_"),
-            RemoteMapping::Mapped { _padding, remote, local } => write!(f, "{remote}({local})"),
-        }
     }
 }
 
@@ -151,14 +137,14 @@ impl Debug for Snapshot {
 }
 
 impl Display for Snapshot {
+    // Snapshot[5;3] means local 5 pages 3
+    // Snapshot[5;3][2r3] means local 5 pages 3 and local 2 maps to remote 3
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Snapshot[{}/{};{}]",
-            self.local(),
-            self.remote,
-            self.pages()
-        )
+        write!(f, "Snapshot[{};{}]", self.local(), self.pages(),)?;
+        if let Some((r, l)) = self.remote.splat() {
+            write!(f, "[{l}r{r}]")?;
+        }
+        Ok(())
     }
 }
 
