@@ -111,7 +111,7 @@ antithesis-prep: antithesis-config-image
 antithesis-run duration='120': antithesis-prep
     antithesis-cli run \
         --name='graft test workload' \
-        --description='git sha: {{GIT_SHA}}\ngit summary: {{GIT_SUMMARY}}' \
+        --description='{{GIT_SHA}}: {{GIT_SUMMARY}}' \
         --tenant="${ANTITHESIS_TENANT}" \
         --username="${ANTITHESIS_USERNAME}" \
         --password="${ANTITHESIS_PASSWORD}" \
