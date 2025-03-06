@@ -10,6 +10,7 @@ codegen-units = 1
 [workspace.dependencies]
 anyhow = "1.0"
 assert_matches = "1.5"
+async-event = "0.2"
 axum = "0.8"
 axum-test = "17.2"
 bindgen = { version = "0.71", default-features = false }

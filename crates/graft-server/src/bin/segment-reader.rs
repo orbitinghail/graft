@@ -106,7 +106,7 @@ fn main_inner() -> Result<(), Culprit<SegmentReaderErr>> {
             print_segment(&segment)
         }
         Commands::Read { vid, pageidx } => {
-            if let Some(page) = segment.find_page(vid, pageidx) {
+            if let Some(page) = segment.find_page(&vid, pageidx) {
                 print_page(page, PAGESIZE.as_usize())
             } else {
                 return Err(Culprit::new(SegmentReaderErr::PageNotFound));

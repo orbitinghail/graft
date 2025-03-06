@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::{extract::State, response::IntoResponse};
 use culprit::{Culprit, ResultExt};
+use futures::future::try_join_all;
 use graft_core::{VolumeId, page::Page};
 use graft_proto::{
     common::v1::SegmentInfo,
@@ -9,10 +10,7 @@ use graft_proto::{
 };
 use hashbrown::HashSet;
 
-use crate::{
-    api::{error::ApiErrCtx, response::ProtoResponse},
-    segment::uploader::SegmentUploadErr,
-};
+use crate::api::{error::ApiErrCtx, response::ProtoResponse};
 
 use crate::api::{error::ApiErr, extractors::Protobuf};
 
@@ -50,43 +48,23 @@ pub async fn handler<C>(
         pages.push((pageidx, page));
     }
 
-    // send pages to the writer
-    let mut segment_rx = state.write_pages(vid.clone(), pages).await;
-
-    let mut segments: Vec<SegmentInfo> = vec![];
-
+    // send pages to the writer and process results
+    let response = state.write_pages(vid.clone(), pages).await;
+    let mut segments: Vec<SegmentInfo> = Vec::with_capacity(response.len());
+    let mut events = Vec::with_capacity(response.len());
     let mut received_pages = 0;
-    while received_pages < expected_pages {
-        let Some(segment) = segment_rx.recv().await else {
-            precept::expect_unreachable!(
-                "segment upload channel closed prematurely",
-                { "vid": vid }
-            );
-            return Err(Culprit::new_with_note(
-                SegmentUploadErr.into(),
-                "segment upload channel closed prematurely",
-            )
-            .into());
-        };
 
-        let sid = segment.sid().or_into_ctx()?;
+    for (sid, graft, event) in response {
         tracing::trace!("write_pages handler received segment {sid} for volume {vid}",);
-
-        if let Some(graft) = segment.graft(&vid) {
-            received_pages += graft.cardinality();
-
-            // store the segment
-            segments.push(SegmentInfo {
-                sid: sid.copy_to_bytes(),
-                graft: graft.inner().clone(),
-            });
-        } else {
-            // the writer/uploader should never send us segments we don't care about
-            unreachable!(
-                "write_pages handler received segment that is missing the requested volume"
-            );
-        }
+        let sid = sid.copy_to_bytes();
+        received_pages += graft.cardinality();
+        let graft = graft.serialize_to_bytes();
+        segments.push(SegmentInfo { sid, graft });
+        events.push(event);
     }
+
+    // wait for all segments to be written
+    try_join_all(events).await?;
 
     assert_eq!(
         received_pages, expected_pages,

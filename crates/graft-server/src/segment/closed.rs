@@ -167,8 +167,8 @@ impl<'a> ClosedSegment<'a> {
         self.footer.sid()
     }
 
-    pub fn find_page(&self, vid: VolumeId, pageidx: PageIdx) -> Option<Page> {
-        self.index.lookup(&vid, pageidx).map(|local_offset| {
+    pub fn find_page(&self, vid: &VolumeId, pageidx: PageIdx) -> Option<Page> {
+        self.index.lookup(vid, pageidx).map(|local_offset| {
             let start = local_offset * PAGESIZE;
             let end = start + PAGESIZE;
             (&self.page_data[start.range(end)])

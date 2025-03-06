@@ -3,17 +3,19 @@
 use std::sync::Arc;
 
 use culprit::{Culprit, ResultExt};
-use graft_core::{PageIdx, VolumeId, page::Page};
+use event_listener::Event;
+use graft_core::{PageIdx, SegmentId, VolumeId, page::Page};
 use measured::{Counter, MetricGroup};
+use splinter::Splinter;
 use thiserror::Error;
 use tokio::{
-    sync::mpsc::{self, Sender, error::SendError},
+    sync::{mpsc, oneshot},
     time::{Duration, Instant, sleep_until},
 };
 
 use super::{
     open::OpenSegment,
-    uploader::{SegmentUploadMsg, StoreSegmentMsg},
+    uploader::{SegmentUploadEvent, SegmentUploadListener, StoreSegmentMsg},
 };
 use crate::{
     segment::closed::SEGMENT_MAX_PAGES,
@@ -26,8 +28,8 @@ pub enum WriterErr {
     OutputChannelClosed,
 }
 
-impl<T> From<SendError<T>> for WriterErr {
-    fn from(_: SendError<T>) -> Self {
+impl<T> From<mpsc::error::SendError<T>> for WriterErr {
+    fn from(_: mpsc::error::SendError<T>) -> Self {
         Self::OutputChannelClosed
     }
 }
@@ -41,32 +43,49 @@ pub struct SegmentWriterMetrics {
     flushed_segments: Counter,
 }
 
-#[derive(Debug)]
-pub struct WritePagesMsg {
+pub struct WritePagesRequest {
     vid: VolumeId,
     pages: Vec<(PageIdx, Page)>,
-    segment_tx: Sender<SegmentUploadMsg>,
+    reply: oneshot::Sender<WritePagesResponse>,
 }
 
-impl WritePagesMsg {
+impl WritePagesRequest {
     pub fn new(
         vid: VolumeId,
         pages: Vec<(PageIdx, Page)>,
-        segment_tx: Sender<SegmentUploadMsg>,
+        reply: oneshot::Sender<WritePagesResponse>,
     ) -> Self {
-        Self { vid, pages, segment_tx }
+        Self { vid, pages, reply }
+    }
+}
+
+pub struct WritePagesResponse {
+    segments: Vec<(SegmentId, Splinter, SegmentUploadListener)>,
+}
+
+impl WritePagesResponse {
+    pub fn len(&self) -> usize {
+        self.segments.len()
+    }
+}
+
+impl IntoIterator for WritePagesResponse {
+    type Item = (SegmentId, Splinter, SegmentUploadListener);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.segments.into_iter()
     }
 }
 
 pub struct SegmentWriterTask {
     metrics: Arc<SegmentWriterMetrics>,
-    input: mpsc::Receiver<WritePagesMsg>,
-    output: Sender<StoreSegmentMsg>,
+    input: mpsc::Receiver<WritePagesRequest>,
+    output: mpsc::Sender<StoreSegmentMsg>,
 
     // the active open segment being written to
     segment: OpenSegment,
-    // a list of writer's waiting for the segment to upload
-    writers: Vec<Sender<SegmentUploadMsg>>,
+    event: SegmentUploadEvent,
 
     flush_interval: Duration,
     next_flush: Instant,
@@ -105,8 +124,8 @@ impl SupervisedTask for SegmentWriterTask {
 impl SegmentWriterTask {
     pub fn new(
         metrics: Arc<SegmentWriterMetrics>,
-        input: mpsc::Receiver<WritePagesMsg>,
-        output: Sender<StoreSegmentMsg>,
+        input: mpsc::Receiver<WritePagesRequest>,
+        output: mpsc::Sender<StoreSegmentMsg>,
         flush_interval: Duration,
     ) -> Self {
         Self {
@@ -114,28 +133,32 @@ impl SegmentWriterTask {
             input,
             output,
             segment: Default::default(),
-            writers: Default::default(),
+            event: Event::with_tag(),
             flush_interval,
             next_flush: Instant::now() + flush_interval,
         }
     }
 
-    async fn handle_write(&mut self, req: WritePagesMsg) -> Result<(), Culprit<WriterErr>> {
+    async fn handle_write(&mut self, req: WritePagesRequest) -> Result<(), Culprit<WriterErr>> {
         tracing::trace!("writing {} pages to volume {:?}", req.pages.len(), req.vid);
         self.metrics.page_writes.inc_by(req.pages.len() as u64);
 
+        let mut segments = Vec::new();
         let mut pages = req.pages.into_iter();
         loop {
-            // flush current segment if full
-            if !self.segment.has_space_for(&req.vid) {
+            // flush current segment if full or it already contains the current volume.
+            // this ensures that two separate write requests to the same volume
+            // can't end up in the same segment
+            if !self.segment.has_space_for(&req.vid) || self.segment.contains_vid(&req.vid) {
                 self.handle_flush().await?
             }
 
             // write as many pages as possible to the current segment
-            self.segment
+            let graft = self
+                .segment
                 .batch_insert(req.vid.clone(), &mut pages)
-                .expect("segment is not full");
-            self.writers.push(req.segment_tx.clone());
+                .expect("segment was just verified to have space");
+            segments.push((self.segment.sid().clone(), graft, self.event.listen()));
 
             // if the iterator is exhausted we are done
             if pages.len() == 0 {
@@ -147,6 +170,9 @@ impl SegmentWriterTask {
         if self.segment.pages() == SEGMENT_MAX_PAGES {
             self.handle_flush().await?;
         }
+
+        // reply to the write request
+        let _ = req.reply.send(WritePagesResponse { segments });
 
         Ok(())
     }
@@ -172,10 +198,10 @@ impl SegmentWriterTask {
 
             // send the current segment to the output
             self.output
-                .send(StoreSegmentMsg {
-                    segment: std::mem::take(&mut self.segment),
-                    writers: std::mem::take(&mut self.writers),
-                })
+                .send(StoreSegmentMsg::new(
+                    std::mem::take(&mut self.segment),
+                    std::mem::replace(&mut self.event, Event::with_tag()),
+                ))
                 .await
                 .or_into_ctx()?;
 
@@ -213,21 +239,28 @@ mod tests {
         let page0 = Page::test_filled(1);
         let page1 = Page::test_filled(2);
 
-        let (tx, _) = mpsc::channel(1);
+        let (tx, rx) = oneshot::channel();
 
         input_tx
-            .send(WritePagesMsg {
+            .send(WritePagesRequest {
                 vid: vid.clone(),
                 pages: vec![(pageidx!(1), page0.clone()), (pageidx!(2), page1.clone())],
-                segment_tx: tx,
+                reply: tx,
             })
             .await
             .unwrap();
 
-        // wait for the flush
-        let req = output_rx.recv().await.unwrap();
+        // wait for the reply
+        let response = rx.await.unwrap();
 
-        assert_eq!(req.segment.find_page(&vid, pageidx!(1)).unwrap(), &page0);
-        assert_eq!(req.segment.find_page(&vid, pageidx!(2)).unwrap(), &page1);
+        let (_, graft, _) = response.into_iter().next().unwrap();
+        assert!(graft.contains(1));
+        assert!(graft.contains(2));
+
+        // wait for the flush
+        let flush = output_rx.recv().await.unwrap();
+        let segment = flush.segment();
+        assert_eq!(segment.find_page(&vid, pageidx!(1)), Some(&page0));
+        assert_eq!(segment.find_page(&vid, pageidx!(2)), Some(&page1));
     }
 }

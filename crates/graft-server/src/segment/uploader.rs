@@ -2,12 +2,12 @@ use std::{convert::Infallible, sync::Arc};
 
 use bytes::Buf;
 use culprit::Culprit;
+use event_listener::{Event, EventListener, IntoNotification};
 use futures::FutureExt;
-use graft_core::{SegmentId, VolumeId};
 use measured::{CounterVec, Histogram, MetricGroup, metric::histogram::Thresholds};
 use object_store::{ObjectStore, PutPayload, path::Path};
 use thiserror::Error;
-use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::mpsc;
 
 use crate::{
     api::error::ApiErrCtx,
@@ -15,7 +15,7 @@ use crate::{
     supervisor::{SupervisedTask, TaskCfg, TaskCtx},
 };
 
-use super::{cache::Cache, multigraft::MultiGraft, open::OpenSegment};
+use super::{cache::Cache, open::OpenSegment};
 
 #[derive(MetricGroup)]
 #[metric(new())]
@@ -51,45 +51,30 @@ impl From<object_store::Error> for SegmentUploadErr {
     }
 }
 
+// Event that is triggered when a segment upload completes
+pub type SegmentUploadEvent = Event<Result<(), SegmentUploadErr>>;
+pub type SegmentUploadListener = EventListener<Result<(), SegmentUploadErr>>;
+
 pub struct StoreSegmentMsg {
-    pub segment: OpenSegment,
-    pub writers: Vec<Sender<SegmentUploadMsg>>,
+    segment: OpenSegment,
+    complete: SegmentUploadEvent,
+}
+
+impl StoreSegmentMsg {
+    pub fn new(segment: OpenSegment, complete: SegmentUploadEvent) -> Self {
+        Self { segment, complete }
+    }
+
+    pub fn segment(&self) -> &OpenSegment {
+        &self.segment
+    }
 }
 
 impl std::fmt::Debug for StoreSegmentMsg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StoreSegmentMsg")
             .field("segment", &self.segment)
-            .field("num_writers", &self.writers.len())
             .finish()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum SegmentUploadMsg {
-    Success {
-        grafts: Arc<MultiGraft>,
-        sid: SegmentId,
-    },
-    Failure {
-        grafts: Arc<MultiGraft>,
-        err: Culprit<SegmentUploadErr>,
-    },
-}
-
-impl SegmentUploadMsg {
-    pub fn graft(&self, vid: &VolumeId) -> Option<&splinter::SplinterRef<bytes::Bytes>> {
-        match self {
-            Self::Success { grafts, .. } => grafts.get(vid),
-            Self::Failure { grafts, .. } => grafts.get(vid),
-        }
-    }
-
-    pub fn sid(&self) -> Result<&SegmentId, Culprit<SegmentUploadErr>> {
-        match self {
-            Self::Success { sid, .. } => Ok(sid),
-            Self::Failure { err, .. } => Err(err.clone()),
-        }
     }
 }
 
@@ -136,16 +121,14 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
 
     #[tracing::instrument(name = "upload segment", skip(self), fields(sid))]
     async fn handle_store_request(&mut self, req: StoreSegmentMsg) {
-        // skip uploading segment if all writers are closed
-        if req.writers.iter().all(|w| w.is_closed()) {
-            tracing::trace!("skipping segment upload, all writers are closed");
+        // skip uploading segment if all writers are gone
+        if req.complete.total_listeners() == 0 {
             return;
         }
 
+        // serialize the segment
         let segment = req.segment;
-        let sid = SegmentId::random();
-        let path = Path::from(sid.pretty());
-        let (segment, grafts) = segment.serialize(sid.clone());
+        let (sid, segment) = segment.serialize();
 
         tracing::Span::current().record("sid", sid.short());
 
@@ -174,8 +157,7 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
             });
         }
 
-        let grafts = Arc::new(grafts);
-
+        let path = Path::from(sid.pretty());
         if let Err(err) = self
             .store
             .put(&path, PutPayload::from_iter(segment.iter().cloned()))
@@ -184,19 +166,10 @@ impl<C: Cache + 'static> SegmentUploaderTask<C> {
             })
             .await
         {
-            Self::multisend(
-                req.writers,
-                SegmentUploadMsg::Failure { grafts, err: Culprit::from_err(err) },
-            )
-            .await;
+            tracing::error!("failed to upload segment {:?}\n{:?}", sid, err);
+            req.complete.notify(usize::MAX.tag(Err(SegmentUploadErr)));
         } else {
-            Self::multisend(req.writers, SegmentUploadMsg::Success { grafts, sid }).await;
-        }
-    }
-
-    async fn multisend(writers: Vec<Sender<SegmentUploadMsg>>, msg: SegmentUploadMsg) {
-        for writer in writers {
-            let _ = writer.send(msg.clone()).await;
+            req.complete.notify(usize::MAX.tag(Ok(())));
         }
     }
 }
@@ -234,21 +207,16 @@ mod tests {
             .insert(vid.clone(), pageidx!(2), page1.clone())
             .unwrap();
 
-        let (segment_tx, mut segment_rx) = mpsc::channel(1);
+        let sid = segment.sid().clone();
+
+        let event = Event::with_tag();
+        let listener = event.listen();
         input_tx
-            .send(StoreSegmentMsg { segment, writers: vec![segment_tx] })
+            .send(StoreSegmentMsg { segment, complete: event })
             .await
             .unwrap();
 
-        let segment = segment_rx.recv().await.unwrap();
-
-        let sid = segment.sid().unwrap();
-
-        // check the graft
-        let graft = segment.graft(&vid).unwrap();
-        assert_eq!(graft.cardinality(), 2);
-        assert!(graft.contains(1));
-        assert!(graft.contains(2));
+        listener.await.unwrap();
 
         // check the stored segment
         let path = Path::from(sid.pretty());
@@ -257,8 +225,8 @@ mod tests {
         let segment = ClosedSegment::from_bytes(&bytes).unwrap();
 
         assert_eq!(segment.pages(), 2);
-        assert_eq!(segment.find_page(vid.clone(), pageidx!(1)), Some(page0));
-        assert_eq!(segment.find_page(vid.clone(), pageidx!(2)), Some(page1));
+        assert_eq!(segment.find_page(&vid, pageidx!(1)), Some(page0));
+        assert_eq!(segment.find_page(&vid, pageidx!(2)), Some(page1));
 
         // check that the cached and stored segment are identical
         let cached = cache.get(&sid).await.unwrap().unwrap();

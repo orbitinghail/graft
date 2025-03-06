@@ -6,6 +6,7 @@ use culprit::Culprit;
 use graft_core::{
     PageIdx, SegmentId, VolumeId, byte_unit::ByteUnit, page::Page, page_count::PageCount,
 };
+use splinter::Splinter;
 use thiserror::Error;
 use zerocopy::IntoBytes;
 
@@ -14,16 +15,24 @@ use crate::bytes_vec::BytesVec;
 use super::{
     closed::{SEGMENT_MAX_PAGES, SEGMENT_MAX_VOLUMES, SegmentFooter, closed_segment_size},
     index::SegmentIndexBuilder,
-    multigraft::MultiGraft,
 };
 
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("segment is full")]
 pub struct SegmentFullErr;
 
-#[derive(Default)]
 pub struct OpenSegment {
+    sid: SegmentId,
     index: BTreeMap<VolumeId, BTreeMap<PageIdx, Page>>,
+}
+
+impl Default for OpenSegment {
+    fn default() -> Self {
+        Self {
+            sid: SegmentId::random(),
+            index: Default::default(),
+        }
+    }
 }
 
 impl Debug for OpenSegment {
@@ -45,13 +54,18 @@ impl OpenSegment {
         }
     }
 
+    /// returns true if the segment contains pages for the specified volume
+    pub fn contains_vid(&self, vid: &VolumeId) -> bool {
+        self.index.contains_key(vid)
+    }
+
     /// inserts pages into the segment from the iterator returning when the
     /// segment is full or the iterator is empty, whichever happens first
     pub fn batch_insert(
         &mut self,
         vid: VolumeId,
         pages: impl Iterator<Item = (PageIdx, Page)> + ExactSizeIterator,
-    ) -> Result<(), Culprit<SegmentFullErr>> {
+    ) -> Result<Splinter, Culprit<SegmentFullErr>> {
         // early exit if segment can't fit a write to this volume
         if !self.has_space_for(&vid) {
             return Err(Culprit::new(SegmentFullErr));
@@ -60,11 +74,15 @@ impl OpenSegment {
         // calculate how many pages we can insert
         let space = SEGMENT_MAX_PAGES.to_usize() - self.pages().to_usize();
 
+        let mut graft = Splinter::default();
+
         // insert pages
         let index = self.index.entry(vid).or_default();
-        index.extend(pages.take(space));
+        index.extend(pages.take(space).inspect(|(idx, _)| {
+            graft.insert(idx.to_u32());
+        }));
 
-        Ok(())
+        Ok(graft)
     }
 
     pub fn insert(
@@ -78,6 +96,11 @@ impl OpenSegment {
         }
         self.index.entry(vid).or_default().insert(pageidx, page);
         Ok(())
+    }
+
+    #[inline]
+    pub fn sid(&self) -> &SegmentId {
+        &self.sid
     }
 
     #[inline]
@@ -107,20 +130,18 @@ impl OpenSegment {
         closed_segment_size(self.volumes(), self.pages())
     }
 
-    pub fn serialize(self, sid: SegmentId) -> (BytesVec, MultiGraft) {
+    pub fn serialize(self) -> (SegmentId, BytesVec) {
         let volumes = self.volumes();
         let pages = self.pages();
         // +2 for the index, +1 for the footer
         let mut data = BytesVec::with_capacity(pages.to_usize() + 2 + 1);
         let mut index_builder = SegmentIndexBuilder::new_with_capacity(volumes, pages);
-        let mut multigraft_builder = MultiGraft::builder();
 
         // write pages to buffer while building index
         for (vid, pages) in self.index {
             for (off, page) in pages {
                 data.put(page.into());
                 index_builder.insert(&vid, off);
-                multigraft_builder.insert(&vid, off);
             }
         }
 
@@ -133,10 +154,10 @@ impl OpenSegment {
         );
 
         // write out the footer
-        let footer = SegmentFooter::new(sid, volumes, index_size);
+        let footer = SegmentFooter::new(self.sid.clone(), volumes, index_size);
         data.put_slice(footer.as_bytes());
 
-        (data, multigraft_builder.build())
+        (self.sid, data)
     }
 }
 
@@ -169,8 +190,7 @@ mod tests {
 
         let expected_size = open_segment.serialized_size();
 
-        let sid = SegmentId::random();
-        let (buf, grafts) = open_segment.serialize(sid.clone());
+        let (sid, buf) = open_segment.serialize();
 
         assert_eq!(buf.remaining(), expected_size);
 
@@ -180,32 +200,17 @@ mod tests {
         assert_eq!(closed_segment.sid(), &sid);
         assert_eq!(closed_segment.pages(), 2);
         assert!(!closed_segment.is_empty());
-        assert_eq!(
-            closed_segment.find_page(vid.clone(), pageidx!(1)),
-            Some(page0)
-        );
-        assert_eq!(
-            closed_segment.find_page(vid.clone(), pageidx!(2)),
-            Some(page1)
-        );
-
-        // validate the multigraft
-        assert!(!grafts.is_empty());
-        assert!(grafts.contains(&vid, pageidx!(1)));
-        assert!(grafts.contains(&vid, pageidx!(2)));
-        assert!(!grafts.contains(&vid, pageidx!(3)));
-        assert!(!grafts.contains(&VolumeId::random(), pageidx!(1)));
+        assert_eq!(closed_segment.find_page(&vid, pageidx!(1)), Some(page0));
+        assert_eq!(closed_segment.find_page(&vid, pageidx!(2)), Some(page1));
     }
 
     #[graft_test::test]
     fn test_zero_length_segment() {
         let open_segment = OpenSegment::default();
         let expected_size = open_segment.serialized_size();
-
-        let (buf, grafts) = open_segment.serialize(SegmentId::random());
+        let (sid, buf) = open_segment.serialize();
 
         assert_eq!(buf.remaining(), expected_size);
-        assert!(grafts.is_empty());
 
         // an empty segment should just be a footer
         assert_eq!(expected_size, size_of::<SegmentFooter>());
@@ -213,6 +218,7 @@ mod tests {
         let buf = buf.into_bytes();
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
 
+        assert_eq!(closed_segment.sid(), &sid);
         assert!(closed_segment.pages().is_empty());
         assert!(closed_segment.is_empty());
     }
@@ -240,18 +246,21 @@ mod tests {
         assert!(!open_segment.has_space_for(&VolumeId::random()));
 
         let expected_size = open_segment.serialized_size();
-        let (buf, grafts) = open_segment.serialize(SegmentId::random());
+        let (_, buf) = open_segment.serialize();
         assert_eq!(buf.remaining(), expected_size);
-
-        assert!(!grafts.is_empty());
-        let mut vid_cycle = vids.iter().cycle();
-        for pageidx in SEGMENT_MAX_PAGES.iter() {
-            assert!(grafts.contains(vid_cycle.next().unwrap(), pageidx));
-        }
 
         let buf = buf.into_bytes();
         let closed_segment = ClosedSegment::from_bytes(&buf).unwrap();
         assert_eq!(closed_segment.pages(), SEGMENT_MAX_PAGES);
+
+        let mut vid_cycle = vids.iter().cycle();
+        for pageidx in SEGMENT_MAX_PAGES.iter() {
+            assert!(
+                closed_segment
+                    .find_page(vid_cycle.next().unwrap(), pageidx)
+                    .is_some()
+            );
+        }
     }
 
     #[graft_test::test]

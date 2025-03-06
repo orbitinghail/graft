@@ -83,7 +83,7 @@ pub async fn handler<C: Cache>(
 
         for pageidx in cut.iter() {
             let page = segment
-                .find_page(vid.clone(), pageidx.try_into()?)
+                .find_page(&vid, pageidx.try_into()?)
                 .expect("bug: failed to find expected pageidx in segment; index out of sync");
             result.pages.push(PageAtIdx { pageidx, data: page.into() });
         }
@@ -115,20 +115,21 @@ mod tests {
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
         bytes_vec::BytesVec,
-        segment::{
-            cache::mem::MemCache, loader::SegmentLoader, multigraft::MultiGraft, open::OpenSegment,
-        },
+        segment::{cache::mem::MemCache, loader::SegmentLoader, open::OpenSegment},
         volume::{catalog::VolumeCatalog, commit::CommitMeta, updater::VolumeCatalogUpdater},
     };
 
     use super::*;
 
-    fn mksegment(sid: &SegmentId, pages: Vec<(VolumeId, PageIdx, Page)>) -> (BytesVec, MultiGraft) {
+    fn mksegment(vid: &VolumeId, pages: Vec<(PageIdx, Page)>) -> (SegmentId, BytesVec, Splinter) {
         let mut segment = OpenSegment::default();
-        for (vid, off, page) in pages {
-            segment.insert(vid, off, page).unwrap();
+        let mut graft = Splinter::default();
+        for (off, page) in pages {
+            segment.insert(vid.clone(), off, page).unwrap();
+            graft.insert(off.to_u32());
         }
-        segment.serialize(sid.clone())
+        let (sid, buf) = segment.serialize();
+        (sid, buf, graft)
     }
 
     #[graft_test::test]
@@ -164,13 +165,12 @@ mod tests {
         let cid = ClientId::random();
 
         // segment 1 is in the store
-        let sid1 = SegmentId::random();
-        let (segment, graft1) = mksegment(
-            &sid1,
+        let (sid1, segment, graft1) = mksegment(
+            &vid,
             vec![
-                (vid.clone(), pageidx!(1), Page::test_filled(1)),
-                (vid.clone(), pageidx!(2), Page::test_filled(2)),
-                (vid.clone(), pageidx!(3), Page::test_filled(3)),
+                (pageidx!(1), Page::test_filled(1)),
+                (pageidx!(2), Page::test_filled(2)),
+                (pageidx!(3), Page::test_filled(3)),
             ],
         );
         store
@@ -182,12 +182,11 @@ mod tests {
             .unwrap();
 
         // segment 2 is already in the cache
-        let sid2 = SegmentId::random();
-        let (segment, graft2) = mksegment(
-            &sid2,
+        let (sid2, segment, graft2) = mksegment(
+            &vid,
             vec![
-                (vid.clone(), pageidx!(4), Page::test_filled(4)),
-                (vid.clone(), pageidx!(5), Page::test_filled(5)),
+                (pageidx!(4), Page::test_filled(4)),
+                (pageidx!(5), Page::test_filled(5)),
             ],
         );
         cache.put(&sid2, segment).await.unwrap();
@@ -208,11 +207,11 @@ mod tests {
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),
-                        graft: graft1.get(&vid).unwrap().clone().into_inner(),
+                        graft: graft1.serialize_to_bytes(),
                     },
                     SegmentInfo {
                         sid: sid2.copy_to_bytes(),
-                        graft: graft2.get(&vid).unwrap().clone().into_inner(),
+                        graft: graft2.serialize_to_bytes(),
                     },
                 ],
             )

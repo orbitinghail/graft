@@ -1,14 +1,16 @@
 use graft_client::MetastoreClient;
 use graft_core::{PageIdx, VolumeId, page::Page};
 use std::sync::Arc;
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::{mpsc, oneshot};
 
 use axum::routing::post;
 
 use crate::{
     limiter::Limiter,
     segment::{
-        cache::Cache, loader::SegmentLoader, uploader::SegmentUploadMsg, writer::WritePagesMsg,
+        cache::Cache,
+        loader::SegmentLoader,
+        writer::{WritePagesRequest, WritePagesResponse},
     },
     volume::{catalog::VolumeCatalog, updater::VolumeCatalogUpdater},
 };
@@ -19,7 +21,7 @@ mod read_pages;
 mod write_pages;
 
 pub struct PagestoreApiState<C> {
-    page_tx: mpsc::Sender<WritePagesMsg>,
+    page_tx: mpsc::Sender<WritePagesRequest>,
     catalog: VolumeCatalog,
     loader: SegmentLoader<C>,
     metastore: MetastoreClient,
@@ -29,7 +31,7 @@ pub struct PagestoreApiState<C> {
 
 impl<C> PagestoreApiState<C> {
     pub fn new(
-        page_tx: mpsc::Sender<WritePagesMsg>,
+        page_tx: mpsc::Sender<WritePagesRequest>,
         catalog: VolumeCatalog,
         loader: SegmentLoader<C>,
         metastore: MetastoreClient,
@@ -50,13 +52,13 @@ impl<C> PagestoreApiState<C> {
         &self,
         vid: VolumeId,
         pages: Vec<(PageIdx, Page)>,
-    ) -> Receiver<SegmentUploadMsg> {
-        let (segment_tx, segment_rx) = tokio::sync::mpsc::channel(4);
+    ) -> WritePagesResponse {
+        let (tx, rx) = oneshot::channel();
         self.page_tx
-            .send(WritePagesMsg::new(vid, pages, segment_tx))
+            .send(WritePagesRequest::new(vid, pages, tx))
             .await
             .unwrap();
-        segment_rx
+        rx.await.expect("write pages response channel closed")
     }
 
     pub fn catalog(&self) -> &VolumeCatalog {
