@@ -9,7 +9,7 @@ use culprit::{Culprit, ResultExt};
 use fjall::Slice;
 use graft_core::{lsn::LSN, page_count::PageCount};
 use serde::Serialize;
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 use super::{StorageErr, volume_state::VolumeStateTag};
 
@@ -73,7 +73,9 @@ impl Default for RemoteMapping {
     }
 }
 
-#[derive(KnownLayout, Immutable, TryFromBytes, IntoBytes, Clone, PartialEq, Eq, Serialize)]
+#[derive(
+    KnownLayout, Immutable, TryFromBytes, IntoBytes, ByteHash, Clone, PartialEq, Eq, Serialize,
+)]
 #[repr(C)]
 pub struct Snapshot {
     /// resolve page reads at this local LSN

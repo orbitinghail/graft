@@ -1,4 +1,9 @@
-use std::{fmt::Debug, mem, sync::Arc};
+use std::{
+    fmt::Debug,
+    hash::{DefaultHasher, Hash, Hasher},
+    mem,
+    sync::Arc,
+};
 
 use bytes::BytesMut;
 use culprit::{Culprit, Result, ResultExt};
@@ -22,6 +27,9 @@ use sqlite_plugin::flags::{LockLevel, OpenOpts};
 use crate::vfs::ErrCtx;
 
 use super::VfsFile;
+
+// The byte offset of the SQLite file change counter in the databse file
+const FILE_CHANGE_COUNTER_OFFSET: usize = 24;
 
 #[derive(Debug)]
 enum VolFileState {
@@ -291,6 +299,26 @@ impl VfsFile for VolFile {
 
         let range = local_offset.as_usize()..(local_offset + data.len()).as_usize();
         data.copy_from_slice(&page[range]);
+
+        // check to see if SQLite is reading the file change counter, and if so,
+        // overwrite it with a counter derived from the current snapshot
+        if page_idx == PageIdx::FIRST
+            && local_offset <= FILE_CHANGE_COUNTER_OFFSET
+            && local_offset + data.len() >= FILE_CHANGE_COUNTER_OFFSET + 4
+        {
+            // find the location of the file change counter within the out buffer
+            let fcc_offset = FILE_CHANGE_COUNTER_OFFSET - local_offset.as_usize();
+
+            // we derive the change counter from the snapshot via hashing
+            let snapshot = self.snapshot_or_latest()?;
+            let mut hasher = DefaultHasher::new();
+            snapshot.hash(&mut hasher);
+            let change_counter = hasher.finish() as u32;
+
+            // write the latest change counter to the buffer
+            data[fcc_offset..fcc_offset + 4].copy_from_slice(&change_counter.to_be_bytes());
+        }
+
         Ok(data.len())
     }
 
