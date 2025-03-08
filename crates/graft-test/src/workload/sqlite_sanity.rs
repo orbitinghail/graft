@@ -1,10 +1,10 @@
 use culprit::{Result, ResultExt};
 use graft_client::runtime::storage::volume_state::{SyncDirection, VolumeConfig, VolumeStatus};
-use graft_core::VolumeId;
+use graft_core::{ClientId, VolumeId};
 use graft_sqlite::vfs::GraftVfs;
 use precept::expect_sometimes;
 use rand::{Rng, seq::IndexedRandom};
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, config::DbConfig, params};
 use serde::{Deserialize, Serialize};
 use sqlite_plugin::vfs::{RegisterOpts, register_static};
 use std::{fmt::Debug, thread::sleep, time::Duration};
@@ -51,6 +51,8 @@ impl Workload for SqliteSanity {
             &self.vfs_name,
         )?;
 
+        sqlite.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
+
         let handle = env
             .runtime
             .open_volume(vid, VolumeConfig::new(SyncDirection::Both))
@@ -70,6 +72,8 @@ impl Workload for SqliteSanity {
         let txn = sqlite.transaction()?;
         if get_snapshot(&txn)?.is_none() {
             txn.execute(SQL_ACCOUNTS_TABLE, [])?;
+            txn.execute(SQL_LEDGER_TABLE, [])?;
+            txn.execute(SQL_LEDGER_INDEX, [])?;
 
             let balance_per_account = TOTAL_BALANCE / self.initial_accounts;
             assert_eq!(
@@ -85,10 +89,12 @@ impl Workload for SqliteSanity {
             );
 
             for _ in 0..self.initial_accounts {
-                txn.execute(
-                    "INSERT INTO accounts (balance) VALUES (?)",
+                let account_id = txn.query_row(
+                    "INSERT INTO accounts (balance) VALUES (?) RETURNING id",
                     [balance_per_account],
+                    |r| r.get(0),
                 )?;
+                write_to_ledger(&txn, account_id, balance_per_account as i64, &env.cid)?;
             }
             txn.commit()?;
         } else {
@@ -148,10 +154,25 @@ const TOTAL_BALANCE: u64 = 1_000_000;
 
 const SQL_ACCOUNTS_TABLE: &str = r#"
 CREATE TABLE accounts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    id INTEGER PRIMARY KEY NOT NULL,
     balance INTEGER NOT NULL,
     CHECK (balance >= 0)
-)
+) STRICT
+"#;
+
+const SQL_LEDGER_TABLE: &str = r#"
+CREATE TABLE ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    account_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    snapshot TEXT NOT NULL,
+    cid TEXT NOT NULL,
+    FOREIGN KEY (account_id) REFERENCES accounts (id)
+) STRICT
+"#;
+
+const SQL_LEDGER_INDEX: &str = r#"
+CREATE INDEX ledger_account_id ON ledger (account_id)
 "#;
 
 #[derive(Debug, Clone, Copy)]
@@ -165,9 +186,6 @@ enum Actions {
     // Verifies that SUM(balance) equals TOTAL_BALANCE
     CheckBalance,
 
-    // Prints out the total number of accounts
-    CountAccounts,
-
     // Verifies the integrity of the database
     IntegrityCheck,
 }
@@ -178,7 +196,6 @@ impl Actions {
             (Actions::CreateAccount, 8),
             (Actions::Transfer, 16),
             (Actions::CheckBalance, 4),
-            (Actions::CountAccounts, 2),
             (Actions::IntegrityCheck, 1),
         ];
 
@@ -209,44 +226,67 @@ impl Actions {
             Actions::CreateAccount => {
                 let (source, balance) = find_nonzero_account(&mut env.rng, txn, max_account_id)?;
                 let amount = env.rng.random_range(1..=balance);
-                txn.execute(
-                    "UPDATE accounts SET balance = balance - ? WHERE id = ?",
-                    [amount, source],
+                let target = txn.query_row(
+                    "INSERT INTO accounts (balance) VALUES (0) RETURNING id",
+                    [],
+                    |r| r.get(0),
                 )?;
-                txn.execute("INSERT INTO accounts (balance) VALUES (?)", [amount])?;
+                transfer(txn, source, target, amount as i64, &env.cid)?;
             }
             Actions::Transfer => {
                 let (source, balance) = find_nonzero_account(&mut env.rng, txn, max_account_id)?;
                 let target = env.rng.random_range(1..=max_account_id);
                 if balance > 0 && account_exists(txn, target)? {
                     let amount = env.rng.random_range(1..=balance);
-                    txn.execute(
-                        "UPDATE accounts SET balance = balance - ? WHERE id = ?",
-                        [amount, source],
-                    )?;
-                    txn.execute(
-                        "UPDATE accounts SET balance = balance + ? WHERE id = ?",
-                        [amount, target],
-                    )?;
+                    transfer(txn, source, target, amount as i64, &env.cid)?;
                 }
             }
             Actions::CheckBalance => {
-                let total_balance: u64 =
-                    txn.query_row("SELECT SUM(balance) FROM accounts", [], |r| r.get(0))?;
+                // verify that each account's balance matches the ledger
+                let mut total_balance = 0;
+                let mut stmt = txn.prepare("SELECT id, balance FROM accounts")?;
+                let mut rows = stmt.query([])?;
+
+                while let Some(row) = rows.next()? {
+                    let account_id: u64 = row.get(0)?;
+                    let balance: i64 = row.get(1)?;
+                    total_balance += balance;
+
+                    let ledger_balance: i64 = txn.query_row(
+                        "SELECT SUM(amount) FROM ledger WHERE account_id = ?",
+                        [account_id],
+                        |r| r.get(0),
+                    )?;
+
+                    if balance != ledger_balance {
+                        // account is out of sync with ledger, print full ledger to log
+                        tracing::error!(
+                            ?vid, cid = ?env.cid, account_id, balance, ledger_balance,
+                            "account balance mismatch; printing ledger",
+                        );
+
+                        let mut stmt = txn
+                            .prepare("SELECT amount, snapshot, cid FROM ledger WHERE account_id = ? ORDER BY id ASC")?;
+                        let mut rows = stmt.query([account_id])?;
+                        while let Some(row) = rows.next()? {
+                            let amount: i64 = row.get(0)?;
+                            let snapshot: String = row.get(1)?;
+                            let cid: String = row.get(2)?;
+                            tracing::error!("{cid} {amount:<5} {snapshot}",);
+                        }
+                    }
+
+                    precept::expect_always_or_unreachable!(
+                        balance == ledger_balance,
+                        "account balance must match ledger balance",
+                        { "vid": vid, "cid": env.cid, "account_id": account_id, "balance": balance, "ledger_balance": ledger_balance }
+                    );
+                }
+
                 precept::expect_always_or_unreachable!(
-                    total_balance == TOTAL_BALANCE,
+                    total_balance == TOTAL_BALANCE as i64,
                     "total balance does not match expected value",
                     { "vid": vid, "cid": env.cid, "total_balance": total_balance, "expected": TOTAL_BALANCE }
-                );
-            }
-            Actions::CountAccounts => {
-                let count: u64 =
-                    txn.query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0))?;
-                tracing::info!("total accounts: {}", count);
-                precept::expect_always_or_unreachable!(
-                    count > 0,
-                    "there should never be zero accounts",
-                    { "vid": vid, "cid": env.cid, "count": count }
                 );
             }
             Actions::IntegrityCheck => {
@@ -255,6 +295,15 @@ impl Actions {
                 precept::expect_always_or_unreachable!(
                     results == ["ok"],
                     "sqlite database is corrupt",
+                    { "vid": vid, "cid": env.cid, "results": results }
+                );
+                let mut results: Vec<(String, String, String, String)> = vec![];
+                txn.pragma_query(None, "foreign_key_check", |r| {
+                    Ok(results.push((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+                })?;
+                precept::expect_always_or_unreachable!(
+                    results.is_empty(),
+                    "sqlite database has invalid foreign key references",
                     { "vid": vid, "cid": env.cid, "results": results }
                 );
             }
@@ -271,11 +320,7 @@ fn check_db<R: rand::Rng>(
 ) -> Result<(), WorkloadErr> {
     let snapshot = get_snapshot(&txn)?;
     let _span = tracing::info_span!("performing initial checks", ?vid, ?snapshot).entered();
-    let checks = [
-        Actions::CheckBalance,
-        Actions::IntegrityCheck,
-        Actions::CountAccounts,
-    ];
+    let checks = [Actions::CheckBalance, Actions::IntegrityCheck];
     for action in &checks {
         let _span = tracing::info_span!("running action", ?action).entered();
         action.run(&vid, env, &txn).or_into_ctx()?;
@@ -291,18 +336,6 @@ fn account_exists(txn: &Transaction<'_>, id: u64) -> rusqlite::Result<bool> {
     )
 }
 
-fn find_nonzero_account<R: Rng>(
-    rng: &mut R,
-    txn: &Transaction<'_>,
-    max_account_id: u64,
-) -> rusqlite::Result<(u64, u64)> {
-    // find the first non-zero balance account starting from a random account id
-    let start = rng.random_range(1..=max_account_id);
-    let (id, balance) = first_nonzero_account_starting_at(txn, start)?;
-    assert!(balance > 0, "balance should be greater than zero");
-    return Ok((id, balance));
-}
-
 // start scanning for nonzero account at the provided id, wrapping around if
 // needed
 const FIRST_NONZERO_ACCOUNT_SQL: &str = r#"
@@ -311,16 +344,55 @@ UNION ALL
 SELECT id, balance FROM accounts WHERE balance > 0
 "#;
 
-fn first_nonzero_account_starting_at(
+fn find_nonzero_account<R: Rng>(
+    rng: &mut R,
     txn: &Transaction<'_>,
-    start: u64,
+    max_account_id: u64,
 ) -> rusqlite::Result<(u64, u64)> {
-    txn.query_row(FIRST_NONZERO_ACCOUNT_SQL, [start], |r| {
+    // find the first non-zero balance account starting from a random account id
+    let start = rng.random_range(1..=max_account_id);
+    let (id, balance) = txn.query_row(FIRST_NONZERO_ACCOUNT_SQL, [start], |r| {
         Ok((r.get(0)?, r.get(1)?))
-    })
+    })?;
+    assert!(balance > 0, "balance should be greater than zero");
+    return Ok((id, balance));
 }
 
 fn get_snapshot(txn: &Transaction<'_>) -> rusqlite::Result<Option<String>> {
     txn.pragma_query_value(None, "graft_snapshot", |row| row.get(0))
         .optional()
+}
+
+fn write_to_ledger(
+    txn: &Transaction<'_>,
+    account_id: u64,
+    amount: i64,
+    cid: &ClientId,
+) -> rusqlite::Result<()> {
+    let snapshot = get_snapshot(&txn)?.unwrap_or("empty".to_string());
+    txn.execute(
+        "INSERT INTO ledger (account_id, amount, snapshot, cid) VALUES (?, ?, ?, ?)",
+        params![account_id, amount, snapshot, cid.short()],
+    )?;
+    Ok(())
+}
+
+fn transfer(
+    txn: &Transaction<'_>,
+    source: u64,
+    target: u64,
+    amount: i64,
+    cid: &ClientId,
+) -> rusqlite::Result<()> {
+    write_to_ledger(txn, source, -amount, cid)?;
+    txn.execute(
+        "UPDATE accounts SET balance = balance - ? WHERE id = ?",
+        params![amount, source],
+    )?;
+    write_to_ledger(txn, target, amount, cid)?;
+    txn.execute(
+        "UPDATE accounts SET balance = balance + ? WHERE id = ?",
+        params![amount, target],
+    )?;
+    Ok(())
 }
