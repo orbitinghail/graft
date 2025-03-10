@@ -53,6 +53,18 @@ impl VolumeReader {
     pub(crate) fn into_parts(self) -> (VolumeId, Option<Snapshot>, Arc<ClientPair>, Arc<Storage>) {
         (self.vid, self.snapshot, self.clients, self.storage)
     }
+
+    /// Read a page from the local page cache
+    pub fn read_cached(&self, pageidx: PageIdx) -> Result<(Option<LSN>, PageValue), ClientErr> {
+        if let Some(snapshot) = self.snapshot() {
+            self.storage
+                .read(self.vid(), snapshot.local(), pageidx)
+                .map(|(lsn, v)| (Some(lsn), v))
+                .or_into_ctx()
+        } else {
+            Ok((None, PageValue::Empty))
+        }
+    }
 }
 
 impl VolumeRead for VolumeReader {

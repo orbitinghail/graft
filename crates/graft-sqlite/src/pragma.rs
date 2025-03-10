@@ -1,4 +1,6 @@
-use graft_client::runtime::runtime::Runtime;
+use graft_client::runtime::{
+    runtime::Runtime, storage::page::PageValue, volume_reader::VolumeRead,
+};
 use sqlite_plugin::vfs::{Pragma, PragmaErr};
 use std::fmt::Write;
 
@@ -10,6 +12,9 @@ pub enum GraftPragma {
 
     /// `pragma graft_snapshot;`
     Snapshot,
+
+    /// `pragma graft_pages;`
+    Pages,
 
     /// `pragma graft_sync = true|false;`
     SetAutosync(bool),
@@ -24,6 +29,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 return match suffix {
                     "status" => Ok(GraftPragma::Status),
                     "snapshot" => Ok(GraftPragma::Snapshot),
+                    "pages" => Ok(GraftPragma::Pages),
                     "sync" => {
                         let arg = p.arg.ok_or(PragmaErr::required_arg(p))?;
                         let autosync = arg.parse()?;
@@ -57,6 +63,29 @@ impl GraftPragma {
             GraftPragma::SetAutosync(autosync) => {
                 runtime.set_autosync(autosync);
                 Ok(None)
+            }
+            GraftPragma::Pages => {
+                let mut out = format!("{:<8} | {:<6} | state\n", "pageno", "lsn");
+                let reader = file.handle().reader()?;
+                let pages = reader.snapshot().map(|s| s.pages()).unwrap_or_default();
+                for pageidx in pages.iter() {
+                    let (lsn, page) = reader.read_cached(pageidx)?;
+                    writeln!(
+                        &mut out,
+                        "{:<8} | {:<6} | {}",
+                        pageidx.to_u32(),
+                        match lsn {
+                            Some(lsn) => lsn.to_string(),
+                            None => "None".to_string(),
+                        },
+                        match page {
+                            PageValue::Pending => "pending",
+                            PageValue::Empty => "empty",
+                            PageValue::Available(_) => "cached",
+                        }
+                    )?;
+                }
+                Ok(Some(out))
             }
         }
     }

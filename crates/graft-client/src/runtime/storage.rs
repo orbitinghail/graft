@@ -37,7 +37,7 @@ use zerocopy::IntoBytes;
 pub mod changeset;
 pub(crate) mod commit;
 pub(crate) mod memtable;
-pub(crate) mod page;
+pub mod page;
 pub mod snapshot;
 pub mod volume_state;
 
