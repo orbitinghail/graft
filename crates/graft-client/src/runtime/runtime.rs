@@ -1,16 +1,12 @@
-use culprit::{Culprit, Result, ResultExt};
+use culprit::{Result, ResultExt};
 use std::{sync::Arc, time::Duration};
-use tryiter::{TryIterator, TryIteratorExt};
 
 use graft_core::{VolumeId, gid::ClientId};
 
 use crate::{ClientErr, ClientPair};
 
 use super::{
-    storage::{
-        Storage,
-        volume_state::{VolumeConfig, VolumeState},
-    },
+    storage::{Storage, volume_state::VolumeConfig},
     sync::{ShutdownErr, StartupErr, SyncTaskHandle},
     volume_handle::VolumeHandle,
 };
@@ -63,10 +59,8 @@ impl Runtime {
         self.sync.rpc().set_autosync(autosync)
     }
 
-    pub fn iter_volumes(&self) -> impl TryIterator<Ok = VolumeState, Err = Culprit<ClientErr>> {
-        self.storage
-            .iter_volumes()
-            .map_err(|e| e.map_ctx(ClientErr::StorageErr))
+    pub fn volume_exists(&self, vid: VolumeId) -> Result<bool, ClientErr> {
+        self.storage.volume_exists(vid).or_into_ctx()
     }
 
     pub fn open_volume(

@@ -263,6 +263,11 @@ impl Storage {
         VolumeQueryIter::new(iter)
     }
 
+    pub fn volume_exists(&self, vid: VolumeId) -> Result<bool> {
+        let key = VolumeStateKey::new(vid, VolumeStateTag::Config);
+        Ok(self.volumes.contains_key(key)?)
+    }
+
     pub fn query_volumes(
         &self,
         sync: SyncDirection,

@@ -181,13 +181,7 @@ impl Vfs for GraftVfs {
         tracing::trace!("access: path={path:?}; flags={flags:?}");
         ErrCtx::wrap(move || {
             if let Ok(vid) = path.parse::<VolumeId>() {
-                Ok(self
-                    .runtime
-                    .iter_volumes()
-                    .try_filter(|v| Ok(v.vid() == &vid))
-                    .try_next()
-                    .or_into_ctx()?
-                    .is_some())
+                Ok(self.runtime.volume_exists(vid).or_into_ctx()?)
             } else {
                 Ok(false)
             }
