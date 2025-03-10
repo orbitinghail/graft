@@ -42,7 +42,11 @@ if [ ! -f "${SQLITE_BIN}" ]; then
         tar -C "${SQLITE_DIR}" -xzf "${SQLITE_TAR}"
         rm "${SQLITE_TAR}"
         cd "${SQLITE_DIR}/sqlite-autoconf-${SQLITE_VERSION}"
-        ./configure
+        export CFLAGS="-DSQLITE_ENABLE_DBSTAT_VTAB"
+        ./configure \
+            --all \
+            --with-readline-ldflags="-L/opt/homebrew/opt/readline/lib -lreadline" \
+            --with-readline-header="/opt/homebrew/opt/readline/include/readline/readline.h"
         make -j 4
         mv sqlite3 "${SQLITE_DIR}"
     fi
