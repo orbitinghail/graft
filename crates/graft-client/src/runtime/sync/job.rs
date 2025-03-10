@@ -1,5 +1,3 @@
-use std::process;
-
 use culprit::{Result, ResultExt};
 use graft_core::{PageIdx, VolumeId, gid::ClientId, lsn::LSN, page::Page};
 use graft_proto::pagestore::v1::PageAtIdx;
@@ -159,7 +157,7 @@ impl PushJob {
             Vec::new()
         };
 
-        precept::maybe_fault!(0.1, "PushJob: before metastore commit", process::exit(0), { "cid": self.cid });
+        precept::maybe_fault!(0.1, "PushJob: before metastore commit", std::process::exit(0), { "cid": self.cid });
 
         // commit the segments to the metastore
         let remote_snapshot = match clients
@@ -182,7 +180,7 @@ impl PushJob {
             }
         };
 
-        precept::maybe_fault!(0.1, "PushJob: after metastore commit", process::exit(0), { "cid": self.cid });
+        precept::maybe_fault!(0.1, "PushJob: after metastore commit", std::process::exit(0), { "cid": self.cid });
 
         // complete the sync
         storage

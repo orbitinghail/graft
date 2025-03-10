@@ -8,7 +8,7 @@ VID="GontkHa6QVLMYnkyk16wUP"
 GDB=${GDB:-0}
 export RUST_LOG=${RUST_LOG:-warn}
 
-cargo build
+cargo build --features precept/disabled --package graft-sqlite-extension
 
 # parse flags
 while [[ $# -gt 0 ]]; do

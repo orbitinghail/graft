@@ -11,13 +11,13 @@ FILTER="${1:-}"
 # set the PWD to the git root directory - sql tests expect this
 cd "${GIT_ROOT}"
 
-cargo build
+cargo build --features precept/disabled --package graft-sqlite-extension
 if [ $? -ne 0 ]; then
     echo "Cargo build failed"
     exit 1
 fi
 
-cargo build --examples --features dynamic
+cargo build --example memvfs --features dynamic
 if [ $? -ne 0 ]; then
     echo "Cargo build failed"
     exit 1

@@ -162,7 +162,7 @@ fn fetch_page<O: Oracle>(
                     "remote_lsn": remote_lsn,
                     "pageidx": page.pageidx,
                 }
-            )
+            );
         }
     }
 

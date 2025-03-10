@@ -12,6 +12,7 @@ graft-core = { path = "../graft-core" }
 graft-client = { path = "../graft-client" }
 graft-sqlite = { path = "../graft-sqlite" }
 sqlite-plugin = { path = "../sqlite-plugin", features = ["dynamic"] }
+precept = { path = "../precept" }
 
 [lints]
 workspace = true

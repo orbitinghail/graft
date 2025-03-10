@@ -1,5 +1,4 @@
 use rand::RngCore;
-use rand_core::impls::fill_bytes_via_next;
 
 #[cfg(feature = "disabled")]
 pub fn rng() -> impl RngCore {
@@ -28,6 +27,6 @@ impl RngCore for DispatchRng {
 
     #[inline]
     fn fill_bytes(&mut self, dst: &mut [u8]) {
-        fill_bytes_via_next(self, dst)
+        rand_core::impls::fill_bytes_via_next(self, dst)
     }
 }
