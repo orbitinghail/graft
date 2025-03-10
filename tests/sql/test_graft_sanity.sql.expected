@@ -16,6 +16,7 @@ pragma graft_status;
 | Graft Status           |
 | Current snapshot: None |
 | Autosync: false        |
+| Volume status: Ok      |
 +------------------------+
 
 CREATE TABLE t1(a, b);
@@ -55,6 +56,7 @@ pragma graft_status;
 | Graft Status                    |
 | Current snapshot: Snapshot[4;2] |
 | Autosync: false                 |
+| Volume status: Ok               |
 +---------------------------------+
 
 vacuum;

@@ -10,6 +10,7 @@ pragma graft_status;
 | Graft Status           |
 | Current snapshot: None |
 | Autosync: false        |
+| Volume status: Ok      |
 +------------------------+
 
 .connection 1
@@ -21,6 +22,7 @@ pragma graft_status;
 | Graft Status           |
 | Current snapshot: None |
 | Autosync: false        |
+| Volume status: Ok      |
 +------------------------+
 
 -- load the sample dataset
@@ -134,6 +136,7 @@ pragma graft_status;
 | Graft Status                    |
 | Current snapshot: Snapshot[3;2] |
 | Autosync: false                 |
+| Volume status: Ok               |
 +---------------------------------+
 .connection 0
 pragma graft_status;
@@ -143,6 +146,7 @@ pragma graft_status;
 | Graft Status                    |
 | Current snapshot: Snapshot[3;2] |
 | Autosync: false                 |
+| Volume status: Ok               |
 +---------------------------------+
 
 SQLite Exit Code = 1
