@@ -18,6 +18,9 @@ pub enum GraftPragma {
 
     /// `pragma graft_sync = true|false;`
     SetAutosync(bool),
+
+    /// `pragma graft_reset;`
+    Reset,
 }
 
 impl TryFrom<&Pragma<'_>> for GraftPragma {
@@ -30,6 +33,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     "status" => Ok(GraftPragma::Status),
                     "snapshot" => Ok(GraftPragma::Snapshot),
                     "pages" => Ok(GraftPragma::Pages),
+                    "reset" => Ok(GraftPragma::Reset),
                     "sync" => {
                         let arg = p.arg.ok_or(PragmaErr::required_arg(p))?;
                         let autosync = arg.parse()?;
@@ -57,6 +61,7 @@ impl GraftPragma {
                     writeln!(&mut out, "Current snapshot: None")?;
                 }
                 writeln!(&mut out, "Autosync: {}", runtime.get_autosync())?;
+                writeln!(&mut out, "Volume status: {:?}", file.handle().status()?)?;
                 Ok(Some(out))
             }
             GraftPragma::Snapshot => Ok(file.snapshot_or_latest()?.map(|s| s.to_string())),
@@ -86,6 +91,10 @@ impl GraftPragma {
                     )?;
                 }
                 Ok(Some(out))
+            }
+            GraftPragma::Reset => {
+                file.handle().reset_to_remote()?;
+                Ok(None)
             }
         }
     }
