@@ -34,6 +34,8 @@ INSERT INTO ledger (account_id, amount) SELECT x, 50 FROM cnt;
 /*
 DEMO QUERIES:
 
+.read datasets/bank.sql
+
 -- get the total balance of all accounts
 SELECT SUM(balance) FROM accounts;
 
@@ -49,4 +51,7 @@ SELECT * FROM accounts ORDER BY balance desc, id asc LIMIT 10;
 
 -- transfer $10 from account 1 to account 2
 INSERT INTO ledger (account_id, amount) VALUES (1, -10), (2, 10);
+
+-- get the balance of account 1 and 2
+SELECT * FROM accounts WHERE id IN (1, 2);
 */
