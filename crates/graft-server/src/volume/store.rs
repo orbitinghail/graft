@@ -61,6 +61,7 @@ impl VolumeStore {
                     mode: PutMode::Create,
                     tags: TagSet::default(),
                     attributes: Attributes::default(),
+                    extensions: Default::default(),
                 },
             )
             .await?;
