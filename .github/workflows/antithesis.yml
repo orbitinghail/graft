@@ -9,10 +9,6 @@ on:
     #         │  │  ┌───────────── day of the month (1 - 31)
     #         │  │  │  ┌───────────── month (1 - 12 or JAN-DEC)
     #         │  │  │  │  ┌───────────── day of the week (0 - 6 or SUN-SAT)
-    #         │  │  │  │  │
-    #         │  │  │  │  │
-    #         │  │  │  │  │
-    #         *  *  *  *  *
     - cron: " 0  7  *  *  *"
     # Run every day at 7:00 AM UTC = 12:00 AM PST
 
@@ -50,7 +46,7 @@ jobs:
           push: true
           tags: ${{env.REGISTRY}}/metastore:${{github.sha}}
           cache-from: type=registry,ref=${{env.REGISTRY}}/metastore:dockercache
-          cache-to: type=registry,ref=${{env.REGISTRY}}/metastore:dockercache,mode=max,image-manifest=true
+          cache-to: type=registry,ref=${{env.REGISTRY}}/layercache,mode=max,image-manifest=true
           platforms: linux/amd64
           target: metastore
           build-args: INSTRUMENTED=1
@@ -62,8 +58,8 @@ jobs:
           pull: true
           push: true
           tags: ${{env.REGISTRY}}/pagestore:${{github.sha}}
-          cache-from: type=registry,ref=${{env.REGISTRY}}/pagestore:dockercache
-          cache-to: type=registry,ref=${{env.REGISTRY}}/pagestore:dockercache,mode=max,image-manifest=true
+          cache-from: type=registry,ref=${{env.REGISTRY}}/layercache
+          cache-to: type=registry,ref=${{env.REGISTRY}}/layercache,mode=max,image-manifest=true
           platforms: linux/amd64
           target: pagestore
           build-args: INSTRUMENTED=1
@@ -75,8 +71,8 @@ jobs:
           pull: true
           push: true
           tags: ${{env.REGISTRY}}/test_workload:${{github.sha}}
-          cache-from: type=registry,ref=${{env.REGISTRY}}/test_workload:dockercache
-          cache-to: type=registry,ref=${{env.REGISTRY}}/test_workload:dockercache,mode=max,image-manifest=true
+          cache-from: type=registry,ref=${{env.REGISTRY}}/layercache
+          cache-to: type=registry,ref=${{env.REGISTRY}}/layercache,mode=max,image-manifest=true
           platforms: linux/amd64
           target: test_workload
           build-args: INSTRUMENTED=1
@@ -108,7 +104,7 @@ jobs:
       - name: Run Antithesis Tests
         uses: antithesishq/antithesis-trigger-action@v0.8
         with:
-          notebook_name: orbitinghail
+          notebook_name: basic_test
           tenant: ${{ secrets.ANTITHESIS_TENANT }}
           username: ${{ secrets.ANTITHESIS_USERNAME }}
           password: ${{ secrets.ANTITHESIS_PASSWORD }}
