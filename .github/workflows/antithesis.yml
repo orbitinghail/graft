@@ -36,7 +36,7 @@ jobs:
         with:
           token: ${{secrets.GITHUB_TOKEN}}
       - name: Start Antithesis Tests
-        run: just run antithesis-run 15
+        run: just antithesis-run 15
         env:
           ANTITHESIS_TENANT: ${{ secrets.ANTITHESIS_TENANT }}
           ANTITHESIS_USERNAME: ${{ secrets.ANTITHESIS_USERNAME }}
