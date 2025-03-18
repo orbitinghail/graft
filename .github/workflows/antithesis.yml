@@ -115,7 +115,7 @@ jobs:
           config_image: ${{ env.registry }}/config:${{github.sha}}
           images: ${{ env.registry }}/metastore:${{github.sha}};${{ env.registry }}/pagestore:${{github.sha}};${{ env.registry }}/test_workload:${{github.sha}};${{ env.registry }}/minio:${{github.sha}}
           test_name: "github actions: antithesis nightly test run"
-          description: "${{ github.sha }}: ${{ steps.commit_summary.outputs.COMMIT_SUMMARY }}"
+          description: "github actions: ${{ github.sha }}: ${{ steps.commit_summary.outputs.COMMIT_SUMMARY }}"
           email_recipients: antithesis-results@orbitinghail.dev
           additional_parameters: |-
             antithesis.duration=${{inputs.duration || 300}}
