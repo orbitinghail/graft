@@ -1,6 +1,13 @@
 name: Antithesis
 
 on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Antithesis test duration in seconds"
+        required: true
+        default: 60
+        type: number
   schedule:
     #         ┌───────────── minute (0 - 59)
     #         │  ┌───────────── hour (0 - 23)
@@ -93,7 +100,7 @@ jobs:
           push: true
           tags: ${{env.REGISTRY}}/config:${{github.sha}}
           platforms: linux/amd64
-          build-args: INSTRUMENTED=1, TAG=${{github.sha}}
+          build-args: INSTRUMENTED=1,TAG=${{github.sha}}
 
       - name: Get Commit Summary
         id: commit_summary
@@ -113,4 +120,4 @@ jobs:
           description: "${{ github.sha }}: ${{ steps.commit_summary.outputs.COMMIT_SUMMARY }}"
           email_recipients: antithesis-results@orbitinghail.dev
           additional_parameters: |-
-            antithesis.duration=300
+            antithesis.duration={{inputs.duration || 300}}

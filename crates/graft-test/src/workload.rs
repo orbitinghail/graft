@@ -126,10 +126,10 @@ impl WorkloadErr {
             WorkloadErr::ClientErr(ClientErr::StorageErr(
                 StorageErr::ConcurrentWrite | StorageErr::RemoteConflict,
             )) => true,
-            WorkloadErr::RusqliteErr(rusqlite::Error::SqliteFailure(err, _)) => match err.code {
-                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::SystemIoFailure => true,
-                _ => false,
-            },
+            WorkloadErr::RusqliteErr(rusqlite::Error::SqliteFailure(err, _)) => matches!(
+                err.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::SystemIoFailure
+            ),
             _ => false,
         }
     }

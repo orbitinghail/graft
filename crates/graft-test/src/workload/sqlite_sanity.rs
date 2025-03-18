@@ -132,7 +132,7 @@ impl Workload for SqliteSanity {
             let action = Actions::random(&mut env.rng);
             let span = tracing::info_span!("running action", ?vid, ?action, ?snapshot).entered();
             action
-                .run(&vid, env, &txn)
+                .run(vid, env, &txn)
                 .or_into_culprit(format!("txn snapshot: {snapshot:?}"))?;
             txn.commit()?;
             drop(span);
@@ -291,7 +291,10 @@ impl Actions {
             }
             Actions::IntegrityCheck => {
                 let mut results: Vec<String> = vec![];
-                txn.pragma_query(None, "integrity_check", |r| Ok(results.push(r.get(0)?)))?;
+                txn.pragma_query(None, "integrity_check", |r| {
+                    results.push(r.get(0)?);
+                    Ok(())
+                })?;
                 precept::expect_always_or_unreachable!(
                     results == ["ok"],
                     "sqlite database is corrupt",
@@ -299,7 +302,8 @@ impl Actions {
                 );
                 let mut results: Vec<(String, String, String, String)> = vec![];
                 txn.pragma_query(None, "foreign_key_check", |r| {
-                    Ok(results.push((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+                    results.push((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?));
+                    Ok(())
                 })?;
                 precept::expect_always_or_unreachable!(
                     results.is_empty(),
@@ -318,12 +322,12 @@ fn check_db<R: rand::Rng>(
     vid: &VolumeId,
     txn: &Transaction<'_>,
 ) -> Result<(), WorkloadErr> {
-    let snapshot = get_snapshot(&txn)?;
+    let snapshot = get_snapshot(txn)?;
     let _span = tracing::info_span!("performing initial checks", ?vid, ?snapshot).entered();
     let checks = [Actions::CheckBalance, Actions::IntegrityCheck];
     for action in &checks {
         let _span = tracing::info_span!("running action", ?action).entered();
-        action.run(&vid, env, &txn).or_into_ctx()?;
+        action.run(vid, env, txn).or_into_ctx()?;
     }
     Ok(())
 }
@@ -355,7 +359,7 @@ fn find_nonzero_account<R: Rng>(
         Ok((r.get(0)?, r.get(1)?))
     })?;
     assert!(balance > 0, "balance should be greater than zero");
-    return Ok((id, balance));
+    Ok((id, balance))
 }
 
 fn get_snapshot(txn: &Transaction<'_>) -> rusqlite::Result<Option<String>> {
@@ -369,7 +373,7 @@ fn write_to_ledger(
     amount: i64,
     cid: &ClientId,
 ) -> rusqlite::Result<()> {
-    let snapshot = get_snapshot(&txn)?.unwrap_or("empty".to_string());
+    let snapshot = get_snapshot(txn)?.unwrap_or("empty".to_string());
     txn.execute(
         "INSERT INTO ledger (account_id, amount, snapshot, cid) VALUES (?, ?, ?, ?)",
         params![account_id, amount, snapshot, cid.short()],

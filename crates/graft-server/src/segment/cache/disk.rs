@@ -116,7 +116,7 @@ impl Cache for DiskCache {
         self.segments
             .write()
             .await
-            .entry(&sid)
+            .entry(sid)
             .or_insert_with(|| Segment {
                 sid: sid.clone(),
                 _size: data_size,

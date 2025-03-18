@@ -64,7 +64,7 @@ impl OpenSegment {
     pub fn batch_insert(
         &mut self,
         vid: VolumeId,
-        pages: impl Iterator<Item = (PageIdx, Page)> + ExactSizeIterator,
+        pages: impl ExactSizeIterator<Item = (PageIdx, Page)>,
     ) -> Result<Splinter, Culprit<SegmentFullErr>> {
         // early exit if segment can't fit a write to this volume
         if !self.has_space_for(&vid) {

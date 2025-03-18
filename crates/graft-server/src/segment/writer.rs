@@ -64,8 +64,14 @@ pub struct WritePagesResponse {
 }
 
 impl WritePagesResponse {
+    #[inline]
     pub fn len(&self) -> usize {
         self.segments.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
     }
 }
 
