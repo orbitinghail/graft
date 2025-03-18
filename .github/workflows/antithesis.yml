@@ -1,8 +1,6 @@
 name: Antithesis
 
 on:
-  push:
-    branches: ["main"]
   schedule:
     #         ┌───────────── minute (0 - 59)
     #         │  ┌───────────── hour (0 - 23)
@@ -45,7 +43,7 @@ jobs:
           pull: true
           push: true
           tags: ${{env.REGISTRY}}/metastore:${{github.sha}}
-          cache-from: type=registry,ref=${{env.REGISTRY}}/metastore:dockercache
+          cache-from: type=registry,ref=${{env.REGISTRY}}/layercache
           cache-to: type=registry,ref=${{env.REGISTRY}}/layercache,mode=max,image-manifest=true
           platforms: linux/amd64
           target: metastore
@@ -115,4 +113,4 @@ jobs:
           description: "${{ github.sha }}: ${{ steps.commit_summary.outputs.COMMIT_SUMMARY }}"
           email_recipients: antithesis-results@orbitinghail.dev
           additional_parameters: |-
-            antithesis.duration=15
+            antithesis.duration=300
