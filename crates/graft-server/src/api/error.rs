@@ -134,30 +134,29 @@ impl IntoResponse for ApiErr {
     fn into_response(self) -> Response {
         use ApiErrCtx::*;
 
-        let (status, code) = match self.0.ctx() {
-            InvalidIdempotentCommit => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            InvalidRequestBody => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            GidParseErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            PageSizeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            DuplicatePageIdx => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            GraftDecodeErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            SnapshotMissing => (StatusCode::NOT_FOUND, GraftErrCode::SnapshotMissing),
-            RejectedCommit => (StatusCode::CONFLICT, GraftErrCode::CommitRejected),
-            ConvertToPageIdxErr(_) => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            ZeroPageIdx => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            GraftTooLarge => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            InvalidLSN => (StatusCode::BAD_REQUEST, GraftErrCode::Client),
-            SegmentDownloadErr | SegmentUploadErr => {
-                (StatusCode::BAD_GATEWAY, GraftErrCode::ServiceUnavailable)
-            }
-            VolumeStoreErr(store::VolumeStoreErr::ObjectStoreErr) => {
-                (StatusCode::BAD_GATEWAY, GraftErrCode::ServiceUnavailable)
-            }
-            ClientErr(graft_client::ClientErr::HttpErr(_)) => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                GraftErrCode::ServiceUnavailable,
-            ),
-            _ => (StatusCode::INTERNAL_SERVER_ERROR, GraftErrCode::Server),
+        let code = match self.0.ctx() {
+            SnapshotMissing => GraftErrCode::SnapshotMissing,
+            RejectedCommit => GraftErrCode::CommitRejected,
+
+            InvalidIdempotentCommit
+            | InvalidRequestBody
+            | GidParseErr(_)
+            | PageSizeErr(_)
+            | DuplicatePageIdx
+            | GraftDecodeErr(_)
+            | ConvertToPageIdxErr(_)
+            | ZeroPageIdx
+            | GraftTooLarge
+            | InvalidLSN => GraftErrCode::Client,
+
+            SegmentDownloadErr
+            | SegmentUploadErr
+            | VolumeStoreErr(store::VolumeStoreErr::ObjectStoreErr)
+            | ClientErr(graft_client::ClientErr::HttpErr(_)) => GraftErrCode::ServiceUnavailable,
+
+            ClientErr(graft_client::ClientErr::GraftErr(err)) => err.code(),
+
+            _ => GraftErrCode::Server,
         };
         let message = self.0.ctx().to_string();
 
@@ -172,7 +171,7 @@ impl IntoResponse for ApiErr {
         }
 
         (
-            status,
+            graft_err_code_to_status(code),
             ProtoResponse::new(GraftErr { code: code as i32, message }),
         )
             .into_response()
@@ -203,4 +202,16 @@ pub(crate) fn handle_panic(err: Box<dyn Any + Send + 'static>) -> Response {
         }),
     )
         .into_response()
+}
+
+#[inline]
+fn graft_err_code_to_status(code: GraftErrCode) -> StatusCode {
+    match code {
+        GraftErrCode::Unspecified => unreachable!("graft error code unspecified"),
+        GraftErrCode::Client => StatusCode::BAD_REQUEST,
+        GraftErrCode::SnapshotMissing => StatusCode::NOT_FOUND,
+        GraftErrCode::CommitRejected => StatusCode::CONFLICT,
+        GraftErrCode::Server => StatusCode::INTERNAL_SERVER_ERROR,
+        GraftErrCode::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+    }
 }
