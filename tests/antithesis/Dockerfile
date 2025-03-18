@@ -3,6 +3,7 @@ COPY docker-compose.yaml /docker-compose.yaml
 
 # replace `:latest` with the actual tag in the docker-compose.yaml
 ARG TAG
+RUN echo "TAG=${TAG}"
 RUN sed -i "s/:latest/:${TAG}/g" /docker-compose.yaml
 
 FROM scratch

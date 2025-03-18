@@ -96,7 +96,9 @@ jobs:
           push: true
           tags: ${{env.REGISTRY}}/config:${{github.sha}}
           platforms: linux/amd64
-          build-args: INSTRUMENTED=1,TAG=${{github.sha}}
+          build-args: |
+            INSTRUMENTED=1
+            TAG=${{github.sha}}
 
       - name: Get Commit Summary
         id: commit_summary
