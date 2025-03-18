@@ -48,7 +48,7 @@ jobs:
           context: .
           pull: true
           push: true
-          tags: metastore,${{env.REGISTRY}}/metastore:latest
+          tags: ${{env.REGISTRY}}/metastore:${{github.sha}}
           cache-from: type=registry,ref=${{env.REGISTRY}}/metastore:dockercache
           cache-to: type=registry,ref=${{env.REGISTRY}}/metastore:dockercache,mode=max,image-manifest=true
           platforms: linux/amd64
@@ -61,7 +61,7 @@ jobs:
           context: .
           pull: true
           push: true
-          tags: pagestore,${{env.REGISTRY}}/pagestore:latest
+          tags: ${{env.REGISTRY}}/pagestore:${{github.sha}}
           cache-from: type=registry,ref=${{env.REGISTRY}}/pagestore:dockercache
           cache-to: type=registry,ref=${{env.REGISTRY}}/pagestore:dockercache,mode=max,image-manifest=true
           platforms: linux/amd64
@@ -74,7 +74,7 @@ jobs:
           context: .
           pull: true
           push: true
-          tags: test_workload,${{env.REGISTRY}}/test_workload:latest
+          tags: ${{env.REGISTRY}}/test_workload:${{github.sha}}
           cache-from: type=registry,ref=${{env.REGISTRY}}/test_workload:dockercache
           cache-to: type=registry,ref=${{env.REGISTRY}}/test_workload:dockercache,mode=max,image-manifest=true
           platforms: linux/amd64
@@ -87,7 +87,7 @@ jobs:
           context: tests/antithesis/minio
           pull: true
           push: true
-          tags: minio,${{env.REGISTRY}}/minio:latest
+          tags: ${{env.REGISTRY}}/minio:${{github.sha}}
           platforms: linux/amd64
           build-args: INSTRUMENTED=1
 
@@ -99,7 +99,7 @@ jobs:
           push: true
           tags: ${{env.REGISTRY}}/config:${{github.sha}}
           platforms: linux/amd64
-          build-args: INSTRUMENTED=1
+          build-args: INSTRUMENTED=1, TAG=${{github.sha}}
 
       - name: Get Commit Summary
         id: commit_summary
@@ -113,8 +113,8 @@ jobs:
           username: ${{ secrets.ANTITHESIS_USERNAME }}
           password: ${{ secrets.ANTITHESIS_PASSWORD }}
           github_token: ${{ secrets.GH_ANTITHESIS_PAT }}
-          config_image: ${{ env.registry }}/config:latest
-          images: ${{ env.registry }}/metastore:latest;${{ env.registry }}/pagestore:latest;${{ env.registry }}/test_workload:latest;${{ env.registry }}/minio:latest
+          config_image: ${{ env.registry }}/config:${{github.sha}}
+          images: ${{ env.registry }}/metastore:${{github.sha}};${{ env.registry }}/pagestore:${{github.sha}};${{ env.registry }}/test_workload:${{github.sha}};${{ env.registry }}/minio:${{github.sha}}
           test_name: "github actions: antithesis nightly test run"
           description: "${{ github.sha }}: ${{ steps.commit_summary.outputs.COMMIT_SUMMARY }}"
           email_recipients: antithesis-results@orbitinghail.dev

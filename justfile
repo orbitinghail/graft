@@ -10,11 +10,11 @@ BUILD_ARGS := instrumented && "--build-arg INSTRUMENTED=1" || ""
 ANTITHESIS_REGISTRY := "us-central1-docker.pkg.dev/molten-verve-216720/orbitinghail-repository"
 DOCKER_PLATFORM := "linux/amd64"
 
-METASTORE_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "metastore:latest"
-PAGESTORE_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "pagestore:latest"
-CONFIG_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "config:latest"
-TEST_WORKLOAD_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "test_workload:latest"
-MINIO_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "minio:latest"
+METASTORE_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "metastore:" + GIT_SHA
+PAGESTORE_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "pagestore:" + GIT_SHA
+CONFIG_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "config:" + GIT_SHA
+TEST_WORKLOAD_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "test_workload:" + GIT_SHA
+MINIO_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "minio:" + GIT_SHA
 
 default:
     @just --list
@@ -90,8 +90,10 @@ test-workload-image:
 antithesis-config-image:
     docker build \
         --platform {{DOCKER_PLATFORM}} \
+        -t antithesis-config \
         -t {{CONFIG_ANTITHESIS_TAG}} \
-        {{BUILD_ARGS}} tests/antithesis
+        {{BUILD_ARGS}} --build-arg TAG={{GIT_SHA}} \
+        tests/antithesis
 
 minio-image:
     docker build \
