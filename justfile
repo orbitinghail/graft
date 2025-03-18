@@ -60,6 +60,9 @@ test:
     cargo nextest run
     just run sqlite test
 
+metastore-tag:
+    @echo {{METASTORE_ANTITHESIS_TAG}}
+
 metastore-image:
     docker build \
         --platform {{DOCKER_PLATFORM}} \
@@ -76,12 +79,6 @@ pagestore-image:
         -t {{PAGESTORE_ANTITHESIS_TAG}} \
         {{BUILD_ARGS}} .
 
-antithesis-config-image:
-    docker build \
-        --platform {{DOCKER_PLATFORM}} \
-        -t {{CONFIG_ANTITHESIS_TAG}} \
-        {{BUILD_ARGS}} tests/antithesis
-
 test-workload-image:
     docker build \
         --platform {{DOCKER_PLATFORM}} \
@@ -90,13 +87,18 @@ test-workload-image:
         -t {{TEST_WORKLOAD_ANTITHESIS_TAG}} \
         {{BUILD_ARGS}} .
 
+antithesis-config-image:
+    docker build \
+        --platform {{DOCKER_PLATFORM}} \
+        -t {{CONFIG_ANTITHESIS_TAG}} \
+        {{BUILD_ARGS}} tests/antithesis
+
 minio-image:
     docker build \
         --platform {{DOCKER_PLATFORM}} \
-        --target minio \
         -t minio \
         -t {{MINIO_ANTITHESIS_TAG}} \
-        {{BUILD_ARGS}} .
+        {{BUILD_ARGS}} tests/antithesis/minio
 
 build-images: metastore-image pagestore-image
 

@@ -19,25 +19,104 @@ on:
 permissions:
   contents: read
 
+env:
+  REGISTRY: us-central1-docker.pkg.dev/molten-verve-216720/orbitinghail-repository
+
 jobs:
   antithesis:
     runs-on: ubuntu-latest
     steps:
       - uses: extractions/setup-just@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Login to Google Artifact Registry
         uses: docker/login-action@v3
         with:
           registry: us-central1-docker.pkg.dev
           username: _json_key
           password: ${{ secrets.GAR_KEY }}
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+
       - uses: actions/checkout@v4
         with:
           token: ${{secrets.GITHUB_TOKEN}}
-      - name: Start Antithesis Tests
-        run: just antithesis-run 15
-        env:
-          ANTITHESIS_TENANT: ${{ secrets.ANTITHESIS_TENANT }}
-          ANTITHESIS_USERNAME: ${{ secrets.ANTITHESIS_USERNAME }}
-          ANTITHESIS_PASSWORD: ${{ secrets.ANTITHESIS_PASSWORD }}
+
+      - name: Build metastore image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          pull: true
+          push: true
+          tags: metastore,${{env.REGISTRY}}/metastore:latest
+          cache-from: type=registry,ref=${{env.REGISTRY}}/metastore:dockercache
+          cache-to: type=registry,ref=${{env.REGISTRY}}/metastore:dockercache,mode=max,image-manifest=true
+          platforms: linux/amd64
+          target: metastore
+          build-args: INSTRUMENTED=1
+
+      - name: Build pagestore image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          pull: true
+          push: true
+          tags: pagestore,${{env.REGISTRY}}/pagestore:latest
+          cache-from: type=registry,ref=${{env.REGISTRY}}/pagestore:dockercache
+          cache-to: type=registry,ref=${{env.REGISTRY}}/pagestore:dockercache,mode=max,image-manifest=true
+          platforms: linux/amd64
+          target: pagestore
+          build-args: INSTRUMENTED=1
+
+      - name: Build test workload image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          pull: true
+          push: true
+          tags: test_workload,${{env.REGISTRY}}/test_workload:latest
+          cache-from: type=registry,ref=${{env.REGISTRY}}/test_workload:dockercache
+          cache-to: type=registry,ref=${{env.REGISTRY}}/test_workload:dockercache,mode=max,image-manifest=true
+          platforms: linux/amd64
+          target: test_workload
+          build-args: INSTRUMENTED=1
+
+      - name: Build minio image
+        uses: docker/build-push-action@v4
+        with:
+          context: tests/antithesis/minio
+          pull: true
+          push: true
+          tags: minio,${{env.REGISTRY}}/minio:latest
+          platforms: linux/amd64
+          build-args: INSTRUMENTED=1
+
+      - name: Build antithesis config image
+        uses: docker/build-push-action@v4
+        with:
+          context: tests/antithesis
+          pull: true
+          push: true
+          tags: ${{env.REGISTRY}}/config:${{github.sha}}
+          platforms: linux/amd64
+          build-args: INSTRUMENTED=1
+
+      - name: Get Commit Summary
+        id: commit_summary
+        run: echo "COMMIT_SUMMARY=$(git show-branch)" >> "$GITHUB_OUTPUT"
+
+      - name: Run Antithesis Tests
+        uses: antithesishq/antithesis-trigger-action@v0.8
+        with:
+          notebook_name: orbitinghail
+          tenant: ${{ secrets.ANTITHESIS_TENANT }}
+          username: ${{ secrets.ANTITHESIS_USERNAME }}
+          password: ${{ secrets.ANTITHESIS_PASSWORD }}
+          github_token: ${{ secrets.GH_ANTITHESIS_PAT }}
+          config_image: ${{ env.registry }}/config:latest
+          images: ${{ env.registry }}/metastore:latest;${{ env.registry }}/pagestore:latest;${{ env.registry }}/test_workload:latest;${{ env.registry }}/minio:latest
+          test_name: "github actions: antithesis nightly test run"
+          description: "${{ github.sha }}: ${{ steps.commit_summary.outputs.COMMIT_SUMMARY }}"
+          email_recipients: antithesis-results@orbitinghail.dev
+          additional_parameters: |-
+            antithesis.duration=15
