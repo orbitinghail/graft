@@ -73,4 +73,15 @@ impl ClientErr {
             _ => false,
         }
     }
+
+    pub(crate) fn is_network_err(&self) -> bool {
+        match self {
+            Self::HttpErr(ureq::Error::Timeout(_)) => true,
+            Self::HttpErr(ureq::Error::ConnectionFailed) => true,
+            Self::HttpErr(ureq::Error::ConnectProxyFailed(_)) => true,
+            Self::HttpErr(ureq::Error::Io(_)) => true,
+            Self::GraftErr(err) => err.code() == GraftErrCode::ServiceUnavailable,
+            _ => false,
+        }
+    }
 }

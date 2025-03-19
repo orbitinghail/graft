@@ -23,6 +23,8 @@ use super::storage::{
     volume_state::{SyncDirection, VolumeStatus},
 };
 
+const MAX_RECENT_ERRORS: usize = 16;
+
 pub mod control;
 mod job;
 
@@ -91,6 +93,7 @@ impl SyncTaskHandle {
             commits,
             control: control_rx,
             autosync,
+            recent_errors: Default::default(),
         };
 
         let handle = thread::Builder::new()
@@ -184,6 +187,8 @@ pub struct SyncTask {
     /// when autosync is true, volumes will be automatically pushed and pulled
     /// to the server when they change or every `refresh_interval`.
     autosync: bool,
+
+    recent_errors: Vec<(Instant, Culprit<SyncTaskErr>)>,
 }
 
 impl SyncTask {
@@ -195,7 +200,18 @@ impl SyncTask {
                     break;
                 }
                 Err(err) => {
-                    tracing::error!("sync task error: {:?}", err);
+                    match err.ctx() {
+                        SyncTaskErr::Client(err) if err.is_network_err() => {
+                            tracing::debug!("sync task: network error: {:?}", err)
+                        }
+                        _ => tracing::error!("sync task error: {:?}", err),
+                    }
+
+                    self.recent_errors.push((Instant::now(), err));
+                    if self.recent_errors.len() > MAX_RECENT_ERRORS {
+                        self.recent_errors.remove(0);
+                    }
+
                     // we want to explore system states that include sync task errors
                     precept::expect_reachable!("error occurred in sync task");
                     sleep(Duration::from_millis(100));
@@ -259,6 +275,9 @@ impl SyncTask {
             }
             SyncControl::ResetToRemote { vid, complete } => {
                 reply!(complete, self.reset_volume_to_remote(vid))
+            }
+            SyncControl::DrainRecentErrors { complete } => {
+                reply!(complete, self.recent_errors.drain(..).collect())
             }
             SyncControl::Shutdown => {
                 unreachable!("shutdown message is handled in sync task select loop")

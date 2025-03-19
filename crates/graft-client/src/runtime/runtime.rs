@@ -1,5 +1,8 @@
-use culprit::{Result, ResultExt};
-use std::{sync::Arc, time::Duration};
+use culprit::{Culprit, Result, ResultExt};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use graft_core::{VolumeId, gid::ClientId};
 
@@ -7,7 +10,7 @@ use crate::{ClientErr, ClientPair};
 
 use super::{
     storage::{Storage, volume_state::VolumeConfig},
-    sync::{ShutdownErr, StartupErr, SyncTaskHandle},
+    sync::{ShutdownErr, StartupErr, SyncTaskErr, SyncTaskHandle},
     volume_handle::VolumeHandle,
 };
 
@@ -27,6 +30,10 @@ impl Runtime {
             storage: Arc::new(storage),
             sync: SyncTaskHandle::default(),
         }
+    }
+
+    pub fn cid(&self) -> &ClientId {
+        &self.cid
     }
 
     pub fn start_sync_task(
@@ -57,6 +64,10 @@ impl Runtime {
 
     pub fn set_autosync(&self, autosync: bool) {
         self.sync.rpc().set_autosync(autosync)
+    }
+
+    pub fn drain_recent_sync_errors(&self) -> Vec<(Instant, Culprit<SyncTaskErr>)> {
+        self.sync.rpc().drain_recent_errors()
     }
 
     pub fn volume_exists(&self, vid: VolumeId) -> Result<bool, ClientErr> {

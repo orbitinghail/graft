@@ -21,9 +21,9 @@ pub unsafe extern "C" fn sqlite3_graft_init(
     _pz_err_msg: *mut *mut c_void,
     p_api: *mut sqlite3_api_routines,
 ) -> std::os::raw::c_int {
+    let profile = std::env::var("GRAFT_PROFILE").unwrap_or_else(|_| "default".to_string());
     let root_dir =
         std::env::var("GRAFT_DIR").map_or_else(|_| temp_dir().join("graft-sqlite"), |d| d.into());
-    let profile = std::env::var("GRAFT_PROFILE").unwrap_or_else(|_| "default".to_string());
     let metastore =
         std::env::var("GRAFT_METASTORE").unwrap_or_else(|_| "http://127.0.0.1:3001".to_string());
     let pagestore =

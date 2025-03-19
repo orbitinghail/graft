@@ -10,14 +10,16 @@ vfs.iVersion   = 3
 vfs.szOsFile   = 192
 vfs.mxPathname = 512
 pragma graft_status;
-+------------------------+
-|      Graft Status      |
-+------------------------+
-| Graft Status           |
-| Current snapshot: None |
-| Autosync: false        |
-| Volume status: Ok      |
-+------------------------+
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: Qi81Dp4C52izQ3LwX2YfZJ |
+| Volume ID: GontkHa6QVLHYnkyk16wUP |
+| Current snapshot: None            |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
 
 CREATE TABLE t1(a, b);
 INSERT INTO t1 VALUES(1, 2);
@@ -50,14 +52,16 @@ SELECT * FROM t1;
 COMMIT;
 
 pragma graft_status;
-+---------------------------------+
-|          Graft Status           |
-+---------------------------------+
-| Graft Status                    |
-| Current snapshot: Snapshot[4;2] |
-| Autosync: false                 |
-| Volume status: Ok               |
-+---------------------------------+
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: Qi81Dp4C52izQ3LwX2YfZJ |
+| Volume ID: GontkHa6QVLHYnkyk16wUP |
+| Current snapshot: Snapshot[4;2]   |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
 
 vacuum;
 drop table t1;

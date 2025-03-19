@@ -4,26 +4,30 @@
 .connection 0
 .open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
 pragma graft_status;
-+------------------------+
-|      Graft Status      |
-+------------------------+
-| Graft Status           |
-| Current snapshot: None |
-| Autosync: false        |
-| Volume status: Ok      |
-+------------------------+
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: Qi81Dp4C52izQ3LwX2YfZJ |
+| Volume ID: GontkHa6QVLHYnkyk16wUP |
+| Current snapshot: None            |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
 
 .connection 1
 .open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
 pragma graft_status;
-+------------------------+
-|      Graft Status      |
-+------------------------+
-| Graft Status           |
-| Current snapshot: None |
-| Autosync: false        |
-| Volume status: Ok      |
-+------------------------+
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: Qi81Dp4C52izQ3LwX2YfZJ |
+| Volume ID: GontkHa6QVLHYnkyk16wUP |
+| Current snapshot: None            |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
 
 -- load the sample dataset
 .read datasets/simple.sql
@@ -130,23 +134,27 @@ select * from t;
 
 -- check metadata
 pragma graft_status;
-+---------------------------------+
-|          Graft Status           |
-+---------------------------------+
-| Graft Status                    |
-| Current snapshot: Snapshot[3;2] |
-| Autosync: false                 |
-| Volume status: Ok               |
-+---------------------------------+
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: Qi81Dp4C52izQ3LwX2YfZJ |
+| Volume ID: GontkHa6QVLHYnkyk16wUP |
+| Current snapshot: Snapshot[3;2]   |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
 .connection 0
 pragma graft_status;
-+---------------------------------+
-|          Graft Status           |
-+---------------------------------+
-| Graft Status                    |
-| Current snapshot: Snapshot[3;2] |
-| Autosync: false                 |
-| Volume status: Ok               |
-+---------------------------------+
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: Qi81Dp4C52izQ3LwX2YfZJ |
+| Volume ID: GontkHa6QVLHYnkyk16wUP |
+| Current snapshot: Snapshot[3;2]   |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
 
 SQLite Exit Code = 1

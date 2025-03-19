@@ -21,12 +21,8 @@ while [[ $# -gt 0 ]]; do
             RUST_LOG="trace"
             shift
             ;;
-        --temp)
-            export GRAFT_DIR="$(mktemp -d)"
-            shift
-            ;;
         -p*)
-            export GRAFT_DIR="/tmp/graft-shell/${1:2}"
+            export GRAFT_PROFILE="${1:2}"
             shift
             ;;
         --gdb)

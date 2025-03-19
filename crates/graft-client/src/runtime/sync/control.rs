@@ -1,8 +1,12 @@
+use std::time::Instant;
+
 use crossbeam::channel::{self, Receiver, Sender};
 use graft_core::VolumeId;
 
 use crate::{ClientErr, runtime::storage::volume_state::SyncDirection};
-use culprit::Result;
+use culprit::{Culprit, Result};
+
+use super::SyncTaskErr;
 
 #[derive(Debug)]
 pub enum SyncControl {
@@ -24,6 +28,10 @@ pub enum SyncControl {
     ResetToRemote {
         vid: VolumeId,
         complete: Sender<Result<(), ClientErr>>,
+    },
+
+    DrainRecentErrors {
+        complete: Sender<Vec<(Instant, Culprit<SyncTaskErr>)>>,
     },
 
     Shutdown,
@@ -66,5 +74,10 @@ impl SyncRpc {
     pub fn reset_to_remote(&self, vid: VolumeId) -> Result<(), ClientErr> {
         let (complete, recv) = channel::bounded(1);
         self.must_call(SyncControl::ResetToRemote { vid, complete }, recv)
+    }
+
+    pub fn drain_recent_errors(&self) -> Vec<(Instant, Culprit<SyncTaskErr>)> {
+        let (complete, recv) = channel::bounded(1);
+        self.must_call(SyncControl::DrainRecentErrors { complete }, recv)
     }
 }
