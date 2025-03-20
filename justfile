@@ -1,7 +1,7 @@
 set unstable
 
-GIT_SHA := `git describe --abbrev=40 --always --dirty --match=nevermatch`
-GIT_SUMMARY := `git show-branch`
+GIT_SHA := `git describe --abbrev=40 --always --dirty --match=nevermatch 2>/dev/null`
+GIT_SUMMARY := `git show-branch 2>/dev/null`
 
 # set this argument via: just instrumented=1 ...
 instrumented := ""
