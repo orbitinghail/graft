@@ -134,7 +134,7 @@ pub async fn handler(
         let note = format!(
             "commit rejected for volume {vid}: client snapshot lsn {snapshot_lsn:?} is out of sync with latest lsn {latest_lsn:?}"
         );
-        tracing::debug!("{note}");
+        tracing::debug!(%note);
         return Err(Culprit::new_with_note(ApiErrCtx::RejectedCommit, note).into());
     }
 
@@ -171,7 +171,7 @@ pub async fn handler(
     batch.insert_commit(&commit).or_into_ctx()?;
     batch.commit().or_into_ctx()?;
 
-    tracing::debug!(
+    tracing::info!(
         "successful commit to volume {vid}: new snapshot lsn {}",
         commit.meta().lsn()
     );

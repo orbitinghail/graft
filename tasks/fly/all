@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+just run fly metastore "$@"
+just run fly pagestore "$@"

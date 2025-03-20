@@ -54,7 +54,10 @@ where
             .from_env()
             .unwrap();
 
+        let mut span_events = FmtSpan::NONE;
+
         if antithesis || testing {
+            span_events = FmtSpan::NEW | FmtSpan::CLOSE;
             filter = filter
                 .add_directive("graft_client=trace".parse().unwrap())
                 .add_directive("graft_core=trace".parse().unwrap())
@@ -80,7 +83,7 @@ where
         tracing_subscriber::fmt()
             .with_env_filter(filter)
             .with_thread_names(true)
-            .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+            .with_span_events(span_events)
             .with_ansi(color)
             .with_timer(TimeAndPrefix::new(prefix, time))
             .with_writer(writer)
