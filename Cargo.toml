@@ -2,6 +2,12 @@
 resolver = "3"
 members = ["crates/*"]
 
+[workspace.package]
+authors = ["orbitinghail <hello@orbitinghail.dev>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/orbitinghail/graft"
+rust-version = "1.85"
+
 [profile.release]
 opt-level = 3
 lto = true
@@ -49,7 +55,6 @@ prost-types = "0.13"
 quote = "1.0"
 rand = "0.9"
 rand_core = "0.9"
-reqwest = "0.12"
 rlimit = "0.10"
 roaring = "0.10"
 rusqlite = "0.34"
