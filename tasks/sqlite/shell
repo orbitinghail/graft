@@ -25,13 +25,18 @@ while [[ $# -gt 0 ]]; do
             export GRAFT_PROFILE="${1:2}"
             shift
             ;;
+        --fly)
+            export GRAFT_METASTORE="https://graft-metastore.fly.dev"
+            export GRAFT_PAGESTORE="https://graft-pagestore.fly.dev"
+            shift
+            ;;
         --gdb)
             GDB=1
             shift
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [-vVID] [--trace] [--temp] [-pPROFILE] [--gdb]"
+            echo "Usage: $0 [-vVID] [--trace] [-pPROFILE] [--fly] [--gdb]"
             exit 1
             ;;
     esac
