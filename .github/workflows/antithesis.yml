@@ -27,7 +27,7 @@ jobs:
   antithesis:
     runs-on: ubuntu-latest
     steps:
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
