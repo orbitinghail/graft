@@ -449,9 +449,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.16"
+version = "1.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be714c154be609ec7f5dad223a33bf1482fff90472de28f7362806e6d4832b8c"
+checksum = "1fcb57c740ae1daf453ae85f16e37396f672b039e00d9d866e07ddb24e328e3a"
 dependencies = [
  "jobserver",
  "libc",
@@ -970,9 +970,9 @@ dependencies = [
 
 [[package]]
 name = "fjall"
-version = "2.6.7"
+version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ad81b05d96e456433c704ae51210be48241c43214f97820c9254b80f9428cae"
+checksum = "f6d38d014c22756201667b0b2f84ded6f54688d538879659a9c450b4fdfbab57"
 dependencies = [
  "byteorder",
  "byteview",
@@ -1900,9 +1900,9 @@ checksum = "30bde2b3dc3671ae49d8e2e9f044c7c005836e7a023ee57cffa25ab82764bb9e"
 
 [[package]]
 name = "lsm-tree"
-version = "2.6.6"
+version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49c29f6322847a38368942f42eb86c3875fb2e946276f9f3df805cc6ada80b81"
+checksum = "0327fc4b44c1212e87f44141029ab2d05a7e607b758a0f6cf661121f3101b737"
 dependencies = [
  "byteorder",
  "crossbeam-skiplist",
@@ -3586,9 +3586,9 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "value-log"
-version = "1.6.0"
+version = "1.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ea85c4fcd677afc3a00abb1fb0fdc494ad3bb5d7d14736c75cb7c07b3ddd182"
+checksum = "d65573c63cf768179763226edb8d614d8b314130a3f50422d6d375d3947c529f"
 dependencies = [
  "byteorder",
  "bytes",
@@ -3599,6 +3599,7 @@ dependencies = [
  "quick_cache",
  "rustc-hash 2.1.1",
  "tempfile",
+ "varint-rs",
  "xxhash-rust",
 ]
 
@@ -4165,18 +4166,18 @@ dependencies = [
 
 [[package]]
 name = "zstd-safe"
-version = "7.2.3"
+version = "7.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3051792fbdc2e1e143244dc28c60f73d8470e93f3f9cbd0ead44da5ed802722"
+checksum = "8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d"
 dependencies = [
  "zstd-sys",
 ]
 
 [[package]]
 name = "zstd-sys"
-version = "2.0.14+zstd.1.5.7"
+version = "2.0.15+zstd.1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fb060d4926e4ac3a3ad15d864e99ceb5f343c6b34f5bd6d81ae6ed417311be5"
+checksum = "eb81183ddd97d0c74cedf1d50d85c8d08c1b8b68ee863bdee9e706eedba1a237"
 dependencies = [
  "cc",
  "pkg-config",
