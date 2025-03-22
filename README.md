@@ -1,6 +1,40 @@
-# Graft
+<h1 align="center">Graft</h1>
+<p align="center">
+  <a href="https://docs.rs/graft-client"><img alt="docs.rs" src="https://img.shields.io/docsrs/graft-client"></a>
+  &nbsp;
+  <a href="https://crates.io/crates/graft-client"><img alt="crates.io" src="https://img.shields.io/crates/v/graft-client.svg"></a>
+  &nbsp;
+  <a href="https://github.com/orbitinghail/graft/actions"><img alt="Build Status" src="https://github.com/orbitinghail/graft/actions/workflows/ci.yml/badge.svg"></a>
+</p>
 
 Transactional page storage engine supporting lazy partial replication to the edge. Optimized for scale and cost over latency. Leverages object storage for durability.
+
+# Using Graft
+
+Graft should be considered **Alpha** quality software. Thus, don't use it for production workloads yet.
+
+## SQLite extension
+
+The Graft [SQLite] extension should work with any version of SQLite after 3.44.0. It probably works with earlier versions, but no guarantees.
+
+You can download the latest extension dynamic object from [GitHub Releases]. The name of the file is:
+...TODO finish this...
+
+[SQLite]: https://www.sqlite.org/index.html
+[install-sqlite-ext]: https://antonz.org/install-sqlite-extension/
+[GitHub Releases]: https://github.com/orbitinghail/graft/releases/latest
+
+## Rust Crate
+
+Graft can be embedded in your Rust application directly, although for now that is left as an exercise for the reader. You can find the Rust docs here: https://docs.rs/graft-client
+
+## Other languages?
+
+Please [file an issue] if you'd like to use Graft directly from a language other than Rust!
+
+[file an issue]: https://github.com/orbitinghail/graft/issues/new
+
+# Technical Overview
 
 ## Consistency Model
 

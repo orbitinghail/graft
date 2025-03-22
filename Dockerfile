@@ -5,8 +5,9 @@ RUN echo "rebuild-deps: 1"
 
 # install deps
 RUN apt-get update && apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential && rm -rf /var/lib/apt/lists/*
-RUN cargo install cargo-chef --version 0.1.71
-RUN cargo install sccache --version 0.10.0
+RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+RUN cargo binstall -y --version 0.1.71 cargo-chef
+RUN cargo binstall -y --version 0.10.0 sccache
 ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
 # Enable instrumentation when INSTRUMENTED is set:
