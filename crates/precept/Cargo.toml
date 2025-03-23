@@ -7,6 +7,9 @@ license = { workspace = true }
 repository = { workspace = true }
 rust-version = { workspace = true }
 
+description = "A testing utility for fuzzing and fault injection to discover erroneous and interesting states."
+keywords = ["fuzzing", "testing", "fault-injection"]
+
 [lints]
 workspace = true
 

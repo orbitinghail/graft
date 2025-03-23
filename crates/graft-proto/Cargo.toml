@@ -5,7 +5,10 @@ edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
+homepage = { workspace = true }
 rust-version = { workspace = true }
+
+description = "Protocol definitions for the Graft storage engine."
 
 [lints]
 workspace = true

@@ -1,3 +1,22 @@
+<h1 align="center">Splinter</h1>
+<p align="center">
+  <a href="https://docs.rs/splinter"><img alt="docs.rs" src="https://img.shields.io/docsrs/splinter"></a>
+  &nbsp;
+  <a href="https://crates.io/crates/splinter"><img alt="crates.io" src="https://img.shields.io/crates/v/splinter.svg"></a>
+</p>
+
+Splinter is a compressed bitmap format similar to [Roaring], optimized specifically for small, sparse sets of 32-bit unsigned integers (`u32`).
+
+## Key Features:
+
+- **Tree-based Encoding**: Splinter encodes `u32` values into a 256-way tree structure by decomposing integers into big-endian component bytes. Leaf nodes efficiently transition from byte lists to compact bitmaps at up to 32 values.
+
+- **Zero-copy Access**: Designed for efficient querying without deserialization, the `SplinterRef` type allows direct, zero-copy reads from any type implementing `AsRef<[u8]>`.
+
+[Roaring]: https://roaringbitmap.org/
+
+## Serialized Format
+
 ```
 header (4 bytes)
     magic (2 bytes)
@@ -33,9 +52,20 @@ splinter
 
 ```
 
-# Future optimizations
+## License
 
-## SIMD/AVX
+Licensed under either of
 
-- implement SIMD/AVX versions of block_contains and block_rank
-- implement 64-bit versions for non-AVX/SIMD
+- Apache License, Version 2.0 ([LICENSE-APACHE] or https://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT] or https://opensource.org/licenses/MIT)
+
+at your option.
+
+[LICENSE-APACHE]: https://github.com/orbitinghail/graft/blob/main/LICENSE-APACHE
+[LICENSE-MIT]: https://github.com/orbitinghail/graft/blob/main/LICENSE-MIT
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you shall be dual licensed as above, without any
+additional terms or conditions.

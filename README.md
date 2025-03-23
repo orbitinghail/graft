@@ -9,11 +9,11 @@
 
 Transactional page storage engine supporting lazy partial replication to the edge. Optimized for scale and cost over latency. Leverages object storage for durability.
 
-# Using Graft
+## Using Graft
 
 Graft should be considered **Alpha** quality software. Thus, don't use it for production workloads yet.
 
-## SQLite extension
+### SQLite extension
 
 The Graft [SQLite] extension should work with any version of SQLite after 3.44.0. It probably works with earlier versions, but no guarantees.
 
@@ -24,23 +24,23 @@ You can download the latest extension dynamic object from [GitHub Releases]. The
 [install-sqlite-ext]: https://antonz.org/install-sqlite-extension/
 [GitHub Releases]: https://github.com/orbitinghail/graft/releases/latest
 
-## Rust Crate
+### Rust Crate
 
 Graft can be embedded in your Rust application directly, although for now that is left as an exercise for the reader. You can find the Rust docs here: https://docs.rs/graft-client
 
-## Other languages?
+### Other languages?
 
 Please [file an issue] if you'd like to use Graft directly from a language other than Rust!
 
 [file an issue]: https://github.com/orbitinghail/graft/issues/new
 
-# Technical Overview
+## Technical Overview
 
-## Consistency Model
+### Consistency Model
 
 _(This model only applies when using the official Graft Client with Graft Server. Third-party client implementations may violate this model.)_
 
-### Global Consistency
+#### Global Consistency
 
 Graft provides **[Serializable Snapshot Isolation](https://distributed-computing-musings.com/2022/02/transactions-serializable-snapshot-isolation/)** globally.
 
@@ -48,7 +48,7 @@ All read operations are executed on an isolated snapshot of a Volume.
 
 A write transaction must be based on the latest snapshot to commit. Assuming a compliant Graft client, this enforces [Strict Serializable](https://jepsen.io/consistency/models/strong-serializable).
 
-### Local Consistency:
+#### Local Consistency:
 
 By default, Graft clients commit locally and then asynchronously attempt to commit remotely. Because Graft enforces **Strict Serializability** globally, when two clients concurrently commit based on the same snapshot, one commit will succeed and the other will fail.
 
@@ -93,3 +93,21 @@ Under optimistic snapshot isolation, a client may observe a snapshot which never
    - Commit rejected locally: invariant violated (balance cannot be negative).
 
 At this stage, client B should ideally replay or invalidate the read transaction from step (4). If external state changes were based on that read, the client must perform reconciliation to ensure correctness.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE] or https://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT] or https://opensource.org/licenses/MIT)
+
+at your option.
+
+[LICENSE-APACHE]: https://github.com/orbitinghail/graft/blob/main/LICENSE-APACHE
+[LICENSE-MIT]: https://github.com/orbitinghail/graft/blob/main/LICENSE-MIT
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you shall be dual licensed as above, without any
+additional terms or conditions.

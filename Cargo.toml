@@ -6,6 +6,7 @@ members = ["crates/*"]
 authors = ["orbitinghail <hello@orbitinghail.dev>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/orbitinghail/graft"
+homepage = "https://github.com/orbitinghail/graft"
 rust-version = "1.85"
 
 [profile.release]
@@ -73,8 +74,8 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 tryiter = "0.6"
 ureq = { version = "3.0", default-features = false, features = [
-    "rustls",
-    "brotli",
+  "rustls",
+  "brotli",
 ] }
 url = "2.5"
 zerocopy = "0.8"

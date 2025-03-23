@@ -7,6 +7,9 @@ license = { workspace = true }
 repository = { workspace = true }
 rust-version = { workspace = true }
 
+keywords = ["bitmap", "compression", "zero-copy"]
+description = "A compressed bitmap format optimized for small, sparse sets of u32s with zero-copy querying."
+
 [lints]
 workspace = true
 

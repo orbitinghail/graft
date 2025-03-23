@@ -5,6 +5,7 @@ edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
+homepage = { workspace = true }
 rust-version = { workspace = true }
 
 [lints]
@@ -22,11 +23,11 @@ event-listener = { workspace = true }
 culprit = { workspace = true }
 tryiter = { workspace = true }
 tokio = { workspace = true, features = [
-    "bytes",
-    "rt-multi-thread",
-    "signal",
-    "test-util",
-    "tokio-macros",
+  "bytes",
+  "rt-multi-thread",
+  "signal",
+  "test-util",
+  "tokio-macros",
 ] }
 static_assertions = { workspace = true }
 zerocopy = { workspace = true }
@@ -42,8 +43,8 @@ hashbrown = { workspace = true }
 futures = { workspace = true }
 axum = { workspace = true, features = ["http2"] }
 tower-http = { workspace = true, features = [
-    "compression-full",
-    "catch-panic",
+  "compression-full",
+  "catch-panic",
 ] }
 prost = { workspace = true }
 prost-types = { workspace = true }

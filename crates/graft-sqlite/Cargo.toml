@@ -5,7 +5,10 @@ edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
+homepage = { workspace = true }
 rust-version = { workspace = true }
+
+description = "A SQLite extension which uses Graft to replicate to and from object storage."
 
 [lints]
 workspace = true

@@ -7,6 +7,9 @@ license = { workspace = true }
 repository = { workspace = true }
 rust-version = { workspace = true }
 
+description = "A Rust crate for building a custom SQLite virtual file system (VFS)."
+keywords = ["sqlite", "vfs", "extension"]
+
 [lints]
 workspace = true
 
