@@ -3,12 +3,24 @@ set -euo pipefail
 
 GIT_ROOT="$(git rev-parse --show-toplevel)"
 
+# run with `PROFILE=release` to use the release profile
+PROFILE="${PROFILE:-debug}"
+PROFILE_FLAG=""
+if [ "${PROFILE}" == "release" ]; then
+    PROFILE_FLAG="--release"
+fi
+
+# make sure sqlite can find the vfs
+LIB_PATH="${GIT_ROOT}/target/${PROFILE}"
+export LD_LIBRARY_PATH=${LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export DYLD_LIBRARY_PATH=${LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
+
 VID="GontkHa6QVLMYnkyk16wUP"
 
 GDB=${GDB:-0}
 export RUST_LOG=${RUST_LOG:-warn}
 
-cargo build --features precept/disabled --package graft-sqlite-extension
+cargo build ${PROFILE_FLAG} --features precept/disabled --package graft-sqlite-extension
 
 # parse flags
 while [[ $# -gt 0 ]]; do

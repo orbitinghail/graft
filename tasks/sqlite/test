@@ -3,6 +3,19 @@ set -uo pipefail
 
 GIT_ROOT="$(git rev-parse --show-toplevel)"
 
+# run with `PROFILE=release` to use the release profile
+PROFILE="${PROFILE:-debug}"
+PROFILE_FLAG=""
+if [ "${PROFILE}" == "release" ]; then
+    PROFILE_FLAG="--release"
+fi
+
+# make sure sqlite can find the vfs
+EXAMPLES_LIB_PATH="${GIT_ROOT}/target/${PROFILE}/examples"
+LIB_PATH="${GIT_ROOT}/target/${PROFILE}"
+export LD_LIBRARY_PATH=${LIB_PATH}:${EXAMPLES_LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export DYLD_LIBRARY_PATH=${LIB_PATH}:${EXAMPLES_LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
+
 # invert diff colors so that expected lines are green
 DIFF_PALETTE="ad=1;38;5;9:de=1;38;5;154"
 
@@ -11,13 +24,13 @@ FILTER="${1:-}"
 # set the PWD to the git root directory - sql tests expect this
 cd "${GIT_ROOT}"
 
-cargo build --features precept/disabled --package graft-sqlite-extension
+cargo build ${PROFILE_FLAG} --features precept/disabled --package graft-sqlite-extension
 if [ $? -ne 0 ]; then
     echo "Cargo build failed"
     exit 1
 fi
 
-cargo build --example memvfs --features dynamic
+cargo build ${PROFILE_FLAG} --example memvfs --features dynamic
 if [ $? -ne 0 ]; then
     echo "Cargo build failed"
     exit 1
