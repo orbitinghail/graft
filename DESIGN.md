@@ -100,7 +100,7 @@ All read operations are executed on an isolated snapshot of a Volume.
 
 A write transaction must be based on the latest snapshot to commit. Assuming a compliant Graft client, this enforces [Strict Serializable](https://jepsen.io/consistency/models/strong-serializable).
 
-## Local Consistency:
+## Local Consistency
 
 By default, Graft clients commit locally and then asynchronously attempt to commit remotely. Because Graft enforces **Strict Serializability** globally, when two clients concurrently commit based on the same snapshot, one commit will succeed and the other will fail.
 
