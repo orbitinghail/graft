@@ -5,6 +5,12 @@
     {
       "groupName": "Fjall",
       "matchPackageNames": ["fjall", "lsm-tree", "value-log"]
+    },
+    {
+      "groupName": "all patch updates",
+      "groupSlug": "all-patch",
+      "matchPackageNames": ["*"],
+      "matchUpdateTypes": ["patch"]
     }
   ]
 }
