@@ -1,4 +1,4 @@
-FROM rust:1.85 AS base
+FROM rust:1.85@sha256:e51d0265072d2d9d5d320f6a44dde6b9ef13653b035098febd68cce8fa7c0bc4 AS base
 
 # increment to force rebuild of all layers
 RUN echo "rebuild-deps: 1"
@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build ${BUILDFLAGS}
 RUN mv ${TARGET_DIR} /artifacts
 
-FROM gcr.io/distroless/cc:debug AS runtime
+FROM gcr.io/distroless/cc:debug@sha256:23aeea465482056f1a839ab5ceffcfd2763eb8eece24b9b5ce2e59facd9670ce AS runtime
 ARG INSTRUMENTED
 COPY ./tests/antithesis/libvoidstar.so /usr/lib/libvoidstar.so
 ENV LD_LIBRARY_PATH=${INSTRUMENTED:+"/usr/lib/libvoidstar.so"}
