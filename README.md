@@ -36,9 +36,9 @@ Please [file an issue] if you'd like to use Graft directly from a language other
 
 ## Technical Overview
 
-For a detailed overview of how Graft works, read [DESIGN.md].
+For a detailed overview of how Graft works, read [design.md].
 
-[DESIGN.md]: https://github.com/orbitinghail/graft/blob/main/DESIGN.md
+[design.md]: https://github.com/orbitinghail/graft/blob/main/docs/design.md
 
 ## Contributing
 

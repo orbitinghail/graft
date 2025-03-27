@@ -2,6 +2,10 @@
 
 This file documents future work that has been punted to help accelerate Graft to a MvP.
 
+# Improved idempotency
+
+Currently we run some heuristics to determine idempotency. This has proved to be error prone. The safer option would be to have the client store the fully serialized commit before sending to the metastore, and then reply that on recovery. This may also make some of the other client side replay code simpler.
+
 # Variable sized pages
 
 I am very curious how much impact variable sized pages would be to Graft adoption. Currently pages are exactly 4KiB which will likely limit workloads. We could implement variable length pages in one of two ways:

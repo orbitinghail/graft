@@ -60,9 +60,13 @@ cargo run --bin pagestore
 just run sqlite shell
 ```
 
-For a detailed overview of how Graft works, you might want to read [DESIGN.md].
+Further reading:
 
-[DESIGN.md]: https://github.com/orbitinghail/graft/blob/main/DESIGN.md
+- For a detailed overview of how Graft works, you might want to read [design.md].
+- For an overview of how to use the Graft SQLite extension, see [sqlite.md].
+
+[design.md]: https://github.com/orbitinghail/graft/blob/main/docs/design.md
+[sqlite.md]: https://github.com/orbitinghail/graft/blob/main/docs/sqlite.md
 
 ## Pull Request (PR) process
 
