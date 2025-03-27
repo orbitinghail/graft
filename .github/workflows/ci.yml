@@ -21,16 +21,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential
-      - uses: extractions/setup-just@v3
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.85
           components: clippy, rustfmt
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           token: ${{secrets.GITHUB_TOKEN}}
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+      - uses: taiki-e/install-action@63f2419bb6a642b9973690fd13cf07b750f65635 # v2
         with:
           tool: cargo-nextest
       - name: Build
@@ -40,7 +40,7 @@ jobs:
       - name: SQLite Tests
         run: just run sqlite test
       - name: Clippy
-        uses: auguwu/clippy-action@1.4.0
+        uses: auguwu/clippy-action@94a9ff2f6920180b89e5c03d121d0af04a9d3e03 # 1.4.0
         with:
           token: ${{secrets.GITHUB_TOKEN}}
       - name: Cargo fmt
