@@ -9,18 +9,87 @@
 - optimistic concurrency
 - point in time restore
 
-## Using `libgraft` with the SQLite shell
+## Compatibility
 
-The fastest way to play with `libgraft` is by loading the extension into SQLite's CLI. Assuming you have `libgraft` downloaded to the current directory and `SQLite` installed, the following steps should work:
+The Graft SQLite extension should work with any version of [SQLite] after 3.44.0 (released Nov 2023). It probably works with earlier versions, but no guarantees.
+
+[SQLite]: https://www.sqlite.org/index.html
+
+## Downloading `libgraft`
+
+### Manual download
+
+`libgraft`, is released using [GitHub Releases] for most platforms. You can access the latest release using the links below:
+
+| Platform | Architecture | Download Link                   |
+| -------- | ------------ | ------------------------------- |
+| Linux    | x86_64       | [libgraft-linux-x86_64.tar.gz]  |
+| Linux    | aarch64      | [libgraft-linux-aarch64.tar.gz] |
+| Windows  | x86_64       | [libgraft-windows-x86_64.zip]   |
+| Windows  | aarch64      | [libgraft-windows-aarch64.zip]  |
+| macOS    | x86_64       | [libgraft-macos-x86_64.tar.gz]  |
+| macOS    | aarch64      | [libgraft-macos-aarch64.tar.gz] |
+
+After downloading the file for your system's platform and architecture, decompress the file to access the extension, which is named `libgraft.[dll,dylib,so]`.
+
+[libgraft-linux-x86_64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-linux-x86_64.tar.gz
+[libgraft-linux-aarch64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-linux-aarch64.tar.gz
+[libgraft-windows-x86_64.zip]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-windows-x86_64.zip
+[libgraft-windows-aarch64.zip]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-windows-aarch64.zip
+[libgraft-macos-x86_64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-macos-x86_64.tar.gz
+[libgraft-macos-aarch64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-macos-aarch64.tar.gz
+[install-sqlite-ext]: https://antonz.org/install-sqlite-extension/
+[GitHub Releases]: https://github.com/orbitinghail/graft/releases/latest
+
+### Download using a package manager
+
+Rather than having to download and manage the extension manually, `libgraft` is availble through the [sqlpkg] SQLite extension manager! This means you can download the extension like so:
+
+**Linux/macOS**:
+
+```bash
+sqlpkg install orbitinghail/graft
+```
+
+**Windows**:
+
+```pwsh
+sqlpkg.exe install orbitinghail/graft
+```
+
+Once installed, you can find the path to `libgraft` using the `which` subcommand:
+
+**Linux/macOS**:
+
+```bash
+sqlpkg which orbitinghail/graft
+```
+
+**Windows**:
+
+```pwsh
+sqlpkg.exe which orbitinghail/graft
+```
+
+The author of `sqlpkg`, [Anton Zhiyanov][anton], published a comprehensive guide to SQLite extensions on their blog [which is available here][sqlpkg-guide]. I highly recommend reading that post for more ways to install and use SQLite extensions.
+
+[anton]: https://www.linkedin.com/in/nalgeon/
+[sqlpkg]: https://github.com/nalgeon/sqlpkg-cli
+[sqlpkg-guide]: https://antonz.org/install-sqlite-extension/
+
+## Using `libgraft` in the SQLite command-line interface
+
+When installed using your system package manager or via another binary distribution, SQLite ships with a command-line interface (CLI) usually called `sqlite3` (`sqlite3.exe` on Windows).
+
+After starting the SQLite shell you can load the Graft extension with the `.load` command:
+
+```sqlite
+.load PATH_TO_LIBGRAFT
+```
+
+Here is an example of loading `libgraft` on linux, opening a Volume, and checking `pragma graft_status` to make sure it all works:
 
 ```
-# First make sure SQLite can find the extension
-export LD_LIBRARY_PATH=${PWD}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-
-# OR, if you are on a mac:
-export DYLD_LIBRARY_PATH=${PWD}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
-
-# Start the SQLite shell:
 ➜ sqlite3
 SQLite version 3.49.1 2025-02-18 13:38:58
 Enter ".help" for usage hints.
@@ -28,7 +97,7 @@ Connected to a transient in-memory database.
 Use ".open FILENAME" to reopen on a persistent database.
 
 sqlite> # load the Graft extension
-sqlite> .load libgraft
+sqlite> .load ./libgraft.so
 
 sqlite> # open a Graft Volume as a database
 sqlite> # (you can generate a unique vid by running `just run tool vid` in the Graft Git repo)
@@ -44,7 +113,7 @@ Autosync: true
 Volume status: Ok
 ```
 
-## Using `libgraft` with a SQLite library
+## Using `libgraft` from your favorite programming language:
 
 SQLite is available as a library in most programming languages, and as long the language/runtime supports loading SQLite extensions, `libgraft` should work!
 
@@ -54,7 +123,7 @@ Here is an example of loading Graft using Python's built in SQLite support:
 import sqlite3
 
 # the path to libgraft
-# change the extension to .dylib if using a mac
+# change the extension to .dylib on macOS and .dll on Windows
 libgraft_path = "./libgraft.so"
 
 # load graft using a temporary (empty) in-memory SQLite database
@@ -74,7 +143,7 @@ print(result.fetchall()[0][0])
 
 ## Configuration
 
-Currently `libgraft` is configured via environment variables:
+Currently the `libgraft` extension is configured via environment variables:
 
 `GRAFT_DIR`:
 This variable must be a valid path to an existing directory in the filesystem. Graft will store all of it's data in this directory.

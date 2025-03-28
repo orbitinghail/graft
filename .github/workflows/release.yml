@@ -43,9 +43,11 @@ jobs:
             setup: ""
             pre-build: ""
             post-build: |
+              cd .\target\release
+              Rename-Item graft.dll libgraft.dll
               Compress-Archive `
-                -Path ".\target\release\graft.dll" `
-                -DestinationPath ".\target\release\libgraft-windows-x86_64.zip"
+                -Path ".\libgraft.dll" `
+                -DestinationPath ".\libgraft-windows-x86_64.zip"
             artifact_name: libgraft-windows-x86_64.zip
 
           - os-name: Windows-aarch64
@@ -54,9 +56,11 @@ jobs:
             setup: ""
             pre-build: ""
             post-build: |
+              cd .\target\release
+              Rename-Item graft.dll libgraft.dll
               Compress-Archive `
-                -Path ".\target\release\graft.dll" `
-                -DestinationPath ".\target\release\libgraft-windows-aarch64.zip"
+                -Path ".\libgraft.dll" `
+                -DestinationPath ".\libgraft-windows-x86_64.zip"
             artifact_name: libgraft-windows-aarch64.zip
 
           - os-name: macOS-x86_64

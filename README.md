@@ -15,14 +15,9 @@ Graft should be considered **Alpha** quality software. Thus, don't use it for pr
 
 ### SQLite extension
 
-The Graft [SQLite] extension should work with any version of SQLite after 3.44.0. It probably works with earlier versions, but no guarantees.
+The easiest way to use Graft is via the Graft SQLite extension which is called `libgraft`. [Please see the documentation][libgraft-docs] for instructions on how to download and use `libgraft`.
 
-You can download the latest extension dynamic object from [GitHub Releases]. The name of the file is:
-...TODO finish this...
-
-[SQLite]: https://www.sqlite.org/index.html
-[install-sqlite-ext]: https://antonz.org/install-sqlite-extension/
-[GitHub Releases]: https://github.com/orbitinghail/graft/releases/latest
+[libgraft-docs]: https://github.com/orbitinghail/graft/blob/main/docs/sqlite.md
 
 ### Rust Crate
 
