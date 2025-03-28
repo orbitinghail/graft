@@ -21,4 +21,3 @@ culprit = { workspace = true }
 bytes = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
-zerocopy = { workspace = true }

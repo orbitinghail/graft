@@ -20,7 +20,6 @@ graft-tracing = { path = "../graft-tracing" }
 graft-test-macro = { path = "../graft-test-macro" }
 graft-sqlite = { path = "../graft-sqlite" }
 sqlite-plugin = { path = "../sqlite-plugin", features = ["static"] }
-splinter = { path = "../splinter" }
 precept = { path = "../precept", features = ["antithesis"] }
 
 enum_dispatch = { workspace = true }
@@ -33,15 +32,12 @@ tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 rand = { workspace = true }
-futures = { workspace = true }
 config = { workspace = true, features = ["toml"] }
 toml = { workspace = true }
 blake3 = { workspace = true }
-bytes = { workspace = true }
 bs58 = { workspace = true }
 zerocopy = { workspace = true }
 static_assertions = { workspace = true }

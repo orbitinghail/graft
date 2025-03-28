@@ -13,9 +13,6 @@ keywords = ["sqlite", "vfs", "extension"]
 [lints]
 workspace = true
 
-[lib]
-crate-type = ["rlib"]
-
 [dev-dependencies]
 rusqlite = { workspace = true, features = ["blob", "trace", "bundled"] }
 log = { workspace = true, features = ["std"] }

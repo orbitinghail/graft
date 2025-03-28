@@ -14,8 +14,6 @@ description = "Core components and types for the Graft storage engine."
 workspace = true
 
 [dependencies]
-splinter = { path = "../splinter" }
-
 culprit = { workspace = true }
 blake3 = { workspace = true }
 bs58 = { workspace = true }

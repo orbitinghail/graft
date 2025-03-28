@@ -47,7 +47,6 @@ log = "0.4"
 lsm-tree = { version = "2.7", features = ["bytes"] }
 measured = "0.0.22"
 memmap2 = "0.9"
-nix = "0.29"
 object_store = "0.12"
 parking_lot = "0.12"
 proc-macro2 = "1.0"

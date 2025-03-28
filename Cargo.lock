@@ -1200,7 +1200,6 @@ dependencies = [
  "hashbrown 0.15.2",
  "rand 0.9.0",
  "serde",
- "splinter",
  "static_assertions",
  "thiserror",
  "zerocopy 0.8.24",
@@ -1216,7 +1215,6 @@ dependencies = [
  "prost",
  "prost-types",
  "splinter",
- "zerocopy 0.8.24",
 ]
 
 [[package]]
@@ -1241,11 +1239,9 @@ dependencies = [
  "graft-tracing",
  "hashbrown 0.15.2",
  "http",
- "itertools 0.14.0",
  "lsm-tree",
  "measured",
  "memmap2",
- "nix",
  "object_store",
  "precept",
  "prost",
@@ -1275,7 +1271,6 @@ dependencies = [
  "enum_dispatch",
  "graft-client",
  "graft-core",
- "graft-proto",
  "graft-tracing",
  "parking_lot",
  "sqlite-plugin",
@@ -1301,14 +1296,12 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "bs58",
- "bytes",
  "clap",
  "config",
  "crossbeam",
  "culprit",
  "enum_dispatch",
  "file-lock",
- "futures",
  "graft-client",
  "graft-core",
  "graft-proto",
@@ -1320,8 +1313,6 @@ dependencies = [
  "rand 0.9.0",
  "rusqlite",
  "serde",
- "serde_json",
- "splinter",
  "sqlite-plugin",
  "static_assertions",
  "thiserror",
@@ -2037,18 +2028,6 @@ dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "nix"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
-dependencies = [
- "bitflags",
- "cfg-if",
- "cfg_aliases",
- "libc",
 ]
 
 [[package]]

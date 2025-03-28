@@ -21,3 +21,6 @@ precept = { path = "../precept" }
 
 [lints]
 workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["precept"]
