@@ -112,8 +112,8 @@ jobs:
           username: orbitinghail
           password: ${{ secrets.ANTITHESIS_PASSWORD }}
           github_token: ${{ secrets.GH_ANTITHESIS_PAT }}
-          config_image: ${{ env.registry }}/config:${{github.sha}}
-          images: ${{ env.registry }}/metastore:${{github.sha}};${{ env.registry }}/pagestore:${{github.sha}};${{ env.registry }}/test_workload:${{github.sha}};${{ env.registry }}/minio:${{github.sha}}
+          config_image: ${{ env.REGISTRY }}/config:${{github.sha}}
+          images: ${{ env.REGISTRY }}/metastore:${{github.sha}};${{ env.REGISTRY }}/pagestore:${{github.sha}};${{ env.REGISTRY }}/test_workload:${{github.sha}};${{ env.REGISTRY }}/minio:${{github.sha}}
           test_name: "github actions: antithesis nightly test run"
           description: "github actions: ${{ github.sha }}: ${{ steps.commit_summary.outputs.COMMIT_SUMMARY }}"
           email_recipients: antithesis-results@orbitinghail.dev
