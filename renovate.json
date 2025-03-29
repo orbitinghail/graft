@@ -1,6 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:best-practices"],
+  "extends": ["config:best-practices", "schedule:daily"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+  "automergeType": "branch",
   "packageRules": [
     {
       "groupName": "Fjall",
@@ -10,7 +15,9 @@
       "groupName": "all patch updates",
       "groupSlug": "all-patch",
       "matchPackageNames": ["*"],
-      "matchUpdateTypes": ["patch"]
+      "matchUpdateTypes": ["patch"],
+      "matchCurrentVersion": "!/^0/",
+      "automerge": true
     }
   ]
 }
