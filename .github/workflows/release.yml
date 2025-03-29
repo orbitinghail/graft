@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  release:
     strategy:
       matrix:
         platform:
@@ -95,8 +95,9 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
-      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+          persist-credentials: false
 
       - name: Build libgraft
         run: |
