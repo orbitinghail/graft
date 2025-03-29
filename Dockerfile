@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build ${BUILDFLAGS}
 RUN mv ${TARGET_DIR} /artifacts
 
-FROM gcr.io/distroless/cc:debug@sha256:23aeea465482056f1a839ab5ceffcfd2763eb8eece24b9b5ce2e59facd9670ce AS runtime
+FROM gcr.io/distroless/cc:debug@sha256:5ccfee06c7ddc5aebcb7c0907d7d5346175f640200e906777259031674e70a37 AS runtime
 ARG INSTRUMENTED
 COPY ./tests/antithesis/libvoidstar.so /usr/lib/libvoidstar.so
 ENV LD_LIBRARY_PATH=${INSTRUMENTED:+"/usr/lib/libvoidstar.so"}
