@@ -30,12 +30,6 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-cargo build ${PROFILE_FLAG} --example memvfs --features dynamic
-if [ $? -ne 0 ]; then
-    echo "Cargo build failed"
-    exit 1
-fi
-
 # test against our min supported sqlite version
 export SQLITE_YEAR=2023
 export SQLITE_VERSION=3440000
