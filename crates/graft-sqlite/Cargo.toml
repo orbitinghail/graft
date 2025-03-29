@@ -17,8 +17,8 @@ workspace = true
 graft-core = { path = "../graft-core" }
 graft-client = { path = "../graft-client" }
 graft-tracing = { path = "../graft-tracing" }
-sqlite-plugin = { path = "../sqlite-plugin" }
 
+sqlite-plugin = { workspace = true }
 tracing = { workspace = true }
 culprit = { workspace = true }
 thiserror = { workspace = true }

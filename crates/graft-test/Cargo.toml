@@ -19,8 +19,8 @@ graft-proto = { path = "../graft-proto" }
 graft-tracing = { path = "../graft-tracing" }
 graft-test-macro = { path = "../graft-test-macro" }
 graft-sqlite = { path = "../graft-sqlite" }
-sqlite-plugin = { path = "../sqlite-plugin", features = ["static"] }
 
+sqlite-plugin = { workspace = true, features = ["static"] }
 precept = { workspace = true, features = ["antithesis"] }
 enum_dispatch = { workspace = true }
 culprit = { workspace = true }

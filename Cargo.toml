@@ -15,6 +15,7 @@ lto = true
 codegen-units = 1
 
 [workspace.dependencies]
+sqlite-plugin = { version = "0.1", default-features = false }
 splinter-rs = "0.1"
 precept = "0.1"
 anyhow = "1.0"
