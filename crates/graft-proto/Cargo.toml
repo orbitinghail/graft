@@ -15,8 +15,8 @@ workspace = true
 
 [dependencies]
 graft-core = { path = "../graft-core" }
-splinter = { path = "../splinter" }
 
+splinter-rs = { workspace = true }
 culprit = { workspace = true }
 bytes = { workspace = true }
 prost = { workspace = true }

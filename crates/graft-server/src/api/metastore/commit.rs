@@ -4,7 +4,7 @@ use axum::extract::State;
 use culprit::{Culprit, ResultExt};
 use graft_core::{VolumeId, gid::ClientId, lsn::LSN, page_count::PageCount};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
-use splinter::{
+use splinter_rs::{
     Splinter,
     ops::{Cut, Union},
 };
@@ -190,7 +190,7 @@ mod tests {
     use graft_proto::common::v1::SegmentInfo;
     use object_store::memory::InMemory;
     use prost::Message;
-    use splinter::Splinter;
+    use splinter_rs::Splinter;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,

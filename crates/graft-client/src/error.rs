@@ -18,7 +18,7 @@ pub enum ClientErr {
     ProtobufDecodeErr,
 
     #[error("failed to parse splinter: {0}")]
-    SplinterParseErr(#[from] splinter::DecodeErr),
+    SplinterParseErr(#[from] splinter_rs::DecodeErr),
 
     #[error("local storage error: {0}")]
     StorageErr(#[from] storage::StorageErr),

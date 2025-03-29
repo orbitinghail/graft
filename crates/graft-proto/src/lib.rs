@@ -18,7 +18,7 @@ use prost_types::TimestampError;
 
 pub use graft::common::v1::{GraftErrCode, Snapshot};
 pub use graft::*;
-use splinter::{DecodeErr, SplinterRef};
+use splinter_rs::{DecodeErr, SplinterRef};
 
 impl Error for GraftErr {}
 impl Display for GraftErr {

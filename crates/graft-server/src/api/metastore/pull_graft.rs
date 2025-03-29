@@ -7,7 +7,7 @@ use graft_proto::{
     common::v1::LsnRange,
     metastore::v1::{PullGraftRequest, PullGraftResponse},
 };
-use splinter::{Splinter, ops::Merge};
+use splinter_rs::{Splinter, ops::Merge};
 use tryiter::TryIteratorExt;
 
 use crate::api::{

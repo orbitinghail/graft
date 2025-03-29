@@ -17,8 +17,8 @@ workspace = true
 [dependencies]
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
-splinter = { path = "../splinter" }
 
+splinter-rs = { workspace = true }
 precept = { workspace = true }
 bytes = { workspace = true }
 circular-buffer = { workspace = true }

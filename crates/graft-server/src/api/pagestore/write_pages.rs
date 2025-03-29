@@ -85,7 +85,7 @@ mod tests {
     use graft_proto::pagestore::v1::PageAtIdx;
     use object_store::memory::InMemory;
     use prost::Message;
-    use splinter::SplinterRef;
+    use splinter_rs::SplinterRef;
     use tokio::sync::mpsc;
 
     use crate::{

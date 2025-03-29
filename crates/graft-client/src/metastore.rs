@@ -8,7 +8,7 @@ use graft_proto::{
         PullGraftResponse, SnapshotRequest, SnapshotResponse,
     },
 };
-use splinter::SplinterRef;
+use splinter_rs::SplinterRef;
 use std::ops::RangeBounds;
 use url::Url;
 

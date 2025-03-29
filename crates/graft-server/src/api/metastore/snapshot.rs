@@ -51,7 +51,7 @@ mod tests {
     use graft_core::{SegmentId, gid::ClientId, page_count::PageCount};
     use object_store::memory::InMemory;
     use prost::Message;
-    use splinter::Splinter;
+    use splinter_rs::Splinter;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,

@@ -17,7 +17,7 @@ use graft_core::{
 };
 use graft_proto::common::v1::SegmentInfo;
 use serde::{Deserialize, Serialize};
-use splinter::SplinterRef;
+use splinter_rs::SplinterRef;
 use tryiter::TryIteratorExt;
 use zerocopy::{ConvertError, IntoBytes, SizeError, TryFromBytes};
 
@@ -41,7 +41,7 @@ pub enum VolumeCatalogErr {
     DecodeErr(#[from] ZerocopyErr),
 
     #[error("splinter error")]
-    SplinterErr(#[from] splinter::DecodeErr),
+    SplinterErr(#[from] splinter_rs::DecodeErr),
 
     #[error("graft validation error")]
     GraftValidationErr(#[from] GraftValidationErr),

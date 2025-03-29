@@ -99,7 +99,7 @@ mod tests {
     use graft_proto::common::v1::LsnRange;
     use object_store::memory::InMemory;
     use prost::Message;
-    use splinter::Splinter;
+    use splinter_rs::Splinter;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,

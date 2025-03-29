@@ -18,7 +18,7 @@ use graft_core::{
 use graft_proto::common::v1::Snapshot;
 use object_store::{PutPayload, path::Path};
 use prost_types::TimestampError;
-use splinter::SplinterRef;
+use splinter_rs::SplinterRef;
 use thiserror::Error;
 use zerocopy::{ConvertError, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
@@ -322,7 +322,7 @@ pub enum GraftValidationErr {
     InvalidSize,
 
     #[error("invalid splinter: {0}")]
-    SplinterDecodeErr(#[from] splinter::DecodeErr),
+    SplinterDecodeErr(#[from] splinter_rs::DecodeErr),
 }
 
 impl<A, S, V> From<ConvertError<A, S, V>> for GraftValidationErr {

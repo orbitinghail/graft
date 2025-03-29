@@ -6,7 +6,7 @@ use culprit::{Culprit, ResultExt};
 use event_listener::Event;
 use graft_core::{PageIdx, SegmentId, VolumeId, page::Page};
 use measured::{Counter, MetricGroup};
-use splinter::Splinter;
+use splinter_rs::Splinter;
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, oneshot},
