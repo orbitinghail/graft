@@ -108,8 +108,8 @@ jobs:
         uses: antithesishq/antithesis-trigger-action@b7d0c9d1d9316bd4de73a44144c56636ea3a64ba # v0.8
         with:
           notebook_name: basic_test
-          tenant: ${{ secrets.ANTITHESIS_TENANT }}
-          username: ${{ secrets.ANTITHESIS_USERNAME }}
+          tenant: orbitinghail
+          username: orbitinghail
           password: ${{ secrets.ANTITHESIS_PASSWORD }}
           github_token: ${{ secrets.GH_ANTITHESIS_PAT }}
           config_image: ${{ env.registry }}/config:${{github.sha}}
