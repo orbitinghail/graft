@@ -286,7 +286,7 @@ Newly written segments may be cached on disk, but not added to the Segment index
 
 ## Pagestore internal dataflow
 
-https://app.excalidraw.com/s/65i7nRDHAIV/1GVOEpCLvJ0
+https://link.excalidraw.com/readonly/TAmndg0ba36Ex63w2F5M
 
 # Volume Router
 
