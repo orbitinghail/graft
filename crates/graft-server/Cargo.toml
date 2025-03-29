@@ -17,8 +17,8 @@ graft-proto = { path = "../graft-proto" }
 graft-client = { path = "../graft-client" }
 graft-tracing = { path = "../graft-tracing" }
 splinter = { path = "../splinter" }
-precept = { path = "../precept", features = ["antithesis"] }
 
+precept = { workspace = true, features = ["antithesis"] }
 event-listener = { workspace = true }
 culprit = { workspace = true }
 tryiter = { workspace = true }

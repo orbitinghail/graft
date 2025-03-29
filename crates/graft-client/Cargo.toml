@@ -18,8 +18,8 @@ workspace = true
 graft-core = { path = "../graft-core" }
 graft-proto = { path = "../graft-proto" }
 splinter = { path = "../splinter" }
-precept = { path = "../precept" }
 
+precept = { workspace = true }
 bytes = { workspace = true }
 circular-buffer = { workspace = true }
 culprit = { workspace = true }

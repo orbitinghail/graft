@@ -20,8 +20,8 @@ graft-tracing = { path = "../graft-tracing" }
 graft-test-macro = { path = "../graft-test-macro" }
 graft-sqlite = { path = "../graft-sqlite" }
 sqlite-plugin = { path = "../sqlite-plugin", features = ["static"] }
-precept = { path = "../precept", features = ["antithesis"] }
 
+precept = { workspace = true, features = ["antithesis"] }
 enum_dispatch = { workspace = true }
 culprit = { workspace = true }
 crossbeam = { workspace = true }
