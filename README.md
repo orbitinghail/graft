@@ -2,9 +2,9 @@
 <p align="center">
   <a href="https://docs.rs/graft-client"><img alt="docs.rs" src="https://img.shields.io/docsrs/graft-client"></a>
   &nbsp;
-  <a href="https://crates.io/crates/graft-client"><img alt="crates.io" src="https://img.shields.io/crates/v/graft-client.svg"></a>
+  <a href="https://github.com/orbitinghail/graft/actions"><img alt="Build Status" src="https://img.shields.io/github/actions/workflow/status/orbitinghail/graft/ci.yml"></a>
   &nbsp;
-  <a href="https://github.com/orbitinghail/graft/actions"><img alt="Build Status" src="https://github.com/orbitinghail/graft/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://crates.io/crates/graft-client"><img alt="crates.io" src="https://img.shields.io/crates/v/graft-client.svg"></a>
 </p>
 
 Transactional page storage engine supporting lazy partial replication to the edge. Optimized for scale and cost over latency. Leverages object storage for durability.
