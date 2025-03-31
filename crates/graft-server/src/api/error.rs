@@ -97,6 +97,9 @@ pub enum ApiErrCtx {
 
     #[error("invalid LSN")]
     InvalidLSN,
+
+    #[error("unauthorized")]
+    Unauthorized,
 }
 
 impl From<io::Error> for ApiErrCtx {
@@ -137,6 +140,7 @@ impl IntoResponse for ApiErr {
         let code = match self.0.ctx() {
             SnapshotMissing => GraftErrCode::SnapshotMissing,
             RejectedCommit => GraftErrCode::CommitRejected,
+            Unauthorized => GraftErrCode::Unauthorized,
 
             InvalidIdempotentCommit
             | InvalidRequestBody
@@ -161,7 +165,9 @@ impl IntoResponse for ApiErr {
         let message = self.0.ctx().to_string();
 
         match code {
-            GraftErrCode::SnapshotMissing | GraftErrCode::CommitRejected => {
+            GraftErrCode::SnapshotMissing
+            | GraftErrCode::CommitRejected
+            | GraftErrCode::Unauthorized => {
                 tracing::trace!(culprit = ?self.0, "client error")
             }
             GraftErrCode::Client => {
@@ -211,6 +217,7 @@ fn graft_err_code_to_status(code: GraftErrCode) -> StatusCode {
         GraftErrCode::Client => StatusCode::BAD_REQUEST,
         GraftErrCode::SnapshotMissing => StatusCode::NOT_FOUND,
         GraftErrCode::CommitRejected => StatusCode::CONFLICT,
+        GraftErrCode::Unauthorized => StatusCode::UNAUTHORIZED,
         GraftErrCode::Server => StatusCode::INTERNAL_SERVER_ERROR,
         GraftErrCode::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
     }

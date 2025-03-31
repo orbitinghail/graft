@@ -141,7 +141,7 @@ mod tests {
 
         let (page_tx, _) = mpsc::channel(128);
 
-        let client = NetClient::new();
+        let client = NetClient::new(None);
         let metastore_uri = "http://localhost:3000".parse().unwrap();
 
         let state = Arc::new(PagestoreApiState::new(

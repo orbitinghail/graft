@@ -74,7 +74,7 @@ pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
         .build()
         .expect("failed to construct tokio runtime");
 
-    let net_client = NetClient::new();
+    let net_client = NetClient::new(None);
 
     let mut supervisor = Supervisor::default();
     let metastore = runtime.block_on(run_metastore(net_client.clone(), &mut supervisor));

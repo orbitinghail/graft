@@ -20,7 +20,7 @@ fn default_metastore() -> Url {
 }
 
 fn default_pagestore() -> Url {
-    "http://127.0.0.1:3001".parse().unwrap()
+    "http://127.0.0.1:3000".parse().unwrap()
 }
 
 fn default_data_dir() -> PathBuf {
@@ -49,6 +49,8 @@ struct ExtensionConfig {
 
     #[serde(default = "ClientId::random")]
     client_id: ClientId,
+
+    token: Option<String>,
 }
 
 /// Register the VFS with `SQLite`.
@@ -88,7 +90,7 @@ pub unsafe extern "C" fn sqlite3_graft_init(
         .try_deserialize()
         .expect("failed to deserialize config");
 
-    let client = NetClient::new();
+    let client = NetClient::new(config.token);
     let metastore_client = MetastoreClient::new(config.metastore, client.clone());
     let pagestore_client = PagestoreClient::new(config.pagestore, client.clone());
     let clients = ClientPair::new(metastore_client, pagestore_client);

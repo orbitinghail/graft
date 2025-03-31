@@ -44,9 +44,9 @@ enum Tool {
         derive: Option<String>,
     },
 
-    /// Generate a new 32 byte hex encoded random key to use as the Graft server
-    /// symmetric PASETO key
-    PasetoKey,
+    /// Generate a new 32 byte hex encoded random key to use to create and
+    /// validate Graft api tokens
+    SecretKey,
 
     /// Generate an API key to use to communicate with Graft services.
     Token {
@@ -83,7 +83,7 @@ fn main() {
             }
             None => println!("{}", ClientId::random()),
         },
-        Tool::PasetoKey => {
+        Tool::SecretKey => {
             let rand = rand::random::<[u8; 32]>();
             println!("{}", hex::encode(rand));
         }

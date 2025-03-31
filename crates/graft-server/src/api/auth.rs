@@ -3,9 +3,10 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use http::StatusCode;
 use rusty_paseto::prelude::*;
 use serde::{Deserialize, Serialize};
+
+use super::error::{ApiErr, ApiErrCtx};
 
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
@@ -37,22 +38,22 @@ pub async fn auth_layer(
     State(state): State<AuthState>,
     request: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, ApiErr> {
     // extract bearer token from request.headers()
     let token = request
         .headers()
         .get("Authorization")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+        .ok_or(ApiErr::from(ApiErrCtx::Unauthorized))?;
 
     // validate the token
     let key = state.key.into();
     PasetoParser::<V4, Local>::default()
         .parse(&token, &key)
         .map_err(|err| {
-            tracing::error!("paseto failure: {err:?}");
-            StatusCode::UNAUTHORIZED
+            tracing::error!("paseto validation failure: {err:?}");
+            ApiErr::from(ApiErrCtx::Unauthorized)
         })?;
 
     Ok(next.run(request).await)

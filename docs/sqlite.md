@@ -218,6 +218,11 @@ The configuration file supports the following options:
 - **Description:** URL for the Graft PageStore.
 - **Default:** `http://127.0.0.1:3000`
 
+#### `token`
+
+- **Environment variable:** `GRAFT_TOKEN`
+- **Description:** Provide an API token to use when connecting to the Graft MetaStore and PageStore.
+
 #### `autosync`
 
 - **Environment variable:** `GRAFT_AUTOSYNC`

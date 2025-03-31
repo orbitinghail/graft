@@ -18,11 +18,11 @@ impl ClientPair {
         Self {
             metastore: MetastoreClient::new(
                 "invalid://foo:0".parse().unwrap(),
-                NetClient::default(),
+                NetClient::new(None),
             ),
             pagestore: PagestoreClient::new(
                 "invalid://foo:0".parse().unwrap(),
-                NetClient::default(),
+                NetClient::new(None),
             ),
         }
     }

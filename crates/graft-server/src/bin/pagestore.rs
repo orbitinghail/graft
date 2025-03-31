@@ -43,6 +43,7 @@ struct PagestoreConfig {
 
     port: u16,
     metastore: Url,
+    token: Option<String>,
 
     catalog_update_concurrency: usize,
     download_concurrency: usize,
@@ -66,6 +67,7 @@ impl Default for PagestoreConfig {
 
             port: 3000,
             metastore: "http://localhost:3001".parse().unwrap(),
+            token: None,
 
             catalog_update_concurrency: 16,
             download_concurrency: 16,
@@ -107,6 +109,10 @@ async fn main() {
         !is_production || config.auth.is_some(),
         "auth must be configured in production"
     );
+    assert!(
+        !is_production || config.token.is_some(),
+        "api key must be configured in production"
+    );
 
     let toml_config = toml::to_string_pretty(&config).expect("failed to serialize config");
     tracing::info!("loaded configuration:\n{toml_config}");
@@ -129,7 +135,7 @@ async fn main() {
     let (page_tx, page_rx) = mpsc::channel(128);
     let (store_tx, store_rx) = mpsc::channel(8);
 
-    let client = NetClient::new();
+    let client = NetClient::new(config.token);
     let metastore = MetastoreClient::new(config.metastore, client);
 
     supervisor.spawn(SegmentWriterTask::new(

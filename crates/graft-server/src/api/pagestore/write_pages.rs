@@ -121,7 +121,7 @@ mod tests {
         SegmentUploaderTask::new(Default::default(), store_rx, store.clone(), cache.clone())
             .testonly_spawn();
 
-        let client = NetClient::new();
+        let client = NetClient::new(None);
         let metastore_uri = "http://localhost:3000".parse().unwrap();
 
         let state = Arc::new(PagestoreApiState::new(
