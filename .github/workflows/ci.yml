@@ -36,7 +36,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
 
-      - uses: taiki-e/install-action@1c861c252bd329898ca0817dc2913d5963834965 # v2
+      - uses: taiki-e/install-action@6aca1cfa12ef3a6b98ee8c70e0171bfa067604f5 # v2
         with:
           tool: cargo-nextest
 
