@@ -1,7 +1,6 @@
 {
   "owner": "orbitinghail",
   "name": "graft",
-  "version": "v0.1.0",
   "repository": "https://github.com/orbitinghail/graft",
   "authors": ["Carl Sverre"],
   "license": "MIT OR Apache-2.0",
