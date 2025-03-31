@@ -95,6 +95,10 @@ struct Cli {
     #[arg(long, default_value = "http://127.0.0.1:3000")]
     pagestore: Url,
 
+    /// The API key to use when communicating with the metastore and pagestore
+    #[arg(long)]
+    token: Option<String>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -459,7 +463,7 @@ fn main() -> Result<()> {
         args.pagestore = "https://graft-pagestore.fly.dev".parse()?;
     }
 
-    let client = NetClient::new();
+    let client = NetClient::new(args.token);
     let metastore_client = MetastoreClient::new(args.metastore, client.clone());
     let pagestore_client = PagestoreClient::new(args.pagestore, client.clone());
     let clients = ClientPair::new(metastore_client, pagestore_client);

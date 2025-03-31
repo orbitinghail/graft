@@ -74,7 +74,7 @@ pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
         .build()
         .expect("failed to construct tokio runtime");
 
-    let net_client = NetClient::new();
+    let net_client = NetClient::new(None);
 
     let mut supervisor = Supervisor::default();
     let metastore = runtime.block_on(run_metastore(net_client.clone(), &mut supervisor));
@@ -123,7 +123,7 @@ pub async fn run_metastore(net_client: NetClient, supervisor: &mut Supervisor) -
     let catalog = VolumeCatalog::open_temporary().unwrap();
     let updater = VolumeCatalogUpdater::new(8);
     let state = Arc::new(MetastoreApiState::new(vol_store, catalog, updater));
-    let router = build_router(Registry::default(), state, metastore_routes());
+    let router = build_router(Registry::default(), None, state, metastore_routes());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let endpoint = Url::parse(&format!("http://localhost:{port}")).unwrap();
@@ -168,7 +168,7 @@ pub async fn run_pagestore(
         updater,
         10,
     ));
-    let router = build_router(registry, state, pagestore_routes());
+    let router = build_router(registry, None, state, pagestore_routes());
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

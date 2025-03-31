@@ -87,7 +87,7 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
         toml::to_string_pretty(&workload).unwrap(),
     );
 
-    let client = NetClient::new();
+    let client = NetClient::new(None);
     let metastore_client =
         MetastoreClient::new("http://metastore:3001".parse().unwrap(), client.clone());
     let pagestore_client =

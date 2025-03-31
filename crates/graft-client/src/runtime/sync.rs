@@ -201,7 +201,7 @@ impl SyncTask {
                 }
                 Err(err) => {
                     match err.ctx() {
-                        SyncTaskErr::Client(err) if err.is_network_err() => {
+                        SyncTaskErr::Client(err) if err.is_network_err() || err.is_auth_err() => {
                             tracing::debug!("sync task: network error: {:?}", err)
                         }
                         _ => tracing::error!("sync task error: {:?}", err),

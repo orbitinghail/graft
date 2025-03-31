@@ -4,6 +4,7 @@ use graft_core::byte_unit::ByteUnit;
 use graft_proto::common::v1::GraftErr;
 use http::{
     HeaderName, HeaderValue, Uri,
+    header::AUTHORIZATION,
     uri::{Builder, PathAndQuery},
 };
 use std::{any::type_name, sync::Arc, time::Duration};
@@ -49,18 +50,14 @@ impl EndpointBuilder {
 
 #[derive(Debug, Clone)]
 pub struct NetClient {
+    api_token: Option<String>,
     agent: Agent,
 }
 
-impl Default for NetClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl NetClient {
-    pub fn new() -> Self {
+    pub fn new(api_token: Option<String>) -> Self {
         Self {
+            api_token,
             agent: Agent::config_builder()
                 .user_agent(AutoHeaderValue::Provided(Arc::new(USER_AGENT.to_string())))
                 .http_status_as_error(false)
@@ -73,20 +70,27 @@ impl NetClient {
         }
     }
 
-    pub(crate) fn send<Req: Message, Resp: Message + Default>(
+    pub(crate) fn send<Msg: Message, Resp: Message + Default>(
         &self,
         uri: Uri,
-        req: Req,
+        msg: Msg,
     ) -> Result<Resp, Culprit<ClientErr>> {
         let span =
             tracing::trace_span!("NetClient::send", path = uri.path(), status = field::Empty)
                 .entered();
 
-        let resp = self
+        let req = self
             .agent
             .post(uri)
-            .header(CONTENT_TYPE, APPLICATION_PROTOBUF)
-            .send(&req.encode_to_vec())?;
+            .header(CONTENT_TYPE, APPLICATION_PROTOBUF);
+
+        let req = if let Some(token) = &self.api_token {
+            req.header(AUTHORIZATION, format!("Bearer {}", token))
+        } else {
+            req
+        };
+
+        let resp = req.send(&msg.encode_to_vec())?;
 
         let status = resp.status();
         span.record("status", status.as_u16());

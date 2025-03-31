@@ -74,6 +74,13 @@ impl ClientErr {
         }
     }
 
+    pub(crate) fn is_auth_err(&self) -> bool {
+        match self {
+            Self::GraftErr(err) => err.code() == GraftErrCode::Unauthorized,
+            _ => false,
+        }
+    }
+
     pub(crate) fn is_network_err(&self) -> bool {
         match self {
             Self::HttpErr(ureq::Error::Timeout(_)) => true,
