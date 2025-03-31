@@ -38,17 +38,18 @@ pub fn build_router<S: Send + Sync + Clone + 'static>(
 
     let panic_layer = CatchPanicLayer::custom(crate::api::error::handle_panic);
 
-    let router = router
-        .route("/health", get(health::handler))
-        .route("/metrics", get(metrics::handler))
-        .with_state(Arc::new(registry))
-        .layer(compression_layer);
+    let router = router.layer(compression_layer);
 
     let router = if let Some(auth) = auth {
         router.layer(from_fn_with_state(auth, auth_layer))
     } else {
         router
     };
+
+    let router = router
+        .route("/metrics", get(metrics::handler))
+        .with_state(Arc::new(registry))
+        .route("/health", get(health::handler));
 
     router.layer(panic_layer)
 }
