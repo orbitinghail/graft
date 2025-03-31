@@ -81,7 +81,7 @@ ureq = { version = "3.0", default-features = false, features = [
   "brotli",
 ] }
 url = "2.5"
-zerocopy = "0.8"
+zerocopy = { version = "0.8", features = ["derive"] }
 
 [workspace.lints.clippy]
 disallowed_methods = "deny"
