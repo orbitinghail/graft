@@ -36,14 +36,35 @@ RELEASE_CRATES=(
     graft-sqlite
 )
 
+# make sure we are on the main branch
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$current_branch" != "main" ]; then
+    echo "Error: Not on main branch (currently on '$current_branch')."
+    exit 1
+fi
+
+# verify that main == origin/main
+git fetch origin
+HEAD_COMMIT=$(git rev-parse HEAD)
+ORIGIN_MAIN_COMMIT=$(git rev-parse origin/main)
+
+if [ "$HEAD_COMMIT" != "$ORIGIN_MAIN_COMMIT" ]; then
+    echo "Error: HEAD ($HEAD_COMMIT) is not equal to origin/main ($ORIGIN_MAIN_COMMIT)."
+    exit 1
+fi
+
 for crate in "${RELEASE_CRATES[@]}"; do
     pushd crates/$crate
     cargo release --no-push --no-tag ${RELEASE_FLAGS} ${VERSION}
     popd
 done
 
-# tag and push the release
+# squash, tag, and push the release commit
 if [ -n "$EXECUTE" ]; then
+    # squash all of the cargo release commits into a single commit
+    git reset --soft "$local_commit"
+    git commit -m "chore: Release v${VERSION}"
+
     git tag -a v${VERSION} -m "Release v${VERSION}"
     git push origin v${VERSION}
 else
