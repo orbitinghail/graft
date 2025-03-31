@@ -11,7 +11,11 @@ rust-version = { workspace = true }
 [dependencies]
 graft-core = { path = "../graft-core" }
 
+rusty_paseto = { workspace = true, features = ["batteries_included"] }
 clap = { workspace = true, features = ["derive"] }
+rand = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

@@ -4,6 +4,7 @@ use config::{Config, FileFormat};
 use futures::FutureExt;
 use graft_server::{
     api::{
+        auth::AuthState,
         metastore::{MetastoreApiState, metastore_routes},
         routes::build_router,
         task::ApiServerTask,
@@ -28,6 +29,8 @@ use tokio::{net::TcpListener, select, signal::ctrl_c};
 struct MetastoreConfig {
     catalog: VolumeCatalogConfig,
     objectstore: ObjectStoreConfig,
+    auth: Option<AuthState>,
+
     port: u16,
     catalog_update_concurrency: usize,
 }
@@ -39,6 +42,7 @@ impl Default for MetastoreConfig {
             objectstore: Default::default(),
             port: 3001,
             catalog_update_concurrency: 16,
+            auth: None,
         }
     }
 }
@@ -72,6 +76,11 @@ async fn main() {
         .try_deserialize()
         .expect("failed to deserialize config");
 
+    assert!(
+        !is_production || config.auth.is_some(),
+        "auth must be configured in production"
+    );
+
     let toml_config = toml::to_string_pretty(&config).expect("failed to serialize config");
     tracing::info!("loaded configuration:\n{toml_config}");
 
@@ -84,8 +93,9 @@ async fn main() {
         VolumeCatalog::open_config(config.catalog).expect("failed to open volume catalog");
     let updater = VolumeCatalogUpdater::new(config.catalog_update_concurrency);
 
+    let auth = config.auth.map(|c| c.into());
     let state = Arc::new(MetastoreApiState::new(store, catalog, updater));
-    let router = build_router(Registry::default(), state, metastore_routes());
+    let router = build_router(Registry::default(), auth, state, metastore_routes());
 
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("listening on {}", addr);

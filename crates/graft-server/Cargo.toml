@@ -17,6 +17,7 @@ graft-proto = { path = "../graft-proto" }
 graft-client = { path = "../graft-client" }
 graft-tracing = { path = "../graft-tracing" }
 
+rusty_paseto = { workspace = true, features = ["batteries_included"] }
 splinter-rs = { workspace = true }
 precept = { workspace = true, features = ["antithesis"] }
 event-listener = { workspace = true }

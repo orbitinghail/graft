@@ -9,6 +9,7 @@ pub mod segment {
 }
 
 pub mod api {
+    pub mod auth;
     pub mod error;
     pub mod extractors;
     pub mod health;

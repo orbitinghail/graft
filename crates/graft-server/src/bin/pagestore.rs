@@ -6,6 +6,7 @@ use graft_client::{MetastoreClient, NetClient};
 use graft_core::byte_unit::ByteUnit;
 use graft_server::{
     api::{
+        auth::AuthState,
         pagestore::{PagestoreApiState, pagestore_routes},
         routes::build_router,
         task::ApiServerTask,
@@ -38,6 +39,8 @@ struct PagestoreConfig {
     catalog: VolumeCatalogConfig,
     cache: DiskCacheConfig,
     objectstore: ObjectStoreConfig,
+    auth: Option<AuthState>,
+
     port: u16,
     metastore: Url,
 
@@ -59,8 +62,11 @@ impl Default for PagestoreConfig {
                     / 2,
             },
             objectstore: Default::default(),
+            auth: None,
+
             port: 3000,
             metastore: "http://localhost:3001".parse().unwrap(),
+
             catalog_update_concurrency: 16,
             download_concurrency: 16,
             write_concurrency: 16,
@@ -96,6 +102,11 @@ async fn main() {
     let config: PagestoreConfig = config
         .try_deserialize()
         .expect("failed to deserialize config");
+
+    assert!(
+        !is_production || config.auth.is_some(),
+        "auth must be configured in production"
+    );
 
     let toml_config = toml::to_string_pretty(&config).expect("failed to serialize config");
     tracing::info!("loaded configuration:\n{toml_config}");
@@ -135,6 +146,7 @@ async fn main() {
         cache,
     ));
 
+    let auth = config.auth.map(|c| c.into());
     let state = Arc::new(PagestoreApiState::new(
         page_tx,
         catalog,
@@ -143,7 +155,7 @@ async fn main() {
         updater,
         config.write_concurrency,
     ));
-    let router = build_router(registry, state, pagestore_routes());
+    let router = build_router(registry, auth, state, pagestore_routes());
 
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("listening on {}", addr);
