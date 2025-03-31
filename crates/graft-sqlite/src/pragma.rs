@@ -24,6 +24,9 @@ pub enum GraftPragma {
 
     /// `pragma graft_reset;`
     Reset,
+
+    /// `pragma graft_version;`
+    Version,
 }
 
 impl TryFrom<&Pragma<'_>> for GraftPragma {
@@ -43,6 +46,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                         Ok(GraftPragma::SetAutosync(autosync))
                     }
                     "sync_errors" => Ok(GraftPragma::SyncErrors),
+                    "version" => Ok(GraftPragma::Version),
                     _ => Err(PragmaErr::Fail(format!(
                         "invalid graft pragma `{}`",
                         p.name
@@ -114,6 +118,16 @@ impl GraftPragma {
             GraftPragma::Reset => {
                 file.handle().reset_to_remote()?;
                 Ok(None)
+            }
+
+            GraftPragma::Version => {
+                const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+                const GITHUB_SHA: Option<&str> = option_env!("GITHUB_SHA");
+                let mut out = format!("Graft Version: {PKG_VERSION}");
+                if let Some(sha) = GITHUB_SHA {
+                    writeln!(&mut out, "\nGit Commit: {sha}")?;
+                }
+                Ok(Some(out))
             }
         }
     }

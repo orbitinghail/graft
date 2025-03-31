@@ -267,3 +267,6 @@ Reveal the most recent 16 errors and warnings encountered during background sync
 
 `pragma graft_reset`:
 This pragma drops all local changes and forceably resets to the latest server Snapshot. Make sure you are ok with loosing local changes permanently when running this pragma.
+
+`pragma graft_version`:
+This pragma prints out Graft's version and commit hash which can be useful for debugging and support.
