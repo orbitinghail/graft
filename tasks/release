@@ -67,6 +67,7 @@ if [ -n "$EXECUTE" ]; then
 
     git tag -a v${VERSION} -m "Release v${VERSION}"
     git push origin v${VERSION}
+    git push origin main
 else
     echo "To execute the release, run:"
     echo "  $0 --execute ${VERSION}"
