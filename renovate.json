@@ -5,7 +5,6 @@
     "enabled": true,
     "automerge": true
   },
-  "automergeType": "branch",
   "packageRules": [
     {
       "groupName": "Fjall",

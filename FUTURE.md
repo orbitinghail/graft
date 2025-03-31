@@ -2,11 +2,11 @@
 
 This file documents future work that has been punted to help accelerate Graft to a MvP.
 
-# Improved idempotency
+## Improved idempotency
 
 Currently we run some heuristics to determine idempotency. This has proved to be error prone. The safer option would be to have the client store the fully serialized commit before sending to the metastore, and then reply that on recovery. This may also make some of the other client side replay code simpler.
 
-# Variable sized pages
+## Variable sized pages
 
 I am very curious how much impact variable sized pages would be to Graft adoption. Currently pages are exactly 4KiB which will likely limit workloads. We could implement variable length pages in one of two ways:
 
@@ -18,11 +18,11 @@ The primary downside of either approach is complexity. It also starts to beg the
 
 I'm leaning towards building (1) as it feels like a reasonable lift from the current design.
 
-# Checksums
+## Checksums
 
 Currently Graft has no way to audit the correctness of underlying storage such as object storage and fjall. It may be prudent to add some strategic checksums to our large serialized formats (segments, splinters, commits) to help detect corruption. Luckily both object storage and fjall already do a lot of work to prevent data corruption, hence why this is in the future work file.
 
-# Time-Travel and Point in Time Restore
+## Time-Travel and Point in Time Restore
 
 Currently, it's only possible to go back in time to fixed checkpoints and recently written LSNs. Returning to an arbitrary LSN or timestamp in the last week or so is not possible since we aggressively checkpoint.
 
@@ -53,7 +53,7 @@ Once we can produce one single-volume optimal Segment. The rest of the data is d
 5. Commit added/removed segments to each Metastore
 6. Delete all removed segments
 
-# Page deltas
+## Page deltas
 
 Currently we store every page directly in a Segment. This wastes a ton of space as most page changes are extremely small. When Segments store multiple versions of each page, they will naturally compress well, however this doesn't help out with pages stored in different segments.
 
@@ -65,7 +65,7 @@ One solution to these issues is to always base XOR deltas off the last checkpoin
 
 For XOR delta compression to work we also need to remove the runs of zeros in the resulting segment. We can either leverage a generic compression library when uploading/downloading the segment, or we can employ RLE/Sparse compression on each page to simply strip out all the zeros. Or compress each page with something like LZ to strip out patterns. Notably this will affect read performance as well as potentially affecting our ability to read pages directly via content-range requests.
 
-# Low-latency writes
+## Low-latency writes
 
 Currently Graft provides high-latency writes at low cost. For some workloads, it may be desirable to tweak this relationship and pay higher cost for lower latency. To do this we will need a durable storage layer with lower latency than object storage.
 
@@ -75,13 +75,13 @@ One way to build this is by combining a consensus replication layer with semi-du
 
 Technically, the above write protocol can be coordinated entirely by the client if the pageservers simply had an optimistic write mode. The only difference being that the client would have to handle PageIdxs being stored in potentially multiple potentially overlapping segments which would have to be deduplicated later at query time. Letting the pageserver coordinate this process makes things easier for the rest of the system.
 
-# Request Hedging
+## Request Hedging
 
 According to the go, hedging requests to blob storage can help dramatically reduce tail latency. For S3, the paper suggests hedging if you haven't received the first byte within 200ms. Slightly more aggressive hedging may also be desirable, like hedging if you haven't completly downloaded the file within 600ms. Making this configurable and testing is important.
 
 [AnyBlob paper]: https://www.vldb.org/pvldb/vol16/p2769-durner.pdf
 
-# Performance Optimizations
+## Performance Optimizations
 
 Once Graft server is sufficiently mature, a series of performance optimization passes should be performed. I'll keep track of relevant blog posts and tools to make this easier here:
 
