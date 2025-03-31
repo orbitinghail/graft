@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RELEASE_FLAGS="--no-verify"
+EXECUTE=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --execute)
+            RELEASE_FLAGS="--execute --no-confirm"
+            EXECUTE="true"
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: $0 [--execute] VERSION"
+    exit 1
+fi
+
+VERSION=$1
+if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Version must match the format X.Y.Z"
+    exit 1
+fi
+
+RELEASE_CRATES=(
+    graft-proto
+    graft-core
+    graft-tracing
+    graft-client
+    graft-sqlite
+)
+
+for crate in "${RELEASE_CRATES[@]}"; do
+    pushd crates/$crate
+    cargo release --no-push --no-tag ${RELEASE_FLAGS} ${VERSION}
+    popd
+done
+
+# tag and push the release
+if [ -n "$EXECUTE" ]; then
+    git tag -a v${VERSION} -m "Release v${VERSION}"
+    git push origin v${VERSION}
+else
+    echo "To execute the release, run:"
+    echo "  $0 --execute ${VERSION}"
+fi
