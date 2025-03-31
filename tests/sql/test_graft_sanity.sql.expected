@@ -1,5 +1,3 @@
--- Load the graft vfs and open a new connection using it
-.load libgraft
 .open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
 
 .databases
@@ -14,7 +12,7 @@ pragma graft_status;
 |           Graft Status            |
 +-----------------------------------+
 | Graft Status                      |
-| Client ID: Qi81Dp4C52izQ3LwX2YfZJ |
+| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
 | Volume ID: GontkHa6QVLHYnkyk16wUP |
 | Current snapshot: None            |
 | Autosync: false                   |
@@ -56,7 +54,7 @@ pragma graft_status;
 |           Graft Status            |
 +-----------------------------------+
 | Graft Status                      |
-| Client ID: Qi81Dp4C52izQ3LwX2YfZJ |
+| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
 | Volume ID: GontkHa6QVLHYnkyk16wUP |
 | Current snapshot: Snapshot[4;2]   |
 | Autosync: false                   |

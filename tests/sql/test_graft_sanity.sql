@@ -1,5 +1,3 @@
--- Load the graft vfs and open a new connection using it
-.load libgraft
 .open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
 
 .databases

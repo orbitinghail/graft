@@ -780,6 +780,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirs-next"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf36e65a80337bea855cd4ef9b8401ffce06a7baedf2e85ec467b1ac3f6e82b6"
+dependencies = [
+ "cfg-if",
+ "dirs-sys-next",
+]
+
+[[package]]
+name = "dirs-sys-next"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ebda144c4fe02d1f7ea1a7d9641b6fc6b580adcfa024ae48797ecdeb6825b4d"
+dependencies = [
+ "libc",
+ "redox_users",
+ "winapi",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -889,9 +910,9 @@ dependencies = [
 
 [[package]]
 name = "fjall"
-version = "2.7.6"
+version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b940621f80f0b2c4263a4201386627356613bc96c56118fb9ac744060acf19c"
+checksum = "26b2ced3483989a62b3533c9f99054d73b527c6c0045cf22b00fe87956f1a46f"
 dependencies = [
  "byteorder",
  "byteview",
@@ -1097,7 +1118,7 @@ dependencies = [
  "splinter-rs",
  "static_assertions",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.12",
  "tracing",
  "tryiter",
  "ureq",
@@ -1120,7 +1141,7 @@ dependencies = [
  "rand 0.9.0",
  "serde",
  "static_assertions",
- "thiserror",
+ "thiserror 2.0.12",
  "zerocopy 0.8.24",
 ]
 
@@ -1170,7 +1191,7 @@ dependencies = [
  "splinter-rs",
  "static_assertions",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-util",
  "toml",
@@ -1193,7 +1214,7 @@ dependencies = [
  "graft-tracing",
  "parking_lot",
  "sqlite-plugin",
- "thiserror",
+ "thiserror 2.0.12",
  "tracing",
  "tryiter",
 ]
@@ -1202,11 +1223,15 @@ dependencies = [
 name = "graft-sqlite-extension"
 version = "0.1.0"
 dependencies = [
+ "config",
  "graft-client",
  "graft-core",
  "graft-sqlite",
+ "platform-dirs",
  "precept",
+ "serde",
  "sqlite-plugin",
+ "url",
 ]
 
 [[package]]
@@ -1234,7 +1259,7 @@ dependencies = [
  "serde",
  "sqlite-plugin",
  "static_assertions",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio",
  "toml",
  "tracing",
@@ -1715,6 +1740,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libredox"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0ff37bd590ca25063e35af745c343cb7a0271906fb7b37e4813e8f79f00268d"
+dependencies = [
+ "bitflags",
+ "libc",
+]
+
+[[package]]
 name = "libsqlite3-sys"
 version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1775,9 +1810,9 @@ checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
 name = "lsm-tree"
-version = "2.7.6"
+version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22360c0be51807df0c2d4354aa76e02b7a1bf9704cff2a575cc61f2e29bf414b"
+checksum = "d0a63a5e98a38b51765274137d8aedfbd848da5f4d016867e186b673fcc06a8c"
 dependencies = [
  "byteorder",
  "crossbeam-skiplist",
@@ -1975,7 +2010,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "url",
@@ -2076,7 +2111,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "198db74531d58c70a361c42201efde7e2591e976d518caf7662a47dc5720e7b6"
 dependencies = [
  "memchr",
- "thiserror",
+ "thiserror 2.0.12",
  "ucd-trie",
 ]
 
@@ -2131,6 +2166,15 @@ name = "pkg-config"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
+
+[[package]]
+name = "platform-dirs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e188d043c1a692985f78b5464853a263f1a27e5bd6322bad3a4078ee3c998a38"
+dependencies = [
+ "dirs-next",
+]
 
 [[package]]
 name = "powerfmt"
@@ -2248,7 +2292,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "rustls",
  "socket2",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "web-time",
@@ -2268,7 +2312,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror",
+ "thiserror 2.0.12",
  "tinyvec",
  "tracing",
  "web-time",
@@ -2373,6 +2417,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_users"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
+dependencies = [
+ "getrandom 0.2.15",
+ "libredox",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "regex"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2468,7 +2523,7 @@ version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba3747658ee2585ecf5607fa9887c92eff61b362ff5253dbf797dfeb73d33d78"
 dependencies = [
- "thiserror",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -2543,7 +2598,7 @@ dependencies = [
  "http",
  "mime",
  "rand 0.9.0",
- "thiserror",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -2838,9 +2893,9 @@ checksum = "7fcf8323ef1faaee30a44a340193b1ac6814fd9b7b4e88e9d4519a3e4abe1cfd"
 
 [[package]]
 name = "socket2"
-version = "0.5.8"
+version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c970269d99b64e60ec3bd6ad27270092a5394c4e309314b18ae3fe575695fbe8"
+checksum = "4f5fd57c80058a56cf5c777ab8a126398ece8e442983605d280a44ce79d0edef"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
@@ -2856,7 +2911,7 @@ dependencies = [
  "culprit",
  "either",
  "itertools 0.14.0",
- "thiserror",
+ "thiserror 2.0.12",
  "zerocopy 0.8.24",
 ]
 
@@ -2945,11 +3000,31 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
+dependencies = [
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
 version = "2.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 2.0.12",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -3358,9 +3433,9 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "value-log"
-version = "1.7.3"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fea68ca5b6dfe05c15b9d611384b2a6dabdfea7484dde78dc1ce55692622a446"
+checksum = "fd29b17c041f94e0885179637289815cd038f0c9fc19c4549d5a97017404fb7d"
 dependencies = [
  "byteorder",
  "bytes",
@@ -3368,7 +3443,6 @@ dependencies = [
  "interval-heap",
  "log",
  "path-absolutize",
- "quick_cache",
  "rustc-hash 2.1.1",
  "tempfile",
  "varint-rs",

@@ -17,8 +17,12 @@ graft-core = { path = "../graft-core" }
 graft-client = { path = "../graft-client" }
 graft-sqlite = { path = "../graft-sqlite" }
 
+platform-dirs = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+config = { workspace = true, features = ["toml"] }
 sqlite-plugin = { workspace = true, features = ["dynamic"] }
 precept = { workspace = true }
+url = { workspace = true, features = ["serde"] }
 
 [lints]
 workspace = true

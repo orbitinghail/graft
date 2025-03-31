@@ -164,6 +164,17 @@ impl Vfs for GraftVfs {
         graft_tracing::init_tracing_with_writer(TracingConsumer::Tool, None, make_writer);
     }
 
+    fn canonical_path<'a>(
+        &self,
+        path: std::borrow::Cow<'a, str>,
+    ) -> VfsResult<std::borrow::Cow<'a, str>> {
+        if path == "random" {
+            Ok(VolumeId::random().pretty().into())
+        } else {
+            Ok(path)
+        }
+    }
+
     fn pragma(
         &self,
         handle: &mut Self::Handle,

@@ -1,5 +1,3 @@
-.load libgraft
-
 -- initialize two connections to the same database
 .connection 0
 .open file:GontkHa6QVLHYnkyk16wUP?vfs=graft

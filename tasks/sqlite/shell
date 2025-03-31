@@ -1,26 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+USAGE=$(cat << EOF
+Usage: $0 [OPTIONS]
+
+Options:
+  -v<VID>            Use the specified Volume ID (default: GontkHa6QVLMYnkyk16wUP).
+  --random-vid       Generate and use a random VID.
+  --random-cid       Generate and use a random client ID and temporary data directory.
+  --release          Build/run in release mode.
+  --trace            Enable trace-level logging (RUST_LOG=trace).
+  --fly              Use Fly-hosted MetaStore and PageStore services.
+  --gdb              Run sqlite3 under gdb debugger.
+EOF
+)
+
 GIT_ROOT="$(git rev-parse --show-toplevel)"
 
-# run with `PROFILE=release` to use the release profile
-PROFILE="${PROFILE:-debug}"
-PROFILE_FLAG=""
-if [ "${PROFILE}" == "release" ]; then
-    PROFILE_FLAG="--release"
-fi
-
-# make sure sqlite can find the vfs
-LIB_PATH="${GIT_ROOT}/target/${PROFILE}"
-export LD_LIBRARY_PATH=${LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-export DYLD_LIBRARY_PATH=${LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
-
+TARGET="debug"
+BUILD_FLAGS=""
 VID="GontkHa6QVLMYnkyk16wUP"
 
 GDB=${GDB:-0}
 export RUST_LOG=${RUST_LOG:-warn}
-
-cargo build ${PROFILE_FLAG} --features precept/disabled --package graft-sqlite-extension
 
 # parse flags
 while [[ $# -gt 0 ]]; do
@@ -29,12 +31,22 @@ while [[ $# -gt 0 ]]; do
             VID="${1:2}"
             shift
             ;;
-        --trace)
-            RUST_LOG="trace"
+        --random-vid)
+            VID="random"
             shift
             ;;
-        -p*)
-            export GRAFT_PROFILE="${1:2}"
+        --random-cid)
+            export GRAFT_CLIENT_ID="$(just run tool cid)"
+            export GRAFT_DATA_DIR="$(mktemp -d)"
+            shift
+            ;;
+        --release)
+            TARGET="release"
+            BUILD_FLAGS="--release"
+            shift
+            ;;
+        --trace)
+            RUST_LOG="trace"
             shift
             ;;
         --fly)
@@ -48,11 +60,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [-vVID] [--trace] [-pPROFILE] [--fly] [--gdb]"
+            echo "${USAGE}"
             exit 1
             ;;
     esac
 done
+
+cargo build ${BUILD_FLAGS} --features precept/disabled --package graft-sqlite-extension
+
+# make sure sqlite can find the vfs
+LIB_PATH="${GIT_ROOT}/target/${TARGET}"
+export LD_LIBRARY_PATH=${LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export DYLD_LIBRARY_PATH=${LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
 
 ARGS=(
     -header

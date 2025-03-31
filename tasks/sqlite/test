@@ -3,31 +3,29 @@ set -uo pipefail
 
 GIT_ROOT="$(git rev-parse --show-toplevel)"
 
-# run with `PROFILE=release` to use the release profile
-PROFILE="${PROFILE:-debug}"
-PROFILE_FLAG=""
-if [ "${PROFILE}" == "release" ]; then
-    PROFILE_FLAG="--release"
-fi
-
-# make sure sqlite can find the vfs
-EXAMPLES_LIB_PATH="${GIT_ROOT}/target/${PROFILE}/examples"
-LIB_PATH="${GIT_ROOT}/target/${PROFILE}"
-export LD_LIBRARY_PATH=${LIB_PATH}:${EXAMPLES_LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-export DYLD_LIBRARY_PATH=${LIB_PATH}:${EXAMPLES_LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
+# set the PWD to the git root directory - sql tests expect this
+cd "${GIT_ROOT}"
 
 # invert diff colors so that expected lines are green
 DIFF_PALETTE="ad=1;38;5;9:de=1;38;5;154"
 
+# load the filter from the first argument
 FILTER="${1:-}"
 
-# set the PWD to the git root directory - sql tests expect this
-cd "${GIT_ROOT}"
+# build libgraft if it's not specified
+LIBGRAFT="${LIBGRAFT:-}"
+if [ -z "${LIBGRAFT}" ]; then
+    cargo build --features precept/disabled --package graft-sqlite-extension
+    if [ $? -ne 0 ]; then
+        echo "Cargo build failed"
+        exit 1
+    fi
 
-cargo build ${PROFILE_FLAG} --features precept/disabled --package graft-sqlite-extension
-if [ $? -ne 0 ]; then
-    echo "Cargo build failed"
-    exit 1
+    LIB_PATH="${GIT_ROOT}/target/debug"
+    export LD_LIBRARY_PATH=${LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+    export DYLD_LIBRARY_PATH=${LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
+
+    LIBGRAFT="libgraft"
 fi
 
 # test against our min supported sqlite version
@@ -50,22 +48,30 @@ fi
 
 ANY_FAILED=0
 
+SQLITE_ARGS=(
+    -cmd ".log stderr"
+    -cmd ".load '${LIBGRAFT}'"
+    -header
+    -table
+    -echo
+)
+
 for TEST in ${TESTS}; do
     echo "Running test: ${TEST}"
     EXPECTED="${TEST}.expected"
 
-    export GRAFT_DIR="$(mktemp -d)"
-    export GRAFT_AUTOSYNC=0
+    export GRAFT_CONFIG="${GIT_ROOT}/tests/sql/graft_config.toml"
+    export GRAFT_DATA_DIR="$(mktemp -d)"
 
     # We add the exit code to the output since SQLite returns the number of
     # errors encountered while executing, and some of the tests want to trigger
     # errors on purpose (thus we can't just fail on non-zero exit code).
-    OUTPUT=$(just run sqlite bin -cmd '.log stderr' -header -table -echo 2>&1 <"${TEST}")
+    OUTPUT=$(just run sqlite bin "${SQLITE_ARGS[@]}" 2>&1 <"${TEST}")
     EXIT_CODE=$?
     OUTPUT=$(printf "%s\n\n%s\n" "${OUTPUT}" "SQLite Exit Code = ${EXIT_CODE}")
 
-    if [ -n "${GRAFT_DIR}" ] && [ -z "${SKIP_CLEANUP:-}" ]; then
-        rm -rf "${GRAFT_DIR}"
+    if [ -n "${GRAFT_DATA_DIR}" ] && [ -z "${SKIP_CLEANUP:-}" ]; then
+        rm -rf "${GRAFT_DATA_DIR}"
     fi
 
     # if UPDATE_EXPECTED is set in the env, then write out expected files

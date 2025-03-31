@@ -22,13 +22,13 @@ Once you're ready to start building, it's time to get Graft running on your comp
 
 To build and run Graft, ensure you have the following dependencies installed:
 
-| Name         | Version | Where to Get It        |
-| ------------ | ------- | ---------------------- |
-| rust + cargo | 1.85    | [rustup]               |
-| just         | 1.40    | [just]                 |
-| clang + llvm | 19      | System package manager |
-| mold         | 2.37    | System package manager |
-| nextest      | 9       | [nextest]              |
+| Name          | Where to Get It        |
+| ------------- | ---------------------- |
+| rust + cargo  | [rustup]               |
+| just          | [just]                 |
+| cargo nextest | [nextest]              |
+| clang + llvm  | System package manager |
+| mold          | System package manager |
 
 [rustup]: https://rustup.rs/
 [just]: https://github.com/casey/just

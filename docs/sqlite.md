@@ -6,7 +6,7 @@
 
 - asynchronous replication to object storage
 - stateless lazy partial replicas on the edge and in devices
-- optimistic concurrency
+- serializable snapshot isolation
 - point in time restore
 
 ## Compatibility
@@ -77,7 +77,9 @@ The author of `sqlpkg`, [Anton Zhiyanov][anton], published a comprehensive guide
 [sqlpkg]: https://github.com/nalgeon/sqlpkg-cli
 [sqlpkg-guide]: https://antonz.org/install-sqlite-extension/
 
-## Using `libgraft` in the SQLite command-line interface
+## Using `libgraft`
+
+### From the SQLite command-line interface
 
 When installed using your system package manager or via another binary distribution, SQLite ships with a command-line interface (CLI) usually called `sqlite3` (`sqlite3.exe` on Windows).
 
@@ -100,8 +102,7 @@ sqlite> # load the Graft extension
 sqlite> .load ./libgraft.so
 
 sqlite> # open a Graft Volume as a database
-sqlite> # (you can generate a unique vid by running `just run tool vid` in the Graft Git repo)
-sqlite> .open 'file:GonugMKom6Q92W5YddpVTd?vfs=graft
+sqlite> .open 'file:random?vfs=graft
 
 sqlite> # verify Graft is working using pragma
 sqlite> pragma graft_status;
@@ -113,7 +114,7 @@ Autosync: true
 Volume status: Ok
 ```
 
-## Using `libgraft` from your favorite programming language:
+### From your favorite programming language:
 
 SQLite is available as a library in most programming languages, and as long the language/runtime supports loading SQLite extensions, `libgraft` should work!
 
@@ -132,34 +133,117 @@ conn.enable_load_extension(True)
 conn.load_extension(libgraft_path)
 
 # open a Graft volume as a database
-# (you can generate a unique vid by running `just run tool vid` in the Graft Git repo)
-volume_id = "GonugMKom6Q92W5YddpVTd"
-conn = sqlite3.connect(f"file:{volume_id}?vfs=graft", autocommit=True, uri=True)
+conn = sqlite3.connect(f"file:random?vfs=graft", autocommit=True, uri=True)
 
 # use pragma to verify graft is working
 result = conn.execute("pragma graft_status")
 print(result.fetchall()[0][0])
 ```
 
+## Volume IDs
+
+When connecting to a Graft SQLite database, you can specify a particular Volume ID directly:
+
+```sql
+.open 'file:GonugMKom6Q92W5YddpVTd?vfs=graft'
+```
+
+Alternatively, you can use `random` to automatically generate a new Volume:
+
+```sql
+.open 'file:random?vfs=graft'
+```
+
+To open additional connections to a randomly generated Volume, you'll first need the generated Volume ID. You can retrieve it using either of the following methods:
+
+- **Using the SQLite CLI:**
+
+  ```sql
+  .databases
+  ```
+
+  The Volume ID will appear in the second column for each attached database which uses Graft.
+
+- **Programmatically via SQLite interfaces such as Python:**
+
+  ```python
+  import sqlite3
+
+  conn = sqlite3.connect('file:random?vfs=graft', autocommit=True, uri=True)
+  cursor = conn.execute('PRAGMA database_list')
+  db_list = cursor.fetchall()
+
+  for db in db_list:
+      db_alias = db[1]    # Database alias (e.g., 'main', 'attached_db')
+      volume_id = db[2]   # Filename, i.e., the Volume ID
+      print(f"{db_alias}: {volume_id}")
+  ```
+
+These retrieved Volume IDs can then be used to open the same Volumes across multiple connections and from multiple nodes.
+
 ## Configuration
 
-Currently the `libgraft` extension is configured via environment variables:
+The `libgraft` SQLite extension can be configured using either a configuration file (`graft.toml`) or environment variables.
 
-`GRAFT_DIR`:
-This variable must be a valid path to an existing directory in the filesystem. Graft will store all of it's data in this directory.
+`libgraft` searches for the configuration file in the current directory or in the following standard locations:
 
-`GRAFT_PROFILE`:
-This variable will be used to derive the Graft ClientID and should be unique among all clients of the Volume.
+| Platform      | Configuration Path                  | Example                                           |
+| ------------- | ----------------------------------- | ------------------------------------------------- |
+| Linux & macOS | `$XDG_CONFIG_HOME/graft/graft.toml` | `/home/alice/.config/graft/graft.toml`            |
+| Windows       | `%APPDATA%\graft\graft.toml`        | `C:\Users\Alice\AppData\Roaming\graft\graft.toml` |
 
-`GRAFT_METASTORE`:
-A URL pointing at the Graft MetaStore. Defaults to localhost:3001
+If the `GRAFT_CONFIG` environment variable is set, `libgraft` will use the provided path instead.
 
-`GRAFT_PAGESTORE`:
-A URL pointing at the Graft PageStore. Defaults to localhost:3000
+### Configuration Options
+
+The configuration file supports the following options:
+
+#### `data_dir`
+
+- **Environment variable:** `GRAFT_DIR`
+- **Description:** Path to the directory where Graft stores its data. Relative paths are resolved from the current working directory.
+- **Default:**
+  - Linux & macOS: `$XDG_DATA_HOME/graft` or `~/.local/share/graft`
+  - Windows: `%LOCALAPPDATA%\graft` or `C:\Users\%USERNAME%\AppData\Local\graft`
+
+#### `metastore`
+
+- **Environment variable:** `GRAFT_METASTORE`
+- **Description:** URL for the Graft MetaStore.
+- **Default:** `http://127.0.0.1:3001`
+
+#### `pagestore`
+
+- **Environment variable:** `GRAFT_PAGESTORE`
+- **Description:** URL for the Graft PageStore.
+- **Default:** `http://127.0.0.1:3000`
+
+#### `autosync`
+
+- **Environment variable:** `GRAFT_AUTOSYNC`
+- **Description:** Enables or disables background synchronization.
+- **Default:** `true`
+- **Values:** `true`, `false`
+- **Note:** Even if set to `false`, background sync can be enabled explicitly using `pragma graft_sync = true`.
+
+#### `client_id`
+
+- **Environment variable:** `GRAFT_CLIENT_ID`
+- **Description:** Specify a unique Client ID to use. If not set, a new Client ID is randomly generated. It is strongly recommended to set this explicitly in production environments.
+
+### Example Configuration File (`graft.toml`)
+
+```toml
+data_dir = "/var/lib/graft"
+metastore = "http://metastore.example.com:3001"
+pagestore = "http://pagestore.example.com:3000"
+autosync = false
+client_id = "QiAaSzeTbNnMQFxK6jm125"
+```
 
 ## Supported pragmas
 
-The application can communicate and control Graft via the following pragma statements:
+The application can interact with Graft using the following pragma statements:
 
 `pragma graft_status`:
 Report the status of the current Volume and the current connection's Snapshot. Note that different SQLite connections to the same Graft Volume can concurrently access different snapshots via read transactions.
