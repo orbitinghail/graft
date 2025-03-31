@@ -62,7 +62,7 @@ done
 # squash, tag, and push the release commit
 if [ -n "$EXECUTE" ]; then
     # squash all of the cargo release commits into a single commit
-    git reset --soft "$local_commit"
+    git reset --soft "$HEAD_COMMIT"
     git commit -m "chore: Release v${VERSION}"
 
     git tag -a v${VERSION} -m "Release v${VERSION}"

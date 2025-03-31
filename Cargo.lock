@@ -1216,7 +1216,7 @@ checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 
 [[package]]
 name = "graft-client"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "circular-buffer",
@@ -1248,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "graft-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "assert_matches",
  "blake3",
@@ -1267,7 +1267,7 @@ dependencies = [
 
 [[package]]
 name = "graft-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "culprit",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "graft-sqlite"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "culprit",
@@ -1414,7 +1414,7 @@ dependencies = [
 
 [[package]]
 name = "graft-tracing"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bs58",
  "parking_lot",
