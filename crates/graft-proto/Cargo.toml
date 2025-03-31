@@ -14,7 +14,7 @@ description = "Protocol definitions for the Graft storage engine."
 workspace = true
 
 [dependencies]
-graft-core = { path = "../graft-core", version = "0.1.0" }
+graft-core = { path = "../graft-core", version = "0.1.1" }
 
 splinter-rs = { workspace = true }
 culprit = { workspace = true }
