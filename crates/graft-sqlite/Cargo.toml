@@ -16,7 +16,7 @@ workspace = true
 [dependencies]
 graft-core = { path = "../graft-core", version = "0.1.1" }
 graft-client = { path = "../graft-client", version = "0.1.0" }
-graft-tracing = { path = "../graft-tracing", version = "0.1.0" }
+graft-tracing = { path = "../graft-tracing", version = "0.1.1" }
 
 sqlite-plugin = { workspace = true }
 tracing = { workspace = true }
