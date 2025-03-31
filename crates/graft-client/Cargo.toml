@@ -15,8 +15,8 @@ description = "Transactional page storage engine supporting lazy partial replica
 workspace = true
 
 [dependencies]
-graft-core = { path = "../graft-core" }
-graft-proto = { path = "../graft-proto" }
+graft-core = { path = "../graft-core", version = "0.1.0" }
+graft-proto = { path = "../graft-proto", version = "0.1.0" }
 
 splinter-rs = { workspace = true }
 precept = { workspace = true }

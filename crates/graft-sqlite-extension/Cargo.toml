@@ -13,9 +13,9 @@ name = "graft"
 crate-type = ["cdylib"]
 
 [dependencies]
-graft-core = { path = "../graft-core" }
-graft-client = { path = "../graft-client" }
-graft-sqlite = { path = "../graft-sqlite" }
+graft-core = { path = "../graft-core", version = "0.1.0" }
+graft-client = { path = "../graft-client", version = "0.1.0" }
+graft-sqlite = { path = "../graft-sqlite", version = "0.1.0" }
 
 platform-dirs = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

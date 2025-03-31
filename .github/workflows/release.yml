@@ -60,7 +60,7 @@ jobs:
               Rename-Item graft.dll libgraft.dll
               Compress-Archive `
                 -Path ".\libgraft.dll" `
-                -DestinationPath ".\libgraft-windows-x86_64.zip"
+                -DestinationPath ".\libgraft-windows-aarch64.zip"
             artifact_name: libgraft-windows-aarch64.zip
 
           - os-name: macOS-x86_64
