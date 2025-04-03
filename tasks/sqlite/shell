@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-USAGE=$(cat << EOF
+USAGE=$(
+    cat <<EOF
 Usage: $0 [OPTIONS]
 
 Options:
@@ -68,16 +69,21 @@ done
 
 cargo build ${BUILD_FLAGS} --features precept/disabled --package graft-sqlite-extension
 
-# make sure sqlite can find the vfs
+# Discover the path to the VFS depending on platform
 LIB_PATH="${GIT_ROOT}/target/${TARGET}"
-export LD_LIBRARY_PATH=${LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-export DYLD_LIBRARY_PATH=${LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    LIB_PATH="${LIB_PATH}/graft.dll"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    LIB_PATH="${LIB_PATH}/libgraft.dylib"
+else
+    LIB_PATH="${LIB_PATH}/libgraft.so"
+fi
 
 ARGS=(
     -header
     -table
     -cmd '.log stderr'
-    -cmd '.load libgraft'
+    -cmd ".load '${LIB_PATH}'"
     -cmd ".open 'file:${VID}?vfs=graft'"
 )
 

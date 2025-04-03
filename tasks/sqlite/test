@@ -22,10 +22,13 @@ if [ -z "${LIBGRAFT}" ]; then
     fi
 
     LIB_PATH="${GIT_ROOT}/target/debug"
-    export LD_LIBRARY_PATH=${LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-    export DYLD_LIBRARY_PATH=${LIB_PATH}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}
-
-    LIBGRAFT="libgraft"
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+        LIBGRAFT="${LIB_PATH}/graft.dll"
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        LIBGRAFT="${LIB_PATH}/libgraft.dylib"
+    else
+        LIBGRAFT="${LIB_PATH}/libgraft.so"
+    fi
 fi
 
 # test against our min supported sqlite version
