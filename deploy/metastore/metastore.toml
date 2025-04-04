@@ -1,6 +1,6 @@
 catalog_update_concurrency = 128
 
 [objectstore]
-type = "s3_compatable"
+type = "s3_compatible"
 bucket = "graft-primary"
 prefix = "metastore"

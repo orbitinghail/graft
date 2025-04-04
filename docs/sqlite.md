@@ -43,7 +43,7 @@ After downloading the file for your system's platform and architecture, decompre
 
 ### Download using a package manager
 
-Rather than having to download and manage the extension manually, `libgraft` is availble through the [sqlpkg] SQLite extension manager! This means you can download the extension like so:
+Rather than having to download and manage the extension manually, `libgraft` is available through the [sqlpkg] SQLite extension manager! This means you can download the extension like so:
 
 **Linux/macOS**:
 
@@ -266,7 +266,7 @@ Turn background sync on or off.
 Reveal the most recent 16 errors and warnings encountered during background sync. This pragma pops errors out of a ring buffer, so calling it repeatedly will only report errors and warnings since the last call.
 
 `pragma graft_reset`:
-This pragma drops all local changes and forceably resets to the latest server Snapshot. Make sure you are ok with loosing local changes permanently when running this pragma.
+This pragma drops all local changes and forcibly resets to the latest server Snapshot. Make sure you are ok with loosing local changes permanently when running this pragma.
 
 `pragma graft_version`:
 This pragma prints out Graft's version and commit hash which can be useful for debugging and support.

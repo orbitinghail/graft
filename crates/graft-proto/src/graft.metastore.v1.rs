@@ -17,7 +17,7 @@ pub struct SnapshotResponse {
     pub snapshot: ::core::option::Option<super::super::common::v1::Snapshot>,
 }
 /// Retrieve the snapshot at the end of the given LSN range along with a Splinter
-/// containing all changed indicies. If the start of the range is Unbounded, it
+/// containing all changed indices. If the start of the range is Unbounded, it
 /// will be set to the last checkpoint.
 /// Returns: graft.metastore.v1.PullGraftResponse
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -304,7 +304,7 @@ mod tests {
         }
 
         // bad encoding
-        let cases = ["GontbnaXtUE3!BbafyDiJt", "zzzzzzzzzzzzzzzzzzzzzz"];
+        let cases = ["GontbnaXtaE3!BbafyDiJt", "zzzzzzzzzzzzzzzzzzzzzz"];
         for &case in cases.iter() {
             let result: Result<VolumeId, _> = case.parse();
             assert_matches!(result.unwrap_err(), GidParseErr::DecodeErr(_));

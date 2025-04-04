@@ -28,7 +28,7 @@ use crate::vfs::ErrCtx;
 
 use super::VfsFile;
 
-// The byte offset of the SQLite file change counter in the databse file
+// The byte offset of the SQLite file change counter in the database file
 const FILE_CHANGE_COUNTER_OFFSET: usize = 24;
 
 #[derive(Debug)]

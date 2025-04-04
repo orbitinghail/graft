@@ -19,7 +19,7 @@ pub enum ObjectStoreConfig {
     /// S3 compatible object store
     /// Can load most config and secrets from environment variables
     /// See `object_store::aws::builder::AmazonS3Builder` for env variable names
-    S3Compatable {
+    S3Compatible {
         bucket: String,
         prefix: Option<String>,
     },
@@ -30,7 +30,7 @@ impl ObjectStoreConfig {
         match self {
             ObjectStoreConfig::Memory => Ok(Arc::new(InMemory::new())),
             ObjectStoreConfig::Fs { root } => Ok(Arc::new(LocalFileSystem::new_with_prefix(root)?)),
-            ObjectStoreConfig::S3Compatable { bucket, prefix } => {
+            ObjectStoreConfig::S3Compatible { bucket, prefix } => {
                 let store = object_store::aws::AmazonS3Builder::from_env()
                     .with_allow_http(true)
                     .with_bucket_name(bucket)

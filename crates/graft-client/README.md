@@ -1,6 +1,6 @@
 # Graft
 
-This crate provides an offline-first storage and syncronization engine designed to be embedded in your Rust project. The engine provides a transactional page-based API over "Volumes". Data is synchronized to and from Graft compatible servers. [Learn more about Graft here.][graft]
+This crate provides an offline-first storage and synchronization engine designed to be embedded in your Rust project. The engine provides a transactional page-based API over "Volumes". Data is synchronized to and from Graft compatible servers. [Learn more about Graft here.][graft]
 
 [graft]: https://github.com/orbitinghail/graft
 

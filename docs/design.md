@@ -41,7 +41,7 @@ Transactional blob storage engine supporting lazy partial replication to the edg
   A node that keeps up with changes to a Volume over time. May subscribe the Metastore to receive Grafts, or periodically poll for updates. Notably, Graft Replicas lazily retrieve Pages they want rather than downloading all changes.
 
 - **Lite Client**
-  An embedded client optimized for reading or writing to a volume without any state. Generally has a very small (or non-existant) cache and does not subscribe to updates. Used in "fire and forget" workloads.
+  An embedded client optimized for reading or writing to a volume without any state. Generally has a very small (or non-existent) cache and does not subscribe to updates. Used in "fire and forget" workloads.
 
 - **Segment**
   An object stored in blob storage containing Pages and an index mapping from (Volume ID, PageIdx) to each Page.
@@ -297,7 +297,7 @@ The only data we will need to make globally available is where each Volume lives
 1. Add region namespacing to Volume Ids. This permanently pins each Volume to a region (or at least a namespace) allowing clients to send traffic to the right location without any additional communication. The downside is a lack of flexibility.
 2. A globally available volume registry service. Cloudflare might be the ideal place for this. They provide multiple storage and caching services that would fairly efficiently keep this routing data highly available globally.
 
-I'm still undecided, but leaning towards using CF as a volume registry to increase flexiblity in volume placement (and more importantly the ability to move volumes).
+I'm still undecided, but leaning towards using CF as a volume registry to increase flexibility in volume placement (and more importantly the ability to move volumes).
 
 # Client
 

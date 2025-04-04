@@ -89,7 +89,7 @@ pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
     let handle = builder
         .spawn(move || {
             runtime.block_on(async {
-                // if the shutdown channel closes, try to shutdown the superviser with a default timeout
+                // if the shutdown channel closes, try to shutdown the supervisor with a default timeout
                 let timeout = shutdown_rx.await.unwrap_or(Duration::from_secs(5));
                 let result = supervisor.shutdown(timeout).await;
                 let _ = result_tx.send(result);
