@@ -9,6 +9,12 @@
 
 Transactional page storage engine supporting lazy partial replication to the edge. Optimized for scale and cost over latency. Leverages object storage for durability.
 
+> [!TIP]
+> The best way to learn about Graft is via this [blog post] or Carl's [talk at Vancouver Systems][graft-talk].
+
+[blog post]: https://sqlsync.dev/posts/stop-syncing-everything/
+[graft-talk]: https://www.youtube.com/watch?v=eRsD8uSAi0s
+
 ## Using Graft
 
 Graft should be considered **Alpha** quality software. Thus, don't use it for production workloads yet.
