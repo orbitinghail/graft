@@ -140,6 +140,26 @@ result = conn.execute("pragma graft_status")
 print(result.fetchall()[0][0])
 ```
 
+To use Graft with Node.js's built-in SQLite module, **Node.js version 23.10.0 or later is required**, as this is the first version that supports URI-formatted database connections needed by Graft.
+
+```javascript
+import { DatabaseSync } from "node:sqlite";
+
+//  the path to libgraft
+//  change the extension to .dylib on macOS and .dll on Windows
+let libgraftPath = "./libgraft.so";
+
+let database = new DatabaseSync(":memory:", {
+  allowExtension: true,
+});
+
+database.loadExtension(libgraftPath);
+
+database = new DatabaseSync("file:random?vfs=graft");
+const graftStatus = database.prepare("PRAGMA graft_status").all();
+console.log(graftStatus);
+```
+
 ## Volume IDs
 
 When connecting to a Graft SQLite database, you can specify a particular Volume ID directly:
