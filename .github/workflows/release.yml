@@ -22,10 +22,7 @@ jobs:
               sudo apt-get update
               sudo apt-get install -y mold libclang-dev clang
             pre-build: ""
-            post-build: |
-              cd target/release
-              tar -czf libgraft-linux-x86_64.tar.gz libgraft.so
-            artifact_name: libgraft-linux-x86_64.tar.gz
+            artifact_name: libgraft.so
 
           - os-name: linux-aarch64
             runs-on: ubuntu-24.04
@@ -34,56 +31,35 @@ jobs:
               sudo apt-get update
               sudo apt-get install -y mold libclang-dev clang
             pre-build: ""
-            post-build: |
-              cd target/release
-              tar -czf libgraft-linux-aarch64.tar.gz libgraft.so
-            artifact_name: libgraft-linux-aarch64.tar.gz
+            artifact_name: libgraft.so
 
           - os-name: windows-x86_64
             runs-on: windows-2022
             target: x86_64-pc-windows-msvc
             setup: ""
             pre-build: ""
-            post-build: |
-              cd .\target\release
-              Rename-Item graft.dll libgraft.dll
-              Compress-Archive `
-                -Path ".\libgraft.dll" `
-                -DestinationPath ".\libgraft-windows-x86_64.zip"
-            artifact_name: libgraft-windows-x86_64.zip
+            artifact_name: graft.dll
 
           - os-name: windows-aarch64
             runs-on: windows-2022
             target: aarch64-pc-windows-msvc
             setup: ""
             pre-build: ""
-            post-build: |
-              cd .\target\release
-              Rename-Item graft.dll libgraft.dll
-              Compress-Archive `
-                -Path ".\libgraft.dll" `
-                -DestinationPath ".\libgraft-windows-aarch64.zip"
-            artifact_name: libgraft-windows-aarch64.zip
+            artifact_name: graft.dll
 
           - os-name: macos-x86_64
             runs-on: macOS-14
             target: x86_64-apple-darwin
             setup: ""
             pre-build: export LIBCLANG_PATH=$(brew --prefix llvm@15)/lib
-            post-build: |
-              cd target/release
-              tar -czf libgraft-macos-x86_64.tar.gz libgraft.dylib
-            artifact_name: libgraft-macos-x86_64.tar.gz
+            artifact_name: libgraft.dylib
 
           - os-name: macos-aarch64
             runs-on: macOS-14
             target: aarch64-apple-darwin
             setup: ""
             pre-build: export LIBCLANG_PATH=$(brew --prefix llvm@15)/lib
-            post-build: |
-              cd target/release
-              tar -czf libgraft-macos-aarch64.tar.gz libgraft.dylib
-            artifact_name: libgraft-macos-aarch64.tar.gz
+            artifact_name: libgraft.dylib
 
     name: Build - ${{ matrix.platform.os-name }}
     runs-on: ${{ matrix.platform.runs-on }}
@@ -109,8 +85,9 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ${{matrix.platform.os-name}}
-          path: dist/target/release/libgraft.*
+          name: ${{ matrix.platform.os-name }}
+          path: target/release/${{ matrix.platform.artifact_name }}
+          if-no-files-found: error
 
       # - name: Create GitHub Release
       #   uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2
