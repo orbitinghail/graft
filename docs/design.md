@@ -305,7 +305,7 @@ Graft Clients support reading and writing to Volumes.
 
 ## Local Storage
 
-The current Graft client runtime stores data in three Fjall partitions.
+Graft client uses [Fjall], an embeddable rust key-value store based on LSM trees, for local storage. Graft splits up the data between three [Fjall] partitions with the following key layout and value types:
 
 ```
 volumes:
@@ -372,7 +372,7 @@ Writes commit locally and then are asynchronously committed remotely. This secti
 
 Writes go through a `VolumeWriter` which buffers newly written pages in a memtable. Reads check the memtable to enable RYOW before falling back to the regular Read algorithm. Each `VolumeWriter` is pinned to a Snapshot.
 
-The commit process happens atomically via a Fjall batch.
+The commit process happens atomically via a [Fjall] batch.
 
 1. Set `commit_lsn = snapshot.local.next()`
 2. Persist the memtable at `commit_lsn`
@@ -381,7 +381,7 @@ The commit process happens atomically via a Fjall batch.
 5. Set `latest` to the latest volume Snapshot
 6. Fail if `latest.local != snapshot.local`
 7. Write out the new snapshot (without changing the remote mapping)
-8. Commit the Fjall batch
+8. Commit the [Fjall] batch
 9. release the commit lock
 
 ## Sync
@@ -398,7 +398,7 @@ Future work:
 
 The Graft runtime polls /metastore/v1/pull_graft for changes. When a change is detected, the runtime attempts to "accept" the change.
 
-The pull process happens atomically via a Fjall batch.
+The pull process happens atomically via a [Fjall] batch.
 
 1. Take the local commit lock
 2. Read the latest Volume Snapshot and Watermarks
@@ -417,7 +417,7 @@ The pull process happens atomically via a Fjall batch.
    - `pending_sync=commit_lsn`
 
 8. For each changed pageidx in the remote commit, write out PageValue::Pending into the pages partition using `commit_lsn`. This ensures that future reads know to fetch the page from the Pagestore.
-9. Commit the Fjall batch
+9. Commit the [Fjall] batch
 10. release the commit lock
 
 FAIL states:
@@ -451,7 +451,7 @@ When the Graft runtime detects a local commit has occurred, it tries to push the
 
 **On commit success:**
 
-1. Open a Fjall batch
+1. Open a [Fjall] batch
 2. Read the latest Volume Snapshot and Watermarks
 3. Assert that the new remote LSN is larger than the last remote LSN
 4. Assert that `watermarks.pending_sync == snapshot.local`
@@ -467,7 +467,7 @@ When the Graft runtime detects a local commit has occurred, it tries to push the
 
 ## Crash recovery
 
-The Graft client runtime must be able to crash at any point and recover. Fjall already has it's own recovery mechanisms built in, so we just need to handle failed Pushes. Failed pushes can be detected when `pending_sync` is larger than `remote_mapping.local` and no concurrent Push job is running.
+The Graft client runtime must be able to crash at any point and recover. [Fjall] already has it's own recovery mechanisms built in, so we just need to handle failed Pushes. Failed pushes can be detected when `pending_sync` is larger than `remote_mapping.local` and no concurrent Push job is running.
 
 When a volume is in this failed push state, it needs to determine if the commit was successfully accepted by the Metastore or not. It does so by retrying the commit process with the same idempotency token.
 
@@ -495,3 +495,5 @@ Networking stack:
 ## Endianness
 
 Graft serializes and deserializes a lot of data to disk and object_storage. It currently only runs on Little Endian systems which are the vast majority. If you happen to want to use Graft on a Big Endian system please file an issue and we can talk about it. All Graft network messages are Protobuf which is agnostic to the Endianness of the system, so building a Graft Client that works on Big Endian systems should be fine.
+
+[Fjall]: https://github.com/fjall-rs/fjall
