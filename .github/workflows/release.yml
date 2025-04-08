@@ -1,8 +1,9 @@
 name: Release libgraft
 
 on:
-  workflow_dispatch:
   push:
+    branches:
+      - feat-packaging
     tags:
       - "v*.*.*"
 
