@@ -8,12 +8,6 @@ authors = ["TODO"]
 git_tag_format = "v$VERSION"
 
 [targets]
-github_releases = {}
-
 pip = {}
-datasette = {}
-sqlite_utils = {}
-
 npm = {}
-
 gem = { module_name = "SqliteGraft" }
