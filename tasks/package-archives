@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GIT_ROOT="$(git rev-parse --show-toplevel)"
+DIST_DIR="${GIT_ROOT}/dist"
+OUTPUT_DIR="${GIT_ROOT}/distx/archives"
+
+# fail if the dist directory does not exist
+if [[ ! -d "$DIST_DIR" ]]; then
+    echo "The distribution directory '$DIST_DIR' does not exist." >&2
+    exit 1
+fi
+
+mkdir -p "$OUTPUT_DIR"
+
+# fail if the output directory is not empty
+if [[ "$(ls -A "$OUTPUT_DIR")" ]]; then
+    echo "The output directory '$OUTPUT_DIR' is not empty." >&2
+    exit 1
+fi
+
+CHECKSUM_FILE="$OUTPUT_DIR/checksums.txt"
+touch "$CHECKSUM_FILE"
+
+for platform in "$DIST_DIR"/*; do
+    platform_name=$(basename "$platform")
+    echo "Processing platform: $platform_name"
+    case "$platform_name" in
+        linux-aarch64|linux-x86_64)
+            libname="libgraft.so"
+            archive_name="libgraft-$platform_name.tar.gz"
+            tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR/$platform_name" "$libname"
+            ;;
+
+        macos-aarch64|macos-x86_64)
+            libname="libgraft.dylib"
+            archive_name="libgraft-$platform_name.tar.gz"
+            tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR/$platform_name" "$libname"
+            ;;
+
+        windows-aarch64|windows-x86_64)
+            libname="graft.dll"
+            archive_name="libgraft-$platform_name.zip"
+            zip -j "$OUTPUT_DIR/$archive_name" "$DIST_DIR/$platform_name/$libname" >/dev/null
+            ;;
+
+        *)
+            echo "Unexpected platform directory encountered: $platform_name" >&2
+            exit 1
+            ;;
+    esac
+
+    pushd "$OUTPUT_DIR" >/dev/null
+    sha256sum "$archive_name" >> "$CHECKSUM_FILE"
+    popd >/dev/null
+done
+
+echo "Packaging completed. Archives and checksums are located in $OUTPUT_DIR."
