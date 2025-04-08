@@ -1,0 +1,13 @@
+[package]
+name = "sqlite-graft"
+license = "MIT OR Apache"
+homepage = "TODO"
+repo = "TODO"
+description = "TODO"
+authors = ["TODO"]
+git_tag_format = "v$VERSION"
+
+[targets]
+pip = {}
+npm = {}
+gem = { module_name = "SqliteGraft" }
