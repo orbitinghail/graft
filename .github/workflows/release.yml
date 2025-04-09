@@ -97,13 +97,16 @@ jobs:
           name: ${{ matrix.platform.os-name }}
           path: target/${{ matrix.platform.target }}/release/${{ matrix.platform.artifact_name }}
           if-no-files-found: error
+          retention-days: 3
 
   release:
     runs-on: ubuntu-latest
     needs: [build]
 
+    environment: publishing
     permissions:
       contents: write
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -164,38 +167,31 @@ jobs:
           fail_on_unmatched_files: true
           files: distx/archives/*
 
-      - name: TODO REMOVE ME
+      - name: Upload distx
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: sqlite-dist
+          name: distx
           path: distx/
+          retention-days: 3
 
-      # - name: Publish NPM Packages
-      #   run: |
-      #     for file in distx/npm/*; do
-      #       npm publish --access public distx/npm/sqlite-graft-darwin-arm64.tar.gz
-      #       npm publish --access public distx/npm/sqlite-graft-darwin-x64.tar.gz
-      #       npm publish --access public distx/npm/sqlite-graft-linux-x64.tar.gz
-      #       npm publish --access public distx/npm/sqlite-graft-linux-arm64.tar.gz
-      #       npm publish --access public distx/npm/sqlite-graft-windows-x64.tar.gz
-      #       npm publish --access public distx/npm/sqlite-graft.tar.gz
-      #     done
-      #   env:
-      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish NPM Packages
+        run: |
+          for file in distx/npm/*; do
+            npm publish --access public "$file"
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # - name: Publish Ruby Packages
-      #   run: |
-      #     for file in distx/gem/*; do
-      #       gem push "$file"
-      #     done
-      #   env:
-      #     GEM_HOST_API_KEY: ${{ secrets.GEM_HOST_API_KEY }}
+      - name: Publish Ruby Packages
+        run: |
+          for file in distx/gem/*; do
+            gem push "$file"
+          done
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.GEM_HOST_API_KEY }}
 
-      # - name: Publish PyPI Packages
-      #   run: |
-      #     uv publish distx/pip/*
-      #     uv publish distx/datasette/*
-      #     uv publish distx/sqlite_utils/*
-      #   env:
-      #     UV_PUBLISH_USERNAME: __token__
-      #     UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Publish PyPI Packages
+        run: |
+          uv publish distx/pip/*
+          uv publish distx/datasette/*
+          uv publish distx/sqlite_utils/*
