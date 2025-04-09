@@ -63,6 +63,9 @@ jobs:
 
     name: Build - ${{ matrix.platform.os-name }}
     runs-on: ${{ matrix.platform.runs-on }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: system dependencies
         run: ${{ matrix.platform.setup }}
