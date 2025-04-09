@@ -89,12 +89,12 @@ jobs:
           path: target/release/${{ matrix.platform.artifact_name }}
           if-no-files-found: error
 
-      # - name: Create GitHub Release
-      #   uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2
-      #   with:
-      #     draft: true
-      #     generate_release_notes: true
-      #     files: target/release/${{ matrix.platform.artifact_name }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: target/release/${{ matrix.platform.artifact_name }}
 
   release:
     runs-on: ubuntu-latest
@@ -105,6 +105,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree
+
+      - name: Install just
+        uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
 
       - name: Install node
         uses: actions/setup-node@v3
@@ -123,7 +131,7 @@ jobs:
       - name: Install sqlite-dist
         run: |
           curl -L https://github.com/asg017/sqlite-dist/releases/download/v0.0.1-alpha.17/sqlite-dist-x86_64-unknown-linux-gnu.tar.xz \
-            | tar xfJ - --strip-components 1
+            | tar xfJ - --strip-components 1 sqlite-dist-x86_64-unknown-linux-gnu/sqlite-dist
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -131,14 +139,29 @@ jobs:
           path: dist/
 
       - name: Run SQLite dist
-        run:
+        run: |
           SQLITE_GRAFT_VERSION=$(cargo pkgid graft-sqlite-extension | cut -d "#" -f2)
-          ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version $SQLITE_GRAFT_VERSION
+          echo "Preparing Graft version: ${SQLITE_GRAFT_VERSION}"
+          ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${SQLITE_GRAFT_VERSION}
+
+      - name: Package archives
+        run: just run package-archives
+
+      - name: Print distribution tree
+        run: tree distx/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sqlite-dist
           path: distx/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: distx/archives/*
+          fail_on_unmatched_files: true
 
       # - run: |
       #     gh release upload ${{ github.ref_name }} \
