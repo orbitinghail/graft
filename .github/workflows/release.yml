@@ -2,13 +2,8 @@ name: Release libgraft
 
 on:
   push:
-    branches:
-      - feat-packaging
     tags:
       - "v*.*.*"
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -63,9 +58,13 @@ jobs:
 
     name: Build - ${{ matrix.platform.os-name }}
     runs-on: ${{ matrix.platform.runs-on }}
+    permissions:
+      contents: read
+
     defaults:
       run:
         shell: bash
+
     steps:
       - name: system dependencies
         run: ${{ matrix.platform.setup }}
@@ -89,8 +88,6 @@ jobs:
             --package graft-sqlite-extension \
             --target ${{ matrix.platform.target }}
           ${{ matrix.platform.post-build }}
-
-      - run: ls -lR target/release
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -148,8 +145,7 @@ jobs:
 
       - name: Run SQLite dist
         run: |
-          # TODO: remove rc.1
-          SQLITE_GRAFT_VERSION="$(cargo pkgid graft-sqlite-extension | cut -d "#" -f2)-rc.1"
+          SQLITE_GRAFT_VERSION="$(cargo pkgid graft-sqlite-extension | cut -d "#" -f2)"
           echo "Preparing Graft version: ${SQLITE_GRAFT_VERSION}"
           ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${SQLITE_GRAFT_VERSION}
 
