@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DIST_DIR="./dist"
-OUTPUT_DIR="./distx/archives"
+GIT_ROOT="$(git rev-parse --show-toplevel)"
+DIST_DIR="${GIT_ROOT}/dist"
+OUTPUT_DIR="${GIT_ROOT}/distx/archives"
 
 # fail if the dist directory does not exist
 if [[ ! -d "$DIST_DIR" ]]; then
@@ -19,6 +20,7 @@ if [[ "$(ls -A "$OUTPUT_DIR")" ]]; then
 fi
 
 CHECKSUM_FILE="$OUTPUT_DIR/checksums.txt"
+touch "$CHECKSUM_FILE"
 
 for platform in "$DIST_DIR"/*; do
     platform_name=$(basename "$platform")
@@ -48,7 +50,9 @@ for platform in "$DIST_DIR"/*; do
             ;;
     esac
 
-    sha256sum "$OUTPUT_DIR/$archive_name" >> "$CHECKSUM_FILE"
+    pushd "$OUTPUT_DIR" >/dev/null
+    sha256sum "$archive_name" >> "$CHECKSUM_FILE"
+    popd >/dev/null
 done
 
 echo "Packaging completed. Archives and checksums are located in $OUTPUT_DIR."
