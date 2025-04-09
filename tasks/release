@@ -54,10 +54,13 @@ if [ "$HEAD_COMMIT" != "$ORIGIN_MAIN_COMMIT" ]; then
 fi
 
 for crate in "${RELEASE_CRATES[@]}"; do
-    pushd crates/$crate
-    cargo release --no-push --no-tag ${RELEASE_FLAGS} ${VERSION}
-    popd
+    cargo release --no-push --no-tag --package ${crate} ${RELEASE_FLAGS} ${VERSION}
 done
+
+# update the graft-sqlite-extension version without releasing it
+cargo release --no-push --no-tag --no-publish \
+    --package graft-sqlite-extension \
+    ${RELEASE_FLAGS} ${VERSION}
 
 # squash, tag, and push the release commit
 if [ -n "$EXECUTE" ]; then

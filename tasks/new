@@ -22,7 +22,7 @@ while getopts ":g:" opt; do
 done
 shift $((OPTIND -1))
 
-NAME=$(echo "${@}" | tr '[:upper:]' '[:lower:]' | tr -d '[:punct:]' | tr ' ' '-')
+NAME="$1"
 
 if [[ -z "${NAME}" ]]; then
     echo "Usage: just run new -g <group> <task-name>"
