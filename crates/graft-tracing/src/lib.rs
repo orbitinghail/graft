@@ -1,3 +1,8 @@
+//! Tracing utilities for the Graft project.
+//!
+//! This crate provides functionality for initializing and configuring
+//! [tracing](https://docs.rs/tracing) in different environments (test, server, tool).
+
 use parking_lot::Once;
 use std::time::Instant;
 use tracing_subscriber::{
@@ -14,22 +19,36 @@ use tracing_subscriber::{
     },
 };
 
+/// Checks if the application is running in the Antithesis testing environment.
 pub fn running_in_antithesis() -> bool {
     std::env::var("ANTITHESIS_OUTPUT_DIR").is_ok()
 }
 
+/// Specifies the type of application consuming the tracing output.
 #[derive(PartialEq, Eq)]
 pub enum TracingConsumer {
+    /// Test environment consumer
     Test,
+    /// Server application consumer
     Server,
+    /// Command-line tool consumer
     Tool,
 }
 
+/// Initializes tracing with stdout as the output.
 pub fn init_tracing(consumer: TracingConsumer, process_id: Option<String>) {
     init_tracing_with_writer(consumer, process_id, std::io::stdout);
 }
 
-/// Initialize tracing. If no `process_id` is specified one will be randomly generated.
+/// Initializes tracing with a custom writer for output.
+///
+/// # Parameters
+/// * `consumer` - The type of application consuming the tracing output
+/// * `process_id` - Optional identifier for the process, randomly generated if None
+/// * `writer` - Custom writer implementation for tracing output
+///
+/// # Type Parameters
+/// * `W` - Writer type that implements the [`tracing_subscriber::fmt::MakeWriter`] trait
 pub fn init_tracing_with_writer<W>(consumer: TracingConsumer, process_id: Option<String>, writer: W)
 where
     W: for<'writer> MakeWriter<'writer> + 'static + Send + Sync,
@@ -108,7 +127,6 @@ impl TimeAndPrefix {
     fn new(prefix: Option<String>, time: TimeFormat) -> Self {
         Self { prefix, time }
     }
-
     fn write_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
         match self.time {
             TimeFormat::None => Ok(()),
