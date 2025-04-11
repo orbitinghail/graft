@@ -1,0 +1,20 @@
+{
+  "name": "graft-docs",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "keywords": ["graft", "documentation", "starlight", "astro"],
+  "author": "Graft Team",
+  "license": "MIT",
+  "description": "Documentation site for Graft",
+  "dependencies": {
+    "@astrojs/starlight": "^0.33.1",
+    "astro": "^5.6.1"
+  }
+}

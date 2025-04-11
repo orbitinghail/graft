@@ -1,0 +1,1 @@
+{"name":"@pagefind/linux-x64","version":"1.3.0","description":"The platform-specific binary for pagefind on linux/x64","license":"MIT","repository":{"type":"git","url":"git+https://github.com/cloudcannon/pagefind.git"},"author":"CloudCannon","os":["linux"],"cpu":["x64"]}
