@@ -1,8 +1,0 @@
-{
-    "cSpell.words": [
-        "papaper"
-    ],
-    "javascript.format.semicolons": "remove",
-    "javascript.format.insertSpaceAfterConstructor": true,
-    "javascript.format.insertSpaceBeforeFunctionParenthesis": true
-}
