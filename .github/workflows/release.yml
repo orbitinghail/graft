@@ -124,8 +124,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
         with:
           path: dist/
       - run: |
@@ -146,7 +146,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Install node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@dbe1369d7be17e7823f8c1ee1ae8bec5779239dd # v3
         with:
           node-version: "16"
           registry-url: "https://registry.npmjs.org"
@@ -171,7 +171,7 @@ jobs:
           done
         env:
           GEM_HOST_API_KEY: ${{ secrets.GEM_HOST_API_KEY }}
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 # v5
       - run: |
           uv publish distx/pip/*
           uv publish distx/datasette/*
