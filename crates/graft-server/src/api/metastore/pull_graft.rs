@@ -63,7 +63,7 @@ pub async fn handler(
         return Err(Culprit::new_with_note(
             ApiErrCtx::SnapshotMissing,
             format!(
-                "volume {vid} snapshot {:?} happens before {start_lsn:?}",
+                "volume {vid} is behind requested snapshot {start_lsn:?}; latest snapshot {:?}",
                 snapshot.lsn()
             ),
         )
