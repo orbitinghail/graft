@@ -1,13 +1,16 @@
 [package]
 name = "sqlite-graft"
+authors = ["Carl Sverre"]
+emails = ["hello@orbitinghail.dev"]
 license = "MIT OR Apache"
-homepage = "TODO"
-repo = "TODO"
-description = "TODO"
-authors = ["TODO"]
+description = "A SQLite extension which uses Graft to replicate to and from object storage."
+homepage = "https://github.com/orbitinghail/graft"
+repo = "https://github.com/orbitinghail/graft"
 git_tag_format = "v$VERSION"
 
 [targets]
-pip = {}
 npm = {}
+pip = {}
+datasette = {}
+sqlite_utils = {}
 gem = { module_name = "SqliteGraft" }

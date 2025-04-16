@@ -1345,7 +1345,7 @@ dependencies = [
 
 [[package]]
 name = "graft-sqlite-extension"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "config",
  "graft-client",
