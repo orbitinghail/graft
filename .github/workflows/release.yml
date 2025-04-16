@@ -2,6 +2,8 @@ name: Release libgraft
 
 on:
   push:
+    branches:
+      - feat-packaging
     tags:
       - "v*.*.*"
 
@@ -135,8 +137,9 @@ jobs:
 
       - name: Install sqlite-dist
         run: |
-          curl -L https://github.com/asg017/sqlite-dist/releases/download/v0.0.1-alpha.17/sqlite-dist-x86_64-unknown-linux-gnu.tar.xz \
-            | tar xfJ - --strip-components 1 sqlite-dist-x86_64-unknown-linux-gnu/sqlite-dist
+          # curl -L https://github.com/asg017/sqlite-dist/releases/download/v0.0.1-alpha.17/sqlite-dist-x86_64-unknown-linux-gnu.tar.xz \
+          #   | tar xfJ - --strip-components 1 sqlite-dist-x86_64-unknown-linux-gnu/sqlite-dist
+          curl -L https://github.com/carlsverre/sqlite-dist/releases/download/v0.1.0-prerelease.1/sqlite-dist > sqlite-dist
 
       - name: Download artifacts
         uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
@@ -145,7 +148,7 @@ jobs:
 
       - name: Run SQLite dist
         run: |
-          SQLITE_GRAFT_VERSION="$(cargo pkgid graft-sqlite-extension | cut -d "#" -f2)"
+          SQLITE_GRAFT_VERSION="$(cargo pkgid graft-sqlite-extension | cut -d "#" -f2)-rc.2"
           echo "Preparing Graft version: ${SQLITE_GRAFT_VERSION}"
           ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${SQLITE_GRAFT_VERSION}
 
