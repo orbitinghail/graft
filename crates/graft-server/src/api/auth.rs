@@ -21,9 +21,7 @@ where
     D::Error: serde::de::Error,
 {
     let key = String::deserialize(deserializer)?;
-    key.as_str()
-        .try_into()
-        .map_err(serde::de::Error::custom)
+    key.as_str().try_into().map_err(serde::de::Error::custom)
 }
 
 impl std::fmt::Debug for AuthState {
