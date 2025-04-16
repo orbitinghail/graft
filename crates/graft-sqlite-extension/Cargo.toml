@@ -16,7 +16,9 @@ crate-type = ["cdylib"]
 graft-core = { path = "../graft-core", version = "0.1.2" }
 graft-client = { path = "../graft-client", version = "0.1.2" }
 graft-sqlite = { path = "../graft-sqlite", version = "0.1.2" }
+graft-tracing = { path = "../graft-tracing", version = "0.1.2" }
 
+tracing = { workspace = true }
 platform-dirs = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 config = { workspace = true, features = ["toml"] }

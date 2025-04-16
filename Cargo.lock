@@ -1348,10 +1348,12 @@ dependencies = [
  "graft-client",
  "graft-core",
  "graft-sqlite",
+ "graft-tracing",
  "platform-dirs",
  "precept",
  "serde",
  "sqlite-plugin",
+ "tracing",
  "url",
 ]
 

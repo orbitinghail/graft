@@ -161,7 +161,11 @@ impl Vfs for GraftVfs {
 
         let writer = Writer(Arc::new(Mutex::new(logger)));
         let make_writer = move || writer.clone();
-        graft_tracing::init_tracing_with_writer(TracingConsumer::Tool, None, make_writer);
+        graft_tracing::init_tracing_with_writer(
+            TracingConsumer::Tool,
+            Some(self.runtime.cid().short()),
+            make_writer,
+        );
     }
 
     fn canonical_path<'a>(

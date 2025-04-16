@@ -256,6 +256,11 @@ The configuration file supports the following options:
 - **Environment variable:** `GRAFT_CLIENT_ID`
 - **Description:** Specify a unique Client ID to use. If not set, a new Client ID is randomly generated. It is strongly recommended to set this explicitly in production environments.
 
+#### `log_file`
+
+- **Environment variable:** `GRAFT_LOG_FILE`
+- **Description:** Write a verbose log of all Graft operations to the specified log file. The verbosity can be controlled using the environment variable `RUST_LOG`. Valid verbosity levels are: `error, warn, info, debug, trace`
+
 ### Example Configuration File (`graft.toml`)
 
 ```toml

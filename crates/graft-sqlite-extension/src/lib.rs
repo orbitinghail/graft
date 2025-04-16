@@ -1,4 +1,4 @@
-use std::{ffi::c_void, path::PathBuf, time::Duration};
+use std::{ffi::c_void, fs::OpenOptions, path::PathBuf, sync::Mutex, time::Duration};
 
 use config::{Config, FileFormat};
 use graft_client::{
@@ -7,6 +7,7 @@ use graft_client::{
 };
 use graft_core::ClientId;
 use graft_sqlite::vfs::GraftVfs;
+use graft_tracing::{TracingConsumer, init_tracing_with_writer};
 use serde::Deserialize;
 use sqlite_plugin::{
     sqlite3_api_routines,
@@ -50,7 +51,20 @@ struct ExtensionConfig {
     #[serde(default = "ClientId::random")]
     client_id: ClientId,
 
+    log_file: Option<PathBuf>,
+
     token: Option<String>,
+}
+
+pub fn setup_log_file(path: PathBuf, cid: &ClientId) {
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .expect("failed to open log file");
+
+    init_tracing_with_writer(TracingConsumer::Tool, Some(cid.short()), Mutex::new(file));
+    tracing::info!("Log file opened");
 }
 
 /// Register the VFS with `SQLite`.
@@ -89,6 +103,10 @@ pub unsafe extern "C" fn sqlite3_graft_init(
     let config: ExtensionConfig = config
         .try_deserialize()
         .expect("failed to deserialize config");
+
+    if let Some(path) = config.log_file {
+        setup_log_file(path, &config.client_id);
+    }
 
     let client = NetClient::new(config.token);
     let metastore_client = MetastoreClient::new(config.metastore, client.clone());
