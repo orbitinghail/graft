@@ -23,7 +23,7 @@ where
     let key = String::deserialize(deserializer)?;
     key.as_str()
         .try_into()
-        .map_err(|err| serde::de::Error::custom(err))
+        .map_err(serde::de::Error::custom)
 }
 
 impl std::fmt::Debug for AuthState {
@@ -50,7 +50,7 @@ pub async fn auth_layer(
     // validate the token
     let key = state.key.into();
     PasetoParser::<V4, Local>::default()
-        .parse(&token, &key)
+        .parse(token, &key)
         .map_err(|err| {
             tracing::error!("paseto validation failure: {err:?}");
             ApiErr::from(ApiErrCtx::Unauthorized)

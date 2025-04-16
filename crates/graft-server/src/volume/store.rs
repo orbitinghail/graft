@@ -153,7 +153,7 @@ mod tests {
 
         // create some commits
         let commits = (1..13)
-            .map(|i| LSN::new(i))
+            .map(LSN::new)
             .map(|lsn| {
                 CommitMeta::new(
                     vid.clone(),

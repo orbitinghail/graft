@@ -5,10 +5,6 @@ plugins:
     opt:
       - bytes=.
       - file_descriptor_set
-  - remote: buf.build/community/neoeinstein-prost-crate:v0.4.1
-    out: crates/graft-proto/src/
-    opt:
-      - no_features
 
 inputs:
   - directory: proto

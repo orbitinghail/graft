@@ -93,9 +93,8 @@ async fn main() {
         VolumeCatalog::open_config(config.catalog).expect("failed to open volume catalog");
     let updater = VolumeCatalogUpdater::new(config.catalog_update_concurrency);
 
-    let auth = config.auth.map(|c| c.into());
     let state = Arc::new(MetastoreApiState::new(store, catalog, updater));
-    let router = build_router(Registry::default(), auth, state, metastore_routes());
+    let router = build_router(Registry::default(), config.auth, state, metastore_routes());
 
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("listening on {}", addr);

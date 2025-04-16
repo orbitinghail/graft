@@ -96,7 +96,7 @@ fn main() {
                 .set_no_expiration_danger_acknowledged()
                 .build(&key)
                 .unwrap();
-            println!("{}", token);
+            println!("{token}");
         }
         Tool::ValidateToken { sk, token } => {
             use rusty_paseto::prelude::*;
@@ -105,7 +105,7 @@ fn main() {
             let claims = PasetoParser::<V4, Local>::default()
                 .parse(&token, &key)
                 .unwrap();
-            println!("{:#?}", claims);
+            println!("{claims:#?}");
         }
     }
 }

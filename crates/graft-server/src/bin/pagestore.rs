@@ -152,7 +152,6 @@ async fn main() {
         cache,
     ));
 
-    let auth = config.auth.map(|c| c.into());
     let state = Arc::new(PagestoreApiState::new(
         page_tx,
         catalog,
@@ -161,7 +160,7 @@ async fn main() {
         updater,
         config.write_concurrency,
     ));
-    let router = build_router(registry, auth, state, pagestore_routes());
+    let router = build_router(registry, config.auth, state, pagestore_routes());
 
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("listening on {}", addr);

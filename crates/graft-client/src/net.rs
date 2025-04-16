@@ -85,7 +85,7 @@ impl NetClient {
             .header(CONTENT_TYPE, APPLICATION_PROTOBUF);
 
         let req = if let Some(token) = &self.api_token {
-            req.header(AUTHORIZATION, format!("Bearer {}", token))
+            req.header(AUTHORIZATION, format!("Bearer {token}"))
         } else {
             req
         };
