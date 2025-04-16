@@ -1,10 +1,11 @@
 [package]
 name = "sqlite-graft"
+authors = ["Carl Sverre"]
+emails = ["hello@orbitinghail.dev"]
 license = "MIT OR Apache"
+description = "A SQLite extension which uses Graft to replicate to and from object storage."
 homepage = "https://github.com/orbitinghail/graft"
 repo = "https://github.com/orbitinghail/graft"
-description = "A SQLite extension which uses Graft to replicate to and from object storage."
-authors = ["Carl Sverre"]
 git_tag_format = "v$VERSION"
 
 [targets]
