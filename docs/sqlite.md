@@ -43,7 +43,92 @@ After downloading the file for your system's platform and architecture, decompre
 
 ### Download using a package manager
 
-Rather than having to download and manage the extension manually, `libgraft` is available through the [sqlpkg] SQLite extension manager! This means you can download the extension like so:
+Rather than having to download and manage the extension manually, `libgraft` is available through many package managers!
+
+#### Python / PyPI
+
+```bash
+pip install sqlite-graft
+```
+
+**Usage**:
+
+```python
+import sqlite3
+import sqlite_graft
+
+# load graft using a temporary (empty) in-memory SQLite database
+db = sqlite3.connect(":memory:")
+db.enable_load_extension(True)
+sqlite_graft.load(db)
+
+# open a Graft volume as a database
+db = sqlite3.connect(f"file:random?vfs=graft", autocommit=True, uri=True)
+
+# use pragma to verify graft is working
+result = db.execute("pragma graft_status")
+print(result.fetchall()[0][0])
+```
+
+#### Node.js / NPM
+
+```bash
+npm install sqlite-graft
+```
+
+**Usage**:
+
+```javascript
+import * as sqliteGraft from "sqlite-graft";
+import Database from "better-sqlite3";
+
+// load the graft extension
+let db = new Database(":memory:");
+sqliteGraft.load(db);
+
+// open a Graft volume as a database and run graft_status
+db = new Database(f"file:random?vfs=graft")
+const graftStatus = database.prepare("PRAGMA graft_status").all();
+console.log(graftStatus);
+
+// Also should work with other javascript SQLite libraries:
+import { DatabaseSync } from "node:sqlite";
+
+// load the graft extension
+let db = new DatabaseSync(":memory:", { allowExtension: true });
+sqliteGraft.load(db);
+
+// open a Graft volume as a database and run graft_status
+db = new DatabaseSync("file:random?vfs=graft");
+const graftStatus = database.prepare("PRAGMA graft_status").all();
+console.log(graftStatus);
+```
+
+#### Ruby / RubyGems
+
+```bash
+gem install sqlite-graft
+```
+
+**Usage:**
+
+```ruby
+require 'sqlite3'
+require 'sqlite_graft'
+
+db = SQLite3::Database.new(':memory:')
+db.enable_load_extension(true)
+SqliteGraft.load(db)
+
+db = SQLite3::Database.new('file:random?vfs=graft');
+db.execute("PRAGMA graft_status") do |row|
+  p row
+end
+```
+
+#### sqlpkg
+
+[sqlpkg] is a third-party command line extension manager for SQLite.
 
 **Linux/macOS**:
 
@@ -77,9 +162,7 @@ The author of `sqlpkg`, [Anton Zhiyanov][anton], published a comprehensive guide
 [sqlpkg]: https://github.com/nalgeon/sqlpkg-cli
 [sqlpkg-guide]: https://antonz.org/install-sqlite-extension/
 
-## Using `libgraft`
-
-### From the SQLite command-line interface
+## Using `libgraft` from the SQLite CLI
 
 When installed using your system package manager or via another binary distribution, SQLite ships with a command-line interface (CLI) usually called `sqlite3` (`sqlite3.exe` on Windows).
 
@@ -114,52 +197,6 @@ Autosync: true
 Volume status: Ok
 ```
 
-### From your favorite programming language:
-
-SQLite is available as a library in most programming languages, and as long the language/runtime supports loading SQLite extensions, `libgraft` should work!
-
-Here is an example of loading Graft using Python's built in SQLite support:
-
-```python
-import sqlite3
-
-# the path to libgraft
-# change the extension to .dylib on macOS and .dll on Windows
-libgraft_path = "./libgraft.so"
-
-# load graft using a temporary (empty) in-memory SQLite database
-conn = sqlite3.connect(":memory:")
-conn.enable_load_extension(True)
-conn.load_extension(libgraft_path)
-
-# open a Graft volume as a database
-conn = sqlite3.connect(f"file:random?vfs=graft", autocommit=True, uri=True)
-
-# use pragma to verify graft is working
-result = conn.execute("pragma graft_status")
-print(result.fetchall()[0][0])
-```
-
-To use Graft with Node.js's built-in SQLite module, **Node.js version 23.10.0 or later is required**, as this is the first version that supports URI-formatted database connections needed by Graft.
-
-```javascript
-import { DatabaseSync } from "node:sqlite";
-
-//  the path to libgraft
-//  change the extension to .dylib on macOS and .dll on Windows
-let libgraftPath = "./libgraft.so";
-
-let database = new DatabaseSync(":memory:", {
-  allowExtension: true,
-});
-
-database.loadExtension(libgraftPath);
-
-database = new DatabaseSync("file:random?vfs=graft");
-const graftStatus = database.prepare("PRAGMA graft_status").all();
-console.log(graftStatus);
-```
-
 ## Volume IDs
 
 When connecting to a Graft SQLite database, you can specify a particular Volume ID directly:
@@ -188,6 +225,12 @@ To open additional connections to a randomly generated Volume, you'll first need
 
   ```python
   import sqlite3
+  import sqlite_graft
+
+  # load graft using a temporary (empty) in-memory SQLite database
+  db = sqlite3.connect(":memory:")
+  db.enable_load_extension(True)
+  sqlite_graft.load(db)
 
   conn = sqlite3.connect('file:random?vfs=graft', autocommit=True, uri=True)
   cursor = conn.execute('PRAGMA database_list')
