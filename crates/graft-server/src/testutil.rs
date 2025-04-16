@@ -1,5 +1,7 @@
 use std::{future::Future, time::Duration};
 
+pub mod test_object_store;
+
 pub async fn assert_would_timeout<F, O>(fut: F)
 where
     F: Future<Output = O>,

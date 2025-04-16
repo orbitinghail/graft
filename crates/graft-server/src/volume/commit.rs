@@ -85,7 +85,7 @@ pub fn parse_commit_key(key: &Path) -> Result<(VolumeId, LSN), Culprit<CommitKey
     Ok((vid, lsn))
 }
 
-#[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+#[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout, PartialEq, Eq)]
 #[repr(u32)]
 enum CommitMagic {
     Magic = 0x71DB116B,
@@ -97,7 +97,7 @@ impl Debug for CommitMagic {
     }
 }
 
-#[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout, Debug)]
+#[derive(Clone, IntoBytes, TryFromBytes, Immutable, KnownLayout, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct CommitMeta {
     magic: CommitMagic,
@@ -377,5 +377,32 @@ impl<T: Buf> Iterator for GraftIter<T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_inner().transpose()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_commit_key_path() {
+        let vid = VolumeId::random();
+        let lsn = LSN::new(2);
+        let path = commit_key_path(&vid, lsn);
+        let prefix = commit_key_path_prefix(&vid);
+        assert!(path.to_string().starts_with(&prefix.to_string()));
+
+        let (parsed_vid, parsed_lsn) = parse_commit_key(&path).unwrap();
+        assert_eq!(parsed_vid, vid);
+        assert_eq!(parsed_lsn, lsn);
+    }
+
+    #[test]
+    fn test_time_roundtrip() {
+        let time = SystemTime::now();
+        let millis = time_to_millis(time);
+        let round_trip = millis_to_time(millis);
+        // we can only compare their millisecond values, since nanos are truncated
+        assert_eq!(millis, time_to_millis(round_trip));
     }
 }
