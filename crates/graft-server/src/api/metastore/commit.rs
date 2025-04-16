@@ -257,7 +257,7 @@ mod tests {
             }
 
             // check the commit in the store and the catalog
-            let commit = store.get_commit(vid.clone(), lsn).await.unwrap();
+            let commit = store.get_commit(&vid, lsn).await.unwrap().unwrap();
             assert_eq!(commit.meta().lsn(), lsn);
 
             let snapshot = catalog.latest_snapshot(&vid).unwrap().unwrap();

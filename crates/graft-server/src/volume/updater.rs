@@ -165,7 +165,7 @@ impl VolumeCatalogUpdater {
         vid: &VolumeId,
         lsns: &R,
     ) -> Result<(), Culprit<UpdateErr>> {
-        let mut commits = store.replay_unordered(vid.clone(), lsns);
+        let mut commits = store.replay_ordered(vid, lsns);
 
         let mut latest_lsn = lsns.try_start();
         if let Some(commit) = commits.try_next().await.or_into_ctx()? {

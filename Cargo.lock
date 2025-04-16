@@ -1282,6 +1282,7 @@ name = "graft-server"
 version = "0.1.0"
 dependencies = [
  "assert_matches",
+ "async-trait",
  "axum",
  "axum-test",
  "bytes",
@@ -1299,6 +1300,7 @@ dependencies = [
  "graft-tracing",
  "hashbrown 0.15.2",
  "http",
+ "itertools 0.14.0",
  "lsm-tree",
  "measured",
  "memmap2",
@@ -1306,6 +1308,7 @@ dependencies = [
  "precept",
  "prost",
  "prost-types",
+ "rand 0.9.0",
  "rlimit",
  "rusty_paseto",
  "serde",

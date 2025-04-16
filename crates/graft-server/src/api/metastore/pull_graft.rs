@@ -63,7 +63,7 @@ pub async fn handler(
         return Err(Culprit::new_with_note(
             ApiErrCtx::SnapshotMissing,
             format!(
-                "volume {vid} snapshot {:?} happens before {start_lsn:?}",
+                "volume {vid} is behind requested snapshot {start_lsn:?}; latest snapshot {:?}",
                 snapshot.lsn()
             ),
         )
@@ -103,11 +103,11 @@ mod tests {
     use axum::{handler::Handler, http::StatusCode};
     use axum_test::TestServer;
     use graft_core::{SegmentId, gid::ClientId, lsn::LSN, page_count::PageCount};
-    use object_store::memory::InMemory;
     use prost::Message;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
+        testutil::test_object_store::{ObjectStoreOp, TestObjectStore},
         volume::{
             catalog::VolumeCatalog,
             commit::{CommitBuilder, CommitMeta},
@@ -120,8 +120,8 @@ mod tests {
 
     #[graft_test::test]
     async fn test_pull_graft_sanity() {
-        let store = Arc::new(InMemory::default());
-        let store = Arc::new(VolumeStore::new(store));
+        let objstore = Arc::new(TestObjectStore::default());
+        let store = Arc::new(VolumeStore::new(objstore.clone()));
         let catalog = VolumeCatalog::open_temporary().unwrap();
 
         let state = Arc::new(MetastoreApiState::new(
@@ -147,6 +147,10 @@ mod tests {
             .expect_failure()
             .await;
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
+
+        // only one object store request should have been issued
+        assert_eq!(objstore.count_hits(ObjectStoreOp::Get).await, 1);
+        objstore.reset_hits().await;
 
         // case 2: catalog is empty, store has 10 commits
         let graft = Splinter::from_iter([0u32]).serialize_to_bytes();
@@ -186,6 +190,10 @@ mod tests {
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);
 
+        // 11 hits are expected, 10 successes followed by one 404
+        assert_eq!(objstore.count_hits(ObjectStoreOp::Get).await, 11);
+        objstore.reset_hits().await;
+
         // request all the segments
         let req = PullGraftRequest { vid: vid.copy_to_bytes(), range: None };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
@@ -193,5 +201,8 @@ mod tests {
         let splinter = Splinter::from_bytes(resp.graft).unwrap();
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);
+
+        // only one hit is expected to check for new lsns
+        assert_eq!(objstore.count_hits(ObjectStoreOp::Get).await, 1);
     }
 }
