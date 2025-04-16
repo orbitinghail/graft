@@ -140,6 +140,7 @@ jobs:
           # curl -L https://github.com/asg017/sqlite-dist/releases/download/v0.0.1-alpha.17/sqlite-dist-x86_64-unknown-linux-gnu.tar.xz \
           #   | tar xfJ - --strip-components 1 sqlite-dist-x86_64-unknown-linux-gnu/sqlite-dist
           curl -L https://github.com/carlsverre/sqlite-dist/releases/download/v0.1.0-prerelease.1/sqlite-dist > sqlite-dist
+          chmod +x sqlite-dist
 
       - name: Download artifacts
         uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
