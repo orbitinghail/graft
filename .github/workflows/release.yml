@@ -2,8 +2,6 @@ name: Release libgraft
 
 on:
   push:
-    branches:
-      - feat-packaging
     tags:
       - "v*.*.*"
 
@@ -149,7 +147,7 @@ jobs:
 
       - name: Run SQLite dist
         run: |
-          SQLITE_GRAFT_VERSION="$(cargo pkgid graft-sqlite-extension | cut -d "#" -f2)-rc.2"
+          SQLITE_GRAFT_VERSION="$(cargo pkgid graft-sqlite-extension | cut -d "#" -f2)"
           echo "Preparing Graft version: ${SQLITE_GRAFT_VERSION}"
           ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${SQLITE_GRAFT_VERSION}
 
