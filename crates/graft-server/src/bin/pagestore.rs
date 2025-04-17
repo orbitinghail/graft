@@ -98,7 +98,11 @@ async fn main() {
 
     let config = Config::builder()
         .add_source(config::File::new("pagestore.toml", FileFormat::Toml).required(false))
-        .add_source(config::Environment::with_prefix("PAGESTORE").separator("_"))
+        .add_source(
+            config::Environment::with_prefix("PAGESTORE")
+                .prefix_separator("_")
+                .separator("__"),
+        )
         .build()
         .expect("failed to load config");
     let config: PagestoreConfig = config

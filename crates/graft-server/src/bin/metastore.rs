@@ -69,7 +69,11 @@ async fn main() {
 
     let config = Config::builder()
         .add_source(config::File::new("metastore.toml", FileFormat::Toml).required(false))
-        .add_source(config::Environment::with_prefix("METASTORE").separator("_"))
+        .add_source(
+            config::Environment::with_prefix("METASTORE")
+                .prefix_separator("_")
+                .separator("__"),
+        )
         .build()
         .expect("failed to load config");
     let config: MetastoreConfig = config
