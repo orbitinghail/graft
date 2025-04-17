@@ -54,6 +54,9 @@ struct ExtensionConfig {
     log_file: Option<PathBuf>,
 
     token: Option<String>,
+
+    #[serde(default = "bool::default")]
+    make_default: bool,
 }
 
 pub fn setup_log_file(path: PathBuf, cid: &ClientId) {
@@ -122,9 +125,14 @@ pub unsafe extern "C" fn sqlite3_graft_init(
 
     let vfs = GraftVfs::new(runtime);
 
-    if let Err(err) =
-        unsafe { register_dynamic(p_api, "graft", vfs, RegisterOpts { make_default: false }) }
-    {
+    if let Err(err) = unsafe {
+        register_dynamic(
+            p_api,
+            "graft",
+            vfs,
+            RegisterOpts { make_default: config.make_default },
+        )
+    } {
         return err;
     }
     SQLITE_OK_LOAD_PERMANENTLY
