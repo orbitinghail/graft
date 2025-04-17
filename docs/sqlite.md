@@ -78,19 +78,10 @@ npm install sqlite-graft
 
 **Usage**:
 
+To use Graft with Node.js's built-in SQLite module, **Node.js version 23.10.0 or later is required**, as this is the first version that supports URI-formatted database connections needed by Graft.
+
 ```javascript
 import * as sqliteGraft from "sqlite-graft";
-import Database from "better-sqlite3";
-
-// load the graft extension
-let db = new Database(":memory:");
-sqliteGraft.load(db);
-
-// open a Graft volume as a database and run graft_status
-db = new Database(f"file:random?vfs=graft")
-const graftStatus = database.prepare("PRAGMA graft_status").all();
-console.log(graftStatus);
-
 // Also should work with other javascript SQLite libraries:
 import { DatabaseSync } from "node:sqlite";
 
@@ -100,9 +91,11 @@ sqliteGraft.load(db);
 
 // open a Graft volume as a database and run graft_status
 db = new DatabaseSync("file:random?vfs=graft");
-const graftStatus = database.prepare("PRAGMA graft_status").all();
-console.log(graftStatus);
+let result = db.prepare("PRAGMA graft_status");
+console.log(result.all());
 ```
+
+You can also use Graft with `better-sqlite3` and older versions of Node by setting the environment variable `GRAFT_MAKE_DEFAULT=true`. This will cause Graft to register itself as the _default_ VFS for all new SQLite connections, so no URI path required.
 
 #### Ruby / RubyGems
 
@@ -303,6 +296,11 @@ The configuration file supports the following options:
 
 - **Environment variable:** `GRAFT_LOG_FILE`
 - **Description:** Write a verbose log of all Graft operations to the specified log file. The verbosity can be controlled using the environment variable `RUST_LOG`. Valid verbosity levels are: `error, warn, info, debug, trace`
+
+#### `make_default`
+
+- **Environment variable:** `GRAFT_MAKE_DEFAULT`
+- **Description:** When `make_default` is true, Graft will register itself as the _default_ SQLite VFS which will cause _all_ new connections to use Graft. This is mainly useful for integrating Graft into SQLite libraries which don't support specifying which VFS to use.
 
 ### Example Configuration File (`graft.toml`)
 
