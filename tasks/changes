@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Show a summarized log of changes since the last tag
+git log --graph --abbrev-commit \
+    --pretty=format:'%C(red)%h%C(reset) -%C(yellow)%d%C(reset) %s %C(green)(%cr) %C(bold blue)<%an>%C(reset)' \
+    -C --decorate --date=local $(git describe --tags --abbrev=0)^..HEAD
