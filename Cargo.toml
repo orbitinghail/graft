@@ -7,7 +7,7 @@ authors = ["orbitinghail <hello@orbitinghail.dev>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/orbitinghail/graft"
 homepage = "https://github.com/orbitinghail/graft"
-rust-version = "1.85"
+rust-version = "1.86"
 
 [profile.release]
 opt-level = 3
