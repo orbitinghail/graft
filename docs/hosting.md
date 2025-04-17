@@ -37,7 +37,7 @@ The resulting binaries will be available at `./target/release/{metastore,pagesto
 
 ## Configuration
 
-Graft can be configured by environment variables or configuration files. The default production config files are located at `./deploy/metastore/metastore.toml` and `./deploy/pagestore/pagestore.toml`. Both binaries search for their configuration file in their current working directory.
+Graft can be configured by environment variables or configuration files. The default production config files are located at [`deploy/metastore/metastore.toml`](/deploy/metastore/metastore.toml) and [`deploy/pagestore/pagestore.toml`](/deploy/pagestore/pagestore.toml). Both binaries search for their configuration file in their current working directory.
 
 ### Object Storage
 
@@ -159,4 +159,4 @@ Subjects are just metadata attached to the token to differentiate between who is
 
 The first token you generate should be for the PageStore to communicate with the MetaStore. You can use any subject, but I like to use `graft-pagestore`. The token can be provided to the PageStore via the config (`token = "..."`) or environment variable: `PAGESTORE_TOKEN=...`.
 
-Once PASETO authentication is configured, all Graft clients must use a valid token. See the [Graft SQLite documentation][./sqlite.md] for more information on configuring the token to use.
+Once PASETO authentication is configured, all Graft clients must use a valid token. See the [Graft SQLite documentation](./sqlite.md) for more information on configuring the token to use.
