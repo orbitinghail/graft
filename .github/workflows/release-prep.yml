@@ -1,0 +1,290 @@
+name: Prepare release
+
+on:
+  push:
+    branches:
+      - "release/**"
+
+jobs:
+  validate:
+    name: Compute release version
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+          persist-credentials: false
+
+      - name: Parse release version from branch name
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          branch="${GITHUB_REF_NAME}"
+
+          # Accepts:
+          #   release/vX.Y.Z
+          #   release/vX.Y.Z-rc.N
+          regex='^release/v([0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?)$'
+
+          if [[ "$branch" =~ $regex ]]; then
+            echo "version=${BASH_REMATCH[1]}" >>"$GITHUB_OUTPUT"
+          else
+            echo "::error::branch '$branch' is not a valid release branch (expected release/vX.Y.Z or release/vX.Y.Z-rc.N)" >&2
+            exit 1
+          fi
+
+      - name: Validate crate versions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXPECTED_VERSION="${{ steps.version.outputs.version }}"
+          CRATES=(
+            graft-proto
+            graft-core
+            graft-tracing
+            graft-client
+            graft-sqlite
+            graft-sqlite-extension
+            graft-server
+          )
+
+          for crate in "${CRATES[@]}"; do
+            CRATE_VERSION="$(cargo pkgid $crate | cut -d "#" -f2)"
+            if [[ "$CRATE_VERSION" != "$EXPECTED_VERSION" ]]; then
+              echo "::error::crate '$crate' version '$CRATE_VERSION' does not match expected version '$EXPECTED_VERSION'" >&2
+              exit 1
+            fi
+          done
+
+  docker:
+    name: Build docker images
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      metastore_tag: ${{ steps.metastore_meta.outputs.tags }}
+      pagestore_tag: ${{ steps.pagestore_meta.outputs.tags }}
+
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+          persist-credentials: false
+
+      - name: Docker metastore meta
+        id: metastore_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/orbitinghail/metastore
+          tags: |
+            type=ref,event=pr
+
+      - name: Docker pagestore meta
+        id: pagestore_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/orbitinghail/pagestore
+          tags: |
+            type=ref,event=pr
+
+      - name: Build and push metastore image
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.metastore_meta.outputs.tags }}
+          labels: ${{ steps.metastore_meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          target: metastore
+
+      - name: Build and push pagestore image
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.pagestore_meta.outputs.tags }}
+          labels: ${{ steps.pagestore_meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          target: pagestore
+
+  build:
+    strategy:
+      matrix:
+        platform:
+          - os-name: linux-x86_64
+            runs-on: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            setup: |
+              sudo apt-get update
+              sudo apt-get install -y mold libclang-dev clang
+            pre-build: ""
+            artifact_name: libgraft.so
+
+          - os-name: linux-aarch64
+            runs-on: ubuntu-24.04
+            target: aarch64-unknown-linux-gnu
+            setup: |
+              sudo apt-get update
+              sudo apt-get install -y mold libclang-dev clang gcc-aarch64-linux-gnu
+            pre-build: ""
+            artifact_name: libgraft.so
+
+          - os-name: windows-x86_64
+            runs-on: windows-2022
+            target: x86_64-pc-windows-msvc
+            setup: ""
+            pre-build: ""
+            artifact_name: graft.dll
+
+          - os-name: windows-aarch64
+            runs-on: windows-2022
+            target: aarch64-pc-windows-msvc
+            setup: ""
+            pre-build: ""
+            artifact_name: graft.dll
+
+          - os-name: macos-x86_64
+            runs-on: macOS-14
+            target: x86_64-apple-darwin
+            setup: ""
+            pre-build: export LIBCLANG_PATH=$(brew --prefix llvm@15)/lib
+            artifact_name: libgraft.dylib
+
+          - os-name: macos-aarch64
+            runs-on: macOS-14
+            target: aarch64-apple-darwin
+            setup: ""
+            pre-build: export LIBCLANG_PATH=$(brew --prefix llvm@15)/lib
+            artifact_name: libgraft.dylib
+
+    name: Build - ${{ matrix.platform.os-name }}
+    runs-on: ${{ matrix.platform.runs-on }}
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: system dependencies
+        run: ${{ matrix.platform.setup }}
+
+      - uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1 # v1
+        with:
+          toolchain: 1.86
+          targets: ${{ matrix.platform.target }}
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+          persist-credentials: false
+
+      - name: Build libgraft
+        run: |
+          ${{ matrix.platform.pre-build }}
+          cargo build --release \
+            --features precept/disabled \
+            --package graft-sqlite-extension \
+            --target ${{ matrix.platform.target }}
+          ${{ matrix.platform.post-build }}
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.platform.os-name }}
+          path: target/${{ matrix.platform.target }}/release/${{ matrix.platform.artifact_name }}
+          if-no-files-found: error
+          retention-days: 3
+
+  package:
+    runs-on: ubuntu-24.04
+    needs: [docker, build, validate]
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+          persist-credentials: false
+
+      - name: system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree
+
+      - name: Install just
+        uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
+
+      - name: Install sqlite-dist
+        run: |
+          # curl -L https://github.com/asg017/sqlite-dist/releases/download/v0.0.1-alpha.17/sqlite-dist-x86_64-unknown-linux-gnu.tar.xz \
+          #   | tar xfJ - --strip-components 1 sqlite-dist-x86_64-unknown-linux-gnu/sqlite-dist
+          curl -L https://github.com/carlsverre/sqlite-dist/releases/download/v0.1.0-prerelease.1/sqlite-dist > sqlite-dist
+          chmod +x sqlite-dist
+
+      - name: Download artifacts
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
+        with:
+          path: dist/
+
+      - name: Run SQLite dist
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+          ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${VERSION}
+
+      - name: Package archives
+        run: just run package-archives
+
+      - name: Add metadata to distx
+        run: |
+          echo "${{ needs.docker.outputs.metastore_tag }}" > distx/metastore_tag
+          echo "${{ needs.docker.outputs.pagestore_tag }}" > distx/pagestore_tag
+          echo "${{ needs.validate.outputs.version }}" > distx/version
+
+      - name: Print distribution tree
+        run: tree distx/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
+        with:
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: distx/archives/*
+
+      - name: Upload distx
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: distx
+          path: distx/
+          retention-days: 3

@@ -1,120 +1,49 @@
-name: Release libgraft
+name: Release Graft
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_run:
+    workflows: ["Prepare release"]
+    types: [completed]
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        platform:
-          - os-name: linux-x86_64
-            runs-on: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            setup: |
-              sudo apt-get update
-              sudo apt-get install -y mold libclang-dev clang
-            pre-build: ""
-            artifact_name: libgraft.so
-
-          - os-name: linux-aarch64
-            runs-on: ubuntu-24.04
-            target: aarch64-unknown-linux-gnu
-            setup: |
-              sudo apt-get update
-              sudo apt-get install -y mold libclang-dev clang gcc-aarch64-linux-gnu
-            pre-build: ""
-            artifact_name: libgraft.so
-
-          - os-name: windows-x86_64
-            runs-on: windows-2022
-            target: x86_64-pc-windows-msvc
-            setup: ""
-            pre-build: ""
-            artifact_name: graft.dll
-
-          - os-name: windows-aarch64
-            runs-on: windows-2022
-            target: aarch64-pc-windows-msvc
-            setup: ""
-            pre-build: ""
-            artifact_name: graft.dll
-
-          - os-name: macos-x86_64
-            runs-on: macOS-14
-            target: x86_64-apple-darwin
-            setup: ""
-            pre-build: export LIBCLANG_PATH=$(brew --prefix llvm@15)/lib
-            artifact_name: libgraft.dylib
-
-          - os-name: macos-aarch64
-            runs-on: macOS-14
-            target: aarch64-apple-darwin
-            setup: ""
-            pre-build: export LIBCLANG_PATH=$(brew --prefix llvm@15)/lib
-            artifact_name: libgraft.dylib
-
-    name: Build - ${{ matrix.platform.os-name }}
-    runs-on: ${{ matrix.platform.runs-on }}
-    permissions:
-      contents: read
-
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - name: system dependencies
-        run: ${{ matrix.platform.setup }}
-
-      - uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1 # v1
-        with:
-          toolchain: 1.86
-          targets: ${{ matrix.platform.target }}
-
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          token: ${{secrets.GITHUB_TOKEN}}
-          persist-credentials: false
-
-      - name: Build libgraft
-        run: |
-          ${{ matrix.platform.pre-build }}
-          cargo build --release \
-            --features precept/disabled \
-            --package graft-sqlite-extension \
-            --target ${{ matrix.platform.target }}
-          ${{ matrix.platform.post-build }}
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: ${{ matrix.platform.os-name }}
-          path: target/${{ matrix.platform.target }}/release/${{ matrix.platform.artifact_name }}
-          if-no-files-found: error
-          retention-days: 3
-
   release:
-    runs-on: ubuntu-latest
-    needs: [build]
+    # Only continue if the upstream workflow finished without errors and the PR
+    # was derived from the main branch
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.pull_requests[0].base.ref == 'main'
 
+    runs-on: ubuntu-24.04
     environment: publishing
     permissions:
       contents: write
       id-token: write
+      packages: write
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y tree
+      - name: Download distx artifact from the 'Prepare release' run
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
+        with:
+          name: distx
+          run-id: ${{ github.event.workflow_run.id }}
+          path: distx/
 
-      - name: Install just
-        uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
+      - name: Read metadata files
+        id: meta
+        run: |
+          set -euo pipefail
+          echo "metastore_tag=$(cat distx/metastore_tag)" >> "$GITHUB_OUTPUT"
+          echo "pagestore_tag=$(cat distx/pagestore_tag)" >> "$GITHUB_OUTPUT"
+          echo "version=$(cat distx/version)"             >> "$GITHUB_OUTPUT"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -133,44 +62,39 @@ jobs:
         with:
           ruby-version: 3.2
 
-      - name: Install sqlite-dist
+      - name: Publish crates
         run: |
-          # curl -L https://github.com/asg017/sqlite-dist/releases/download/v0.0.1-alpha.17/sqlite-dist-x86_64-unknown-linux-gnu.tar.xz \
-          #   | tar xfJ - --strip-components 1 sqlite-dist-x86_64-unknown-linux-gnu/sqlite-dist
-          curl -L https://github.com/carlsverre/sqlite-dist/releases/download/v0.1.0-prerelease.1/sqlite-dist > sqlite-dist
-          chmod +x sqlite-dist
+          set -euo pipefail
+          CRATES=(
+            graft-proto
+            graft-core
+            graft-tracing
+            graft-client
+            graft-sqlite
+          )
+          for crate in "${CRATES[@]}"; do
+            cargo publish -p "$crate"
+          done
 
-      - name: Download artifacts
-        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
-        with:
-          path: dist/
-
-      - name: Run SQLite dist
+      - name: Publish metastore and pagestore images
+        env:
+          METASTORE_SRC: ${{ steps.meta.outputs.metastore_tag }}
+          PAGESTORE_SRC: ${{ steps.meta.outputs.pagestore_tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          SQLITE_GRAFT_VERSION="$(cargo pkgid graft-sqlite-extension | cut -d "#" -f2)"
-          echo "Preparing Graft version: ${SQLITE_GRAFT_VERSION}"
-          ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${SQLITE_GRAFT_VERSION}
+          set -euo pipefail
 
-      - name: Package archives
-        run: just run package-archives
+          # copies the entire manifest list without pulling layers
+          copy_manifest() {
+            local src="$1" repo="$2" ver="$3"
+            docker buildx imagetools create \
+              --tag "${repo}:${ver}" \
+              --tag "${repo}:latest" \
+              "${src}"
+          }
 
-      - name: Print distribution tree
-        run: tree distx/
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
-        with:
-          draft: true
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: distx/archives/*
-
-      - name: Upload distx
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: distx
-          path: distx/
-          retention-days: 3
+          copy_manifest "${METASTORE_SRC}" "ghcr.io/orbitinghail/metastore" "${VERSION}"
+          copy_manifest "${PAGESTORE_SRC}"  "ghcr.io/orbitinghail/pagestore"  "${VERSION}"
 
       - name: Publish NPM Packages
         run: |
