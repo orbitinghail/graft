@@ -73,6 +73,8 @@ jobs:
     outputs:
       metastore_tag: ${{ steps.metastore_meta.outputs.tags }}
       pagestore_tag: ${{ steps.pagestore_meta.outputs.tags }}
+    env:
+      DOCKER_BUILD_SUMMARY: false
 
     steps:
       - name: Set up QEMU
@@ -257,7 +259,6 @@ jobs:
         uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
         with:
           path: dist/
-          pattern: "!(*.dockerbuild)"
 
       - name: Run SQLite dist
         run: |

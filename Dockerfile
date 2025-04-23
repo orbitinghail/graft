@@ -44,6 +44,9 @@ RUN mv ${TARGET_DIR} /artifacts
 FROM --platform=$BUILDPLATFORM gcr.io/distroless/cc:debug@sha256:5ccfee06c7ddc5aebcb7c0907d7d5346175f640200e906777259031674e70a37 AS runtime
 ARG INSTRUMENTED
 COPY ./tests/antithesis/libvoidstar.so /usr/lib/libvoidstar.so
+COPY ./LICENSE-APACHE /LICENSE-APACHE
+COPY ./LICENSE-MIT /LICENSE-MIT
+COPY ./README.md /README.md
 ENV LD_LIBRARY_PATH=${INSTRUMENTED:+"/usr/lib/libvoidstar.so"}
 
 FROM runtime AS metastore
