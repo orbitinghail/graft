@@ -1,6 +1,6 @@
 [package]
 name = "graft-server"
-version = "0.1.4-rc.2"
+version = "0.1.4-rc.3"
 edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }
