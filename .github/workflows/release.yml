@@ -34,9 +34,19 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-          echo "metastore_tag=$(cat distx/metastore_tag)" >> "$GITHUB_OUTPUT"
-          echo "pagestore_tag=$(cat distx/pagestore_tag)" >> "$GITHUB_OUTPUT"
-          echo "version=$(cat distx/version)"             >> "$GITHUB_OUTPUT"
+          METASTORE_TAG=$(cat distx/metastore_tag)
+          PAGESTORE_TAG=$(cat distx/pagestore_tag)
+          VERSION=$(cat distx/version)
+
+          echo "metastore_tag=$METASTORE_TAG" >>"$GITHUB_OUTPUT"
+          echo "pagestore_tag=$PAGESTORE_TAG" >>"$GITHUB_OUTPUT"
+          echo "version=$VERSION"             >>"$GITHUB_OUTPUT"
+
+          if [[ "$VERSION" == *-rc* ]]; then
+            echo "prerelease=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >>"$GITHUB_OUTPUT"
+          fi
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
@@ -61,6 +71,25 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.2
+
+      - name: Push git tag
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          TAG_NAME="v${{ steps.meta.outputs.version }}"
+          git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+          git push origin "$TAG_NAME"
+
+      - name: Update GitHub Release
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
+        with:
+          name: v${{ steps.meta.outputs.version }}
+          draft: false
+          tag_name: v${{ steps.meta.outputs.version }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          make_latest: ${{ steps.meta.outputs.prerelease == 'false' }}
 
       - name: Publish crates
         run: |

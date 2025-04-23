@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y clang libclang-dev llvm mold libncurses
 RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 RUN cargo binstall -y --version 0.1.71 cargo-chef
 RUN cargo binstall -y --version 0.10.0 sccache
-ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
+ENV RUSTC_WRAPPER=/usr/local/cargo/bin/sccache SCCACHE_DIR=/sccache
 
 # Enable instrumentation when INSTRUMENTED is set:
 #   --build-arg INSTRUMENTED=1
