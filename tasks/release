@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_FLAGS="--no-verify"
+RELEASE_FLAGS=""
 EXECUTE=""
 
 while [[ $# -gt 0 ]]; do
@@ -39,6 +39,8 @@ RELEASE_CRATES=(
     graft-tracing
     graft-client
     graft-sqlite
+    graft-sqlite-extension
+    graft-server
 )
 
 # verify that HEAD == origin/main
@@ -47,38 +49,41 @@ HEAD_COMMIT=$(git rev-parse HEAD)
 ORIGIN_MAIN_COMMIT=$(git rev-parse origin/main)
 
 if [ "$HEAD_COMMIT" != "$ORIGIN_MAIN_COMMIT" ]; then
-  echo "Warning: HEAD ($HEAD_COMMIT) is not equal to origin/main ($ORIGIN_MAIN_COMMIT)."
-  read -r -p "Continue anyway? [y/N] " reply
-  case "$reply" in
-    [Yy]*) ;;          # proceed
-    *) echo "Aborting."; exit 1 ;;
-  esac
+    echo "Warning: HEAD ($HEAD_COMMIT) is not equal to origin/main ($ORIGIN_MAIN_COMMIT)."
+    read -r -p "Continue anyway? [y/N] " reply
+    case "$reply" in
+        [Yy]*) ;; # proceed
+        *)
+            echo "Aborting."
+            exit 1
+            ;;
+    esac
 fi
 
-for crate in "${RELEASE_CRATES[@]}"; do
-    cargo release --no-push --no-tag --no-publish --package ${crate} ${RELEASE_FLAGS} ${VERSION}
-done
+# verify that git is clean
+if ! git diff-index --quiet HEAD --; then
+    echo "Error: git working directory is not clean. Please commit or stash your changes."
+    exit 1
+fi
 
-# update the graft-sqlite-extension and graft-server versions without releasing them
-cargo release --no-push --no-tag --no-publish \
-    --package graft-sqlite-extension \
-    ${RELEASE_FLAGS} ${VERSION}
+BRANCH="release/v${VERSION}"
 
-cargo release --no-push --no-tag --no-publish \
-    --package graft-server \
-    ${RELEASE_FLAGS} ${VERSION}
-
-# squash, tag, and push the release commit
 if [ -n "$EXECUTE" ]; then
-    # squash all of the cargo release commits into a single commit
-    git reset --soft "$HEAD_COMMIT"
-
-    BRANCH="release/v${VERSION}"
-
-    # checkout the branch and commit
+    # create a new branch for the release, if not already on it
     if [ "$(git branch --show-current)" != "$BRANCH" ]; then
         git checkout -b ${BRANCH}
     fi
+fi
+
+for crate in "${RELEASE_CRATES[@]}"; do
+    cargo release version ${VERSION} --package ${crate} ${RELEASE_FLAGS}
+    cargo release replace --package ${crate} ${RELEASE_FLAGS}
+    cargo release hook --package ${crate} ${RELEASE_FLAGS}
+done
+
+# commit and push to the release branch
+if [ -n "$EXECUTE" ]; then
+    git add .
     git commit -m "chore: Release v${VERSION}"
 
     # push the branch to origin
