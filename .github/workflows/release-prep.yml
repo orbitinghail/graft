@@ -5,6 +5,10 @@ on:
     branches:
       - "release/**"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     name: Compute release version
@@ -13,6 +17,7 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -33,7 +38,13 @@ jobs:
           regex='^release/v([0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?)$'
 
           if [[ "$branch" =~ $regex ]]; then
-            echo "version=${BASH_REMATCH[1]}" >>"$GITHUB_OUTPUT"
+            VERSION="${BASH_REMATCH[1]}"
+            echo "version=${VERSION}" >>"$GITHUB_OUTPUT"
+            if [[ "$VERSION" == *-rc* ]]; then
+              echo "prerelease=true" >>"$GITHUB_OUTPUT"
+            else
+              echo "prerelease=false" >>"$GITHUB_OUTPUT"
+            fi
           else
             echo "::error::branch '$branch' is not a valid release branch (expected release/vX.Y.Z or release/vX.Y.Z-rc.N)" >&2
             exit 1
@@ -281,6 +292,9 @@ jobs:
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
         with:
           name: v${{ needs.validate.outputs.version }}
+          tag_name: v${{ needs.validate.outputs.version }}
+          prerelease: ${{ needs.validate.outputs.prerelease }}
+          make_latest: ${{ needs.validate.outputs.prerelease == 'false' }}
           draft: true
           generate_release_notes: true
           fail_on_unmatched_files: true
