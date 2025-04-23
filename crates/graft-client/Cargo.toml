@@ -1,6 +1,6 @@
 [package]
 name = "graft-client"
-version = "0.1.4-rc.3"
+version = "0.1.4-rc.4"
 edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }
@@ -15,8 +15,8 @@ description = "Transactional page storage engine supporting lazy partial replica
 workspace = true
 
 [dependencies]
-graft-core = { path = "../graft-core", version = "0.1.4-rc.3" }
-graft-proto = { path = "../graft-proto", version = "0.1.4-rc.3" }
+graft-core = { path = "../graft-core", version = "0.1.4-rc.4" }
+graft-proto = { path = "../graft-proto", version = "0.1.4-rc.4" }
 
 splinter-rs = { workspace = true }
 precept = { workspace = true }
