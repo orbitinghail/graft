@@ -106,6 +106,25 @@ jobs:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
 
+      - name: Prepare volume cache
+        uses: actions/cache@v3
+        id: cache
+        with:
+          path: |
+            cargo-registry
+            sccache
+          key: cache-${{ hashFiles('Dockerfile') }}
+
+      - name: inject volume cache into docker
+        uses: reproducible-containers/buildkit-cache-dance@v3.1.0
+        with:
+          cache-map: |
+            {
+              "cargo-registry": "/usr/local/cargo/registry",
+              "sccache": "/sccache"
+            }
+          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+
       - name: Docker metastore meta
         id: metastore_meta
         uses: docker/metadata-action@v5

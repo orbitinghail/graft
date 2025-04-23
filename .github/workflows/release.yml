@@ -133,9 +133,9 @@ jobs:
         run: |
           set -euo pipefail
           CRATES=(
-            graft-proto
-            graft-core
             graft-tracing
+            graft-core
+            graft-proto
             graft-client
             graft-sqlite
           )
