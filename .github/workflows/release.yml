@@ -11,7 +11,8 @@ jobs:
     # was derived from the main branch
     if: |
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.pull_requests[0].base.ref == 'main'
+      github.event.workflow_run.pull_requests[0].base.ref == 'main' &&
+      github.event.workflow_run.pull_requests[0].merged
 
     runs-on: ubuntu-24.04
     environment: publishing
