@@ -140,7 +140,7 @@ jobs:
             graft-sqlite
           )
           for crate in "${CRATES[@]}"; do
-            cargo publish -p "$crate"
+            cargo publish --no-verify -p "$crate"
           done
 
       - name: Publish metastore and pagestore images

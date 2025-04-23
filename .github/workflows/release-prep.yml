@@ -74,6 +74,32 @@ jobs:
             fi
           done
 
+  crates:
+    name: Verify crates
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential
+
+      - uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1 # v1
+        with:
+          toolchain: 1.86
+          components: clippy, rustfmt
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+
+      - name: Build
+        run: cargo build --release
+
   docker:
     name: Build docker images
     runs-on: ubuntu-24.04
@@ -259,7 +285,7 @@ jobs:
 
   package:
     runs-on: ubuntu-24.04
-    needs: [docker, build, validate]
+    needs: [docker, build, validate, crates]
 
     permissions:
       contents: write
