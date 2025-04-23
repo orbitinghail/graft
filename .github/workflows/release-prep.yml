@@ -133,12 +133,12 @@ jobs:
           persist-credentials: false
 
       - name: Prepare volume cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: cache
         with:
           path: |
-            cargo-registry
-            sccache
+            cache-cargo-registry
+            cache-sccache
           key: cache-${{ hashFiles('Dockerfile') }}
 
       - name: inject volume cache into docker
@@ -146,8 +146,8 @@ jobs:
         with:
           cache-map: |
             {
-              "cargo-registry": "/usr/local/cargo/registry",
-              "sccache": "/sccache"
+              "cache-cargo-registry": "/usr/local/cargo/registry",
+              "cache-sccache": "/sccache"
             }
           skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
