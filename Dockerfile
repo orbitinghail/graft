@@ -1,4 +1,4 @@
-FROM rust:1.86@sha256:7b65306dd21304f48c22be08d6a3e41001eef738b3bd3a5da51119c802321883 AS base
+FROM --platform=$BUILDPLATFORM rust:1.86@sha256:7b65306dd21304f48c22be08d6a3e41001eef738b3bd3a5da51119c802321883 AS base
 
 # increment to force rebuild of all layers
 RUN echo "rebuild-deps: 1"
@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y clang libclang-dev llvm mold libncurses
 RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 RUN cargo binstall -y --version 0.1.71 cargo-chef
 RUN cargo binstall -y --version 0.10.0 sccache
-ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
+ENV RUSTC_WRAPPER=/usr/local/cargo/bin/sccache SCCACHE_DIR=/sccache
 
 # Enable instrumentation when INSTRUMENTED is set:
 #   --build-arg INSTRUMENTED=1
@@ -41,9 +41,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build ${BUILDFLAGS}
 RUN mv ${TARGET_DIR} /artifacts
 
-FROM gcr.io/distroless/cc:debug@sha256:5ccfee06c7ddc5aebcb7c0907d7d5346175f640200e906777259031674e70a37 AS runtime
+FROM --platform=$BUILDPLATFORM gcr.io/distroless/cc:debug@sha256:5ccfee06c7ddc5aebcb7c0907d7d5346175f640200e906777259031674e70a37 AS runtime
 ARG INSTRUMENTED
 COPY ./tests/antithesis/libvoidstar.so /usr/lib/libvoidstar.so
+COPY ./LICENSE-APACHE /LICENSE-APACHE
+COPY ./LICENSE-MIT /LICENSE-MIT
+COPY ./README.md /README.md
 ENV LD_LIBRARY_PATH=${INSTRUMENTED:+"/usr/lib/libvoidstar.so"}
 
 FROM runtime AS metastore

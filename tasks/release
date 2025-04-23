@@ -22,9 +22,14 @@ if [[ $# -eq 0 ]]; then
     exit 1
 fi
 
+# Accepts:
+#   X.Y.Z
+#   X.Y.Z-rc.N
+regex='^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'
+
 VERSION=$1
-if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "Version must match the format X.Y.Z"
+if [[ ! $VERSION =~ $regex ]]; then
+    echo "Version must match the format X.Y.Z or X.Y.Z-rc.N"
     exit 1
 fi
 
@@ -36,42 +41,51 @@ RELEASE_CRATES=(
     graft-sqlite
 )
 
-# make sure we are on the main branch
-current_branch=$(git rev-parse --abbrev-ref HEAD)
-if [ "$current_branch" != "main" ]; then
-    echo "Error: Not on main branch (currently on '$current_branch')."
-    exit 1
-fi
-
-# verify that main == origin/main
+# verify that HEAD == origin/main
 git fetch origin
 HEAD_COMMIT=$(git rev-parse HEAD)
 ORIGIN_MAIN_COMMIT=$(git rev-parse origin/main)
 
 if [ "$HEAD_COMMIT" != "$ORIGIN_MAIN_COMMIT" ]; then
-    echo "Error: HEAD ($HEAD_COMMIT) is not equal to origin/main ($ORIGIN_MAIN_COMMIT)."
-    exit 1
+  echo "Warning: HEAD ($HEAD_COMMIT) is not equal to origin/main ($ORIGIN_MAIN_COMMIT)."
+  read -r -p "Continue anyway? [y/N] " reply
+  case "$reply" in
+    [Yy]*) ;;          # proceed
+    *) echo "Aborting."; exit 1 ;;
+  esac
 fi
 
 for crate in "${RELEASE_CRATES[@]}"; do
-    cargo release --no-push --no-tag --package ${crate} ${RELEASE_FLAGS} ${VERSION}
+    cargo release --no-push --no-tag --no-publish --package ${crate} ${RELEASE_FLAGS} ${VERSION}
 done
 
-# update the graft-sqlite-extension version without releasing it
+# update the graft-sqlite-extension and graft-server versions without releasing them
 cargo release --no-push --no-tag --no-publish \
     --package graft-sqlite-extension \
+    ${RELEASE_FLAGS} ${VERSION}
+
+cargo release --no-push --no-tag --no-publish \
+    --package graft-server \
     ${RELEASE_FLAGS} ${VERSION}
 
 # squash, tag, and push the release commit
 if [ -n "$EXECUTE" ]; then
     # squash all of the cargo release commits into a single commit
     git reset --soft "$HEAD_COMMIT"
+
+    BRANCH="release/v${VERSION}"
+
+    # checkout the branch and commit
+    if [ "$(git branch --show-current)" != "$BRANCH" ]; then
+        git checkout -b ${BRANCH}
+    fi
     git commit -m "chore: Release v${VERSION}"
 
-    git tag -a v${VERSION} -m "Release v${VERSION}"
-    git push origin v${VERSION}
-    git push origin main
+    # push the branch to origin
+    git push origin ${BRANCH}
+
+    echo "To continue the release process, create a GitHub PR on the release branch: ${BRANCH}"
 else
-    echo "To execute the release, run:"
+    echo "To start the release process, run:"
     echo "  $0 --execute ${VERSION}"
 fi
