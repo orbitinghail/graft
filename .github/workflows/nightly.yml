@@ -1,10 +1,10 @@
-name: Antithesis
+name: Nightly
 
 on:
   workflow_dispatch:
     inputs:
       duration:
-        description: "Antithesis test duration in seconds"
+        description: "Antithesis test duration in minutes"
         required: true
         default: 60
         type: number
@@ -25,8 +25,50 @@ env:
   REGISTRY: us-central1-docker.pkg.dev/molten-verve-216720/orbitinghail-repository
 
 jobs:
-  antithesis:
+  docker:
+    name: Build pagestore & metastore images
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      DOCKER_BUILD_SUMMARY: false
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+          persist-credentials: false
+
+      - name: Build metastore image
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          target: metastore
+
+      - name: Build pagestore image
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          target: pagestore
+
+  antithesis:
+    name: Antithesis test run
+    runs-on: ubuntu-24.04
+    env:
+      DOCKER_BUILD_SUMMARY: false
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3

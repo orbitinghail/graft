@@ -7,8 +7,6 @@ RUN echo "rebuild-deps: 1"
 RUN apt-get update && apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential && rm -rf /var/lib/apt/lists/*
 RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 RUN cargo binstall -y --version 0.1.71 cargo-chef
-RUN cargo binstall -y --version 0.10.0 sccache
-ENV RUSTC_WRAPPER=/usr/local/cargo/bin/sccache SCCACHE_DIR=/sccache
 
 # Enable instrumentation when INSTRUMENTED is set:
 #   --build-arg INSTRUMENTED=1
@@ -25,20 +23,14 @@ ENV TARGET_DIR=${TARGET_DIR:-"target/release"}
 FROM base AS planner
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    cargo chef prepare --recipe-path recipe.json
+RUN cargo chef prepare --recipe-path recipe.json
 
 FROM base AS builder
 WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    cargo chef cook ${BUILDFLAGS} --recipe-path recipe.json
+RUN cargo chef cook ${BUILDFLAGS} --recipe-path recipe.json
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    cargo build ${BUILDFLAGS}
+RUN cargo build ${BUILDFLAGS}
 RUN mv ${TARGET_DIR} /artifacts
 
 FROM --platform=$BUILDPLATFORM gcr.io/distroless/cc:debug@sha256:5ccfee06c7ddc5aebcb7c0907d7d5346175f640200e906777259031674e70a37 AS runtime
