@@ -95,8 +95,6 @@ jobs:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
 
-      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
-
       - name: Build
         run: cargo build --release
 
@@ -131,25 +129,6 @@ jobs:
         with:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
-
-      - name: Prepare volume cache
-        uses: actions/cache@v4
-        id: cache
-        with:
-          path: |
-            cache-cargo-registry
-            cache-sccache
-          key: cache-${{ hashFiles('Dockerfile') }}
-
-      - name: inject volume cache into docker
-        uses: reproducible-containers/buildkit-cache-dance@v3.1.0
-        with:
-          cache-map: |
-            {
-              "cache-cargo-registry": "/usr/local/cargo/registry",
-              "cache-sccache": "/sccache"
-            }
-          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
       - name: Docker metastore meta
         id: metastore_meta

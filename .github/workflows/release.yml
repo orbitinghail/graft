@@ -53,10 +53,18 @@ jobs:
       actions: read
 
     steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_PRIVATE_KEY }}
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
+          token: ${{ steps.app-token.outputs.token }}
           ref: ${{ github.event.workflow_run.head_sha }}
-          token: ${{secrets.GITHUB_TOKEN}}
+          fetch-tags: true
+          fetch-depth: 0
 
       - name: Download distx artifact from the 'Prepare release' run
         uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
@@ -108,12 +116,20 @@ jobs:
         with:
           ruby-version: 3.2
 
+      - name: Get GitHub Bot User ID
+        id: get-bot-id
+        run: echo "bot-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure git
+        run: |
+          git config --global user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
+          git config --global user.email '${{ steps.get-bot-id.outputs.bot-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
+
       - name: Push git tag
         run: |
           set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
           TAG_NAME="v${{ steps.meta.outputs.version }}"
           git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
           git push origin "$TAG_NAME"
@@ -148,16 +164,19 @@ jobs:
           METASTORE_SRC: ${{ steps.meta.outputs.metastore_tag }}
           PAGESTORE_SRC: ${{ steps.meta.outputs.pagestore_tag }}
           VERSION: ${{ steps.meta.outputs.version }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           set -euo pipefail
 
           # copies the entire manifest list without pulling layers
           copy_manifest() {
             local src="$1" repo="$2" ver="$3"
-            docker buildx imagetools create \
-              --tag "${repo}:${ver}" \
-              --tag "${repo}:latest" \
-              "${src}"
+            # always tag the specific version
+            local args=(--tag "${repo}:${ver}")
+            # add :latest only when this is **not** a pre-release
+            [[ "${PRERELEASE}" == "false" ]] && args+=(--tag "${repo}:latest")
+
+            docker buildx imagetools create "${args[@]}" "${src}"
           }
 
           copy_manifest "${METASTORE_SRC}" "ghcr.io/orbitinghail/metastore" "${VERSION}"
