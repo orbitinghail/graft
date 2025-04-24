@@ -45,7 +45,7 @@ SQLite includes several [`journal_mode`]s (`DELETE`, `TRUNCATE`, `PERSIST`, `MEM
 - Enabling SQLite’s journaling adds unnecessary I/O and file operations that Graft does not require for safety.
 
 **Recommendation:**
-Set `PRAGMA journal_mode = MEMORY` when initializing the database. This avoids redundant journaling work while still preserving atomicity and durability through Graft.
+Set `PRAGMA journal_mode = MEMORY` when initializing the database. This makes redundant journaling work much cheaper while still preserving atomicity and durability through Graft.
 
 **Note on `WAL` mode:**
 Write-Ahead Logging (WAL) is **not supported** with Graft. It relies on shared memory and filesystem-level WAL files, which Graft does not provide.
