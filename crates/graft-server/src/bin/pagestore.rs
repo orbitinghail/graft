@@ -34,11 +34,10 @@ use url::Url;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-#[serde(default)]
 struct PagestoreConfig {
-    catalog: VolumeCatalogConfig,
+    catalog: Option<VolumeCatalogConfig>,
     cache: DiskCacheConfig,
-    objectstore: ObjectStoreConfig,
+    objectstore: Option<ObjectStoreConfig>,
     auth: Option<AuthState>,
 
     port: u16,
@@ -50,29 +49,37 @@ struct PagestoreConfig {
     write_concurrency: usize,
 }
 
-impl Default for PagestoreConfig {
-    fn default() -> Self {
-        Self {
-            catalog: Default::default(),
-            cache: DiskCacheConfig {
-                path: None,
-                space_limit: ByteUnit::from_gb(1),
-                open_limit: rlimit::getrlimit(Resource::NOFILE)
-                    .expect("failed to get nofile limit")
-                    .0 as usize
-                    / 2,
-            },
-            objectstore: Default::default(),
-            auth: None,
+#[derive(Debug)]
+struct ConfigDefaults;
 
-            port: 3000,
-            metastore: "http://localhost:3001".parse().unwrap(),
-            token: None,
+impl config::Source for ConfigDefaults {
+    fn clone_into_box(&self) -> Box<dyn config::Source + Send + Sync> {
+        Box::new(ConfigDefaults)
+    }
 
-            catalog_update_concurrency: 16,
-            download_concurrency: 16,
-            write_concurrency: 16,
+    fn collect(&self) -> Result<config::Map<String, config::Value>, config::ConfigError> {
+        let open_limit = rlimit::getrlimit(Resource::NOFILE)
+            .expect("failed to get nofile limit")
+            .0
+            / 2;
+
+        let mut map = config::Map::new();
+
+        macro_rules! set_default {
+            ($key:expr, $val:expr) => {
+                map.insert($key.into(), $val.into());
+            };
         }
+
+        set_default!("cache.space_limit", ByteUnit::from_gb(1).to_string());
+        set_default!("cache.open_limit", open_limit);
+        set_default!("port", 3000);
+        set_default!("metastore", "http://localhost:3001");
+        set_default!("catalog_update_concurrency", 16);
+        set_default!("download_concurrency", 16);
+        set_default!("write_concurrency", 16);
+
+        Ok(map)
     }
 }
 
@@ -97,6 +104,7 @@ async fn main() {
     let mut registry = Registry::default();
 
     let config = Config::builder()
+        .add_source(ConfigDefaults)
         .add_source(config::File::new("pagestore.toml", FileFormat::Toml).required(false))
         .add_source(
             config::Environment::with_prefix("PAGESTORE")
@@ -125,14 +133,15 @@ async fn main() {
 
     let store = config
         .objectstore
+        .unwrap_or_default()
         .build()
         .expect("failed to build object store");
 
     let mut supervisor = Supervisor::default();
 
     let cache = Arc::new(DiskCache::new(config.cache).expect("failed to create disk cache"));
-    let catalog =
-        VolumeCatalog::open_config(config.catalog).expect("failed to open volume catalog");
+    let catalog = VolumeCatalog::open_config(config.catalog.unwrap_or_default())
+        .expect("failed to open volume catalog");
     let loader = SegmentLoader::new(store.clone(), cache.clone(), config.download_concurrency);
     let updater = VolumeCatalogUpdater::new(config.catalog_update_concurrency);
 

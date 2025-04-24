@@ -25,25 +25,36 @@ use tokio::{net::TcpListener, select, signal::ctrl_c};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-#[serde(default)]
 struct MetastoreConfig {
-    catalog: VolumeCatalogConfig,
-    objectstore: ObjectStoreConfig,
+    catalog: Option<VolumeCatalogConfig>,
+    objectstore: Option<ObjectStoreConfig>,
     auth: Option<AuthState>,
 
     port: u16,
     catalog_update_concurrency: usize,
 }
 
-impl Default for MetastoreConfig {
-    fn default() -> Self {
-        Self {
-            catalog: Default::default(),
-            objectstore: Default::default(),
-            port: 3001,
-            catalog_update_concurrency: 16,
-            auth: None,
+#[derive(Debug)]
+struct ConfigDefaults;
+
+impl config::Source for ConfigDefaults {
+    fn clone_into_box(&self) -> Box<dyn config::Source + Send + Sync> {
+        Box::new(ConfigDefaults)
+    }
+
+    fn collect(&self) -> Result<config::Map<String, config::Value>, config::ConfigError> {
+        let mut map = config::Map::new();
+
+        macro_rules! set_default {
+            ($key:expr, $val:expr) => {
+                map.insert($key.into(), $val.into());
+            };
         }
+
+        set_default!("port", 3001);
+        set_default!("catalog_update_concurrency", 16);
+
+        Ok(map)
     }
 }
 
@@ -68,6 +79,7 @@ async fn main() {
     rlimit::increase_nofile_limit(rlimit::INFINITY).expect("failed to increase nofile limit");
 
     let config = Config::builder()
+        .add_source(ConfigDefaults)
         .add_source(config::File::new("metastore.toml", FileFormat::Toml).required(false))
         .add_source(
             config::Environment::with_prefix("METASTORE")
@@ -90,11 +102,12 @@ async fn main() {
 
     let store = config
         .objectstore
+        .unwrap_or_default()
         .build()
         .expect("failed to build object store");
     let store = Arc::new(VolumeStore::new(store));
-    let catalog =
-        VolumeCatalog::open_config(config.catalog).expect("failed to open volume catalog");
+    let catalog = VolumeCatalog::open_config(config.catalog.unwrap_or_default())
+        .expect("failed to open volume catalog");
     let updater = VolumeCatalogUpdater::new(config.catalog_update_concurrency);
 
     let state = Arc::new(MetastoreApiState::new(store, catalog, updater));
