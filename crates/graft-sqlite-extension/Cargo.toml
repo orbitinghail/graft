@@ -1,6 +1,6 @@
 [package]
 name = "graft-sqlite-extension"
-version = "0.1.4-rc.8"
+version = "0.1.4"
 edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }
@@ -13,10 +13,10 @@ name = "graft"
 crate-type = ["cdylib"]
 
 [dependencies]
-graft-core = { path = "../graft-core", version = "0.1.4-rc.8" }
-graft-client = { path = "../graft-client", version = "0.1.4-rc.8" }
-graft-sqlite = { path = "../graft-sqlite", version = "0.1.4-rc.8" }
-graft-tracing = { path = "../graft-tracing", version = "0.1.4-rc.8" }
+graft-core = { path = "../graft-core", version = "0.1.4" }
+graft-client = { path = "../graft-client", version = "0.1.4" }
+graft-sqlite = { path = "../graft-sqlite", version = "0.1.4" }
+graft-tracing = { path = "../graft-tracing", version = "0.1.4" }
 
 tracing = { workspace = true }
 platform-dirs = { workspace = true }
