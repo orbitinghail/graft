@@ -142,6 +142,23 @@ impl GraftVfs {
 impl Vfs for GraftVfs {
     type Handle = FileHandle;
 
+    fn device_characteristics(&self) -> i32 {
+        // writes up to a single page are atomic
+        vars::SQLITE_IOCAP_ATOMIC512 |
+        vars::SQLITE_IOCAP_ATOMIC1K |
+        vars::SQLITE_IOCAP_ATOMIC2K |
+        vars::SQLITE_IOCAP_ATOMIC4K |
+        // after reboot following a crash or power loss, the only bytes in a file that were written
+        // at the application level might have changed and that adjacent bytes, even bytes within
+        // the same sector are guaranteed to be unchanged
+        vars::SQLITE_IOCAP_POWERSAFE_OVERWRITE |
+        // when data is appended to a file, the data is appended first then the size of the file is
+        // extended, never the other way around
+        vars::SQLITE_IOCAP_SAFE_APPEND |
+        // information is written to disk in the same order as calls to xWrite()
+        vars::SQLITE_IOCAP_SEQUENTIAL
+    }
+
     fn register_logger(&self, logger: SqliteLogger) {
         #[derive(Clone)]
         struct Writer(Arc<Mutex<SqliteLogger>>);

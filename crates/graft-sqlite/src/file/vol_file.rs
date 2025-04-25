@@ -30,6 +30,7 @@ use super::VfsFile;
 
 // The byte offset of the SQLite file change counter in the database file
 const FILE_CHANGE_COUNTER_OFFSET: usize = 24;
+const VERSION_VALID_FOR_NUMBER_OFFSET: usize = 92;
 
 #[derive(Debug)]
 enum VolFileState {
@@ -363,6 +364,34 @@ impl VfsFile for VolFile {
             local_offset + data.len() <= PAGESIZE,
             "write must not cross page boundary"
         );
+
+        // if this is a write to the first page, and the write only changes the
+        // file change counter and the version valid for number, we can ignore this write
+        if page_idx == PageIdx::FIRST && data.len() == PAGESIZE && local_offset == 0 {
+            let existing: Page = writer.read(self.oracle.as_mut(), page_idx).or_into_ctx()?;
+
+            debug_assert_eq!(data.len(), existing.len(), "page size mismatch");
+
+            let fcc = FILE_CHANGE_COUNTER_OFFSET..FILE_CHANGE_COUNTER_OFFSET + 4;
+            let vvf = VERSION_VALID_FOR_NUMBER_OFFSET..VERSION_VALID_FOR_NUMBER_OFFSET + 4;
+
+            // check the header page is unchanged while ignoring the file change
+            // counter and version valid for number
+            let unchanged =
+                // prefix [0,24)
+                data[..fcc.start]           == existing[..fcc.start] &&
+                // middle (28,92)
+                data[fcc.end..vvf.start]    == existing[fcc.end..vvf.start] &&
+                // suffix (96, end]
+                data[vvf.end..]             == existing[vvf.end..];
+
+            if unchanged {
+                tracing::trace!(
+                    "ignoring write to header page, file change counter and version valid for number unchanged"
+                );
+                return Ok(data.len());
+            }
+        }
 
         let page = if data.len() == PAGESIZE {
             // writing a full page

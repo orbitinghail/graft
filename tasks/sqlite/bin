@@ -24,7 +24,7 @@ SQLITE_BIN="${SQLITE_DIR}/sqlite3"
 # install sqlite3 into ${GIT_ROOT}/target/sqlite3/
 # if it's not already installed
 if [ ! -f "${SQLITE_BIN}" ]; then
-    if [ $PLATFORM == "linux" ]; then
+    if [ "$SQLITE_VERSION" -lt 3490000 ] && [ "$PLATFORM" = linux ]; then
         echo "Downloading sqlite3 from ${SQLITE_URL} into ${SQLITE_DIR}"
         mkdir -p "${SQLITE_DIR}"
         SQLITE_ZIP="$(mktemp -d)/sqlite3.zip"
@@ -32,7 +32,7 @@ if [ ! -f "${SQLITE_BIN}" ]; then
         unzip -d "${SQLITE_DIR}" "${SQLITE_ZIP}"
         rm "${SQLITE_ZIP}"
 
-    elif [ $PLATFORM == "osx" ]; then
+    else
         echo "Downloading sqlite3 from ${SQLITE_SRC_URL} into ${SQLITE_DIR}"
         mkdir -p "${SQLITE_DIR}"
         SQLITE_TAR="$(mktemp -d)/sqlite3.tar.gz"
@@ -40,7 +40,16 @@ if [ ! -f "${SQLITE_BIN}" ]; then
         tar -C "${SQLITE_DIR}" -xzf "${SQLITE_TAR}"
         rm "${SQLITE_TAR}"
         cd "${SQLITE_DIR}/sqlite-autoconf-${SQLITE_VERSION}"
-        export CFLAGS="-DSQLITE_ENABLE_DBSTAT_VTAB"
+        export CFLAGS="
+            -DSQLITE_ENABLE_DBSTAT_VTAB
+            -DSQLITE_ENABLE_FTS4
+            -DSQLITE_ENABLE_FTS5
+            -DSQLITE_ENABLE_MATH_FUNCTIONS
+            -DSQLITE_THREADSAFE=0
+            -DSQLITE_ENABLE_EXPLAIN_COMMENTS
+            -DHAVE_READLINE
+            -DSQLITE_ENABLE_ATOMIC_WRITE
+        "
         ./configure \
             --all \
             --with-readline-ldflags="-L/opt/homebrew/opt/readline/lib -lreadline" \
