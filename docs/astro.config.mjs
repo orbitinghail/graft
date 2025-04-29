@@ -20,8 +20,8 @@ export default defineConfig({
       title: "Graft",
       pagination: false,
       logo: {
-        light: "./src/assets/tight-light.svg",
-        dark: "./src/assets/tight-dark.svg",
+        light: "./src/assets/logo-light.svg",
+        dark: "./src/assets/logo-dark.svg",
       },
       head: [
         {
