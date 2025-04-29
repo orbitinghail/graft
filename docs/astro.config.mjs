@@ -5,18 +5,14 @@ import starlightLlmsTxt from "starlight-llms-txt";
 
 import starlightLinksValidator from "starlight-links-validator";
 
-const plugins = [starlightLlmsTxt()];
-
-if (process.env.CHECK_LINKS) {
-  plugins.push(starlightLinksValidator());
-}
+import sitemap from "@astrojs/sitemap";
 
 // https://astro.build/config
 export default defineConfig({
   site: "https://graft.rs/",
   integrations: [
     starlight({
-      plugins,
+      plugins: [starlightLlmsTxt(), starlightLinksValidator()],
       title: "Graft",
       pagination: false,
       logo: {
@@ -30,6 +26,13 @@ export default defineConfig({
             src: "https://cdn.usefathom.com/script.js",
             "data-site": "MEZQWTLT",
             defer: true,
+          },
+        },
+        {
+          tag: "link",
+          attrs: {
+            rel: "sitemap",
+            href: "/sitemap-index.xml",
           },
         },
       ],
@@ -57,43 +60,49 @@ export default defineConfig({
         {
           label: "About",
           items: [
-            { label: "Introduction", slug: "about/intro" },
-            { label: "FAQ", slug: "about/faq" },
-            { label: "Architecture", slug: "about/architecture" },
+            { label: "Introduction", slug: "docs/about" },
+            { label: "Comparison", slug: "docs/about/comparison" },
+            { label: "FAQ", slug: "docs/about/faq" },
           ],
         },
         {
           label: "Concepts",
           items: [
-            { label: "Volumes", slug: "concepts/volumes" },
-            { label: "Consistency", slug: "concepts/consistency" },
+            { label: "Volumes", slug: "docs/concepts/volumes" },
+            { label: "Consistency", slug: "docs/concepts/consistency" },
           ],
         },
         {
           label: "SQLite extension",
           items: [
-            { label: "Overview", slug: "sqlite/overview" },
-            { label: "Compatibility", slug: "sqlite/compatibility" },
-            { label: "Databases", slug: "sqlite/databases" },
-            { label: "Config", slug: "sqlite/config" },
-            { label: "Pragmas", slug: "sqlite/pragmas" },
+            { label: "Overview", slug: "docs/sqlite" },
+            { label: "Compatibility", slug: "docs/sqlite/compatibility" },
+            { label: "Databases", slug: "docs/sqlite/databases" },
+            { label: "Config", slug: "docs/sqlite/config" },
+            { label: "Pragmas", slug: "docs/sqlite/pragmas" },
             {
               label: "Using with...",
-              autogenerate: { directory: "sqlite/usage" },
+              autogenerate: { directory: "docs/sqlite/usage" },
             },
           ],
         },
         {
-          label: "Server",
+          label: "Backend",
           items: [
-            { label: "Overview", slug: "server/overview" },
-            { label: "Deploy", slug: "server/deploy" },
-            { label: "Config", slug: "server/config" },
-            { label: "Auth", slug: "server/auth" },
-            { label: "API", slug: "server/api" },
+            { label: "Overview", slug: "docs/backend" },
+            { label: "Deploy", slug: "docs/backend/deploy" },
+            { label: "Config", slug: "docs/backend/config" },
+            { label: "Auth", slug: "docs/backend/auth" },
+            { label: "API", slug: "docs/backend/api" },
           ],
+        },
+        {
+          label: "Internals",
+          collapsed: true,
+          autogenerate: { directory: "docs/internals" },
         },
       ],
     }),
+    sitemap(),
   ],
 });

@@ -3,9 +3,9 @@ title: Databases
 description: Understanding how to connect to different databases using Graft
 ---
 
-The Graft SQLite extension maps each SQLite database to a single [Graft Volume](/concepts/volumes).
+The Graft SQLite extension maps each SQLite database to a single [Graft Volume](/docs/concepts/volumes).
 
-You can either connect to a specific database by using a [Graft Volume ID](/concepts/volumes) as the database name or by using the literal string `random` to dynamically create a new volume.
+You can either connect to a specific database by using a [Graft Volume ID](/docs/concepts/volumes) as the database name or by using the literal string `random` to dynamically create a new volume.
 
 ## Connect to a specific database by Volume Id
 

@@ -1,0 +1,83 @@
+---
+title: Comparison
+description: Comparison between Graft and similar storage engines
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Graft builds on ideas pioneered by many other projects, while adding its own unique contributions to the space. Here is a brief overview of the SQLite replication landscape and how Graft compares.
+
+<Aside type="caution">
+  The information in this section has been gathered from documentation and blog posts, and might not be perfectly accurate. Please [let me know][email] if I've misrepresented or misunderstood a project.
+</Aside>
+
+#### mvSQLite
+
+Among SQLite-based projects, [mvSQLite] is the closest in concept to Graft. It implements a custom VFS layer that stores SQLite pages directly in [FoundationDB].
+
+In mvSQLite, each page is stored by its content hash and referenced by `(page_number, snapshot version)`. This structure allows readers to lazily fetch pages from FoundationDB as needed. By leveraging page-level versioning, mvSQLite supports concurrent write transactions, provided their read and write sets don't overlap.
+
+_How Graft compares_: Graft and mvSQLite share similar storage-layer designs, using page-level versioning to allow lazy, on-demand fetching and partial database views. The key difference lies in data storage location and how page changes are tracked. mvSQLite depends on FoundationDB, requiring all nodes to have direct cluster access—making it unsuitable for widely distributed edge devices and web applications. Additionally, Graft’s [Splinter]-based changesets are self-contained, easily distributable, and do not require direct queries against FoundationDB to determine changed page versions.
+
+#### Litestream
+
+[Litestream] is a streaming backup solution that continuously replicates [SQLite WAL] frames to object storage. Its primary focus is async durability, point-in-time restore, and read replicas. It runs externally to your application, monitoring SQLite's WAL through the filesystem.
+
+_How Graft compares_: Unlike Litestream, Graft integrates directly into SQLite's commit process via its custom VFS, enabling lazy, partial replication, and distributed writes. Like Litestream, Graft replicates pages to object storage and supports point-in-time restores.
+
+#### cr-sqlite
+
+[cr-sqlite] is a SQLite extension which turns tables into [Conflict-free Replicated Data Types (CRDTs)][crdt], enabling logical, row-level replication. It offers automatic conflict resolution but requires schema awareness and application-level integration.
+
+_How Graft compares_: Graft is schema-agnostic and doesn't depend on logical CRDTs, making it compatible with arbitrary SQLite extensions and custom data structures. However, to achieve global serializability, Graft expects applications to handle conflict resolution explicitly. In contrast, cr-sqlite automatically merges changes from multiple writers, achieving [causal consistency].
+
+#### Cloudflare Durable Objects with SQLite Storage
+
+[By combining Durable Objects with SQLite][cloudflare-do-sql], you get a strongly consistent and highly durable database wrapped with your business logic and hosted hopefully close to your users in Cloudflare's massive edge network. Under the hood, this solution is similar to Litestream in that it replicates the SQLite WAL to object storage and performs periodic checkpoints.
+
+_How Graft compares_: Graft exposes replication as a first class citizen, and is designed to replicate efficiently to and from the edge. In comparison, SQLite in Durable Objects is focused on extending Durable Objects with the full power of SQLite.
+
+#### Cloudflare D1
+
+[Cloudflare D1] is a managed SQLite database operating similarly to traditional database services like [Amazon RDS] or [Turso], accessed by applications via an HTTP API.
+
+_How Graft compares_: Graft replicates data directly to the edge, embedding it within client applications. This decentralized replication model contrasts significantly with D1’s centralized data service.
+
+#### Turso & libSQL
+
+[Turso] provides managed SQLite databases and embedded replicas via [libSQL], an open-source SQLite fork. Similar to Litestream and Cloudflare Durable Objects SQL Storage, Turso replicates SQLite WAL frames to object storage and periodically checkpoints. Replicas catch up by retrieving these checkpoints and replaying the log.
+
+_How Graft compares_: Graft distinguishes itself with partial replication and support for arbitrary, schema-agnostic data structures. Graft's backend service operates directly at the page level and outsources the entire transactional lifecycle to clients.
+
+#### rqlite & dqlite
+
+The key idea behind [rqlite] and [dqlite] is to distribute SQLite across multiple servers. This is achieved through [Raft] based consensus and routing SQLite operations through a network protocol to the current Raft leader.
+
+_How Graft compares:_ These projects are focused on increasing SQLite's durability and availability through consensus and traditional replication. They are designed to keep a set of stateful nodes that maintain connectivity to one another in sync. Graft fundamentally differs by being a stateless system built on top of object storage, designed to replicate data to and from the edge.
+
+#### Verneuil
+
+[Verneuil] focuses on asynchronously replicating SQLite snapshots to read replicas via object storage, prioritizing reliability without introducing additional failure modes. Verneuil explicitly avoids mechanisms to minimize replication latency or staleness.
+
+_How Graft compares_: Graft behaves more like a multi-writer distributed database, emphasizing selective, real-time partial replication. Verneuil’s approach, meanwhile, emphasizes unidirectional asynchronous snapshot replication without guarantees around replication freshness.
+
+[email]: mailto:hello@orbitinghail.dev
+[LiteFS]: https://fly.io/docs/litefs/
+[FoundationDB]: https://www.foundationdb.org/
+[mvSQLite]: https://github.com/losfair/mvsqlite
+[mvSQLite-conflict]: https://github.com/losfair/mvsqlite/wiki/Atomic-commit#commit-modes
+[Raft]: https://en.wikipedia.org/wiki/Raft_(algorithm)
+[dqlite]: https://dqlite.io/
+[libSQL]: https://github.com/tursodatabase/libsql
+[Splinter]: https://github.com/orbitinghail/splinter-rs
+[Litestream]: https://litestream.io/
+[SQLite WAL]: https://www.sqlite.org/wal.html
+[cr-sqlite]: https://github.com/vlcn-io/cr-sqlite
+[crdt]: https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type
+[causal consistency]: https://jepsen.io/consistency/models/causal
+[cloudflare-do-sql]: https://blog.cloudflare.com/sqlite-in-durable-objects/
+[Cloudflare D1]: https://developers.cloudflare.com/d1/
+[Turso]: https://turso.tech/
+[Amazon RDS]: https://aws.amazon.com/rds/
+[rqlite]: https://github.com/rqlite/rqlite
+[Verneuil]: https://github.com/backtrace-labs/verneuil

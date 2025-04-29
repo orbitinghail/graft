@@ -2,6 +2,17 @@
 
 This file documents future work that has been punted to help accelerate Graft to a MvP.
 
+## Volume Router
+
+In order to scale the Metastore around the world, we need a globally available routing system to determine where each Volume lives. This allows the Metastore to be entirely region local which is simpler, faster, and cheaper than backing it with some kind of globally available database.
+
+The only data we will need to make globally available is where each Volume lives. We can solve this in a number of ways:
+
+1. Add region namespacing to Volume Ids. This permanently pins each Volume to a region (or at least a namespace) allowing clients to send traffic to the right location without any additional communication. The downside is a lack of flexibility.
+2. A globally available volume registry service. Cloudflare might be the ideal place for this. They provide multiple storage and caching services that would fairly efficiently keep this routing data highly available globally.
+
+I'm still undecided, but leaning towards using CF as a volume registry to increase flexibility in volume placement (and more importantly the ability to move volumes).
+
 ## Improved idempotency
 
 Currently we run some heuristics to determine idempotency. This has proved to be error prone. The safer option would be to have the client store the fully serialized commit before sending to the metastore, and then reply that on recovery. This may also make some of the other client side replay code simpler.
