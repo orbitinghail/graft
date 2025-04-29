@@ -1,0 +1,85 @@
+---
+title: Consistency Model
+description: An overview of Graft's consistency and isolation model
+---
+
+import { Steps } from "@astrojs/starlight/components";
+
+_(This model only applies when using the official Graft Client with Graft Server. Third-party client implementations may violate this model.)_
+
+## Global Consistency
+
+Graft provides **[Serializable Snapshot Isolation](https://distributed-computing-musings.com/2022/02/transactions-serializable-snapshot-isolation/)** globally.
+
+All read operations are executed on an isolated snapshot of a Volume.
+
+A write transaction must be based on the latest snapshot to commit. Assuming a compliant Graft client, this enforces [Strict Serializable](https://jepsen.io/consistency/models/strong-serializable).
+
+## Local Consistency
+
+By default, Graft clients commit locally and then asynchronously attempt to commit remotely. Because Graft enforces **Strict Serializability** globally, when two clients concurrently commit based on the same snapshot, one commit will succeed and the other will fail.
+
+Upon rejection, the client must choose one of:
+
+1. **Fork the volume permanently**: This results in a new volume and retains **Strict Serializability**.
+2. **Reset and replay**: Reset to the latest snapshot from the server, replay local transactions, and attempt again.
+   - The global consistency remains **Strict Serializable**.
+   - Locally, the client experiences **Optimistic Snapshot Isolation**, meaning:
+     - Reads always observe internally consistent snapshots.
+     - However, these snapshots may later be discarded if the commit is rejected.
+3. **Merge**: Attempt to merge the remote snapshot with local commits. _(Not yet implemented by Graft; this degrades global consistency to [snapshot isolation](https://jepsen.io/consistency/models/snapshot-isolation))_
+
+**Optimistic Snapshot Isolation:**
+
+Under optimistic snapshot isolation, a client may observe a snapshot which never exists in the global timeline. Here is an example of this in action:
+
+<Steps>
+
+1. Initial state on all clients
+
+    ```sql
+    create table accounts (id, bal, check(bal >= 0));
+    insert into accounts values (1, 10);
+    ```
+
+2. client A commits locally:
+
+    ```sql
+    sqlite> update accounts set bal = bal - 10 where id = 1
+
+    -- accounts = [ { id: 1, bal: 0 } ]
+    ```
+
+3. client B commits concurrently:
+
+   ```sql
+   sqlite> update accounts set bal = bal - 5 where id = 1
+
+   -- accounts = [ { id: 1, bal: 5 } ]
+   ```
+
+4. client B reads from the database before syncing with the server:
+
+   ```sql
+   sqlite> select * from accounts
+   +----+-----+
+   | id | bal |
+   +----+-----+
+   | 1  | 5   |
+   +----+-----+
+   ```
+
+5. client A successfully pushes their commit to the server.
+
+6. client B’s commit is rejected by the server and resets to the latest server snapshot.
+
+7. client B attempts to replay their last transaction:
+   ```sql
+   sqlite> update accounts set bal = bal - 5 where id = 1
+   (275) abort at 13 in [update accounts set bal = bal - 5 where id = 1;]: CHECK constraint failed: bal >= 0
+   Runtime error: CHECK constraint failed: bal >= 0 (19)
+   ```
+
+</Steps>
+
+At this stage, client B should ideally replay or invalidate the query in step (4). If external state changes were based on that read, the client must perform reconciliation to ensure correctness.

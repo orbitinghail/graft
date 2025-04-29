@@ -1,0 +1,31 @@
+---
+title: JavaScript
+description: Use the Graft SQLite extension with JavaScript
+sidebar:
+  order: 0
+---
+
+import { PackageManagers } from "starlight-package-managers";
+
+<PackageManagers pkg="sqlite-graft" />
+
+## Usage
+
+To use Graft with Node.js's built-in SQLite module, **Node.js version 23.10.0 or later is required**, as this is the first version that supports URI-formatted database connections needed by Graft.
+
+```javascript
+import * as sqliteGraft from "sqlite-graft";
+// Also should work with other javascript SQLite libraries:
+import { DatabaseSync } from "node:sqlite";
+
+// load the graft extension
+let db = new DatabaseSync(":memory:", { allowExtension: true });
+sqliteGraft.load(db);
+
+// open a Graft volume as a database and run graft_status
+db = new DatabaseSync("file:random?vfs=graft");
+let result = db.prepare("PRAGMA graft_status");
+console.log(result.all());
+```
+
+You can also use Graft with `better-sqlite3` and older versions of Node by setting the environment variable `GRAFT_MAKE_DEFAULT=true`. This will cause Graft to register itself as the _default_ VFS for all new SQLite connections, so no URI path required.
