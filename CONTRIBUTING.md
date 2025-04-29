@@ -68,11 +68,11 @@ just run sqlite shell
 
 Further reading:
 
-- For a detailed overview of how Graft works, you might want to read [design.md].
-- For an overview of how to use the Graft SQLite extension, see [sqlite.md].
+- For a detailed overview of how Graft works, see [graft.rs/docs/internals].
+- For an overview of how to use the Graft SQLite extension, see [graft.rs/docs/sqlite].
 
-[design.md]: https://github.com/orbitinghail/graft/blob/main/docs/design.md
-[sqlite.md]: https://github.com/orbitinghail/graft/blob/main/docs/sqlite.md
+[graft.rs/docs/internals]: https://graft.rs/docs/internals/
+[graft.rs/docs/sqlite]: https://graft.rs/docs/sqlite/
 
 ## Pull Request (PR) process
 
