@@ -1,0 +1,102 @@
+---
+title: Direct
+description: Use the Graft SQLite extension anywhere you can use SQLite
+sidebar:
+  order: 999
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { Code } from "@astrojs/starlight/components";
+
+The Graft SQLite extension can be downloaded and used with SQLite anywhere you can use SQLite.[^1]
+
+[^1]: As long as SQLite is running on a supported platform and is compiled with support for loading extensions.
+
+## Manual download
+
+`libgraft`, is released using [GitHub Releases] for most platforms. You can access the latest release using the links below:
+
+| Platform | Architecture | Download Link                   |
+| -------- | ------------ | ------------------------------- |
+| Linux    | x86_64       | [libgraft-linux-x86_64.tar.gz]  |
+| Linux    | aarch64      | [libgraft-linux-aarch64.tar.gz] |
+| Windows  | x86_64       | [libgraft-windows-x86_64.zip]   |
+| Windows  | aarch64      | [libgraft-windows-aarch64.zip]  |
+| macOS    | x86_64       | [libgraft-macos-x86_64.tar.gz]  |
+| macOS    | aarch64      | [libgraft-macos-aarch64.tar.gz] |
+
+After downloading the file for your system's platform and architecture, decompress the file to access the extension, which is named `libgraft.[dll,dylib,so]`.
+
+[libgraft-linux-x86_64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-linux-x86_64.tar.gz
+[libgraft-linux-aarch64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-linux-aarch64.tar.gz
+[libgraft-windows-x86_64.zip]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-windows-x86_64.zip
+[libgraft-windows-aarch64.zip]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-windows-aarch64.zip
+[libgraft-macos-x86_64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-macos-x86_64.tar.gz
+[libgraft-macos-aarch64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-macos-aarch64.tar.gz
+[install-sqlite-ext]: https://antonz.org/install-sqlite-extension/
+[GitHub Releases]: https://github.com/orbitinghail/graft/releases/latest
+
+## sqlpkg
+
+[sqlpkg] is a third-party command line extension manager for SQLite.
+
+<Tabs syncKey="platform">
+  <TabItem label="Linux/macOS">
+    <Code lang="bash" code="sqlpkg install orbitinghail/graft" />
+  </TabItem>
+  <TabItem label="Windows">
+    <Code lang="powershell" code="sqlpkg.exe install orbitinghail/graft" />
+  </TabItem>
+</Tabs>
+
+Once installed, you can find the path to `libgraft` using the `which` subcommand:
+
+<Tabs syncKey="platform">
+  <TabItem label="Linux/macOS">
+    <Code lang="bash" code="sqlpkg which orbitinghail/graft" />
+  </TabItem>
+  <TabItem label="Windows">
+    <Code lang="powershell" code="sqlpkg.exe which orbitinghail/graft" />
+  </TabItem>
+</Tabs>
+
+The author of `sqlpkg`, [Anton Zhiyanov][anton], published a comprehensive guide to SQLite extensions on their blog [which is available here][sqlpkg-guide]. I highly recommend reading that post for more ways to install and use SQLite extensions.
+
+[anton]: https://www.linkedin.com/in/nalgeon/
+[sqlpkg]: https://github.com/nalgeon/sqlpkg-cli
+[sqlpkg-guide]: https://antonz.org/install-sqlite-extension/
+
+## Usage with the SQLite CLI
+
+When installed using your system package manager or via another binary distribution, SQLite ships with a command-line interface (CLI) usually called `sqlite3` (`sqlite3.exe` on Windows).
+
+After starting the SQLite shell you can load the Graft extension with the `.load` command:
+
+```sql
+.load PATH_TO_LIBGRAFT
+```
+
+Here is an example of loading `libgraft` on linux, opening a Volume, and checking `pragma graft_status` to make sure it all works:
+
+```console
+➜ sqlite3
+SQLite version 3.49.1 2025-02-18 13:38:58
+Enter ".help" for usage hints.
+Connected to a transient in-memory database.
+Use ".open FILENAME" to reopen on a persistent database.
+
+sqlite> # load the Graft extension
+sqlite> .load ./libgraft.so
+
+sqlite> # open a Graft Volume as a database
+sqlite> .open 'file:random?vfs=graft'
+
+sqlite> # verify Graft is working using pragma
+sqlite> pragma graft_status;
+Graft Status
+Client ID: Qi81Dp4C52izQ3LwX2YfZJ
+Volume ID: GonugMKom6Q92W5YddpVTd
+Current snapshot: None
+Autosync: true
+Volume status: Ok
+```

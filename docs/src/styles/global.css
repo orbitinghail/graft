@@ -1,0 +1,20 @@
+.hero {
+    grid-template-columns: 1fr;
+}
+
+.hero .copy {
+    align-items: center;
+}
+
+.hero .actions {
+    justify-content: center;
+}
+
+.hero .tagline {
+    text-align: center;
+    max-width: 500px;
+}
+
+.site-title {
+    gap: calc(var(--sl-nav-gap) / 2);
+}
