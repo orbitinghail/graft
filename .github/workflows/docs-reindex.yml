@@ -1,0 +1,35 @@
+name: Update docs index
+
+on:
+  workflow_dispatch:
+
+  check_run:
+    types: [completed]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  algolia-reindex:
+    if: >
+      github.event_name == 'workflow_dispatch' || (
+        github.event_name == 'check_run' &&
+        github.event.check_run.name == 'Cloudflare Pages' &&
+        github.event.check_run.conclusion == 'success' &&
+        github.head_ref == 'main'
+      )
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Trigger Algolia crawler
+        env:
+          CRAWLER_ID: ${{ secrets.ALGOLIA_CRAWLER_ID }}
+          CRAWLER_USER_ID: ${{ secrets.ALGOLIA_CRAWLER_USER_ID }}
+          CRAWLER_API_KEY: ${{ secrets.ALGOLIA_CRAWLER_API_KEY }}
+        run: |
+          curl -sSf -X POST \
+            --user "${CRAWLER_USER_ID}:${CRAWLER_API_KEY}" \
+            "https://crawler.algolia.com/api/1/crawlers/${CRAWLER_ID}/reindex"

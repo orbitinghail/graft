@@ -40,6 +40,14 @@ export default defineConfig({
             href: "/sitemap-index.xml",
           },
         },
+        {
+          tag: "link",
+          attrs: {
+            rel: "preconnect",
+            href: "https://gs869rqcpn-dsn.algolia.net",
+            crossorigin: true,
+          },
+        },
       ],
       expressiveCode: {
         themes: ["dracula", "solarized-light"],
