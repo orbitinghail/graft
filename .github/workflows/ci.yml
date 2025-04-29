@@ -3,14 +3,8 @@ name: CI
 on:
   push:
     branches: ["main"]
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
   pull_request:
     branches: ["main"]
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,8 +19,19 @@ permissions:
   checks: write
 
 jobs:
+  skip-check:
+    runs-on: ubuntu-24.04
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@v5
+        with:
+          paths_ignore: '["**.md", "/docs/**"]'
   build:
     runs-on: ubuntu-24.04
+    needs: skip-check
+    if: needs.skip-check.outputs.should_skip != 'true'
     steps:
       - name: system dependencies
         run: |
