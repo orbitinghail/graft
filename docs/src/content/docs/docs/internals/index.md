@@ -64,10 +64,10 @@ Graft supports multiple client types to serve different replication and access p
 - **[Replica Client]**: Subscribes to volume updates and lazily replicates only the Pages it needs, based on Graft data.
 - **[Lite Client]**: Stateless client optimized for single reads or writes, typically used for fire-and-forget workloads or one-shot syncs.
 
-[PageStore]: /docs/internals/pagestore
-[MetaStore]: /docs/internals/metastore
-[GID]: /docs/internals/gid
-[Volume]: /docs/concepts/volumes
-[Volumes]: /docs/concepts/volumes
-[Replica Client]: /docs/internals/client
-[Lite Client]: /docs/internals/client#lite-client
+[PageStore]: /docs/internals/pagestore/
+[MetaStore]: /docs/internals/metastore/
+[GID]: /docs/internals/gid/
+[Volume]: /docs/concepts/volumes/
+[Volumes]: /docs/concepts/volumes/
+[Replica Client]: /docs/internals/client/
+[Lite Client]: /docs/internals/client/#lite-client
