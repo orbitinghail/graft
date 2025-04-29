@@ -1,5 +1,5 @@
 ---
-title: Overview
+title: Architecture
 description: An overview of how Graft works
 sidebar:
   order: 0
