@@ -1,6 +1,6 @@
 ---
 title: Graft API
-description: A reference for the Graft API
+description: A reference for the Graft backend API
 ---
 
 ## MetaStore
