@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   pull_request:
     branches: ["main"]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -64,6 +70,3 @@ jobs:
 
       - name: Cargo doctests
         run: cargo test --doc
-
-      - name: Spell Check Repo
-        uses: crate-ci/typos@b1a1ef3893ff35ade0cfa71523852a49bfd05d19 # v1.31.1
