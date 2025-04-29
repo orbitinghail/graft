@@ -37,7 +37,7 @@ To ensure that each volume log sorts correctly, LSNs will need to be fixed lengt
 
 ## API
 
-[MetaStore API docs](/docs/backend/api#metastore)
+[MetaStore API docs](/docs/backend/api/#metastore)
 
 ## Checkpointing
 

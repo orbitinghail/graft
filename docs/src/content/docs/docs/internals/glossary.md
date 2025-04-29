@@ -4,7 +4,7 @@ description: Glossary of Graft terms.
 ---
 
 - **GID**
-  A 128 bit Graft Identifier. See [GIDs](/docs/internals/gid) for details.
+  A 128 bit Graft Identifier. See [GIDs](/docs/internals/gid/) for details.
 
 - **Volume**
   A sparse data object consisting of Pages located at PageIdxs starting from 1. Volumes are referred to primarily by a Volume ID.

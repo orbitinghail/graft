@@ -52,7 +52,7 @@ In addition, we should have a memory based cache. One option is to read all of t
 
 ## API
 
-[PageStore API docs](/docs/backend/api#pagestore)
+[PageStore API docs](/docs/backend/api/#pagestore)
 
 ## Pagestore internal dataflow
 
