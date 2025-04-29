@@ -14,6 +14,16 @@ permissions:
   contents: read
 
 jobs:
+  debug_event:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Debug event
+        run: |
+          echo "Event name: '${{ github.event_name }}'"
+          echo "Check run name: '${{ github.event.check_run.name }}'"
+          echo "Check run conclusion: '${{ github.event.check_run.conclusion }}'"
+          echo "Head ref: '${{ github.head_ref }}'"
+          echo "Ref: '${{ github.ref }}'"
   algolia-reindex:
     if: >
       github.event_name == 'workflow_dispatch' || (

@@ -3,14 +3,15 @@ title: Graft Identifier (GID)
 description: Graft Identifiers (GIDs) are 16 byte IDs used to globally identify Graft objects.
 ---
 
-Graft uses a 16 byte identifier called a Graft Identifier (GID) to identify Segments, Clients, and Volumes. GIDs are based on ULIDs with a prefix byte.
+Graft uses a 16 byte identifier called a Graft Identifier (GID) to identify Segments, Clients, and Volumes. GIDs are similar to UUIDs and ULIDs with a Graft specific prefix and different canonical encoding.
 
-The primary goals of GIDs are:
-
-- 128 bits in size
-- they are alphanumerically sortable by time in both their serialized and binary representations
-- they are "typed" such that equality takes the type into account
-- collisions have close to zero probability assuming that less than 10k GIDs are created per second
+- **128-bit compatibility** (same size as UUID)
+- **Up to 2^72 unique GIDs per millisecond**
+- **Lexicographically sortable** by creation time!
+- **Canonically encoded as a 22-character string**, compared to the 36-character UUID
+- **Case sensitive**
+- **No special characters** (fully URL safe)
+- **Creation time is embedded**: newer GIDs sort after older ones
 
 GIDs have the following layout:
 
