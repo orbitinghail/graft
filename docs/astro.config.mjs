@@ -2,9 +2,8 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import starlightLlmsTxt from "starlight-llms-txt";
-
+import starlightDocSearch from "@astrojs/starlight-docsearch";
 import starlightLinksValidator from "starlight-links-validator";
-
 import sitemap from "@astrojs/sitemap";
 
 // https://astro.build/config
@@ -12,7 +11,13 @@ export default defineConfig({
   site: "https://graft.rs/",
   integrations: [
     starlight({
-      plugins: [starlightLlmsTxt(), starlightLinksValidator()],
+      plugins: [
+        starlightLlmsTxt(),
+        starlightLinksValidator(),
+        starlightDocSearch({
+          clientOptionsModule: "./src/config/docsearch.ts",
+        }),
+      ],
       title: "Graft",
       pagination: false,
       logo: {
