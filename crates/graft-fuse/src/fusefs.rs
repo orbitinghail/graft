@@ -1,6 +1,5 @@
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
-use std::u64;
 
 use fuser::consts::FUSE_DO_READDIRPLUS;
 use fuser::{
@@ -100,7 +99,7 @@ impl Filesystem for FuseFs {
         match self.dbfs.read_file(ino) {
             Ok(data) => {
                 let mut contents = serde_json::to_vec_pretty(&data).unwrap();
-                contents.push('\n' as u8);
+                contents.push(b'\n');
                 let start = offset as usize;
                 let end = (start + size as usize).min(contents.len());
                 reply.data(&contents[start..end]);
