@@ -1077,6 +1077,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuser"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53274f494609e77794b627b1a3cddfe45d675a6b2e9ba9c0fdc8d8eee2184369"
+dependencies = [
+ "libc",
+ "log",
+ "memchr",
+ "nix",
+ "page_size",
+ "pkg-config",
+ "smallvec",
+ "zerocopy 0.8.25",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1263,6 +1279,27 @@ dependencies = [
  "static_assertions",
  "thiserror 2.0.12",
  "zerocopy 0.8.25",
+]
+
+[[package]]
+name = "graft-fuse"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fuser",
+ "graft-client",
+ "graft-core",
+ "graft-sqlite",
+ "graft-tracing",
+ "libc",
+ "precept",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sqlite-plugin",
+ "toml",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -2096,6 +2133,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2209,6 +2258,16 @@ name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
+
+[[package]]
+name = "page_size"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30d5b2194ed13191c1999ae0704b7839fb18384fa22e49b57eeaa97d79ce40da"
+dependencies = [
+ "libc",
+ "winapi",
+]
 
 [[package]]
 name = "parking"
@@ -2746,6 +2805,7 @@ dependencies = [
  "fallible-streaming-iterator",
  "hashlink",
  "libsqlite3-sys",
+ "serde_json",
  "smallvec",
 ]
 
