@@ -1,84 +1,29 @@
-use rusqlite::{
-    Connection, ToSql, params,
-    types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, ValueRef},
-};
+use rusqlite::{Connection, named_params};
+use thiserror::Error;
+use types::{FieldKind, Inode, NameOrIndex};
 
-pub const SCHEMA: &str = "
-    CREATE TABLE IF NOT EXISTS entries (
-        -- ino is the inode number of this entry
-        ino INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+pub const SCHEMA: &str = include_str!("sql/schema.sql");
+pub const SEED_DATA: &str = include_str!("sql/seed.sql");
+pub const QUERY_FIELD: &str = include_str!("sql/query_field.sql");
 
-        -- parent is the parent inode of this entry; must be a directory
-        parent INTEGER NOT NULL,
-        kind INTEGER NOT NULL,
-        name TEXT NOT NULL,
+pub mod types;
 
-        -- contents of the file stored as JSONB
-        -- must be not null for files
-        contents JSONB,
+#[derive(Debug, Error)]
+pub enum DbfsErr {
+    #[error("Not found")]
+    NotFound,
 
-        FOREIGN KEY (parent) REFERENCES entries(ino) ON DELETE CASCADE
-    );
-";
-
-pub const INITIAL_DATA: &str = "
-    DELETE FROM entries;
-    INSERT INTO entries (ino, parent, kind, name, contents)
-    VALUES
-        (1, 1, 1, '/', NULL),
-        (2, 1, 0, 'hello.json', '{\"hello\": \"world\"}');
-";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EntryKind {
-    File = 0,
-    Dir = 1,
+    #[error("Fatal database error")]
+    Fatal(rusqlite::Error),
 }
 
-impl EntryKind {
-    pub fn fuser_type(&self) -> fuser::FileType {
-        match self {
-            EntryKind::File => fuser::FileType::RegularFile,
-            EntryKind::Dir => fuser::FileType::Directory,
+impl From<rusqlite::Error> for DbfsErr {
+    fn from(err: rusqlite::Error) -> Self {
+        match err {
+            rusqlite::Error::QueryReturnedNoRows => DbfsErr::NotFound,
+            _ => DbfsErr::Fatal(err),
         }
     }
-
-    pub fn unix_perm(&self) -> u16 {
-        match self {
-            EntryKind::File => 0o644,
-            EntryKind::Dir => 0o755,
-        }
-    }
-}
-
-impl FromSql for EntryKind {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        match value {
-            ValueRef::Integer(i) => Ok(match i {
-                0 => EntryKind::File,
-                1 => EntryKind::Dir,
-                _ => return Err(FromSqlError::InvalidType),
-            }),
-            ValueRef::Null => Ok(EntryKind::File),
-            _ => Err(FromSqlError::InvalidType),
-        }
-    }
-}
-
-impl ToSql for EntryKind {
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        match self {
-            EntryKind::File => Ok(ToSqlOutput::Owned(Value::Integer(0))),
-            EntryKind::Dir => Ok(ToSqlOutput::Owned(Value::Integer(1))),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct DirEntry {
-    pub ino: u64,
-    pub kind: EntryKind,
-    pub name: String,
 }
 
 #[derive(Debug)]
@@ -89,84 +34,40 @@ pub struct Dbfs {
 impl Dbfs {
     pub fn new(db: Connection) -> Self {
         db.execute_batch(SCHEMA).expect("failed to setup db schema");
-        db.execute_batch(INITIAL_DATA)
-            .expect("failed to setup initial data");
+        db.execute_batch(SEED_DATA)
+            .expect("failed to setup seed data");
 
         Dbfs { db }
     }
 
-    pub fn find_entry(&self, parent: u64, name: &str) -> rusqlite::Result<DirEntry> {
-        let mut stmt = self.db.prepare_cached(
-            "
-                SELECT ino, kind, name
-                FROM entries
-                WHERE parent = ? AND name = ?
-            ",
-        )?;
-        stmt.query_row(params![parent, name], |row| {
-            let ino: u64 = row.get(0)?;
-            let kind: EntryKind = row.get(1)?;
-            let name: String = row.get(2)?;
-            Ok(DirEntry { ino, kind, name })
-        })
+    pub fn get_inode_by_name(&self, parent_id: u64, name: &str) -> Result<Inode, DbfsErr> {
+        Ok(Inode::get_by_name(&self.db, parent_id, name)?)
     }
 
-    pub fn get_entry(&self, ino: u64) -> rusqlite::Result<DirEntry> {
-        let mut stmt = self.db.prepare_cached(
-            "
-                SELECT ino, kind, name
-                FROM entries
-                WHERE ino = ?
-            ",
-        )?;
-        stmt.query_row([ino], |row| {
-            let ino: u64 = row.get(0)?;
-            let kind: EntryKind = row.get(1)?;
-            let name: String = row.get(2)?;
-            Ok(DirEntry { ino, kind, name })
-        })
+    pub fn get_inode_by_id(&self, id: u64) -> Result<Inode, DbfsErr> {
+        Ok(Inode::get_by_id(&self.db, id)?)
     }
 
     pub fn listdir(
         &self,
-        parent: u64,
-        offset: i64,
-        mut cb: impl FnMut(i64, DirEntry) -> bool,
-    ) -> rusqlite::Result<i64> {
-        let mut stmt = self.db.prepare_cached(
-            "
-                SELECT ino, kind, name
-                FROM entries
-                WHERE parent = ? AND ino != parent
-                ORDER BY ino
-                LIMIT -1 OFFSET ?
-            ",
-        )?;
-
-        let mut rows = stmt.query([parent, offset as u64])?;
-
-        let mut n = offset;
-        while let Some(row) = rows.next()? {
-            let ino: u64 = row.get(0)?;
-            let kind: EntryKind = row.get(1)?;
-            let name: String = row.get(2)?;
-            if !cb(n, DirEntry { ino, kind, name }) {
-                break;
-            }
-            n += 1;
-        }
-
-        Ok(n)
+        parent_id: u64,
+        offset: u64,
+        cb: impl FnMut(Inode) -> bool,
+    ) -> Result<(), DbfsErr> {
+        Ok(Inode::select_children(&self.db, parent_id, offset, cb)?)
     }
 
-    pub fn read_file(&self, ino: u64) -> rusqlite::Result<serde_json::Value> {
-        let mut stmt = self.db.prepare_cached(
-            "
-                SELECT contents
-                FROM entries
-                WHERE ino = ? AND kind = 0
-            ",
-        )?;
-        stmt.query_row([ino], |row| row.get(0))
+    pub fn read_inode(&self, id: u64) -> Result<serde_json::Value, DbfsErr> {
+        let mut stmt = self.db.prepare_cached(QUERY_FIELD)?;
+        let mut rows = stmt.query(named_params! { ":id": id })?;
+        while let Some(row) = rows.next()? {
+            let id: u64 = row.get(0)?;
+            let parent_id: u64 = row.get(1)?;
+            let kind: FieldKind = row.get(2)?;
+            let name_or_index: NameOrIndex = row.get(3)?;
+            let value: rusqlite::types::Value = row.get(4)?;
+        }
+
+        todo!("build serde_json value dynamically")
     }
 }

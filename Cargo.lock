@@ -1297,6 +1297,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlite-plugin",
+ "thiserror 2.0.12",
  "toml",
  "tracing",
  "url",
@@ -2805,7 +2806,6 @@ dependencies = [
  "fallible-streaming-iterator",
  "hashlink",
  "libsqlite3-sys",
- "serde_json",
  "smallvec",
 ]
 

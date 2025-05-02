@@ -56,7 +56,7 @@ impl Filesystem for FuseFs {
 
     fn lookup(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
         let name = name.to_str().unwrap();
-        match self.dbfs.find_entry(parent, name) {
+        match self.dbfs.get_inode_by_name(parent, name) {
             Ok(entry) => {
                 let attr = build_attr(req, &entry);
                 reply.entry(&TTL, &attr, 0);

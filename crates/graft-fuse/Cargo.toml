@@ -19,12 +19,13 @@ libc = { workspace = true }
 tracing = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 sqlite-plugin = { workspace = true, features = ["static"] }
-rusqlite = { workspace = true, features = ["bundled", "serde_json"] }
+rusqlite = { workspace = true, features = ["bundled"] }
 precept = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 toml = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true
