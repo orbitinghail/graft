@@ -66,7 +66,9 @@ jobs:
         run: just run sqlite test
 
       - name: Fuse Tests
-        run: just run fuse test
+        run: |
+          echo "user_allow_other" | sudo tee /etc/fuse.conf
+          just run fuse test
 
       - name: Clippy
         uses: auguwu/clippy-action@94a9ff2f6920180b89e5c03d121d0af04a9d3e03 # 1.4.0

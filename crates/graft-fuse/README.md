@@ -12,6 +12,9 @@ The file contents are normalized into a key/value table allowing the file format
 
 ## Running the driver
 
+> [!warn]
+> The driver requires that `/etc/fuse.conf` contains `user_allow_other`.
+
 You can run the driver using:
 
 ```bash
