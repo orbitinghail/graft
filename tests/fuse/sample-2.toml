@@ -1,0 +1,10 @@
+engine = "postgresql"
+pool_size = 40
+replica_set = [
+    "db-1.internal",
+    "db-2.internal",
+]
+
+[credentials]
+password = "REDACTED"
+user = "service"

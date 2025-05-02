@@ -36,7 +36,7 @@ jobs:
       - name: system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential
+          sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential fuse3 libfuse3-dev
 
       - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
 
@@ -64,6 +64,11 @@ jobs:
 
       - name: SQLite Tests
         run: just run sqlite test
+
+      - name: Fuse Tests
+        run: |
+          echo "user_allow_other" | sudo tee /etc/fuse.conf
+          just run fuse test
 
       - name: Clippy
         uses: auguwu/clippy-action@94a9ff2f6920180b89e5c03d121d0af04a9d3e03 # 1.4.0
