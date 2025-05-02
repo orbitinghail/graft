@@ -8,30 +8,42 @@ use fuser::{
 };
 use libc::ENOENT;
 
-use crate::dbfs::{Dbfs, DirEntry, EntryKind};
+use crate::dbfs::inode::{Inode, InodeKind};
+use crate::dbfs::{Dbfs, DbfsErr};
 
 const TTL: Duration = Duration::from_secs(0);
 
-fn build_attr(req: &Request, entry: &DirEntry) -> FileAttr {
-    FileAttr {
-        ino: entry.ino,
-        size: match entry.kind {
-            EntryKind::File => u32::MAX as u64,
-            EntryKind::Dir => 0,
-        },
-        blocks: 0,
-        atime: UNIX_EPOCH,
-        mtime: UNIX_EPOCH,
-        ctime: UNIX_EPOCH,
-        crtime: UNIX_EPOCH,
-        kind: entry.kind.fuser_type(),
-        perm: entry.kind.unix_perm(),
-        nlink: 1,
-        uid: req.uid(),
-        gid: req.gid(),
-        rdev: 0,
-        flags: 0,
-        blksize: 512,
+struct AttrBuilder {
+    uid: u32,
+    gid: u32,
+}
+
+impl AttrBuilder {
+    fn new(req: &Request) -> Self {
+        AttrBuilder { uid: req.uid(), gid: req.gid() }
+    }
+
+    fn build(&self, inode: &Inode) -> FileAttr {
+        FileAttr {
+            ino: inode.id(),
+            size: match inode.kind() {
+                InodeKind::File => u32::MAX as u64,
+                InodeKind::Dir => 0,
+            },
+            blocks: 0,
+            atime: UNIX_EPOCH,
+            mtime: UNIX_EPOCH,
+            ctime: UNIX_EPOCH,
+            crtime: UNIX_EPOCH,
+            kind: inode.fuser_type(),
+            perm: inode.unix_perm(),
+            nlink: 1,
+            uid: self.uid,
+            gid: self.gid,
+            rdev: 0,
+            flags: 0,
+            blksize: 512,
+        }
     }
 }
 
@@ -54,33 +66,33 @@ impl Filesystem for FuseFs {
         Ok(())
     }
 
-    fn lookup(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
+    fn lookup(&mut self, req: &Request, parent_id: u64, name: &OsStr, reply: ReplyEntry) {
         let name = name.to_str().unwrap();
-        match self.dbfs.get_inode_by_name(parent, name) {
-            Ok(entry) => {
-                let attr = build_attr(req, &entry);
+        match self.dbfs.get_inode_by_name(parent_id, name) {
+            Ok(inode) => {
+                let attr = AttrBuilder::new(req).build(&inode);
                 reply.entry(&TTL, &attr, 0);
             }
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Err(DbfsErr::NotFound) => {
                 reply.error(ENOENT);
             }
             Err(e) => {
-                panic!("Error looking up {name} in {parent}: {e}");
+                panic!("Error looking up {name} in {parent_id}: {e:?}");
             }
         }
     }
 
-    fn getattr(&mut self, req: &Request, ino: u64, _fh: Option<u64>, reply: ReplyAttr) {
-        match self.dbfs.get_entry(ino) {
-            Ok(entry) => {
-                let attr = build_attr(req, &entry);
+    fn getattr(&mut self, req: &Request, id: u64, _fh: Option<u64>, reply: ReplyAttr) {
+        match self.dbfs.get_inode_by_id(id) {
+            Ok(inode) => {
+                let attr = AttrBuilder::new(req).build(&inode);
                 reply.attr(&TTL, &attr);
             }
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Err(DbfsErr::NotFound) => {
                 reply.error(ENOENT);
             }
             Err(e) => {
-                panic!("Error looking up inode {ino}: {e}");
+                panic!("Error looking up inode {id}: {e}");
             }
         }
     }
@@ -96,15 +108,13 @@ impl Filesystem for FuseFs {
         _lock: Option<u64>,
         reply: ReplyData,
     ) {
-        match self.dbfs.read_file(ino) {
+        match self.dbfs.read_inode(ino) {
             Ok(data) => {
-                let mut contents = serde_json::to_vec_pretty(&data).unwrap();
-                contents.push(b'\n');
                 let start = offset as usize;
-                let end = (start + size as usize).min(contents.len());
-                reply.data(&contents[start..end]);
+                let end = (start + size as usize).min(data.len());
+                reply.data(&data[start..end]);
             }
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Err(DbfsErr::NotFound) => {
                 reply.error(ENOENT);
             }
             Err(e) => {
@@ -118,62 +128,71 @@ impl Filesystem for FuseFs {
         req: &Request,
         ino: u64,
         _fh: u64,
-        offset: i64,
-        mut reply: ReplyDirectoryPlus,
+        start_offset: i64,
+        reply: ReplyDirectoryPlus,
     ) {
-        let mut extra = 0;
-        if offset == 0 {
-            extra = 2;
-            reply.add(
-                1,
-                0,
-                OsStr::new("."),
-                &TTL,
-                &build_attr(
-                    req,
-                    &DirEntry {
-                        ino: 1,
-                        kind: EntryKind::Dir,
-                        name: ".".to_string(),
-                    },
-                ),
-                0,
-            );
-            reply.add(
-                1,
-                1,
-                OsStr::new(".."),
-                &TTL,
-                &build_attr(
-                    req,
-                    &DirEntry {
-                        ino: 1,
-                        kind: EntryKind::Dir,
-                        name: ".".to_string(),
-                    },
-                ),
-                0,
-            );
+        struct ReplyHelper {
+            attr: AttrBuilder,
+            reply: ReplyDirectoryPlus,
+            offset: i64,
         }
 
-        let n = self
-            .dbfs
-            .listdir(ino, offset, |off, entry| {
-                !reply.add(
-                    entry.ino,
-                    off + extra,
-                    entry.name.as_str(),
+        impl ReplyHelper {
+            fn append(&mut self, name: &str, inode: &Inode) -> bool {
+                let out = self.reply.add(
+                    inode.id(),
+                    self.offset,
+                    name,
                     &TTL,
-                    &build_attr(req, &entry),
+                    &self.attr.build(&inode),
                     0,
-                )
-            })
-            .expect("failed to listdir");
+                );
+                self.offset += 1;
+                out
+            }
 
-        if n == 0 {
-            reply.error(ENOENT);
-        } else {
-            reply.ok();
+            fn ok(self) {
+                self.reply.ok();
+            }
+
+            fn error(self, err: libc::c_int) {
+                self.reply.error(err);
+            }
+        }
+
+        let mut reply = ReplyHelper {
+            attr: AttrBuilder::new(req),
+            reply,
+            offset: start_offset,
+        };
+
+        fn handler(
+            reply: &mut ReplyHelper,
+            dbfs: &Dbfs,
+            ino: u64,
+            offset: u64,
+        ) -> Result<(), DbfsErr> {
+            if offset == 0 {
+                let current = dbfs.get_inode_by_id(ino)?;
+                reply.append(".", &current);
+                reply.append("..", &dbfs.get_inode_by_id(current.parent_id())?);
+            }
+            for inode in dbfs.list_children(ino, 200, offset)? {
+                if reply.append(inode.name(), &inode) {
+                    break;
+                }
+            }
+            Ok(())
+        }
+
+        match handler(&mut reply, &self.dbfs, ino, start_offset as u64) {
+            Ok(()) => reply.ok(),
+            Err(DbfsErr::NotFound) => {
+                reply.error(ENOENT);
+            }
+            Err(e) => {
+                panic!("Error reading inode {ino}: {e:?}");
+            }
         }
     }
 }

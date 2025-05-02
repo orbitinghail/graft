@@ -87,6 +87,9 @@ url = "2.5"
 zerocopy = { version = "0.8", features = ["derive"] }
 fuser = "0.15.1"
 libc = "0.2"
+base64 = "0.22"
+quick_cache = "0.6"
+serde_yaml = "0.9"
 
 [workspace.lints.clippy]
 disallowed_methods = "deny"

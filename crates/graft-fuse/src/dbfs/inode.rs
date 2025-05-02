@@ -25,6 +25,27 @@ impl FromSql for InodeKind {
     }
 }
 
+pub enum InodeFormatter {
+    Json,
+    Toml,
+    Yaml,
+}
+
+impl InodeFormatter {
+    fn from_filename(filename: &str) -> Self {
+        // guess the format based on the filename
+        if filename.ends_with(".json") {
+            InodeFormatter::Json
+        } else if filename.ends_with(".toml") {
+            InodeFormatter::Toml
+        } else if filename.ends_with(".yaml") || filename.ends_with(".yml") {
+            InodeFormatter::Yaml
+        } else {
+            InodeFormatter::Json // default to JSON
+        }
+    }
+}
+
 pub struct Inode {
     id: u64,
     parent_id: u64,
@@ -34,6 +55,26 @@ pub struct Inode {
 }
 
 impl Inode {
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn parent_id(&self) -> u64 {
+        self.parent_id
+    }
+
+    pub fn kind(&self) -> InodeKind {
+        self.kind
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn field_id(&self) -> Option<u64> {
+        self.field_id
+    }
+
     pub fn fuser_type(&self) -> fuser::FileType {
         match self.kind {
             InodeKind::File => fuser::FileType::RegularFile,
@@ -48,6 +89,10 @@ impl Inode {
         }
     }
 
+    pub fn formatter(&self) -> InodeFormatter {
+        InodeFormatter::from_filename(&self.name)
+    }
+
     pub(super) fn get_by_name(
         db: &Connection,
         parent_id: u64,
@@ -56,7 +101,7 @@ impl Inode {
         let mut stmt = db.prepare_cached(
             "
                 SELECT id, parent_id, kind, name, field_id
-                FROM inodes
+                FROM inode
                 WHERE parent_id = ? AND name = ?
             ",
         )?;
@@ -75,7 +120,7 @@ impl Inode {
         let mut stmt = db.prepare_cached(
             "
                 SELECT id, parent_id, kind, name, field_id
-                FROM inodes
+                FROM inode
                 WHERE id = ?
             ",
         )?;
@@ -90,91 +135,31 @@ impl Inode {
         })?)
     }
 
-    /// Selects all children of a given parent inode, starting from the given offset.
-    /// Calls `cb` with each child. If `cb` returns false, end iteration early.
-    pub(super) fn select_children(
+    pub(super) fn list_children(
         db: &Connection,
         parent_id: u64,
+        limit: u64,
         offset: u64,
-        mut cb: impl FnMut(Self) -> bool,
-    ) -> rusqlite::Result<()> {
+    ) -> rusqlite::Result<Vec<Inode>> {
         let mut stmt = db.prepare_cached(
             "
                 SELECT id, parent_id, kind, name, field_id
-                FROM inodes
+                FROM inode
                 WHERE parent_id = ? AND id != parent_id
                 ORDER BY id
-                LIMIT -1 OFFSET ?
+                LIMIT ? OFFSET ?
             ",
         )?;
-        let mut rows = stmt.query([parent_id, offset])?;
-        while let Some(row) = rows.next()? {
-            if !cb(Inode {
+
+        stmt.query_map([parent_id, limit, offset], |row| {
+            Ok(Inode {
                 id: row.get(0)?,
                 parent_id: row.get(1)?,
                 kind: row.get(2)?,
                 name: row.get(3)?,
                 field_id: row.get(4)?,
-            }) {
-                break;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FieldKind {
-    String = 1,
-    Numeric = 2,
-    Boolean = 3,
-    Object = 4,
-    List = 5,
-}
-
-impl ToSql for FieldKind {
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::Owned(Value::Integer(*self as i64)))
-    }
-}
-
-impl FromSql for FieldKind {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        match value {
-            ValueRef::Integer(i) if i == 1 => Ok(FieldKind::String),
-            ValueRef::Integer(i) if i == 2 => Ok(FieldKind::Numeric),
-            ValueRef::Integer(i) if i == 3 => Ok(FieldKind::Boolean),
-            ValueRef::Integer(i) if i == 4 => Ok(FieldKind::Object),
-            ValueRef::Integer(i) if i == 5 => Ok(FieldKind::List),
-            _ => Err(FromSqlError::InvalidType),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NameOrIndex {
-    Name(String),
-    Index(u64),
-}
-
-impl ToSql for NameOrIndex {
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        match self {
-            NameOrIndex::Name(name) => name.to_sql(),
-            NameOrIndex::Index(index) => index.to_sql(),
-        }
-    }
-}
-
-impl FromSql for NameOrIndex {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        match value {
-            ValueRef::Text(s) => {
-                let s = String::from_utf8(s.to_vec()).map_err(|_| FromSqlError::InvalidType)?;
-                Ok(NameOrIndex::Name(s))
-            }
-            ValueRef::Integer(i) => Ok(NameOrIndex::Index(i as u64)),
-            _ => Err(FromSqlError::InvalidType),
-        }
+            })
+        })?
+        .collect()
     }
 }

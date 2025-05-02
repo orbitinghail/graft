@@ -1,0 +1,8 @@
+{
+  "endpoints": [
+    "/api/v1/users",
+    "/api/v1/orders"
+  ],
+  "sample-2": "production",
+  "version": "v3.2.1"
+}

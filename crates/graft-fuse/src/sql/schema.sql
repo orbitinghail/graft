@@ -16,8 +16,8 @@ CREATE INDEX IF NOT EXISTS inode_parent ON inode (parent_id);
 CREATE TABLE IF NOT EXISTS field (
     id INTEGER PRIMARY KEY NOT NULL,
     parent_id INTEGER NOT NULL,
-    -- string(1), numeric(2), boolean(3), object(4), list(5)
-    kind INTEGER NOT NULL,
+    -- native(1), object(2), list(3)
+    kind INTEGER NOT NULL DEFAULT 1,
     -- name or index (for an array) of the field
     name_or_index NOT NULL,
     -- dynamically typed contents of the field

@@ -1,42 +1,51 @@
 -- seed objects and arrays
 INSERT INTO
-    field (id, parent, kind, name_or_index)
+    field (id, parent_id, kind, name_or_index)
 VALUES
-    (1, 1, 4, 'root'),
-    (1000, 1, 4, 'config_app'),
-    (1001, 1000, 4, 'logging'),
-    (1002, 1000, 5, 'endpoints'),
-    (1100, 1, 4, 'config_db'),
-    (1101, 1100, 5, 'replica_set'),
-    (1102, 1100, 4, 'credentials'),
-    (1200, 1, 4, 'feature_flags'),
-    (1201, 1200, 5, 'experiments');
+    (1, 1, 2, 'root'),
+    (1000, 1, 2, 'sample-1'),
+    (1001, 1000, 2, 'sample-2'),
+    (1002, 1000, 3, 'endpoints'),
+    (1100, 1, 2, 'sample-2'),
+    (1101, 1100, 3, 'replica_set'),
+    (1102, 1100, 2, 'credentials'),
+    (1200, 1, 2, 'sample-3'),
+    (1201, 1200, 3, 'experiments');
 
--- seed fields
+-- seed values
 INSERT INTO
-    field (parent, kind, name_or_index, value)
+    field (parent_id, name_or_index, value)
 VALUES
-    -- config_app fields
-    (1000, 1, 'env', 'production'),
-    (1000, 1, 'version', 'v3.2.1'),
+    -- sample-1 fields
+    (1000, 'sample-2', 'production'),
+    (1000, 'version', 'v3.2.1'),
     -- logging
-    (1001, 1, 'level', 'debug'),
-    (1001, 3, 'to_file', 1),
-    -- endpoints array
-    (1002, 1, 0, '/api/v1/users'),
-    (1002, 1, 1, '/api/v1/orders'),
-    -- config_db fields
-    (1100, 1, 'engine', 'postgresql'),
-    (1100, 2, 'pool_size', 40),
+    (1001, 'level', 'debug'),
+    (1001, 'to_file', 1),
+    -- endpoints array (stored backwards to test query field ordering)
+    (1002, 1, '/api/v1/orders'),
+    (1002, 0, '/api/v1/users'),
+    -- sample-2 fields
+    (1100, 'engine', 'postgresql'),
+    (1100, 'pool_size', 40),
     -- replica_set array
-    (1101, 1, 0, 'db-1.internal'),
-    (1101, 1, 1, 'db-2.internal'),
+    (1101, 0, 'db-1.internal'),
+    (1101, 1, 'db-2.internal'),
     -- credentials object
-    (1102, 1, 'user', 'service'),
-    (1102, 1, 'password', 'REDACTED'),
-    -- feature_flags fields
-    (1200, 3, 'beta_dashboard', 1),
-    (1200, 3, 'use_edge_cache', 0),
+    (1102, 'user', 'service'),
+    (1102, 'password', 'REDACTED'),
+    -- sample-3 fields
+    (1200, 'beta_dashboard', 1),
+    (1200, 'use_edge_cache', 0),
     -- experiments array
-    (1201, 1, 0, 'new_nav'),
-    (1201, 1, 1, 'async_hooks');
+    (1201, 0, 'new_nav'),
+    (1201, 1, 'async_hooks');
+
+-- seed inodes
+INSERT INTO
+    inode (id, parent_id, kind, name, field_id)
+VALUES
+    (1, 1, 1, 'root', NULL),
+    (2, 1, 2, 'sample-1.json', 1000),
+    (3, 1, 2, 'sample-2.toml', 1100),
+    (4, 1, 2, 'sample-3.yaml', 1200);

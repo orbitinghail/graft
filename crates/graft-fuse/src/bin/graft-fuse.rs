@@ -70,6 +70,7 @@ fn main() {
             MountOption::FSName("graft".into()),
             MountOption::AutoUnmount,
             MountOption::AllowRoot,
+            MountOption::DefaultPermissions,
         ],
     )
     .unwrap();

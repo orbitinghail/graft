@@ -24,6 +24,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e89da841a80418a9b391ebaea17f5c112ffaaa96f621d2c285b5174da76b9011"
 dependencies = [
  "cfg-if",
+ "getrandom 0.2.15",
  "once_cell",
  "version_check",
  "zerocopy 0.7.35",
@@ -1285,6 +1286,7 @@ dependencies = [
 name = "graft-fuse"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "clap",
  "fuser",
  "graft-client",
@@ -1293,9 +1295,11 @@ dependencies = [
  "graft-tracing",
  "libc",
  "precept",
+ "quick_cache",
  "rusqlite",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sqlite-plugin",
  "thiserror 2.0.12",
  "toml",
@@ -2509,8 +2513,10 @@ version = "0.6.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "287e56aac5a2b4fb25a6fb050961d157635924c8696305a5c937a76f29841a0f"
 dependencies = [
+ "ahash",
  "equivalent",
  "hashbrown 0.15.2",
+ "parking_lot",
 ]
 
 [[package]]
@@ -3099,6 +3105,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3641,6 +3660,12 @@ name = "unicode-segmentation"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"
