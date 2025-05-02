@@ -54,5 +54,5 @@ When the snapshot changes we need to clear the kernel page cache and our file ca
 Possible optimizations:
 
 - only update file cache on open (if snapshot changed)
-- similarily only trigger inode invalidation on open if snapshot changed
+- similarly only trigger inode invalidation on open if snapshot changed
   - actually this might not be needed, I think the kernel always clears the page cache for an inode on open
