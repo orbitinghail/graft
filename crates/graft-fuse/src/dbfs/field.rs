@@ -202,8 +202,6 @@ impl FieldBuilder {
     }
 
     fn push(&mut self, field: FieldRow) {
-        println!("pushing field: {field:?}");
-
         self.rollup_to(field.parent_id);
 
         let Some((id, _, container)) = self.stack.last_mut() else {

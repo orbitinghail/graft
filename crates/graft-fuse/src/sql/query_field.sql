@@ -1,5 +1,5 @@
 WITH RECURSIVE descendants(id, parent_id, kind, name_or_index, value, path) AS (
-    SELECT f.id, f.parent_id, f.kind, f.name_or_index, f.value, CAST(f.id AS TEXT)
+    SELECT f.id, f.parent_id, f.kind, f.name_or_index, f.value, f.id
     FROM field f
     WHERE f.id = :id
 

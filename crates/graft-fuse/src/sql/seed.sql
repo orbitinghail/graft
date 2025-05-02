@@ -47,5 +47,6 @@ INSERT INTO
 VALUES
     (1, 1, 1, 'root', NULL),
     (2, 1, 2, 'sample-1.json', 1000),
-    (3, 1, 2, 'sample-2.toml', 1100),
-    (4, 1, 2, 'sample-3.yaml', 1200);
+    (3, 1, 2, 'sample-1.toml', 1000), -- same contents different format
+    (4, 1, 2, 'sample-2.toml', 1100),
+    (5, 1, 2, 'sample-3.yaml', 1200);
