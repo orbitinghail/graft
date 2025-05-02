@@ -10,4 +10,4 @@ The Graft SQLite Extension (`libgraft`) is a native SQLite extension that works 
 - asynchronous replication to object storage
 - stateless lazy partial replicas on the edge and in devices
 - serializable snapshot isolation
-- point in time restore
+- point-in-time restore
