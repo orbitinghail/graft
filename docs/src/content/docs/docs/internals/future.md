@@ -1,6 +1,54 @@
-# Future Work
+---
+title: Future work
+description: What's next for Graft development?
+---
 
-This file documents future work that has been punted to help accelerate Graft to a MvP.
+This page documents the direction of Graft development. As ideas on this page are made more concrete they will be migrated to GitHub issues and scheduled for development. Thus, if you'd like to look at what's being worked on, visit the [Graft Issue Tracker].
+
+[Graft Issue Tracker]: https://github.com/orbitinghail/graft/issues
+
+## WebAssembly support
+
+Supporting WebAssembly (Wasm) would allow Graft to be used in the browser. I’d like to eventually support SQLite’s official Wasm build, wa-sqlite, and sql.js.
+
+## Integrating Graft and SQLSync
+
+Once Graft supports Wasm, integrating it with [SQLSync] will be straightforward. The plan is to split out SQLSync’s mutation, rebase, and query subscription layers so it can lay on top of a database using Graft replication.
+
+[SQLSync]: https://sqlsync.dev
+
+## Conflict handling
+
+Graft should offer built-in conflict resolution strategies and extension points so applications can control how conflicts are handled. The initial built-in strategy will automatically merge non-overlapping transactions. While this relaxes global consistency to optimistic snapshot isolation, it can significantly boost performance in collaborative and multiplayer scenarios.
+
+## Low-latency writes
+
+Currently Graft provides high-latency writes at low cost. For some workloads, it may be desirable to tweak this relationship and pay higher cost for lower latency. To do this we will need a durable storage layer with lower latency than object storage.
+
+This can be addressed in a number of ways:
+
+- Experiment with S3 express zone
+- Buffer writes in a low-latency durable consensus group sitting in front of object storage.
+
+One way to build this is by combining a consensus replication layer with semi-durable storage. Fly.io offers non-replicated nvme drives. We only need to buffer around 1 second of writes per active volume while we wait for those writes to be committed to object storage. We also can aggressively coalesce transactions with the current txn model offered by graft, which means we may not need the full lsn based infrastructure used by the page store.
+
+**insight:** the absolute simplest thing we can do is simply return the segment id a write _will be written to_ before committing the segment to object storage. One way to provide durability for this operation is to have the pageserver simply coordinate with one or two other pageservers on a per in-progress segment basis. Each of the page servers can commit to object storage independently, and let object storage handle deduplication (since they are all committing to the same key with the same contents, we don't care who wins and object store will either reject or overwrite accordingly). This increases the costs linearly based on the number of additional writers, but the absolute costs are still very small.
+
+Technically, the above write protocol can be coordinated entirely by the client if the pageservers simply had an optimistic write mode. The only difference being that the client would have to handle PageIdxs being stored in potentially multiple potentially overlapping segments which would have to be deduplicated later at query time. Letting the pageserver coordinate this process makes things easier for the rest of the system.
+
+## Garbage collection, checkpointing, and compaction
+
+These features are needed to maximize query performance, minimize wasted space, and enable deleting data permanently. They all relate to Graft’s decision to store data directly in object storage, and batch changes together into files called segments.
+
+## Authentication and authorization
+
+This is a fairly broad project that encompasses everything from accounts on the Graft managed service to fine-grained authorization to read/write Volumes. Currently the Graft backend supports [PASETO token authentication][auth].
+
+[auth]: /docs/backend/auth/
+
+## Volume forking
+
+The Graft service is already setup to perform zero-copy forks, since it can easily copy Segment references over to the new Volume. However, to perform a local fork, Graft currently needs to copy all of the pages. This could be solved by layering volumes locally and allowing reads to fall through or changing how pages are addressed locally.
 
 ## Volume Router
 
@@ -75,16 +123,6 @@ This also adds complexity to GC, as a base page can't be deleted until all delta
 One solution to these issues is to always base XOR deltas off the last checkpoint. Thus a writer only needs to retrieve one segment (the portion of the checkpoint containing the PageIdx in question) and can quickly decide if storing a XOR delta is worthwhile (i.e. 0s out X% of the bytes). GC thus knows that a checkpoint can't be deleted until no snapshots exist between the checkpoint and the subsequent one.
 
 For XOR delta compression to work we also need to remove the runs of zeros in the resulting segment. We can either leverage a generic compression library when uploading/downloading the segment, or we can employ RLE/Sparse compression on each page to simply strip out all the zeros. Or compress each page with something like LZ to strip out patterns. Notably this will affect read performance as well as potentially affecting our ability to read pages directly via content-range requests.
-
-## Low-latency writes
-
-Currently Graft provides high-latency writes at low cost. For some workloads, it may be desirable to tweak this relationship and pay higher cost for lower latency. To do this we will need a durable storage layer with lower latency than object storage.
-
-One way to build this is by combining a consensus replication layer with semi-durable storage. Fly.io offers non-replicated nvme drives. We only need to buffer around 1 second of writes per active volume while we wait for those writes to be committed to object storage. We also can aggressively coalesce transactions with the current txn model offered by graft, which means we may not need the full lsn based infrastructure used by the page store.
-
-**insight:** the absolute simplest thing we can do is simply return the segment id a write _will be written to_ before committing the segment to object storage. One way to provide durability for this operation is to have the pageserver simply coordinate with one or two other pageservers on a per in-progress segment basis. Each of the page servers can commit to object storage independently, and let object storage handle deduplication (since they are all committing to the same key with the same contents, we don't care who wins and object store will either reject or overwrite accordingly). This increases the costs linearly based on the number of additional writers, but the absolute costs are still very small.
-
-Technically, the above write protocol can be coordinated entirely by the client if the pageservers simply had an optimistic write mode. The only difference being that the client would have to handle PageIdxs being stored in potentially multiple potentially overlapping segments which would have to be deduplicated later at query time. Letting the pageserver coordinate this process makes things easier for the rest of the system.
 
 ## Request Hedging
 
