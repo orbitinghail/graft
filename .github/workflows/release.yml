@@ -59,7 +59,7 @@ jobs:
       actions: read
 
     steps:
-      - uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5 # v2
+      - uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e # v2
         id: app-token
         with:
           app-id: ${{ secrets.GH_APP_ID }}
@@ -112,7 +112,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c7f87aa956e4c323abf06d5dec078e358f6b4d04 # v6
+        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca # v6
         with:
           enable-cache: false
           cache-dependency-glob: ""
