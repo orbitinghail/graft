@@ -72,6 +72,7 @@ export default defineConfig({
       sidebar: [
         {
           label: "About",
+          collapsed: true,
           items: [
             { label: "Introduction", slug: "docs/about" },
             { label: "Comparison", slug: "docs/about/comparison" },
@@ -80,6 +81,7 @@ export default defineConfig({
         },
         {
           label: "Concepts",
+          collapsed: true,
           items: [
             { label: "Volumes", slug: "docs/concepts/volumes" },
             { label: "Consistency", slug: "docs/concepts/consistency" },
@@ -87,6 +89,7 @@ export default defineConfig({
         },
         {
           label: "SQLite extension",
+          collapsed: true,
           items: [
             { label: "Overview", slug: "docs/sqlite" },
             { label: "Compatibility", slug: "docs/sqlite/compatibility" },
@@ -101,6 +104,7 @@ export default defineConfig({
         },
         {
           label: "Backend",
+          collapsed: true,
           items: [
             { label: "Overview", slug: "docs/backend" },
             { label: "Deploy", slug: "docs/backend/deploy" },
@@ -113,6 +117,11 @@ export default defineConfig({
           label: "Internals",
           collapsed: true,
           autogenerate: { directory: "docs/internals" },
+        },
+        {
+          label: "RFCs",
+          collapsed: true,
+          autogenerate: { directory: "docs/rfcs" },
         },
       ],
     }),

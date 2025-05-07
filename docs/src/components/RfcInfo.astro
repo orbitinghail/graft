@@ -1,0 +1,41 @@
+---
+interface Props {
+  id: number;
+  slug: string;
+  startDate: Date;
+  issue: number | null;
+  pr: number | null;
+}
+
+import { Aside } from "@astrojs/starlight/components";
+
+const issueUrl = `https://github.com/orbitinghail/graft/issues/${Astro.props.issue}`;
+const prUrl = `https://github.com/orbitinghail/graft/pull/${Astro.props.pr}`;
+const date = new Date(Astro.props.startDate).toISOString().split("T")[0];
+---
+
+<Aside title="Details">
+  <ul>
+    <li><b>Start Date:</b> {date}</li>
+    {
+      Astro.props.issue && (
+        <li>
+          <b>Issue:</b>{" "}
+          <a href={issueUrl} target="_blank" rel="noopener noreferrer">
+            <code>orbitinghail/graft#{Astro.props.issue}</code>
+          </a>
+        </li>
+      )
+    }
+    {
+      Astro.props.pr && (
+        <li>
+          <b>PR:</b>{" "}
+          <a href={prUrl} target="_blank" rel="noopener noreferrer">
+            <code>orbitinghail/graft#{Astro.props.pr}</code>
+          </a>
+        </li>
+      )
+    }
+  </ul>
+</Aside>
