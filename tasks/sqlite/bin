@@ -42,6 +42,7 @@ if [ ! -f "${SQLITE_BIN}" ]; then
         cd "${SQLITE_DIR}/sqlite-autoconf-${SQLITE_VERSION}"
         export CFLAGS="
             -DSQLITE_ENABLE_DBSTAT_VTAB
+            -DSQLITE_ENABLE_BYTECODE_VTAB
             -DSQLITE_ENABLE_FTS4
             -DSQLITE_ENABLE_FTS5
             -DSQLITE_ENABLE_MATH_FUNCTIONS
