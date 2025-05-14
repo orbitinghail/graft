@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linkChecker:
+  checkDocs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -46,7 +46,8 @@ jobs:
       - name: Check links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --user-agent 'curl/8.13.0' --no-progress --include-fragments --root-dir $PWD/docs/dist docs/dist
+          workingDirectory: docs
+          args: --user-agent 'curl/8.13.0' --no-progress --include-fragments --root-dir $PWD/dist dist
           failIfEmpty: true
           format: markdown
           jobSummary: true
