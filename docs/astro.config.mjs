@@ -3,7 +3,6 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import starlightLlmsTxt from "starlight-llms-txt";
 import starlightDocSearch from "@astrojs/starlight-docsearch";
-import starlightLinksValidator from "starlight-links-validator";
 import sitemap from "@astrojs/sitemap";
 
 // https://astro.build/config
@@ -13,7 +12,6 @@ export default defineConfig({
     starlight({
       plugins: [
         starlightLlmsTxt(),
-        starlightLinksValidator(),
         starlightDocSearch({
           clientOptionsModule: "./src/config/docsearch.ts",
         }),
