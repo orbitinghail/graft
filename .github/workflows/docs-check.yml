@@ -1,0 +1,54 @@
+name: Check docs
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "docs/**"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "docs/**"
+  workflow_dispatch:
+  schedule:
+    # Run every day at 7:00 AM UTC = 12:00 AM PST
+    - cron: " 0  7  *  *  *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checkDocs:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+          persist-credentials: false
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          version: 10.11
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          cache-dependency-path: "docs"
+          node-version: "23"
+          cache: "pnpm"
+
+      - name: Build docs
+        working-directory: docs
+        run: |
+          pnpm install
+          pnpm build
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          workingDirectory: docs
+          args: --user-agent 'curl/8.13.0' --no-progress --include-fragments --root-dir $PWD/dist dist
+          failIfEmpty: true
+          format: markdown
+          jobSummary: true
+          token: ${{ secrets.GITHUB_TOKEN }}
