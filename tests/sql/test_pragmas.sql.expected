@@ -70,20 +70,6 @@ pragma graft_pages;
 | 14       | 6      | available |
 +-------------------------------+
 pragma graft_pull;
-pragma graft_sync=false;
-pragma graft_sync_errors;
-+---------------------+
-| Recent sync errors: |
-+---------------------+
-| Recent sync errors: |
-+---------------------+
-pragma graft_reset;
-pragma graft_version;
-+----------------------+
-| Graft Version: 0.1.4 |
-+----------------------+
-| Graft Version: 0.1.4 |
-+----------------------+
 
 -- check pragmas on connection 1
 .connection 1
@@ -125,20 +111,6 @@ pragma graft_pages;
 | 14       | 6      | available |
 +-------------------------------+
 pragma graft_pull;
-pragma graft_sync=false;
-pragma graft_sync_errors;
-+---------------------+
-| Recent sync errors: |
-+---------------------+
-| Recent sync errors: |
-+---------------------+
-pragma graft_reset;
-pragma graft_version;
-+----------------------+
-| Graft Version: 0.1.4 |
-+----------------------+
-| Graft Version: 0.1.4 |
-+----------------------+
 
 -- open a snapshot on connection 1
 begin;

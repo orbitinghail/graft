@@ -18,10 +18,6 @@ pragma graft_status;
 pragma graft_snapshot;
 pragma graft_pages;
 pragma graft_pull;
-pragma graft_sync=false;
-pragma graft_sync_errors;
-pragma graft_reset;
-pragma graft_version;
 
 -- check pragmas on connection 1
 .connection 1
@@ -29,10 +25,6 @@ pragma graft_status;
 pragma graft_snapshot;
 pragma graft_pages;
 pragma graft_pull;
-pragma graft_sync=false;
-pragma graft_sync_errors;
-pragma graft_reset;
-pragma graft_version;
 
 -- open a snapshot on connection 1
 begin;
