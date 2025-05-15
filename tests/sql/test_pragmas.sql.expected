@@ -1,0 +1,249 @@
+-- initialize two connections to the same database
+.connection 0
+.open file:Gonv3h382yN51uu51uyaj9?vfs=graft
+pragma graft_status;
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
+| Volume ID: Gonv3h382yN51uu51uyaj9 |
+| Current snapshot: None            |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
+
+.connection 1
+.open file:Gonv3h382yN51uu51uyaj9?vfs=graft
+pragma graft_status;
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
+| Volume ID: Gonv3h382yN51uu51uyaj9 |
+| Current snapshot: None            |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
+
+-- initialize the db on connection 0
+.connection 0
+.echo off
+
+-- check pragmas
+pragma graft_status;
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
+| Volume ID: Gonv3h382yN51uu51uyaj9 |
+| Current snapshot: Snapshot[6;14]  |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
+pragma graft_snapshot;
++----------------+
+| Snapshot[6;14] |
++----------------+
+| Snapshot[6;14] |
++----------------+
+pragma graft_pages;
++-------------------------------+
+|   pageno   | lsn    | state   |
++-------------------------------+
+| pageno   | lsn    | state     |
+| 1        | 6      | available |
+| 2        | 6      | available |
+| 3        | 6      | available |
+| 4        | 6      | available |
+| 5        | 6      | available |
+| 6        | 6      | available |
+| 7        | 6      | available |
+| 8        | 6      | available |
+| 9        | 6      | available |
+| 10       | 6      | available |
+| 11       | 6      | available |
+| 12       | 6      | available |
+| 13       | 6      | available |
+| 14       | 6      | available |
++-------------------------------+
+pragma graft_pull;
+pragma graft_sync=false;
+pragma graft_sync_errors;
++---------------------+
+| Recent sync errors: |
++---------------------+
+| Recent sync errors: |
++---------------------+
+pragma graft_reset;
+pragma graft_version;
++----------------------+
+| Graft Version: 0.1.4 |
++----------------------+
+| Graft Version: 0.1.4 |
++----------------------+
+
+-- check pragmas on connection 1
+.connection 1
+pragma graft_status;
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
+| Volume ID: Gonv3h382yN51uu51uyaj9 |
+| Current snapshot: Snapshot[6;14]  |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
+pragma graft_snapshot;
++----------------+
+| Snapshot[6;14] |
++----------------+
+| Snapshot[6;14] |
++----------------+
+pragma graft_pages;
++-------------------------------+
+|   pageno   | lsn    | state   |
++-------------------------------+
+| pageno   | lsn    | state     |
+| 1        | 6      | available |
+| 2        | 6      | available |
+| 3        | 6      | available |
+| 4        | 6      | available |
+| 5        | 6      | available |
+| 6        | 6      | available |
+| 7        | 6      | available |
+| 8        | 6      | available |
+| 9        | 6      | available |
+| 10       | 6      | available |
+| 11       | 6      | available |
+| 12       | 6      | available |
+| 13       | 6      | available |
+| 14       | 6      | available |
++-------------------------------+
+pragma graft_pull;
+pragma graft_sync=false;
+pragma graft_sync_errors;
++---------------------+
+| Recent sync errors: |
++---------------------+
+| Recent sync errors: |
++---------------------+
+pragma graft_reset;
+pragma graft_version;
++----------------------+
+| Graft Version: 0.1.4 |
++----------------------+
+| Graft Version: 0.1.4 |
++----------------------+
+
+-- open a snapshot on connection 1
+begin;
+select count(*) from ledger;
++----------+
+| count(*) |
++----------+
+| 1000     |
++----------+
+pragma graft_snapshot;
++----------------+
+| Snapshot[6;14] |
++----------------+
+| Snapshot[6;14] |
++----------------+
+
+-- switch to connection 0, write something, check snapshot, switch back
+.connection 0
+INSERT INTO ledger (account_id, amount) VALUES (1, -10), (2, 10);
+pragma graft_snapshot;
++----------------+
+| Snapshot[7;14] |
++----------------+
+| Snapshot[7;14] |
++----------------+
+.connection 1
+
+-- check that connection 1 pragmas can't see the new snapshot
+pragma graft_status;
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
+| Volume ID: Gonv3h382yN51uu51uyaj9 |
+| Current snapshot: Snapshot[6;14]  |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
+pragma graft_snapshot;
++----------------+
+| Snapshot[6;14] |
++----------------+
+| Snapshot[6;14] |
++----------------+
+pragma graft_pages;
++-------------------------------+
+|   pageno   | lsn    | state   |
++-------------------------------+
+| pageno   | lsn    | state     |
+| 1        | 6      | available |
+| 2        | 6      | available |
+| 3        | 6      | available |
+| 4        | 6      | available |
+| 5        | 6      | available |
+| 6        | 6      | available |
+| 7        | 6      | available |
+| 8        | 6      | available |
+| 9        | 6      | available |
+| 10       | 6      | available |
+| 11       | 6      | available |
+| 12       | 6      | available |
+| 13       | 6      | available |
+| 14       | 6      | available |
++-------------------------------+
+
+-- close the snapshot and check that we can see the latest snapshot
+commit;
+
+pragma graft_status;
++-----------------------------------+
+|           Graft Status            |
++-----------------------------------+
+| Graft Status                      |
+| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
+| Volume ID: Gonv3h382yN51uu51uyaj9 |
+| Current snapshot: Snapshot[7;14]  |
+| Autosync: false                   |
+| Volume status: Ok                 |
++-----------------------------------+
+pragma graft_snapshot;
++----------------+
+| Snapshot[7;14] |
++----------------+
+| Snapshot[7;14] |
++----------------+
+pragma graft_pages;
++-------------------------------+
+|   pageno   | lsn    | state   |
++-------------------------------+
+| pageno   | lsn    | state     |
+| 1        | 6      | available |
+| 2        | 6      | available |
+| 3        | 6      | available |
+| 4        | 7      | available |
+| 5        | 6      | available |
+| 6        | 7      | available |
+| 7        | 6      | available |
+| 8        | 6      | available |
+| 9        | 6      | available |
+| 10       | 6      | available |
+| 11       | 7      | available |
+| 12       | 6      | available |
+| 13       | 7      | available |
+| 14       | 6      | available |
++-------------------------------+
+
+SQLite Exit Code = 0

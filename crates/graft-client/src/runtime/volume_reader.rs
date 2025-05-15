@@ -137,7 +137,7 @@ fn fetch_page<O: Oracle>(
     local_lsn: LSN,
     pageidx: PageIdx,
 ) -> Result<Page, ClientErr> {
-    let span = tracing::debug_span!(
+    let span = tracing::trace_span!(
         "fetching page from pagestore",
         ?vid,
         %remote_lsn,

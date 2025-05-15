@@ -21,7 +21,7 @@ Reports the status of every page accessible by the current connection's Snapshot
 
 #### **`pragma graft_pull`**
 
-Pulls every page accessible by the current connectin's Snapshot from the server.
+Pulls every page accessible by the current connection's Snapshot from the server.
 
 #### **`pragma graft_sync = true|false`**
 
