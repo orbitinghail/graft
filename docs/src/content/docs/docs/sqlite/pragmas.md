@@ -17,7 +17,11 @@ Returns a compressed description of the current connections Snapshot.
 
 #### **`pragma graft_pages`**
 
-Reports the version and cache status of every page accessible by the current connection's Snapshot.
+Reports the status of every page accessible by the current connection's Snapshot.
+
+#### **`pragma graft_pull`**
+
+Pulls every page accessible by the current connection's Snapshot from the server.
 
 #### **`pragma graft_sync = true|false`**
 

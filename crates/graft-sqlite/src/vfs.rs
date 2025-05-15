@@ -253,7 +253,7 @@ impl Vfs for GraftVfs {
                     if vol_file.opts().delete_on_close() {
                         // TODO: do we want to actually delete volumes? or mark them for deletion?
                         self.runtime
-                            .update_volume_config(vol_file.handle().vid(), |conf| {
+                            .update_volume_config(vol_file.vid(), |conf| {
                                 conf.with_sync(SyncDirection::Disabled)
                             })
                             .or_into_ctx()?;

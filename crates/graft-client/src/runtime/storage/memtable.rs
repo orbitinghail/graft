@@ -28,6 +28,10 @@ impl Memtable {
     pub fn get(&self, pageidx: PageIdx) -> Option<&Page> {
         self.pages.get(&pageidx)
     }
+
+    pub fn contains(&self, pageidx: PageIdx) -> bool {
+        self.pages.contains_key(&pageidx)
+    }
 }
 
 impl IntoIterator for Memtable {
