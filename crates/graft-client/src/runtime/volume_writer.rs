@@ -4,7 +4,7 @@ use graft_core::{PageIdx, VolumeId, page::Page, page_count::PageCount};
 use crate::{ClientErr, oracle::Oracle};
 
 use super::{
-    storage::{memtable::Memtable, snapshot::Snapshot},
+    storage::{memtable::Memtable, page::PageStatus, snapshot::Snapshot},
     volume_reader::{VolumeRead, VolumeReader},
 };
 
@@ -65,6 +65,14 @@ impl VolumeRead for VolumeWriter {
             return Ok(page.clone());
         }
         self.reader.read(oracle, pageidx)
+    }
+
+    /// Read a page's status; supports read your own writes (RYOW)
+    fn status(&self, pageidx: PageIdx) -> Result<PageStatus, ClientErr> {
+        if self.memtable.contains(pageidx) {
+            return Ok(PageStatus::Dirty);
+        }
+        self.reader.status(pageidx)
     }
 }
 

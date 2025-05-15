@@ -75,9 +75,13 @@ impl NetClient {
         uri: Uri,
         msg: Msg,
     ) -> Result<Resp, Culprit<ClientErr>> {
-        let span =
-            tracing::trace_span!("NetClient::send", path = uri.path(), status = field::Empty)
-                .entered();
+        let span = tracing::trace_span!(
+            "NetClient::send",
+            path = uri.path(),
+            status = field::Empty,
+            err = field::Empty
+        )
+        .entered();
 
         let req = self
             .agent
@@ -90,7 +94,13 @@ impl NetClient {
             req
         };
 
-        let resp = req.send(&msg.encode_to_vec())?;
+        let resp = match req.send(&msg.encode_to_vec()) {
+            Ok(resp) => resp,
+            Err(err) => {
+                span.record("err", err.to_string());
+                return Err(err.into());
+            }
+        };
 
         let status = resp.status();
         span.record("status", status.as_u16());

@@ -290,6 +290,13 @@ impl Actions {
                 );
             }
             Actions::IntegrityCheck => {
+                // ensure we have a full copy of the database before running
+                // integrity_check. this is because integrity check swallows IO
+                // errors which prevents us from detecting when Antithesis is
+                // injecting network faults while fetching pages, and retrying
+                // the workload.
+                txn.execute("PRAGMA graft_pull", [])?;
+
                 let mut results: Vec<String> = vec![];
                 txn.pragma_query(None, "integrity_check", |r| {
                     results.push(r.get(0)?);

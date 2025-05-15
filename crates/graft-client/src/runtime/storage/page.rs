@@ -168,3 +168,15 @@ impl From<Page> for PageValue {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PageStatus {
+    /// The page is not available locally
+    Pending,
+    /// The page is empty
+    Empty(Option<LSN>),
+    /// The page is available locally
+    Available(LSN),
+    /// The page is dirty
+    Dirty,
+}

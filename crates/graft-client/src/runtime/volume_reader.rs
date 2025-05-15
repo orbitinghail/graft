@@ -1,4 +1,4 @@
-use std::{collections::HashMap, iter::once, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, iter::once, sync::Arc};
 
 use culprit::{Result, ResultExt};
 
@@ -8,11 +8,16 @@ use graft_core::{
     page::{EMPTY_PAGE, Page},
 };
 use splinter_rs::Splinter;
+use tracing::field;
 
 use crate::{ClientErr, ClientPair, oracle::Oracle};
 
 use super::{
-    storage::{Storage, page::PageValue, snapshot::Snapshot},
+    storage::{
+        Storage,
+        page::{PageStatus, PageValue},
+        snapshot::Snapshot,
+    },
     volume_writer::VolumeWriter,
 };
 
@@ -24,6 +29,9 @@ pub trait VolumeRead {
 
     /// Read a page from the snapshot
     fn read<O: Oracle>(&self, oracle: &mut O, pageidx: PageIdx) -> Result<Page, ClientErr>;
+
+    /// Retrieve a page's status
+    fn status(&self, pageidx: PageIdx) -> Result<PageStatus, ClientErr>;
 }
 
 #[derive(Debug, Clone)]
@@ -52,18 +60,6 @@ impl VolumeReader {
     /// decompose this reader into snapshot and storage
     pub(crate) fn into_parts(self) -> (VolumeId, Option<Snapshot>, Arc<ClientPair>, Arc<Storage>) {
         (self.vid, self.snapshot, self.clients, self.storage)
-    }
-
-    /// Read a page from the local page cache
-    pub fn read_cached(&self, pageidx: PageIdx) -> Result<(Option<LSN>, PageValue), ClientErr> {
-        if let Some(snapshot) = self.snapshot() {
-            self.storage
-                .read(self.vid(), snapshot.local(), pageidx)
-                .map(|(lsn, v)| (Some(lsn), v))
-                .or_into_ctx()
-        } else {
-            Ok((None, PageValue::Empty))
-        }
     }
 }
 
@@ -114,6 +110,22 @@ impl VolumeRead for VolumeReader {
             Ok(EMPTY_PAGE)
         }
     }
+
+    fn status(&self, pageidx: PageIdx) -> Result<PageStatus, ClientErr> {
+        if let Some(snapshot) = self.snapshot() {
+            match self
+                .storage
+                .read(self.vid(), snapshot.local(), pageidx)
+                .or_into_ctx()?
+            {
+                (lsn, PageValue::Available(_)) => Ok(PageStatus::Available(lsn)),
+                (lsn, PageValue::Empty) => Ok(PageStatus::Empty(Some(lsn))),
+                (_, PageValue::Pending) => Ok(PageStatus::Pending),
+            }
+        } else {
+            Ok(PageStatus::Empty(None))
+        }
+    }
 }
 
 fn fetch_page<O: Oracle>(
@@ -125,12 +137,13 @@ fn fetch_page<O: Oracle>(
     local_lsn: LSN,
     pageidx: PageIdx,
 ) -> Result<Page, ClientErr> {
-    let _span = tracing::trace_span!(
+    let span = tracing::debug_span!(
         "fetching page from pagestore",
         ?vid,
         %remote_lsn,
         %local_lsn,
         %pageidx,
+        num_pages=field::Empty,
     )
     .entered();
 
@@ -145,6 +158,8 @@ fn fetch_page<O: Oracle>(
             pages.insert(idx, (lsn, PageValue::Empty));
         }
     }
+
+    span.record("num_pages", pages.len());
 
     // process client results and update the hashmap
     let response = clients
@@ -177,4 +192,39 @@ fn fetch_page<O: Oracle>(
 
     // return the requested page
     Ok(requested_page)
+}
+
+pub enum VolumeReadRef<'a> {
+    Reader(Cow<'a, VolumeReader>),
+    Writer(&'a VolumeWriter),
+}
+
+impl VolumeRead for VolumeReadRef<'_> {
+    fn vid(&self) -> &VolumeId {
+        match self {
+            VolumeReadRef::Reader(reader) => reader.vid(),
+            VolumeReadRef::Writer(writer) => writer.vid(),
+        }
+    }
+
+    fn snapshot(&self) -> Option<&Snapshot> {
+        match self {
+            VolumeReadRef::Reader(reader) => reader.snapshot(),
+            VolumeReadRef::Writer(writer) => writer.snapshot(),
+        }
+    }
+
+    fn read<O: Oracle>(&self, oracle: &mut O, pageidx: PageIdx) -> Result<Page, ClientErr> {
+        match self {
+            VolumeReadRef::Reader(reader) => reader.read(oracle, pageidx),
+            VolumeReadRef::Writer(writer) => writer.read(oracle, pageidx),
+        }
+    }
+
+    fn status(&self, pageidx: PageIdx) -> Result<PageStatus, ClientErr> {
+        match self {
+            VolumeReadRef::Reader(reader) => reader.status(pageidx),
+            VolumeReadRef::Writer(writer) => writer.status(pageidx),
+        }
+    }
 }

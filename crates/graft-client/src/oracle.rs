@@ -37,7 +37,7 @@ impl Oracle for NoopOracle {
 /// USENIX Association, USA.
 ///
 /// [1]: https://www.usenix.org/system/files/atc20-maruf.pdf
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct LeapOracle {
     /// the last observed read
     last_read: PageIdx,

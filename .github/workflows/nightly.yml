@@ -160,4 +160,4 @@ jobs:
           description: "github actions: ${{ github.sha }}: ${{ steps.commit_summary.outputs.COMMIT_SUMMARY }}"
           email_recipients: antithesis-results@orbitinghail.dev
           additional_parameters: |-
-            antithesis.duration=${{inputs.duration || 300}}
+            antithesis.duration=${{inputs.duration || 420}}

@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher},
     mem,
@@ -12,12 +13,12 @@ use graft_client::{
     runtime::{
         storage::snapshot::Snapshot,
         volume_handle::VolumeHandle,
-        volume_reader::{VolumeRead, VolumeReader},
+        volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
         volume_writer::{VolumeWrite, VolumeWriter},
     },
 };
 use graft_core::{
-    PageIdx,
+    PageIdx, VolumeId,
     page::{PAGESIZE, Page},
     page_count::PageCount,
 };
@@ -79,11 +80,37 @@ impl VolFile {
 
     pub fn snapshot_or_latest(&self) -> Result<Option<Snapshot>, ErrCtx> {
         match &self.state {
-            VolFileState::Idle => self.handle().snapshot().or_into_ctx(),
+            VolFileState::Idle => self.handle.snapshot().or_into_ctx(),
             VolFileState::Shared { reader, .. } => Ok(reader.snapshot().cloned()),
             VolFileState::Reserved { writer, .. } => Ok(writer.snapshot().cloned()),
             VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
         }
+    }
+
+    pub fn reader(&self) -> Result<VolumeReadRef<'_>, ErrCtx> {
+        match &self.state {
+            VolFileState::Idle => Ok(VolumeReadRef::Reader(Cow::Owned(
+                self.handle.reader().or_into_ctx()?,
+            ))),
+            VolFileState::Shared { reader, .. } => Ok(VolumeReadRef::Reader(Cow::Borrowed(reader))),
+            VolFileState::Reserved { writer, .. } => Ok(VolumeReadRef::Writer(writer)),
+            VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
+        }
+    }
+
+    /// Pull all of the pages accessible in the current snapshot or latest
+    pub fn pull(&mut self) -> Result<(), ErrCtx> {
+        let mut oracle = self.oracle.as_ref().clone();
+        let reader = self.reader()?;
+        let pages = reader.snapshot().map(|s| s.pages()).unwrap_or_default();
+        for pageidx in pages.iter() {
+            reader.read(&mut oracle, pageidx).or_into_ctx()?;
+        }
+        Ok(())
+    }
+
+    pub fn vid(&self) -> &VolumeId {
+        self.handle.vid()
     }
 
     pub fn handle(&self) -> &VolumeHandle {
@@ -283,7 +310,7 @@ impl VfsFile for VolFile {
                 // sqlite sometimes reads the database header without holding a
                 // lock, in this case we are expected to read from the latest
                 // snapshot
-                self.handle()
+                self.handle
                     .reader()
                     .or_into_ctx()?
                     .read(self.oracle.as_mut(), page_idx)

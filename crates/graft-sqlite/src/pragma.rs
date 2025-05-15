@@ -1,5 +1,5 @@
 use graft_client::runtime::{
-    runtime::Runtime, storage::page::PageValue, volume_reader::VolumeRead,
+    runtime::Runtime, storage::page::PageStatus, volume_reader::VolumeRead,
 };
 use sqlite_plugin::vfs::{Pragma, PragmaErr};
 use std::{fmt::Write, time::Instant};
@@ -15,6 +15,9 @@ pub enum GraftPragma {
 
     /// `pragma graft_pages;`
     Pages,
+
+    /// `pragma graft_pull;`
+    Pull,
 
     /// `pragma graft_sync = true|false;`
     SetAutosync(bool),
@@ -39,6 +42,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     "status" => Ok(GraftPragma::Status),
                     "snapshot" => Ok(GraftPragma::Snapshot),
                     "pages" => Ok(GraftPragma::Pages),
+                    "pull" => Ok(GraftPragma::Pull),
                     "reset" => Ok(GraftPragma::Reset),
                     "sync" => {
                         let arg = p.arg.ok_or(PragmaErr::required_arg(p))?;
@@ -64,7 +68,7 @@ impl GraftPragma {
             GraftPragma::Status => {
                 let mut out = "Graft Status\n".to_string();
                 writeln!(&mut out, "Client ID: {}", runtime.cid())?;
-                writeln!(&mut out, "Volume ID: {}", file.handle().vid())?;
+                writeln!(&mut out, "Volume ID: {}", file.vid())?;
                 if let Some(snapshot) = file.snapshot_or_latest()? {
                     writeln!(&mut out, "Current snapshot: {snapshot}")?;
                 } else {
@@ -94,26 +98,39 @@ impl GraftPragma {
             }
             GraftPragma::Pages => {
                 let mut out = format!("{:<8} | {:<6} | state\n", "pageno", "lsn");
-                let reader = file.handle().reader()?;
+                let reader = file.reader()?;
+
+                macro_rules! fmt_lsn {
+                    ($lsn:expr) => {
+                        match $lsn {
+                            Some(lsn) => format!("{:<6}", lsn),
+                            None => format!("{:<6}", "_"),
+                        }
+                    };
+                }
+
+                let snapshot_lsn = reader.snapshot().map(|s| s.local());
                 let pages = reader.snapshot().map(|s| s.pages()).unwrap_or_default();
                 for pageidx in pages.iter() {
-                    let (lsn, page) = reader.read_cached(pageidx)?;
-                    writeln!(
-                        &mut out,
-                        "{:<8} | {:<6} | {}",
-                        pageidx.to_u32(),
-                        match lsn {
-                            Some(lsn) => lsn.to_string(),
-                            None => "None".to_string(),
-                        },
-                        match page {
-                            PageValue::Pending => "pending",
-                            PageValue::Empty => "empty",
-                            PageValue::Available(_) => "cached",
+                    write!(&mut out, "{:<8} | ", pageidx.to_u32())?;
+
+                    let status = reader.status(pageidx)?;
+                    match status {
+                        PageStatus::Pending => {
+                            writeln!(&mut out, "{} | pending", fmt_lsn!(snapshot_lsn))?
                         }
-                    )?;
+                        PageStatus::Empty(lsn) => writeln!(&mut out, "{} | empty", fmt_lsn!(lsn))?,
+                        PageStatus::Available(lsn) => {
+                            writeln!(&mut out, "{} | available", fmt_lsn!(Some(lsn)))?
+                        }
+                        PageStatus::Dirty => writeln!(&mut out, "{:<6} | dirty", "_")?,
+                    }
                 }
                 Ok(Some(out))
+            }
+            GraftPragma::Pull => {
+                file.pull()?;
+                Ok(None)
             }
             GraftPragma::Reset => {
                 file.handle().reset_to_remote()?;
