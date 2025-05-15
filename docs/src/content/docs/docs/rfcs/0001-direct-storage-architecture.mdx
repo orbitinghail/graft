@@ -1,0 +1,118 @@
+---
+title: 0001 - Direct Storage Architecture
+rfc:
+  id: 0001
+  slug: direct-storage-architecture
+  startDate: 2025-05-14
+  issue: ~
+  pr: ~
+---
+
+import RfcInfo from "@components/RfcInfo.astro";
+
+<RfcInfo {...frontmatter.rfc} />
+
+Build a new Graft runtime which directly interfaces with blob storage, eliminating the need for the MetaStore and PageStore, and setting Graft up as a viable replacement to systems like Litestream. Graft should focus on providing best-in-class PITR, branching, and sparse replication for page-based workloads.
+
+## Motivation
+
+An overview of why we should consider making this major change to Graft's architecture.
+
+### Existing state of Graft
+
+Currently Graft requires a MetaStore and PageStore to support replication to and from blob storage. This architecture has the following advantages and disadvantages:
+
+**Advantages**
+- The MetaStore can efficiently rollup commits to fast forward clients, increasing performance and enabling instant read replicas
+- The PageStore acts as a smart cache, allowing clients to pull only the pages they need at the edge.
+- The PageStore is able to collocate writes to multiple Volumes in the same Segment, reducing cost for high write rates.
+
+**Disadvantages**
+- There is little isolation between data in different Volumes. Graft will need to roll out a comprehensive encryption + authorization layer to work for production workloads. This is a huge cost in terms of testing and engineering.
+- Users must run two services to take full advantage of Graft, this makes Graft much harder to use.
+
+### [Datasette]
+
+In a discussion with [Simon Willison] and [Alex Garcia], we talked about some of their dream features for SQLite:
+
+**Rollback database to earlier version**
+The ability to cheaply rollback a database would allow risky features like giving an LLM read/write access to your database to be built. Additionally, the ability to branch a database at a particular version may enable risk-free experimentation and testing.
+
+**Read-only replication**
+Cheap and fast read-only replication to horizontally scale a heavy query workload over multiple machines, or simply to expose data to less-trusted users without any fear of changes.
+
+**Composability with IAM permissions**
+Currently, Datasette uses IAM keys limited to a single S3 prefix to restrict Litestreams access to a single tenant's data. This ensures that a bug in Litestream can affect a single tenant in the worst case.
+
+This feature implies that data does not cross "tenant" boundaries (or in this case, the configured S3 prefix).
+
+[Datasette]: https://www.datasette.cloud/
+[Simon Willison]: https://simonwillison.net/
+[Alex Garcia]: https://alexgarcia.xyz/
+
+### Blob storage scalability
+
+In a discussion with a potential user, they expressed reservations due to the layer of indirection between the Graft client and blob storage. Their main argument was that S3 already has proved that it can handle extremely high scale. They would be more comfortable using Graft if clients connected directly to blob storage to pull changes.
+
+### New user experience
+
+Graft should work out of the box without needing additional services to run. By supporting directly interfacing with blob storage or other backends, Graft would be a much more composable client library - making it easier to embed in more places.
+
+## Guide-level Explanation
+
+A high level explanation of how this feature works, and would change the behavior of existing Graft clients such as `graft-sqlite` and `graft-fuse`.
+
+### New crate: `graft-rt`
+
+`graft-rt` implements the Graft runtime which replaces the `graft-client` and `graft-server` crates. The runtime provides access to a remote Volume Catalog, local storage, and client functionality to downstream crates like `graft-sqlite` and `graft-fuse`.
+
+**Volume Catalog**
+This subsystem provides push and pull functionality to Volume commit logs. It's designed to support multiple backends, with blob storage being the priority.
+
+**Local storage**
+This subsystem provides durable storage for the Volume Catalog, Pages, and Volume State. It's extremely similar to the existing `graft-client` storage subsystem. It uses Fjall under the hood.
+
+### New crate: `graft-proxy`
+
+- needed in first pass? or can we just set up for it in the future possibilities section?
+- lightweight cache accelerator
+- main goal is to allow replicas to more efficiently fast forward to the latest state for a volume, and also support things like volume subscriptions
+
+## Reference-level Explanation
+
+Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, edge cases, and performance implications.
+
+## Drawbacks
+
+Why should we *not* do this?
+
+## Rationale and alternatives
+
+- Why is this design the best in the space of possible designs?
+- What other designs have been considered and what is the rationale for not choosing them?
+- What is the impact of not doing this?
+
+## Prior art
+
+Discuss prior art, both the good and the bad, in relation to this proposal. A few examples of what this can include are:
+
+- Does this feature exist in other projects and what experience has their community had?
+- Papers: Are there any published papers or great posts that discuss this? If you have some relevant papers to refer to, this can serve as a more detailed theoretical background.
+
+This section is intended to encourage you as an author to think about the lessons from other projects, provide readers of your RFC with a fuller picture. If there is no prior art, that is fine - your ideas are interesting to us whether they are brand new or inspired.
+
+## Unresolved questions
+
+- What parts of the design do you expect to resolve through the RFC process before this gets merged?
+- What parts of the design do you expect to resolve through the implementation of this feature before stabilization?
+- What related issues do you consider out of scope for this RFC that could be addressed in the future independently of the solution that comes out of this RFC?
+
+## Future possibilities
+
+Think about what the natural extension and evolution of your proposal would be and how it would affect the project as a whole in a holistic way. Try to use this section as a tool to more fully consider all possible interactions with the project in your proposal. Also consider how this all fits into the roadmap for the project.
+
+This is also a good place to "dump ideas", if they are out of scope for the RFC you are writing but otherwise related.
+
+If you have tried and cannot think of any future possibilities, you may simply state that you cannot think of anything.
+
+Note that having something written down in the future-possibilities section is not a reason to accept the current or a future RFC; such notes should be in the section on motivation or rationale in this or subsequent RFCs.  The section merely provides additional information.
