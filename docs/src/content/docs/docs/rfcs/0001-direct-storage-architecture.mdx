@@ -12,7 +12,7 @@ import RfcInfo from "@components/RfcInfo.astro";
 
 <RfcInfo {...frontmatter.rfc} />
 
-Build a new Graft runtime which directly interfaces with blob storage, eliminating the need for the MetaStore and PageStore, and setting Graft up as a viable replacement to systems like Litestream. Graft should focus on providing best-in-class PITR, branching, and sparse replication for page-based workloads.
+Build a new Graft client library (called `graft-kernel`) which directly interfaces with object storage, eliminating the need for the MetaStore and PageStore, and setting Graft up as a viable replacement to systems like Litestream. Graft should focus on providing best-in-class PITR, branching, and sparse replication for page-based workloads.
 
 ## Motivation
 
@@ -20,7 +20,7 @@ An overview of why we should consider making this major change to Graft's archit
 
 ### Existing state of Graft
 
-Currently Graft requires a MetaStore and PageStore to support replication to and from blob storage. This architecture has the following advantages and disadvantages:
+Currently Graft requires a MetaStore and PageStore to support replication to and from object storage. This architecture has the following advantages and disadvantages:
 
 **Advantages**
 - The MetaStore can efficiently rollup commits to fast forward clients, increasing performance and enabling instant read replicas
@@ -50,37 +50,64 @@ This feature implies that data does not cross "tenant" boundaries (or in this ca
 [Simon Willison]: https://simonwillison.net/
 [Alex Garcia]: https://alexgarcia.xyz/
 
-### Blob storage scalability
+### Object storage scalability
 
-In a discussion with a potential user, they expressed reservations due to the layer of indirection between the Graft client and blob storage. Their main argument was that S3 already has proved that it can handle extremely high scale. They would be more comfortable using Graft if clients connected directly to blob storage to pull changes.
+In a discussion with a potential user, they expressed reservations due to the layer of indirection between the Graft client and object storage. Their main argument was that S3 already has proved that it can handle extremely high scale. They would be more comfortable using Graft if clients connected directly to object storage to pull changes.
 
 ### New user experience
 
-Graft should work out of the box without needing additional services to run. By supporting directly interfacing with blob storage or other backends, Graft would be a much more composable client library - making it easier to embed in more places.
+Graft should work out of the box without needing additional services to run. By supporting directly interfacing with object storage or other backends, Graft would be a much more composable client library - making it easier to embed in more places.
 
 ## Guide-level Explanation
 
 A high level explanation of how this feature works, and would change the behavior of existing Graft clients such as `graft-sqlite` and `graft-fuse`.
 
-### New crate: `graft-rt`
+### `graft-kernel`
 
-`graft-rt` implements the Graft runtime which replaces the `graft-client` and `graft-server` crates. The runtime provides access to a remote Volume Catalog, local storage, and client functionality to downstream crates like `graft-sqlite` and `graft-fuse`.
+`graft-kernel` implements the Graft Kernel which supercedes the functionality of the `graft-client` and `graft-server` crates. The Kernel provides access to a remote Volume Catalog, local storage, and client functionality to downstream crates like `graft-sqlite` and `graft-fuse`.
 
 **Volume Catalog**
-This subsystem provides push and pull functionality to Volume commit logs. It's designed to support multiple backends, with blob storage being the priority.
+This subsystem provides push and pull functionality to Volume commit logs. It's designed to support multiple backends including direct access to object storage and the graft-proxy.
 
 **Local storage**
 This subsystem provides durable storage for the Volume Catalog, Pages, and Volume State. It's extremely similar to the existing `graft-client` storage subsystem. It uses Fjall under the hood.
 
-### New crate: `graft-proxy`
+### `graft-proxy`
 
-- needed in first pass? or can we just set up for it in the future possibilities section?
-- lightweight cache accelerator
-- main goal is to allow replicas to more efficiently fast forward to the latest state for a volume, and also support things like volume subscriptions
+The Graft Proxy is a stateless edge service and caching layer which allows Graft to run on devices. Initially it will simply act as a pass-through proxy to object storage with its own authentication and authorization layer.
+
+Graft Proxy exposes a simple API to consumers, enabling two key performance features:
+1. Graft Proxy acts like a read through cache, ideally using ephemeral NVME drives
+2. Replica fast-forwarding: collapse a pull graft request and only return the latest segments.
+
+Eventually Graft Proxy will provide Graft with these features:
+- volume subscriptions -> eliminate the need to poll for changes
+- granular authorization
 
 ## Reference-level Explanation
 
 Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, edge cases, and performance implications.
+
+### Object storage keyspace
+
+```
+$prefix /
+  segments /
+    $segment_id: Segment
+  volumes /
+    $volume_id /
+      log /
+        $LSN: Commit
+```
+
+### Segment encoding
+
+Segments store a set of pages for a single Volume at a single LSN. Each segment has a maximum size of 16 MB.
+
+Open decisions:
+- segment compression? pro=smaller, con=range requests
+- segment index? depends on how the volume catalog will work + what the read algorithm looks like. once we figure those things out, then we can return to segments
+- footer/header? footer allows pages in segments to be page aligned
 
 ## Drawbacks
 
