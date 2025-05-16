@@ -1,9 +1,27 @@
 // @ts-check
+import { execSync } from "node:child_process";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import starlightLlmsTxt from "starlight-llms-txt";
 import starlightDocSearch from "@astrojs/starlight-docsearch";
 import sitemap from "@astrojs/sitemap";
+
+// find the current branch name
+export function currentBranch() {
+  const branch =
+    process.env.GITHUB_HEAD_REF || // PR source branch in GitHub Actions
+    process.env.GITHUB_REF_NAME || // push/tag ref in GitHub Actions
+    process.env.CF_PAGES_BRANCH; // branch name in CloudFlare pages build
+
+  if (branch) {
+    return branch;
+  }
+
+  // fallback to checking git
+  return execSync("git rev-parse --abbrev-ref HEAD", {
+    encoding: "utf8",
+  }).trim();
+}
 
 // https://astro.build/config
 export default defineConfig({
@@ -65,7 +83,7 @@ export default defineConfig({
       ],
       customCss: ["./src/styles/global.css"],
       editLink: {
-        baseUrl: "https://github.com/orbitinghail/graft/blob/main/docs/",
+        baseUrl: `https://github.com/orbitinghail/graft/blob/${currentBranch()}/docs/`,
       },
       sidebar: [
         {
