@@ -47,7 +47,7 @@ jobs:
         uses: lycheeverse/lychee-action@v2
         with:
           workingDirectory: docs
-          args: --user-agent 'curl/8.13.0' --no-progress --include-fragments --root-dir $PWD/dist dist
+          args: --user-agent 'curl/8.13.0' --no-progress --include-fragments --remap "https://graft.rs file://$PWD/dist" --fallback-extensions html --root-dir $PWD/dist dist
           failIfEmpty: true
           format: markdown
           jobSummary: true

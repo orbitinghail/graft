@@ -5,6 +5,12 @@ import starlightLlmsTxt from "starlight-llms-txt";
 import starlightDocSearch from "@astrojs/starlight-docsearch";
 import sitemap from "@astrojs/sitemap";
 
+// find the current branch name
+import { execSync } from "node:child_process";
+const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+  encoding: "utf8",
+}).trim();
+
 // https://astro.build/config
 export default defineConfig({
   site: "https://graft.rs/",
@@ -65,7 +71,7 @@ export default defineConfig({
       ],
       customCss: ["./src/styles/global.css"],
       editLink: {
-        baseUrl: "https://github.com/orbitinghail/graft/blob/main/docs/",
+        baseUrl: `https://github.com/orbitinghail/graft/blob/${branch}/docs/`,
       },
       sidebar: [
         {
