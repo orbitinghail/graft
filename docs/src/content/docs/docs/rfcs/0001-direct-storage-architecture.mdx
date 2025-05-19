@@ -100,6 +100,41 @@ $prefix /
         $LSN: Commit
 ```
 
+### Volume log
+
+Volume log records are written to object storage with the following layout:
+
+```
+LogRecord (64 bytes) {
+  magic: 4 bytes
+  page_count: 4 bytes
+  vid: VolumeId (16 bytes)
+  cid: ClientId (16 bytes)
+  lsn: LSN (8 bytes)
+  timestamp: 8 bytes
+  op: Op {
+    Branch {
+      vid: VolumeId (16 bytes)
+      lsn: LSN (8 bytes)
+    }
+    Commit {
+      segments: [ SegmentMeta ]
+    }
+    Checkpoint {
+      lsn_range: LsnRange (16 bytes)
+      segments: [ SegmentMeta ]
+    }
+  }
+}
+
+SegmentMeta {
+  sid: SegmentId (16 bytes)
+  size: 4 bytes
+  graft: encoded splinter of length $size
+}
+```
+
+
 ### Segment encoding
 
 Segments store a set of pages for a single Volume at a single LSN. Each segment has a maximum size of 16 MB.
