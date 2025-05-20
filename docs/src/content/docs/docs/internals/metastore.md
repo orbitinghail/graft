@@ -7,7 +7,7 @@ A service which stores Volume metadata including the log of segments per Volume.
 
 ## Metastore Storage
 
-The Metastore will store it's data in a key value store. For now we will use object storage directly. Each commit to a volume will be a separate file, stored in a way that makes it easy for downstream consumers to quickly get up to date.
+The Metastore will store its data in a key value store. For now we will use object storage directly. Each commit to a volume will be a separate file, stored in a way that makes it easy for downstream consumers to quickly get up to date.
 
 ## Storage Layout
 
