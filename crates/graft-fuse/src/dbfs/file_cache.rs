@@ -15,7 +15,7 @@ pub struct FileCache {
 }
 
 impl FileCache {
-    /// estimated_max_items should be roughly equivalent to max_size / average item weight
+    /// `estimated_max_items` should be roughly equivalent to `max_size` / average item weight
     pub fn new(estimated_max_items: usize, max_size: ByteUnit) -> Self {
         FileCache {
             cache: Cache::with_weighter(estimated_max_items, max_size.as_u64(), SizeWeighter),

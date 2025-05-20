@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::iter::repeat_n;
 
@@ -31,9 +32,9 @@ impl ToSql for FieldKind {
 impl FromSql for FieldKind {
     fn column_result(value: SqlValRef<'_>) -> FromSqlResult<Self> {
         match value {
-            SqlValRef::Integer(i) if i == 1 => Ok(FieldKind::Native),
-            SqlValRef::Integer(i) if i == 2 => Ok(FieldKind::Object),
-            SqlValRef::Integer(i) if i == 3 => Ok(FieldKind::List),
+            SqlValRef::Integer(1) => Ok(FieldKind::Native),
+            SqlValRef::Integer(2) => Ok(FieldKind::Object),
+            SqlValRef::Integer(3) => Ok(FieldKind::List),
             _ => Err(FromSqlError::InvalidType),
         }
     }
@@ -139,21 +140,25 @@ impl FieldVal {
                 map.insert(name, val);
             }
             (FieldVal::List(list), NameOrIndex::Index(index)) => {
-                if index == list.len() as u64 {
-                    list.push(val);
-                } else if index < list.len() as u64 {
-                    assert_eq!(
-                        list[index as usize],
-                        FieldVal::null(),
-                        "duplicate index in list"
-                    );
-                    list[index as usize] = val;
-                } else if index > list.len() as u64 {
-                    list.extend(repeat_n(
-                        FieldVal::null(),
-                        (index - list.len() as u64 + 1) as usize,
-                    ));
-                    list[index as usize] = val;
+                match index.cmp(&(list.len() as u64)) {
+                    Ordering::Equal => {
+                        list.push(val);
+                    }
+                    Ordering::Less => {
+                        assert_eq!(
+                            list[index as usize],
+                            FieldVal::null(),
+                            "duplicate index in list"
+                        );
+                        list[index as usize] = val;
+                    }
+                    Ordering::Greater => {
+                        list.extend(repeat_n(
+                            FieldVal::null(),
+                            (index - list.len() as u64 + 1) as usize,
+                        ));
+                        list[index as usize] = val;
+                    }
                 }
             }
             _ => {
@@ -173,7 +178,7 @@ impl Serialize for FieldVal {
                 SqlVal::Null => serializer.serialize_none(),
                 SqlVal::Integer(i) => serializer.serialize_i64(*i),
                 SqlVal::Real(f) => serializer.serialize_f64(*f),
-                SqlVal::Text(s) => serializer.serialize_str(&s),
+                SqlVal::Text(s) => serializer.serialize_str(s),
                 SqlVal::Blob(b) => serializer.serialize_bytes(b),
             },
             FieldVal::Map(map) => map.serialize(serializer),

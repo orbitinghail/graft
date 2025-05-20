@@ -74,7 +74,7 @@ impl config::Source for ConfigDefaults {
         set_default!("cache.space_limit", ByteUnit::from_gb(1).to_string());
         set_default!("cache.open_limit", open_limit);
         set_default!("port", 3000);
-        set_default!("metastore", "http://localhost:3001");
+        set_default!("metastore", "http://127.0.0.1:3001");
         set_default!("catalog_update_concurrency", 16);
         set_default!("download_concurrency", 16);
         set_default!("write_concurrency", 16);

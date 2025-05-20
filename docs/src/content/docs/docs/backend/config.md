@@ -27,7 +27,7 @@ All configuration variables can be specified via environment variables prefixed 
 # the port to listen on
 port = 3000
 # metastore url
-metastore = "http://localhost:3001"
+metastore = "http://127.0.0.1:3001"
 # PASETO token to authenticate with the metastore; requires the metastore to have authentication enabled.
 token = "v4.local.GSdE..."
 

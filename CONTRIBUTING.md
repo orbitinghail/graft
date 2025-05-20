@@ -25,16 +25,19 @@ Graft is low-level systems software. Prioritize safety, performance, and clarity
 [TigerStyle]: https://tigerstyle.dev/
 
 **Safety:**
+
 - Control Flow: Use simple, explicit control structures. Avoid recursion. Keep functions under 70 lines. Centralize branching logic in parent functions.
 - Memory & Types: Use fixed-size types (e.g. u32, i64). Avoid runtime allocation—allocate memory at startup or make use of the stack.
 - Error Handling: Use assertions for invariants and argument checks. Treat warnings as errors.
 
 **Performance:**
+
 - Early Design: Apply napkin math to estimate bottlenecks. Design for performance from the start.
 - Batching: Batch I/O or expensive operations. Prioritize optimizing network > disk > memory > CPU.
 - Predictability: Write predictable, branch-friendly code. Don't rely on compiler optimizations.
 
 **Clarity:**
+
 - Naming: Use clear variable names. Avoid abbreviations and single-letter variable names. Use specific types like ByteUnit and Duration rather than bare types for variables that have logical units.
 - Structure: Keep functions simple. Group related code. Declare variables near usage.
 - Consistency: Avoid aliases/dupes. Pass large values by reference. Maintain consistent indentation, comment style, and toolchain. Write idiomatic Rust code.
@@ -84,7 +87,7 @@ cargo run --bin metastore
 # next, in another terminal, run a local Graft pagestore
 cargo run --bin pagestore
 
-# finally, you can open up a SQLite shell connected to localhost by default
+# finally, you can open up a SQLite shell connected to 127.0.0.1
 just run sqlite shell
 ```
 

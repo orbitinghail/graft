@@ -122,7 +122,7 @@ mod tests {
             .testonly_spawn();
 
         let client = NetClient::new(None);
-        let metastore_uri = "http://localhost:3000".parse().unwrap();
+        let metastore_uri = "http://127.0.0.1:3000".parse().unwrap();
 
         let state = Arc::new(PagestoreApiState::new(
             page_tx,
