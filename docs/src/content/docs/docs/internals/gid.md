@@ -29,7 +29,7 @@ GIDs have the following layout:
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-Every GID has a 1 byte prefix which encodes it's type. There are currently three known GID types: Volume, Segment, and Client. The prefix may contain other types or namespace metadata in the future. The highest bit of the prefix is always set to ensure that GIDs bs58 serialize to exactly 22 bytes.
+Every GID has a 1 byte prefix which encodes its type. There are currently three known GID types: Volume, Segment, and Client. The prefix may contain other types or namespace metadata in the future. The highest bit of the prefix is always set to ensure that GIDs bs58 serialize to exactly 22 bytes.
 
 Following the prefix is a 48 bit timestamp encoding milliseconds since the unix epoch and stored in network byte order (MSB first).
 
