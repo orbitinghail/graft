@@ -101,7 +101,7 @@ fn test_sync_and_reset() {
         handle1.snapshot().unwrap()
     });
 
-    // enable sync on node1 and wait for it to detect the conflict
+    // enable sync on node2 and wait for it to detect the conflict
     let status = handle2.status().unwrap();
     runtime2.set_autosync(true);
     wait_for_change(Duration::from_secs(5), status, || handle2.status().unwrap());
