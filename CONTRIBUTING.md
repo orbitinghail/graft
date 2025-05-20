@@ -27,7 +27,7 @@ Graft is low-level systems software. Prioritize safety, performance, and clarity
 **Safety:**
 
 - Control Flow: Use simple, explicit control structures. Avoid recursion. Keep functions under 70 lines. Centralize branching logic in parent functions.
-- Memory & Types: Use fixed-size types (e.g. u32, i64). Avoid runtime allocation—allocate memory at startup or make use of the stack.
+- Memory & types: Use fixed-size types (e.g. u32, i64). Prefer to allocate memory at startup or make use of the stack. Avoid dynamically checked borrow rules (e.g. `RefCell`) and `dyn` usage.
 - Error Handling: Use assertions for invariants and argument checks. Treat warnings as errors.
 
 **Performance:**
