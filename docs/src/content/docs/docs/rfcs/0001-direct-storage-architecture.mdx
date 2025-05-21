@@ -33,16 +33,16 @@ Currently Graft requires a MetaStore and PageStore to support replication to and
 
 ### [Datasette]
 
-In a discussion with [Simon Willison] and [Alex Garcia], we talked about some of their dream features for SQLite:
+In a discussion with [Simon Willison] and [Alex Garcia], we talked about some of their dream features for SQLite + Graft:
 
 **Rollback database to earlier version**
-The ability to cheaply rollback a database would allow risky features like giving an LLM read/write access to your database to be built. Additionally, the ability to branch a database at a particular version may enable risk-free experimentation and testing.
+The ability to cheaply rollback a database would make risky features like giving an LLM read/write access to your database much safer. Additionally, the ability to branch a database at a particular version may enable risk-free experimentation and testing.
 
 **Read-only replication**
-Cheap and fast read-only replication to horizontally scale a heavy query workload over multiple machines, or simply to expose data to less-trusted users without any fear of changes.
+Cheap and fast read-only replication to horizontally scale a heavy query workload over multiple machines, or simply to expose data to less-trusted users.
 
 **Composability with IAM permissions**
-Currently, Datasette uses IAM keys limited to a single S3 prefix to restrict Litestreams access to a single tenant's data. This ensures that a bug in Litestream can affect a single tenant in the worst case.
+Currently, Datasette uses IAM keys limited to a single S3 prefix to restrict Litestream's access to a single tenant's data. This ensures that a bug in Litestream can affect at most a single tenant.
 
 This feature implies that data does not cross "tenant" boundaries (or in this case, the configured S3 prefix).
 
@@ -52,11 +52,11 @@ This feature implies that data does not cross "tenant" boundaries (or in this ca
 
 ### Object storage scalability
 
-In a discussion with a potential user, they expressed reservations due to the layer of indirection between the Graft client and object storage. Their main argument was that S3 already has proved that it can handle extremely high scale. They would be more comfortable using Graft if clients connected directly to object storage to pull changes.
+In a discussion with a potential user, they expressed reservations due to the layer of indirection between the Graft client and object storage. Their main argument is that S3 is already proven to handle extremely high scale. They would be more comfortable using Graft if clients connected directly to object storage to pull changes. In some cases, this may also reduce costs due to free bandwidth between compute and S3.
 
 ### New user experience
 
-Graft should work out of the box without needing additional services to run. By supporting directly interfacing with object storage or other backends, Graft would be a much more composable client library - making it easier to embed in more places.
+Graft should work out of the box without needing additional services to run. By supporting direct access to object storage, it will be easier to get started and embed Graft in an application.
 
 ## Guide-level Explanation
 
@@ -70,25 +70,31 @@ A high level explanation of how this feature works, and would change the behavio
 This subsystem provides push and pull functionality to Volume commit logs. It's designed to support multiple backends including direct access to object storage and the graft-proxy.
 
 **Local storage**
-This subsystem provides durable storage for the Volume Catalog, Pages, and Volume State. It's extremely similar to the existing `graft-client` storage subsystem. It uses Fjall under the hood.
+This subsystem provides durable storage for the Volume Catalog, Pages, and Volume State. It's extremely similar to the existing `graft-client` storage subsystem.
+
+**Client functionality**
+Clients such as `graft-sqlite` and `graft-fuse` will use the `graft-kernel` to operate on Volumes. The Kernel is designed to be embedded in the application, performing I/O in a small set of background threads. The Kernel will be implemented as an async core wrapped with an async and sync API.
 
 ### `graft-proxy`
 
-The Graft Proxy is a stateless edge service and caching layer which allows Graft to run on devices. Initially it will simply act as a pass-through proxy to object storage with its own authentication and authorization layer.
+The Graft Proxy is a stateless edge service and caching layer which makes it easier for Graft to replicate to & from devices. Initially it will simply act as a pass-through proxy to object storage with its own authentication and authorization layer.
 
 Graft Proxy exposes a simple API to consumers, enabling two key performance features:
 1. Graft Proxy acts like a read through cache, ideally using ephemeral NVME drives
 2. Replica fast-forwarding: collapse a pull graft request and only return the latest segments.
 
-Eventually Graft Proxy will provide Graft with these features:
+Eventually Graft Proxy will enhance Graft with these features:
 - volume subscriptions -> eliminate the need to poll for changes
 - granular authorization
+- direct byte range puts and gets against Volumes
 
 ## Reference-level Explanation
 
 Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, edge cases, and performance implications.
 
 ### Object storage keyspace
+
+Graft will store all of a Volume's data in Object Storage using the following keyspace layout:
 
 ```
 $prefix /
@@ -100,40 +106,141 @@ $prefix /
         $LSN: Commit
 ```
 
+This flexible layout allows users to isolate tenants from one another by simply providing a unique `$prefix`. Or, ignoring `$prefix` all-together.
+
+This layout can also eventually support multi-volume write aggregation for high-throughput workloads, which is equivalent to how we currently build segments in the PageStore.
+
 ### Volume log
 
-Volume log records are written to object storage with the following layout:
+Volume Commits are written to object storage using the following layout:
 
 ```
-LogRecord (64 bytes) {
+Commit
+  CommitHeader (64 bytes)
+  CommitBody
+
+CommitHeader (64 bytes):
   magic: 4 bytes
-  page_count: 4 bytes
+  page_count: PageCount (4 bytes)
   vid: VolumeId (16 bytes)
   cid: ClientId (16 bytes)
   lsn: LSN (8 bytes)
-  timestamp: 8 bytes
-  op: Op {
-    Branch {
-      vid: VolumeId (16 bytes)
-      lsn: LSN (8 bytes)
-    }
-    Commit {
-      segments: [ SegmentMeta ]
-    }
-    Checkpoint {
-      lsn_range: LsnRange (16 bytes)
-      segments: [ SegmentMeta ]
-    }
-  }
-}
+  timestamp: u64 (8 bytes)
+  kind: CommitKind (1 byte)
+  _padding: 7 bytes
 
-SegmentMeta {
+CommitBody:
+  kind == CommitKind::Branch: CommitBranch
+  kind == CommitKind::Segments: CommitSegments
+  kind == CommitKind::Checkpoint: CommitCheckpoint
+
+CommitBranch: (32 bytes)
+  vid: VolumeId (16 bytes)
+  lsn: LSN (8 bytes)
+  _padding: 8 bytes
+
+CommitSegments:
+  [ SegmentMeta ]
+
+CommitCheckpoint (32 bytes + trailer):
+  lsn_range: LsnRange (16 bytes)
+  _padding: 16 bytes
+  [ SegmentMeta ]
+
+SegmentMeta (32 bytes + trailer):
   sid: SegmentId (16 bytes)
-  size: 4 bytes
-  graft: encoded splinter of length $size
-}
+  size: u32 (4 bytes)
+  _padding: 4 bytes
+  graft: Splinter
 ```
 
+### Algorithms
+
+#### Pull changes
+
+```
+Pull changes starting at LSN 8:
+  GET $prefix/volumes/$VID/log/9 -> 200 Commit(9, Segment(1))
+    PUT Commit(9) -> commits/$VID/9
+      PUT Segment(1) -> segments/$VID/9/$SID
+        for pageidx in Segment:
+          PUT Pending -> pages/$VID/$pageidx/9
+
+  GET $prefix/volumes/$VID/log/10 -> 200 Commit(10, Checkpoint(1-4, Segment(2))
+    PUT Commit(10) -> commits/$VID/10
+      DEL commits/$VID/{1-4}/*
+      PUT Commit(10) -> commits/$VID/4
+        PUT Segment(2) -> segments/$VID/4/$SID
+          for pageidx in Segment:
+            PUT_IF_NOT_EXISTS Pending -> pages/$VID/$pageidx/4
+
+  GET $prefix/volumes/$VID/log/11 -> 404
+```
+
+#### Read transaction
+
+```
+Open snapshot at LSN 10
+
+Read page 5 at LSN=10
+  storage.read(vid=$VID, lsn=10, page=5)
+    if found:
+      oracle.observe_cache_hit(5)
+      return page
+
+  issue a blocking read:
+    self.read_head.read(lsn=10, page=5, oracle.predict_next(5))
+
+  return storage.read(lsn=10, page=5)
+
+Segment Fetcher:
+  A background thread that is responsible for fetching pages from remote storage as the read heads issue reads.
+
+  read_head updates:
+    vid = read_head.vid
+
+    optimistically check to see if the read is already satisfied
+      if storage.read(vid, lsn=read_head.lsn, page=read_head.page)
+        read_head.complete()
+
+    start loading segments:
+      for (key, segment) in segments/$vid/10..segments/$vid/1:
+        let cut = pages.cut(segment.graft)
+        if !cut.is_empty():
+          notifier = cut.contains(read_head.page).and_then(read_head)
+          loader.add(key.vid, key.lsn, segment, cut, priority, notifier)
+```
+
+#### Write transaction
+
+IDEA: instead of overloading local and remote LSNs which makes sync more tricky we can instead append a 4 byte local LSN to the remote LSN. This allows us to write all local commits to the same *next* remote LSN at sequential local LSNs.
+
+```
+Open snapshot at read LSN 10
+Take write lock on Volume and allocate write LSN 11
+
+txn state:
+  page_count = snapshot.page_count
+
+read page 5:
+  execute read algorithm at LSN 11
+
+write page 5:
+  storage.put(vid, lsn=11, pageidx=5, data) -> pages/$vid/$pageidx/$lsn
+  storage.stage(vid, lsn=11, pageidx=5) -> staged/$vid/$lsn/$pageidx
+  page_count = max(page_count, 5)
+
+rollback/drop:
+  storage.bulk_delete(vid, lsn=11)
+
+commit:
+  graft = Splinter{}
+  for pageidx in ITER staged/$vid/$lsn/$pageidx:
+    DEL staged/$vid/$lsn/$pageidx
+    graft.add(pageidx)
+  storage.stage_commit(vid, lsn=11, page_count, graft)
+    -> staged/$vid/$lsn -> StagedCommit { page_count, graft }
+```
 
 ### Segment encoding
 
