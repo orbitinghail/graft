@@ -1,4 +1,5 @@
 pub mod byte_unit;
+pub mod cbe;
 pub mod gid;
 pub mod hash_table;
 pub mod lsn;
