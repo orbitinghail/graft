@@ -97,61 +97,130 @@ Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, 
 Graft will store all of a Volume's data in Object Storage using the following keyspace layout:
 
 ```
-$prefix /
-  segments /
-    $segment_id: Segment
+{prefix} /
   volumes /
-    $volume_id /
+    {vid} /
+      control: Control
+      forks /
+        {fork-vid}: Fork
+      checkpoints /
+        {lsn}: Checkpoint
       log /
-        $LSN: Commit
+        {lsn}: Commit
+      segments /
+        {sid}: Segment
 ```
 
 This flexible layout allows users to isolate tenants from one another by simply providing a unique `$prefix`. Or, ignoring `$prefix` all-together.
 
-This layout can also eventually support multi-volume write aggregation for high-throughput workloads, which is equivalent to how we currently build segments in the PageStore.
+### File schemas
 
-### Volume log
+All of the files aside from Segments are encoded using Protobuf. Segments are simply a set of pages stored back-to-back, ordered by `pageidx` ascending.
 
-Volume Commits are written to object storage using the following layout:
+```proto
+syntax = "proto3"
+package graft.volume.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Storage must provide the following additional system metadata:
+//  - Last-Modified: The object creation or updated date
+//  - Checksum: The object's checksum
+// Allowing these fields to be omitted.
+
+// A Volume has a top level control file stored at
+// `{prefix}/volumes/{vid}/control`
+// Control files are immutable.
+message Control {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The parent reference if this Volume is a fork.
+  VolumeRef parent = 2;
+
+  // The page size of this Volume in bytes.
+  uint32 page_size_bytes = 3;
+
+  // The creation timestamp of this Volume.
+  google.protobuf.Timestamp created_at = 4;
+}
+
+// When a Volume is forked, a ref is first written to the source volume:
+// `{prefix}/volumes/{source-vid}/forks/{fork-vid}`
+// The Fork's parent must match this VolumeRef.
+// Forks are immutable.
+message Fork {
+  // A pointer to the source VID/layer.
+  VolumeRef ref = 1;
+}
+
+// A reference to a Volume at a particular LSN.
+message VolumeRef {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The referenced LSN.
+  uint64 lsn = 2;
+}
+
+// Checkpoints are stored at `{prefix}/volumes/{vid}/checkpoints/{lsn}`.
+// {lsn} is a 64 bit number stored as a fixed-width 16 character hex string.
+// Checkpoints are immutable.
+message Checkpoint {
+  // The total number of pages in the Volume at this Checkpoint.
+  uint32 page_count = 1;
+
+  // The list of SegmentRefs representing this Checkpoint.
+  repeated SegmentRef segments = 2;
+}
+
+// Commits are stored at `{prefix}/volumes/{vid}/log/{lsn}`.
+// {lsn} is a 64 bit number stored as a fixed-width 16 character hex string.
+// Commits are immutable.
+message Commit {
+  // The total number of pages in the Volume at this Commit.
+  uint32 page_count = 1;
+
+  // The latest checkpoint LSN.
+  // To recover the Volume's latest state, replay this checkpoint and the log starting from the checkpoint LSNs successor.
+  // Earlier LSNs and checkpoints may be garbage collected at any point.
+  uint64 checkpoint_lsn = 2;
+
+  // The list of SegmentRefs representing this Commit.
+  repeated SegmentRef segments = 3;
+}
+
+message SegmentRef {
+  // The 16 byte segment id.
+  bytes sid = 1;
+
+  // The set of pageidxs stored in this Segment.
+  // Serialized using Splinter encoding.
+  bytes graft = 2;
+}
+```
+
+### Local storage
+
+**TODO: open thoughts**
+- how are local commits stored, ideally such that pages don't need to be moved locally after a push? while still allowing for push compaction.
+  -> notably: this may lead to some write amp due to local shadowing
+  -> how expensive is moving pages locally? the main issue may be read snapshots
+  -> what about modeling writes as local forks?
+    -> or just eliminating multi-writer support?
+- checkpoints may change the `{segmentid,lsn}<>pageidx` mapping, but never alter the contents of a page.
+- anything special needed for forks?
 
 ```
-Commit
-  CommitHeader (64 bytes)
-  CommitBody
+volumes / $vid /
+  config -> VolumeConfig { SyncDirection }
+  status -> VolumeStatus { Ok, RejectedCommit, Conflict, InterruptedPush }
+  snapshot -> VolumeSnapshot { local, pages, remote { local => remote } }
+  watermarks -> Watermarks { checkpoint, pending_sync }
 
-CommitHeader (64 bytes):
-  magic: 4 bytes
-  page_count: PageCount (4 bytes)
-  vid: VolumeId (16 bytes)
-  cid: ClientId (16 bytes)
-  lsn: LSN (8 bytes)
-  timestamp: u64 (8 bytes)
-  kind: CommitKind (1 byte)
-  _padding: 7 bytes
+log / $vid / $lsn -> Commit
 
-CommitBody:
-  kind == CommitKind::Branch: CommitBranch
-  kind == CommitKind::Segments: CommitSegments
-  kind == CommitKind::Checkpoint: CommitCheckpoint
-
-CommitBranch: (32 bytes)
-  vid: VolumeId (16 bytes)
-  lsn: LSN (8 bytes)
-  _padding: 8 bytes
-
-CommitSegments:
-  [ SegmentMeta ]
-
-CommitCheckpoint (32 bytes + trailer):
-  lsn_range: LsnRange (16 bytes)
-  _padding: 16 bytes
-  [ SegmentMeta ]
-
-SegmentMeta (32 bytes + trailer):
-  sid: SegmentId (16 bytes)
-  size: u32 (4 bytes)
-  _padding: 4 bytes
-  graft: Splinter
+pages / $vid / $pageidx / $LSN -> Pending | Empty | Page
 ```
 
 ### Algorithms
@@ -217,17 +286,17 @@ IDEA: instead of overloading local and remote LSNs which makes sync more tricky 
 
 ```
 Open snapshot at read LSN 10
-Take write lock on Volume and allocate write LSN 11
+Take write lock on Volume and allocate write LSN 11.1
 
 txn state:
   page_count = snapshot.page_count
 
 read page 5:
-  execute read algorithm at LSN 11
+  execute read algorithm at LSN 11.1
 
 write page 5:
-  storage.put(vid, lsn=11, pageidx=5, data) -> pages/$vid/$pageidx/$lsn
-  storage.stage(vid, lsn=11, pageidx=5) -> staged/$vid/$lsn/$pageidx
+  storage.put(vid, lsn=11.1, pageidx=5, data) -> pages/$vid/$pageidx/$lsn
+  storage.stage(vid, lsn=11.1, pageidx=5) -> staged/$vid/$lsn/$pageidx
   page_count = max(page_count, 5)
 
 rollback/drop:
