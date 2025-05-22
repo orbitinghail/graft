@@ -92,7 +92,9 @@ Eventually Graft Proxy will enhance Graft with these features:
 
 Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, edge cases, and performance implications.
 
-### Object storage keyspace
+### Remote storage
+
+#### Object storage keyspace
 
 Graft will store all of a Volume's data in Object Storage using the following keyspace layout:
 
@@ -113,7 +115,7 @@ Graft will store all of a Volume's data in Object Storage using the following ke
 
 This flexible layout allows users to isolate tenants from one another by simply providing a unique `$prefix`. Or, ignoring `$prefix` all-together.
 
-### File schemas
+#### Object storage schemas
 
 All of the files aside from Segments are encoded using Protobuf. Segments are simply a set of pages stored back-to-back, ordered by `pageidx` ascending.
 
@@ -204,24 +206,32 @@ message SegmentRef {
 
 **TODO: open thoughts**
 - how are local commits stored, ideally such that pages don't need to be moved locally after a push? while still allowing for push compaction.
-  -> notably: this may lead to some write amp due to local shadowing
-  -> how expensive is moving pages locally? the main issue may be read snapshots
-  -> what about modeling writes as local forks?
-    -> or just eliminating multi-writer support?
+  - notably: this may lead to some write amp due to local shadowing
+  - how expensive is moving pages locally? the main issue may be read snapshots
+  - what about modeling writes as local forks?
+    - or just eliminating multi-writer support?
 - checkpoints may change the `{segmentid,lsn}<>pageidx` mapping, but never alter the contents of a page.
 - anything special needed for forks?
 
+#### Local keyspace
+Local storage uses Fjall, a partitioned k/v store. In the following keyspace, the top level keys are independent partitions, and the remainder of the keypath is encoded using zerocopy types that preserve lexicographical order.
+
+Values are encoded using zerocopy types, documented in the following section.
+
 ```
-volumes / $vid /
-  config -> VolumeConfig { SyncDirection }
-  status -> VolumeStatus { Ok, RejectedCommit, Conflict, InterruptedPush }
-  snapshot -> VolumeSnapshot { local, pages, remote { local => remote } }
-  watermarks -> Watermarks { checkpoint, pending_sync }
+volumes /
+  $vid /
+    control -> Control { SyncDirection }
+    status -> VolumeStatus { Ok, RejectedCommit, Conflict, InterruptedPush }
+    snapshot -> VolumeSnapshot { local, pages, remote { local => remote } }
+    watermarks -> Watermarks { checkpoint, pending_sync }
 
 log / $vid / $lsn -> Commit
 
 pages / $vid / $pageidx / $LSN -> Pending | Empty | Page
 ```
+
+#### Local schemas
 
 ### Algorithms
 
