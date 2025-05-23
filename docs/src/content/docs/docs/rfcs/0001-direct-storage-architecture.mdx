@@ -92,6 +92,15 @@ Eventually Graft Proxy will enhance Graft with these features:
 
 Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, edge cases, and performance implications.
 
+### Glossary
+
+- **`vid`**: A 16 byte Volume ID using [`GID`] encoding.
+- **`sid`**: A 16 byte Segment ID using [`GID`] encoding.
+- **`lsn`**: A 8 byte log sequence number, representing a fixed point in a log. Valid range: `[1, 2^64)`.
+- **`pageidx`**: A 4 byte page index, representing the index of a page within a Volume. Valid range: `[1, 2^32)`.
+- **`Splinter`**: A compressed bitset, used to keep track of which `pageidxs` appear in a Segment.
+- **`Segment`**: A set of pages, sorted by `pageidx`.
+
 ### Remote storage
 
 #### Object storage keyspace
@@ -113,7 +122,7 @@ Graft will store all of a Volume's data in Object Storage using the following ke
         {sid}: Segment
 ```
 
-This flexible layout allows users to isolate tenants from one another by simply providing a unique `$prefix`. Or, ignoring `$prefix` all-together.
+This flexible layout allows users to isolate tenants from one another by simply providing a unique `{prefix}`. Or, ignoring `{prefix}` all-together.
 
 #### Object storage schemas
 
@@ -121,7 +130,8 @@ All of the files aside from Segments are encoded using Protobuf. Segments are si
 
 ```proto
 syntax = "proto3"
-package graft.volume.v1;
+
+package graft.remote.v1;
 
 import "google/protobuf/timestamp.proto";
 
@@ -140,20 +150,16 @@ message Control {
   // The parent reference if this Volume is a fork.
   VolumeRef parent = 2;
 
-  // The page size of this Volume in bytes.
-  uint32 page_size_bytes = 3;
-
   // The creation timestamp of this Volume.
-  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp created_at = 3;
 }
 
 // When a Volume is forked, a ref is first written to the source volume:
 // `{prefix}/volumes/{source-vid}/forks/{fork-vid}`
-// The Fork's parent must match this VolumeRef.
 // Forks are immutable.
 message Fork {
-  // A pointer to the source VID/layer.
-  VolumeRef ref = 1;
+  // The VID of the fork.
+  bytes vid = 1;
 }
 
 // A reference to a Volume at a particular LSN.
@@ -179,6 +185,10 @@ message Checkpoint {
 // Commits are stored at `{prefix}/volumes/{vid}/log/{lsn}`.
 // {lsn} is a 64 bit number stored as a fixed-width 16 character hex string.
 // Commits are immutable.
+// There are some valid cases for a commit to not include any SegmentRefs:
+//  - The volume is a fork and has rebased itself on the parent. An empty commit is used to ensure that LSNs retain monotonicity.
+//  - The commit marks a new checkpoint.
+//  - The Volume has been truncated or extended causing the `page_count` to change, but no new pages to be written.
 message Commit {
   // The total number of pages in the Volume at this Commit.
   uint32 page_count = 1;
@@ -193,12 +203,12 @@ message Commit {
 }
 
 message SegmentRef {
-  // The 16 byte segment id.
+  // The 16 byte Segment ID.
   bytes sid = 1;
 
   // The set of pageidxs stored in this Segment.
   // Serialized using Splinter encoding.
-  bytes graft = 2;
+  bytes splinter = 2;
 }
 ```
 
@@ -214,26 +224,82 @@ message SegmentRef {
 - anything special needed for forks?
 
 #### Local keyspace
-Local storage uses Fjall, a partitioned k/v store. In the following keyspace, the top level keys are independent partitions, and the remainder of the keypath is encoded using zerocopy types that preserve lexicographical order.
-
-Values are encoded using zerocopy types, documented in the following section.
+Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, the top level keys are independent partitions. The remainder of the keys and the values are encoded using types in the following section.
 
 ```
 volumes /
-  $vid /
-    control -> Control { SyncDirection }
-    status -> VolumeStatus { Ok, RejectedCommit, Conflict, InterruptedPush }
-    snapshot -> VolumeSnapshot { local, pages, remote { local => remote } }
-    watermarks -> Watermarks { checkpoint, pending_sync }
+  {vid} /
+    writer -> Fork
+    parent -> VolumeRef
+    pending_commit -> PendingCommit
 
-log / $vid / $lsn -> Commit
+log / {vid} / {lsn} -> LocalCommit
+log / {vid} / {lsn} / {sid} -> Splinter
 
-pages / $vid / $pageidx / $LSN -> Pending | Empty | Page
+pages / {vid} / {pageidx} / {lsn} -> PageValue
 ```
 
 #### Local schemas
 
+Keys which are stored in the local keyspace are encoded using `zerocopy` types. `lsn` values are stored using `CBE64`, which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
+
+Values stored locally are encoded using protobuf, using a combination of the remote storage schema and the following additional message types.
+
+Splinters and PageValues are hand written datastructures storing compressed `pageidx` sets and page values (`Pending, Empty, [u8;4096]`) accordingly.
+
+```proto
+syntax = "proto3"
+
+package graft.local.v1;
+
+// An inclusive range of LSNs.
+message LsnRange {
+  uint64 inclusive_start = 1;
+  uint64 inclusive_end = 2;
+}
+
+// PendingCommit is stored at `volumes/{vid}/pending_commit` on the
+// writing Volume ID. It is part of our two-phase commit protocol used to sync
+// local changes to a remote volume.
+message PendingCommit {
+  // The LSN range we are attempting to sync from the writing fork to the
+  // remote volume.
+  LsnRange sync_range = 1;
+
+  // The latest remote LSN. If this commit is successful it will land at `remote_lsn + 1`.
+  uint64 remote_lsn = 2;
+
+  // The full remote commit we are attempting to sync.
+  graft.remote.v1.Commit commit = 3;
+}
+
+// stored at log/{vid}/{lsn}
+message LocalCommit {
+  uint32 page_count = 1;
+}
+```
+
 ### Algorithms
+
+**TODO: plan for sync protocol**
+- push
+  - build and push segments
+  - write pending commit
+  - commit
+  - if success:
+    - fjall batch
+      - write commit to parent vid
+      - drop synced local commits up to the last sync lsn from writer vid
+      - remove segments from last sync lsn in writer vid
+      - update writer vid parent ref
+  - if failure:
+    - drop pending commit
+    - record failure (WHERE??)
+- pull
+  - pull commits into remote vid
+  - rebase writer vid if possible
+    - if diverged record failure (WHERE??)
+
 
 #### Pull changes
 
@@ -364,3 +430,7 @@ This is also a good place to "dump ideas", if they are out of scope for the RFC 
 If you have tried and cannot think of any future possibilities, you may simply state that you cannot think of anything.
 
 Note that having something written down in the future-possibilities section is not a reason to accept the current or a future RFC; such notes should be in the section on motivation or rationale in this or subsequent RFCs.  The section merely provides additional information.
+
+[Fjall]: https://github.com/fjall-rs/fjall/
+[`GID`]: https://graft.rs/docs/internals/gid/
+[blake3]: https://github.com/BLAKE3-team/BLAKE3
