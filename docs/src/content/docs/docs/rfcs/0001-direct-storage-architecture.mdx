@@ -214,14 +214,7 @@ message SegmentRef {
 
 ### Local storage
 
-**TODO: open thoughts**
-- how are local commits stored, ideally such that pages don't need to be moved locally after a push? while still allowing for push compaction.
-  - notably: this may lead to some write amp due to local shadowing
-  - how expensive is moving pages locally? the main issue may be read snapshots
-  - what about modeling writes as local forks?
-    - or just eliminating multi-writer support?
-- checkpoints may change the `{segmentid,lsn}<>pageidx` mapping, but never alter the contents of a page.
-- anything special needed for forks?
+This section documents how clients store data.
 
 #### Local keyspace
 Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, the top level keys are independent partitions. The remainder of the keys and the values are encoded using types in the following section.
@@ -236,7 +229,7 @@ volumes /
 log / {vid} / {lsn} -> LocalCommit
 log / {vid} / {lsn} / {sid} -> Splinter
 
-pages / {vid} / {pageidx} / {lsn} -> PageValue
+pages / {sid} / {pageidx} -> Page
 ```
 
 #### Local schemas
@@ -244,8 +237,6 @@ pages / {vid} / {pageidx} / {lsn} -> PageValue
 Keys which are stored in the local keyspace are encoded using `zerocopy` types. `lsn` values are stored using `CBE64`, which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
 
 Values stored locally are encoded using protobuf, using a combination of the remote storage schema and the following additional message types.
-
-Splinters and PageValues are hand written datastructures storing compressed `pageidx` sets and page values (`Pending, Empty, [u8;4096]`) accordingly.
 
 ```proto
 syntax = "proto3"
@@ -291,6 +282,7 @@ message LocalCommit {
       - write commit to parent vid
       - drop synced local commits up to the last sync lsn from writer vid
       - remove segments from last sync lsn in writer vid
+      - migrate pages from old to new segments
       - update writer vid parent ref
   - if failure:
     - drop pending commit
