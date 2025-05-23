@@ -224,7 +224,8 @@ volumes /
   {vid} /
     writer -> Fork
     parent -> VolumeRef
-    pending_commit -> PendingCommit
+
+sync / {source_vid} / {source_lsn} -> SyncOp
 
 log / {vid} / {lsn} -> LocalCommit
 log / {vid} / {lsn} / {sid} -> Splinter
@@ -249,19 +250,38 @@ message LsnRange {
   uint64 inclusive_end = 2;
 }
 
-// PendingCommit is stored at `volumes/{vid}/pending_commit` on the
-// writing Volume ID. It is part of our two-phase commit protocol used to sync
-// local changes to a remote volume.
-message PendingCommit {
-  // The LSN range we are attempting to sync from the writing fork to the
-  // remote volume.
-  LsnRange sync_range = 1;
+enum SyncStatus {
+  SYNC_STATUS_UNSPECIFIED = 0;
+  SYNC_STATUS_PENDING = 1;
+  SYNC_STATUS_COMPLETE = 2;
+  SYNC_STATUS_REJECTED = 3;
+}
 
-  // The latest remote LSN. If this commit is successful it will land at `remote_lsn + 1`.
-  uint64 remote_lsn = 2;
+// SyncOp is stored at `sync/{source_vid}/{source_lsn}`. It is part of our
+// two-phase commit protocol used to sync changes between volumes.
+//
+// The `source_lsn` is the last LSN in the `source_lsns` range. Thus it marks a
+// mapping between a LSN on the source Volume and the corresponding LSN on the
+// destination volume.
+message SyncOp {
+  // The Volume we are syncing from.
+  bytes source_vid = 1;
+
+  // The LSN range we are attempting to sync from the source volume to the
+  // destination volume.
+  LsnRange source_lsns = 2;
+
+  // The Volume we are syncing to.
+  bytes destination_vid = 3;
+
+  // The resulting LSN in the destination Volume created by this sync operation.
+  uint64 destination_lsn = 4;
+
+  // The status of this sync.
+  SyncStatus status = 5;
 
   // The full remote commit we are attempting to sync.
-  graft.remote.v1.Commit commit = 3;
+  graft.remote.v1.Commit commit = 5;
 }
 
 // stored at log/{vid}/{lsn}
@@ -272,26 +292,48 @@ message LocalCommit {
 
 ### Algorithms
 
+**TODO: open thoughts**
+- should sync status include an error message? or is code enough?
+- do we want a log of failed syncs stored separately from the sync log?
+  - an app basically only cares how far behind we are, and whether or not the most recent sync failed (and why)
+- do we need to track the min lsn on the writer vid to ensure monotonicity?
+- need better consistent names for writer/upstream throughout
+- SyncOps can be created by push and pull - effectively they are mappings
+  - may want to split the sync op from the pending commit object
+  - can pending commit just land in the destination log directly?
+
 **TODO: plan for sync protocol**
+- snapshot
+  - use last writer lsn if exists, otherwise upstream lsn
 - push
   - build and push segments
-  - write pending commit
+  - write pending SyncOp
   - commit
   - if success:
     - fjall batch
-      - write commit to parent vid
-      - drop synced local commits up to the last sync lsn from writer vid
-      - remove segments from last sync lsn in writer vid
-      - migrate pages from old to new segments
-      - update writer vid parent ref
-  - if failure:
-    - drop pending commit
-    - record failure (WHERE??)
+      - write commit to parent log
+      - mark SyncOp as success
+  - if transient failure:
+    - mark SyncOp as failure, schedule retry
+  - if reject:
+    - mark SyncOp as reject, disable push, wait for app resolution
 - pull
   - pull commits into remote vid
-  - rebase writer vid if possible
-    - if diverged record failure (WHERE??)
-
+  - also write commit into writer vid if exists
+    - if so, add a SyncOp mapping the remote lsn to the writer lsn
+- fast forward
+  - when read snapshots close, check to see if we can fast forward the writer
+  - fjall batch
+    - drop local commits up to the oldest read snapshot
+    - optimization: before dropping segments, best-effort copy cached pages into the upstream VIDs segments by following the mapping in the sync log.
+      - unless we do this during push
+    - drop any unreachable pages
+    - drop SyncOps up to new base LSN
+    - update writer vid parent ref
+- reset
+  - open new writer vid
+  - update writer pointer on upstream vid
+  - eventually GC old vid once read snapshots drop
 
 #### Pull changes
 
