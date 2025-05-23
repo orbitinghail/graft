@@ -154,12 +154,15 @@ message Control {
   google.protobuf.Timestamp created_at = 3;
 }
 
-// When a Volume is forked, a ref is first written to the source volume:
-// `{prefix}/volumes/{source-vid}/forks/{fork-vid}`
+// When a Volume is forked, a ref is first written to the parent Volume:
+// `{prefix}/volumes/{parent-vid}/forks/{fork-vid}`
 // Forks are immutable.
 message Fork {
+  // The VID of the parent.
+  bytes parent_vid = 1;
+
   // The VID of the fork.
-  bytes vid = 1;
+  bytes fork_vid = 2;
 }
 
 // A reference to a Volume at a particular LSN.
@@ -175,11 +178,14 @@ message VolumeRef {
 // {lsn} is a 64 bit number stored as a fixed-width 16 character hex string.
 // Checkpoints are immutable.
 message Checkpoint {
-  // The total number of pages in the Volume at this Checkpoint.
-  uint32 page_count = 1;
+  // The Volume ID.
+  bytes vid = 1;
+
+  // The Volume's page count after replaying this checkpoint.
+  uint32 page_count = 2;
 
   // The list of SegmentRefs representing this Checkpoint.
-  repeated SegmentRef segments = 2;
+  repeated SegmentRef segments = 3;
 }
 
 // Commits are stored at `{prefix}/volumes/{vid}/log/{lsn}`.
@@ -190,16 +196,22 @@ message Checkpoint {
 //  - The commit marks a new checkpoint.
 //  - The Volume has been truncated or extended causing the `page_count` to change, but no new pages to be written.
 message Commit {
-  // The total number of pages in the Volume at this Commit.
-  uint32 page_count = 1;
+  // The Volume ID.
+  bytes vid = 1;
+
+  // The LSN of this commit.
+  uint64 lsn = 2;
+
+  // The Volume's page count after replaying this commit.
+  uint32 page_count = 3;
 
   // The latest checkpoint LSN.
   // To recover the Volume's latest state, replay this checkpoint and the log starting from the checkpoint LSNs successor.
   // Earlier LSNs and checkpoints may be garbage collected at any point.
-  uint64 checkpoint_lsn = 2;
+  uint64 checkpoint_lsn = 4;
 
   // The list of SegmentRefs representing this Commit.
-  repeated SegmentRef segments = 3;
+  repeated SegmentRef segments = 5;
 }
 
 message SegmentRef {
@@ -225,7 +237,7 @@ volumes /
     writer -> Fork
     parent -> VolumeRef
 
-sync / {source_vid} / {source_lsn} -> SyncOp
+sync / {writer_vid} / {writer_lsn} -> SyncOp
 
 log / {vid} / {lsn} -> LocalCommit
 log / {vid} / {lsn} / {sid} -> Splinter
@@ -250,43 +262,50 @@ message LsnRange {
   uint64 inclusive_end = 2;
 }
 
-enum SyncStatus {
-  SYNC_STATUS_UNSPECIFIED = 0;
-  SYNC_STATUS_PENDING = 1;
-  SYNC_STATUS_COMPLETE = 2;
-  SYNC_STATUS_REJECTED = 3;
+enum SyncState {
+  SYNC_STATE_UNSPECIFIED = 0;
+
+  // This SyncOp is in the process of committing into the destination Volume.
+  SYNC_STATE_PENDING = 1;
+
+  // This SyncOp represents a fully committed relationship between a Volume and
+  // its writer.
+  SYNC_STATE_COMPLETED = 2;
+
+  // This SyncOp was rejected by the destination Volume.
+  SYNC_STATE_REJECTED = 3;
 }
 
-// SyncOp is stored at `sync/{source_vid}/{source_lsn}`. It is part of our
-// two-phase commit protocol used to sync changes between volumes.
+// SyncOp is stored at `sync/{writer_vid}/{writer_lsn}`.
 //
-// The `source_lsn` is the last LSN in the `source_lsns` range. Thus it marks a
-// mapping between a LSN on the source Volume and the corresponding LSN on the
-// destination volume.
+// The `writer_lsn` is the last LSN in the `writer_lsns` range. Thus it marks a
+// mapping between a LSN range on the writer Volume and the corresponding LSN on
+// its parent Volume.
 message SyncOp {
-  // The Volume we are syncing from.
-  bytes source_vid = 1;
+  // The writer Volume ID.
+  bytes writer_vid = 1;
 
-  // The LSN range we are attempting to sync from the source volume to the
-  // destination volume.
-  LsnRange source_lsns = 2;
+  // The writer LSN range.
+  LsnRange writer_lsns = 2;
 
-  // The Volume we are syncing to.
-  bytes destination_vid = 3;
+  // The parent reference
+  graft.remote.v1.VolumeRef parent = 3;
 
-  // The resulting LSN in the destination Volume created by this sync operation.
-  uint64 destination_lsn = 4;
-
-  // The status of this sync.
-  SyncStatus status = 5;
+  // The state of this SyncOp.
+  SyncState state = 4;
 
   // The full remote commit we are attempting to sync.
-  graft.remote.v1.Commit commit = 5;
+  // Only set when `state == Pending`.
+  optional graft.remote.v1.Commit commit = 5;
 }
 
 // stored at log/{vid}/{lsn}
 message LocalCommit {
-  uint32 page_count = 1;
+  // The Volume ID and LSN.
+  graft.remote.v1.VolumeRef ref = 1;
+
+  // The Volume's page count after replaying this commit.
+  uint32 page_count = 2;
 }
 ```
 
@@ -297,10 +316,6 @@ message LocalCommit {
 - do we want a log of failed syncs stored separately from the sync log?
   - an app basically only cares how far behind we are, and whether or not the most recent sync failed (and why)
 - do we need to track the min lsn on the writer vid to ensure monotonicity?
-- need better consistent names for writer/upstream throughout
-- SyncOps can be created by push and pull - effectively they are mappings
-  - may want to split the sync op from the pending commit object
-  - can pending commit just land in the destination log directly?
 
 **TODO: plan for sync protocol**
 - snapshot
@@ -334,101 +349,6 @@ message LocalCommit {
   - open new writer vid
   - update writer pointer on upstream vid
   - eventually GC old vid once read snapshots drop
-
-#### Pull changes
-
-```
-Pull changes starting at LSN 8:
-  GET $prefix/volumes/$VID/log/9 -> 200 Commit(9, Segment(1))
-    PUT Commit(9) -> commits/$VID/9
-      PUT Segment(1) -> segments/$VID/9/$SID
-        for pageidx in Segment:
-          PUT Pending -> pages/$VID/$pageidx/9
-
-  GET $prefix/volumes/$VID/log/10 -> 200 Commit(10, Checkpoint(1-4, Segment(2))
-    PUT Commit(10) -> commits/$VID/10
-      DEL commits/$VID/{1-4}/*
-      PUT Commit(10) -> commits/$VID/4
-        PUT Segment(2) -> segments/$VID/4/$SID
-          for pageidx in Segment:
-            PUT_IF_NOT_EXISTS Pending -> pages/$VID/$pageidx/4
-
-  GET $prefix/volumes/$VID/log/11 -> 404
-```
-
-#### Read transaction
-
-```
-Open snapshot at LSN 10
-
-Read page 5 at LSN=10
-  storage.read(vid=$VID, lsn=10, page=5)
-    if found:
-      oracle.observe_cache_hit(5)
-      return page
-
-  issue a blocking read:
-    self.read_head.read(lsn=10, page=5, oracle.predict_next(5))
-
-  return storage.read(lsn=10, page=5)
-
-Segment Fetcher:
-  A background thread that is responsible for fetching pages from remote storage as the read heads issue reads.
-
-  read_head updates:
-    vid = read_head.vid
-
-    optimistically check to see if the read is already satisfied
-      if storage.read(vid, lsn=read_head.lsn, page=read_head.page)
-        read_head.complete()
-
-    start loading segments:
-      for (key, segment) in segments/$vid/10..segments/$vid/1:
-        let cut = pages.cut(segment.graft)
-        if !cut.is_empty():
-          notifier = cut.contains(read_head.page).and_then(read_head)
-          loader.add(key.vid, key.lsn, segment, cut, priority, notifier)
-```
-
-#### Write transaction
-
-IDEA: instead of overloading local and remote LSNs which makes sync more tricky we can instead append a 4 byte local LSN to the remote LSN. This allows us to write all local commits to the same *next* remote LSN at sequential local LSNs.
-
-```
-Open snapshot at read LSN 10
-Take write lock on Volume and allocate write LSN 11.1
-
-txn state:
-  page_count = snapshot.page_count
-
-read page 5:
-  execute read algorithm at LSN 11.1
-
-write page 5:
-  storage.put(vid, lsn=11.1, pageidx=5, data) -> pages/$vid/$pageidx/$lsn
-  storage.stage(vid, lsn=11.1, pageidx=5) -> staged/$vid/$lsn/$pageidx
-  page_count = max(page_count, 5)
-
-rollback/drop:
-  storage.bulk_delete(vid, lsn=11)
-
-commit:
-  graft = Splinter{}
-  for pageidx in ITER staged/$vid/$lsn/$pageidx:
-    DEL staged/$vid/$lsn/$pageidx
-    graft.add(pageidx)
-  storage.stage_commit(vid, lsn=11, page_count, graft)
-    -> staged/$vid/$lsn -> StagedCommit { page_count, graft }
-```
-
-### Segment encoding
-
-Segments store a set of pages for a single Volume at a single LSN. Each segment has a maximum size of 16 MB.
-
-Open decisions:
-- segment compression? pro=smaller, con=range requests
-- segment index? depends on how the volume catalog will work + what the read algorithm looks like. once we figure those things out, then we can return to segments
-- footer/header? footer allows pages in segments to be page aligned
 
 ## Drawbacks
 
