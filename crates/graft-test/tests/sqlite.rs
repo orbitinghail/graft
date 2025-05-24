@@ -35,7 +35,7 @@ fn test_sync_and_reset() {
 
     // create the second node
     let storage2 = Storage::open_temporary().unwrap();
-    let runtime2 = Runtime::new(ClientId::random(), clients, storage2);
+    let runtime2 = Runtime::new(ClientId::random(), clients.clone(), storage2);
     runtime2
         .start_sync_task(Duration::from_millis(100), 8, true, "sync-2")
         .unwrap();
@@ -102,6 +102,7 @@ fn test_sync_and_reset() {
     });
 
     // enable sync on node2 and wait for it to detect the conflict
+    runtime2.clients().pagestore().reset_pages_read();
     let status = handle2.status().unwrap();
     runtime2.set_autosync(true);
     wait_for_change(Duration::from_secs(5), status, || handle2.status().unwrap());
@@ -112,8 +113,8 @@ fn test_sync_and_reset() {
     let snapshot2 = handle2.snapshot().unwrap();
 
     assert_eq!(
-        snapshot1.and_then(|s| s.remote()),
-        snapshot2.and_then(|s| s.remote())
+        snapshot1.as_ref().and_then(|s| s.remote()),
+        snapshot2.as_ref().and_then(|s| s.remote())
     );
 
     // verify that node2 sees that the t1 counter is 1 and the t2 counter is 0
@@ -125,6 +126,10 @@ fn test_sync_and_reset() {
         .unwrap();
     assert_eq!(t1_counter, 1);
     assert_eq!(t2_counter, 0);
+
+    // We resolved the conflict after only fetching a single page, out of a total of 3
+    assert_eq!(snapshot1.unwrap().pages(), 3);
+    assert_eq!(runtime2.clients().pagestore().pages_read(), 1);
 
     // shutdown everything
     runtime1.shutdown_sync_task(Duration::from_secs(5)).unwrap();
