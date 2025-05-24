@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use culprit::Culprit;
-use graft_core::{VolumeId, page_count::PageCount};
 use graft_core::lsn::LSN;
+use graft_core::{VolumeId, page_count::PageCount};
 use graft_proto::{
     common::v1::SegmentInfo,
     pagestore::v1::{
@@ -23,8 +23,8 @@ pub struct PagestoreClient {
 
 impl PagestoreClient {
     pub fn new(root: Url, client: NetClient) -> Self {
-        Self { 
-            endpoint: root.into(), 
+        Self {
+            endpoint: root.into(),
             client,
             pages_read_count: AtomicU32::new(0),
         }
@@ -42,15 +42,17 @@ impl PagestoreClient {
             lsn: lsn.into(),
             graft,
         };
-        let result = self.client
+        let result = self
+            .client
             .send::<_, ReadPagesResponse>(uri, req)
             .map(|r| r.pages);
-        
+
         // Increment the counter with the number of pages read
         if let Ok(ref pages) = result {
-            self.pages_read_count.fetch_add(pages.len() as u32, Ordering::Relaxed);
+            self.pages_read_count
+                .fetch_add(pages.len() as u32, Ordering::Relaxed);
         }
-        
+
         result
     }
 

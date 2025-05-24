@@ -143,7 +143,11 @@ fn test_sqlite_query_only_fetches_needed_pages() {
     let vid = VolumeId::random();
 
     // create the first node (writer)
-    let writer_runtime = Runtime::new(ClientId::random(), clients.clone(), Storage::open_temporary().unwrap());
+    let writer_runtime = Runtime::new(
+        ClientId::random(),
+        clients.clone(),
+        Storage::open_temporary().unwrap(),
+    );
     writer_runtime
         .start_sync_task(Duration::from_secs(1), 8, true, "sync-1")
         .unwrap();
@@ -186,7 +190,11 @@ fn test_sqlite_query_only_fetches_needed_pages() {
     assert_eq!(writer_handle.snapshot().unwrap().unwrap().pages(), 5);
 
     // create the second node (reader)
-    let reader_runtime = Runtime::new(ClientId::random(), clients.clone(), Storage::open_temporary().unwrap());
+    let reader_runtime = Runtime::new(
+        ClientId::random(),
+        clients.clone(),
+        Storage::open_temporary().unwrap(),
+    );
     reader_runtime
         .start_sync_task(Duration::from_millis(100), 8, true, "sync-2")
         .unwrap();
@@ -215,7 +223,9 @@ fn test_sqlite_query_only_fetches_needed_pages() {
 
     // perform a single row lookup by ID
     let value: i32 = sqlite_reader
-        .query_row("SELECT id FROM test_data WHERE id = 42", [], |row| row.get(0))
+        .query_row("SELECT id FROM test_data WHERE id = 42", [], |row| {
+            row.get(0)
+        })
         .unwrap();
     assert_eq!(value, 42);
     // only a small number of pages are read
@@ -227,11 +237,18 @@ fn test_sqlite_query_only_fetches_needed_pages() {
         .unwrap();
     assert_eq!(value, 5050);
     // this pulls in the rest of the pages
-    assert_eq!(reader_runtime.clients().pagestore().pages_read(), writer_handle.snapshot().unwrap().unwrap().pages());
+    assert_eq!(
+        reader_runtime.clients().pagestore().pages_read(),
+        writer_handle.snapshot().unwrap().unwrap().pages()
+    );
 
     // shutdown everything
-    writer_runtime.shutdown_sync_task(Duration::from_secs(5)).unwrap();
-    reader_runtime.shutdown_sync_task(Duration::from_secs(5)).unwrap();
+    writer_runtime
+        .shutdown_sync_task(Duration::from_secs(5))
+        .unwrap();
+    reader_runtime
+        .shutdown_sync_task(Duration::from_secs(5))
+        .unwrap();
     backend.shutdown(Duration::from_secs(5)).unwrap();
 }
 
