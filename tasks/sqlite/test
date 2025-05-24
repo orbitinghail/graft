@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 GIT_ROOT="$(git rev-parse --show-toplevel)"
 
@@ -69,9 +69,11 @@ for TEST in ${TESTS}; do
     # We add the exit code to the output since SQLite returns the number of
     # errors encountered while executing, and some of the tests want to trigger
     # errors on purpose (thus we can't just fail on non-zero exit code).
+    set +e
     OUTPUT=$(just run sqlite bin "${SQLITE_ARGS[@]}" 2>&1 <"${TEST}")
     EXIT_CODE=$?
     OUTPUT=$(printf "%s\n\n%s\n" "${OUTPUT}" "SQLite Exit Code = ${EXIT_CODE}")
+    set -e
 
     if [ -n "${GRAFT_DATA_DIR}" ] && [ -z "${SKIP_CLEANUP:-}" ]; then
         rm -rf "${GRAFT_DATA_DIR}"

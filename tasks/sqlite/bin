@@ -40,19 +40,18 @@ if [ ! -f "${SQLITE_BIN}" ]; then
         tar -C "${SQLITE_DIR}" -xzf "${SQLITE_TAR}"
         rm "${SQLITE_TAR}"
         cd "${SQLITE_DIR}/sqlite-autoconf-${SQLITE_VERSION}"
-        export CFLAGS="
-            -DSQLITE_ENABLE_DBSTAT_VTAB
-            -DSQLITE_ENABLE_BYTECODE_VTAB
-            -DSQLITE_ENABLE_FTS4
-            -DSQLITE_ENABLE_FTS5
-            -DSQLITE_ENABLE_MATH_FUNCTIONS
-            -DSQLITE_THREADSAFE=0
-            -DSQLITE_ENABLE_EXPLAIN_COMMENTS
-            -DHAVE_READLINE
-            -DSQLITE_ENABLE_ATOMIC_WRITE
+        export CFLAGS="\
+            -DSQLITE_ENABLE_DBSTAT_VTAB \
+            -DSQLITE_ENABLE_BYTECODE_VTAB \
+            -DSQLITE_ENABLE_FTS4 \
+            -DSQLITE_ENABLE_FTS5 \
+            -DSQLITE_ENABLE_MATH_FUNCTIONS \
+            -DSQLITE_THREADSAFE=0 \
+            -DSQLITE_ENABLE_EXPLAIN_COMMENTS \
+            -DHAVE_READLINE \
+            -DSQLITE_ENABLE_ATOMIC_WRITE \
         "
         ./configure \
-            --all \
             --with-readline-ldflags="-L/opt/homebrew/opt/readline/lib -lreadline" \
             --with-readline-header="/opt/homebrew/opt/readline/include/readline/readline.h"
         make -j 4
