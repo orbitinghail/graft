@@ -36,6 +36,10 @@ impl Runtime {
         &self.cid
     }
 
+    pub fn clients(&self) -> &ClientPair {
+        &self.clients
+    }
+
     pub fn start_sync_task(
         &self,
         refresh_interval: Duration,
