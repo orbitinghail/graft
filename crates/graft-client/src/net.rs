@@ -11,7 +11,7 @@ use std::{any::type_name, sync::Arc, time::Duration};
 use tracing::field;
 use url::Url;
 
-use ureq::{Agent, config::AutoHeaderValue};
+use ureq::{Agent, Proxy, config::AutoHeaderValue};
 
 use crate::{USER_AGENT, error::ClientErr};
 
@@ -56,10 +56,15 @@ pub struct NetClient {
 
 impl NetClient {
     pub fn new(api_token: Option<String>) -> Self {
+        Self::new_with_proxy(api_token, Proxy::try_from_env())
+    }
+
+    pub fn new_with_proxy(api_token: Option<String>, proxy: Option<Proxy>) -> Self {
         Self {
             api_token,
             agent: Agent::config_builder()
                 .user_agent(AutoHeaderValue::Provided(Arc::new(USER_AGENT.to_string())))
+                .proxy(proxy)
                 .http_status_as_error(false)
                 .max_idle_age(Duration::from_secs(300))
                 .timeout_connect(Some(Duration::from_secs(60)))

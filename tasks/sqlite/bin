@@ -14,8 +14,14 @@ case "${UNAME_KERNEL}" in
         ;;
 esac
 
-SQLITE_YEAR=${SQLITE_YEAR:-2025}
-SQLITE_VERSION=${SQLITE_VERSION:-3490100}
+if [[ -z "${SQLITE_TEST-}" ]]; then
+    SQLITE_YEAR=2025
+    SQLITE_VERSION=3490100
+else
+    SQLITE_YEAR=2023
+    SQLITE_VERSION=3440000
+fi
+
 SQLITE_URL="https://www.sqlite.org/${SQLITE_YEAR}/sqlite-tools-${PLATFORM}-x64-${SQLITE_VERSION}.zip"
 SQLITE_SRC_URL="https://www.sqlite.org/${SQLITE_YEAR}/sqlite-autoconf-${SQLITE_VERSION}.tar.gz"
 SQLITE_DIR="${GIT_ROOT}/target/sqlite-${SQLITE_VERSION}"

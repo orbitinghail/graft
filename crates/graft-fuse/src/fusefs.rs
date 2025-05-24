@@ -144,7 +144,7 @@ impl Filesystem for FuseFs {
                     self.offset,
                     name,
                     &TTL,
-                    &self.attr.build(&inode),
+                    &self.attr.build(inode),
                     0,
                 );
                 self.offset += 1;

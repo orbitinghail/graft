@@ -32,8 +32,7 @@ if [ -z "${LIBGRAFT}" ]; then
 fi
 
 # test against our min supported sqlite version
-export SQLITE_YEAR=2023
-export SQLITE_VERSION=3440000
+export SQLITE_TEST=1
 
 # run sqlite3.sh to ensure it's installed and print the version
 just run sqlite bin --version

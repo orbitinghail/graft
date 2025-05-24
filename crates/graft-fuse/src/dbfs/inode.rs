@@ -18,8 +18,8 @@ impl ToSql for InodeKind {
 impl FromSql for InodeKind {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value {
-            ValueRef::Integer(i) if i == 1 => Ok(InodeKind::Dir),
-            ValueRef::Integer(i) if i == 2 => Ok(InodeKind::File),
+            ValueRef::Integer(1) => Ok(InodeKind::Dir),
+            ValueRef::Integer(2) => Ok(InodeKind::File),
             _ => Err(FromSqlError::InvalidType),
         }
     }
@@ -105,7 +105,7 @@ impl Inode {
                 WHERE parent_id = ? AND name = ?
             ",
         )?;
-        Ok(stmt.query_row(params![parent_id, name], |row| {
+        stmt.query_row(params![parent_id, name], |row| {
             Ok(Inode {
                 id: row.get(0)?,
                 parent_id: row.get(1)?,
@@ -113,7 +113,7 @@ impl Inode {
                 name: row.get(3)?,
                 field_id: row.get(4)?,
             })
-        })?)
+        })
     }
 
     pub(super) fn get_by_id(db: &Connection, id: u64) -> rusqlite::Result<Self> {
@@ -124,7 +124,7 @@ impl Inode {
                 WHERE id = ?
             ",
         )?;
-        Ok(stmt.query_row(params![id], |row| {
+        stmt.query_row(params![id], |row| {
             Ok(Inode {
                 id: row.get(0)?,
                 parent_id: row.get(1)?,
@@ -132,7 +132,7 @@ impl Inode {
                 name: row.get(3)?,
                 field_id: row.get(4)?,
             })
-        })?)
+        })
     }
 
     pub(super) fn list_children(

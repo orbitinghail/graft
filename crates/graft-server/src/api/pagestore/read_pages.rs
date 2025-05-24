@@ -141,8 +141,8 @@ mod tests {
 
         let (page_tx, _) = mpsc::channel(128);
 
-        let client = NetClient::new(None);
-        let metastore_uri = "http://localhost:3000".parse().unwrap();
+        let client = NetClient::new_with_proxy(None, None);
+        let metastore_uri = "http://127.0.0.1:3000".parse().unwrap();
 
         let state = Arc::new(PagestoreApiState::new(
             page_tx,

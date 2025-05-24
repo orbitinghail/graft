@@ -64,6 +64,9 @@ pub enum ErrCtx {
 
     #[error("Invalid volume state")]
     InvalidVolumeState,
+
+    #[error(transparent)]
+    FmtErr(#[from] std::fmt::Error),
 }
 
 impl ErrCtx {
@@ -72,19 +75,23 @@ impl ErrCtx {
         match cb() {
             Ok(t) => Ok(t),
             Err(err) => {
-                let code = match err.ctx() {
-                    ErrCtx::UnknownPragma => SQLITE_NOTFOUND,
-                    ErrCtx::CantOpen => SQLITE_CANTOPEN,
-                    ErrCtx::Busy => SQLITE_BUSY,
-                    ErrCtx::BusySnapshot => SQLITE_BUSY_SNAPSHOT,
-                    ErrCtx::Client(err) => Self::map_client_err(err),
-                    _ => SQLITE_INTERNAL,
-                };
+                let code = err.ctx().sqlite_err();
                 if code == SQLITE_INTERNAL {
                     tracing::error!("{}", err);
                 }
                 Err(code)
             }
+        }
+    }
+
+    fn sqlite_err(&self) -> SqliteErr {
+        match self {
+            ErrCtx::UnknownPragma => SQLITE_NOTFOUND,
+            ErrCtx::CantOpen => SQLITE_CANTOPEN,
+            ErrCtx::Busy => SQLITE_BUSY,
+            ErrCtx::BusySnapshot => SQLITE_BUSY_SNAPSHOT,
+            ErrCtx::Client(err) => Self::map_client_err(err),
+            _ => SQLITE_INTERNAL,
         }
     }
 
@@ -203,7 +210,13 @@ impl Vfs for GraftVfs {
     ) -> Result<Option<String>, PragmaErr> {
         tracing::trace!("pragma: file={handle:?}, pragma={pragma:?}");
         if let FileHandle::VolFile(file) = handle {
-            GraftPragma::try_from(&pragma)?.eval(&self.runtime, file)
+            match GraftPragma::try_from(&pragma)?.eval(&self.runtime, file) {
+                Ok(val) => Ok(val),
+                Err(err) => Err(PragmaErr::Fail(
+                    err.ctx().sqlite_err(),
+                    Some(format!("{err:?}")),
+                )),
+            }
         } else {
             Err(PragmaErr::NotFound)
         }

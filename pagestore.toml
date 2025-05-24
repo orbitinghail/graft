@@ -1,4 +1,4 @@
-metastore = "http://localhost:3001"
+metastore = "http://127.0.0.1:3001"
 
 [objectstore]
 type = "memory"

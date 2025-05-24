@@ -1,10 +1,14 @@
+use culprit::{Culprit, ResultExt};
 use graft_client::runtime::{
     runtime::Runtime, storage::page::PageStatus, volume_reader::VolumeRead,
 };
-use sqlite_plugin::vfs::{Pragma, PragmaErr};
+use sqlite_plugin::{
+    vars::SQLITE_ERROR,
+    vfs::{Pragma, PragmaErr},
+};
 use std::{fmt::Write, time::Instant};
 
-use crate::file::vol_file::VolFile;
+use crate::{file::vol_file::VolFile, vfs::ErrCtx};
 
 pub enum GraftPragma {
     /// `pragma graft_status;`
@@ -46,15 +50,17 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     "reset" => Ok(GraftPragma::Reset),
                     "sync" => {
                         let arg = p.arg.ok_or(PragmaErr::required_arg(p))?;
-                        let autosync = arg.parse()?;
+                        let autosync = arg.parse().map_err(|err| {
+                            PragmaErr::Fail(SQLITE_ERROR, Some(format!("{err:?}")))
+                        })?;
                         Ok(GraftPragma::SetAutosync(autosync))
                     }
                     "sync_errors" => Ok(GraftPragma::SyncErrors),
                     "version" => Ok(GraftPragma::Version),
-                    _ => Err(PragmaErr::Fail(format!(
-                        "invalid graft pragma `{}`",
-                        p.name
-                    ))),
+                    _ => Err(PragmaErr::Fail(
+                        SQLITE_ERROR,
+                        Some(format!("invalid graft pragma `{}`", p.name)),
+                    )),
                 };
             }
         }
@@ -63,7 +69,11 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
 }
 
 impl GraftPragma {
-    pub fn eval(self, runtime: &Runtime, file: &mut VolFile) -> Result<Option<String>, PragmaErr> {
+    pub fn eval(
+        self,
+        runtime: &Runtime,
+        file: &mut VolFile,
+    ) -> Result<Option<String>, Culprit<ErrCtx>> {
         match self {
             GraftPragma::Status => {
                 let mut out = "Graft Status\n".to_string();
@@ -75,7 +85,11 @@ impl GraftPragma {
                     writeln!(&mut out, "Current snapshot: None")?;
                 }
                 writeln!(&mut out, "Autosync: {}", runtime.get_autosync())?;
-                writeln!(&mut out, "Volume status: {:?}", file.handle().status()?)?;
+                writeln!(
+                    &mut out,
+                    "Volume status: {:?}",
+                    file.handle().status().or_into_ctx()?
+                )?;
                 Ok(Some(out))
             }
             GraftPragma::SyncErrors => {
@@ -114,7 +128,7 @@ impl GraftPragma {
                 for pageidx in pages.iter() {
                     write!(&mut out, "{:<8} | ", pageidx.to_u32())?;
 
-                    let status = reader.status(pageidx)?;
+                    let status = reader.status(pageidx).or_into_ctx()?;
                     match status {
                         PageStatus::Pending => {
                             writeln!(&mut out, "{} | pending", fmt_lsn!(snapshot_lsn))?
@@ -133,7 +147,7 @@ impl GraftPragma {
                 Ok(None)
             }
             GraftPragma::Reset => {
-                file.handle().reset_to_remote()?;
+                file.handle().reset_to_remote().or_into_ctx()?;
                 Ok(None)
             }
 

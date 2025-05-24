@@ -74,7 +74,7 @@ pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
         .build()
         .expect("failed to construct tokio runtime");
 
-    let net_client = NetClient::new(None);
+    let net_client = NetClient::new_with_proxy(None, None);
 
     let mut supervisor = Supervisor::default();
     let metastore = runtime.block_on(run_metastore(net_client.clone(), &mut supervisor));
@@ -126,7 +126,7 @@ pub async fn run_metastore(net_client: NetClient, supervisor: &mut Supervisor) -
     let router = build_router(Registry::default(), None, state, metastore_routes());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    let endpoint = Url::parse(&format!("http://localhost:{port}")).unwrap();
+    let endpoint = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
     supervisor.spawn(ApiServerTask::new("metastore-api", listener, router));
     MetastoreClient::new(endpoint, net_client)
 }
@@ -172,7 +172,7 @@ pub async fn run_pagestore(
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    let endpoint = Url::parse(&format!("http://localhost:{port}")).unwrap();
+    let endpoint = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
     supervisor.spawn(ApiServerTask::new("pagestore-api", listener, router));
 
     PagestoreClient::new(endpoint, net_client)
