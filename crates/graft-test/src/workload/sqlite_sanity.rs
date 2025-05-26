@@ -7,7 +7,7 @@ use rand::{Rng, seq::IndexedRandom};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, config::DbConfig, params};
 use serde::{Deserialize, Serialize};
 use sqlite_plugin::vfs::{RegisterOpts, register_static};
-use std::{fmt::Debug, thread::sleep, time::Duration};
+use std::{ffi::CString, fmt::Debug, thread::sleep, time::Duration};
 use tracing::field;
 
 use crate::workload::recover_and_sync_volume;
@@ -20,7 +20,7 @@ pub struct SqliteSanity {
     vids: Vec<VolumeId>,
     interval_ms: u64,
     initial_accounts: u64,
-    vfs_name: String,
+    vfs_name: CString,
 
     #[serde(skip)]
     vid: Option<VolumeId>,
@@ -30,8 +30,12 @@ impl Workload for SqliteSanity {
     fn setup<R: rand::Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), WorkloadErr> {
         // register graft vfs
         let vfs = GraftVfs::new(env.runtime.clone());
-        register_static(&self.vfs_name, vfs, RegisterOpts { make_default: false })
-            .expect("failed to register vfs");
+        register_static(
+            self.vfs_name.clone(),
+            vfs,
+            RegisterOpts { make_default: false },
+        )
+        .expect("failed to register vfs");
 
         Ok(())
     }
@@ -48,7 +52,7 @@ impl Workload for SqliteSanity {
         let mut sqlite = Connection::open_with_flags_and_vfs(
             vid.pretty(),
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-            &self.vfs_name,
+            self.vfs_name.as_c_str(),
         )?;
 
         sqlite.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
