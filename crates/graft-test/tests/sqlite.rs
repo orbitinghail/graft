@@ -27,7 +27,7 @@ fn test_sync_and_reset() {
         .start_sync_task(Duration::from_secs(1), 8, true, "sync-1")
         .unwrap();
     register_static(
-        "graft-1",
+        c"graft-1".to_owned(),
         GraftVfs::new(runtime1.clone()),
         RegisterOpts { make_default: false },
     )
@@ -40,7 +40,7 @@ fn test_sync_and_reset() {
         .start_sync_task(Duration::from_millis(100), 8, true, "sync-2")
         .unwrap();
     register_static(
-        "graft-2",
+        c"graft-2".to_owned(),
         GraftVfs::new(runtime2.clone()),
         RegisterOpts { make_default: false },
     )
@@ -52,7 +52,7 @@ fn test_sync_and_reset() {
     let sqlite1 = Connection::open_with_flags_and_vfs(
         vid.pretty(),
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-        "graft-1",
+        c"graft-1",
     )
     .unwrap();
     let handle1 = runtime1
@@ -62,7 +62,7 @@ fn test_sync_and_reset() {
     let sqlite2 = Connection::open_with_flags_and_vfs(
         vid.pretty(),
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-        "graft-2",
+        c"graft-2",
     )
     .unwrap();
     let handle2 = runtime2
@@ -152,7 +152,7 @@ fn test_sqlite_query_only_fetches_needed_pages() {
         .start_sync_task(Duration::from_secs(1), 8, true, "sync-1")
         .unwrap();
     register_static(
-        "graft-writer",
+        c"graft-writer".to_owned(),
         GraftVfs::new(writer_runtime.clone()),
         RegisterOpts { make_default: false },
     )
@@ -162,7 +162,7 @@ fn test_sqlite_query_only_fetches_needed_pages() {
     let sqlite_writer = Connection::open_with_flags_and_vfs(
         vid.pretty(),
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-        "graft-writer",
+        c"graft-writer",
     )
     .unwrap();
     let writer_handle = writer_runtime
@@ -199,7 +199,7 @@ fn test_sqlite_query_only_fetches_needed_pages() {
         .start_sync_task(Duration::from_millis(100), 8, true, "sync-2")
         .unwrap();
     register_static(
-        "graft-reader",
+        c"graft-reader".to_owned(),
         GraftVfs::new(reader_runtime.clone()),
         RegisterOpts { make_default: false },
     )
@@ -207,7 +207,7 @@ fn test_sqlite_query_only_fetches_needed_pages() {
     let sqlite_reader = Connection::open_with_flags_and_vfs(
         vid.pretty(),
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-        "graft-reader",
+        c"graft-reader",
     )
     .unwrap();
 

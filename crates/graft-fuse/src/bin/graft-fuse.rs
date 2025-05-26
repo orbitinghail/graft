@@ -48,7 +48,7 @@ fn main() {
         .unwrap();
 
     register_static(
-        "graft",
+        c"graft".to_owned(),
         GraftVfs::new(runtime.clone()),
         RegisterOpts { make_default: false },
     )

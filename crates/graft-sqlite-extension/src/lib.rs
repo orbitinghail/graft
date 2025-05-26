@@ -128,7 +128,7 @@ pub unsafe extern "C" fn sqlite3_graft_init(
     if let Err(err) = unsafe {
         register_dynamic(
             p_api,
-            "graft",
+            c"graft".to_owned(),
             vfs,
             RegisterOpts { make_default: config.make_default },
         )
