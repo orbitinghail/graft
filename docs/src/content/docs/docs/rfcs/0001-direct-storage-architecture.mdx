@@ -96,10 +96,36 @@ Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, 
 
 - **`vid`**: A 16 byte Volume ID using [`GID`] encoding.
 - **`sid`**: A 16 byte Segment ID using [`GID`] encoding.
-- **`lsn`**: A 8 byte log sequence number, representing a fixed point in a log. Valid range: `[1, 2^64)`.
+- **`Snapshot`**: A frozen point-in-time view of a Volume.
+- **`lsn`**: Documented in the [Volume Log](#volume-log) section.
 - **`pageidx`**: A 4 byte page index, representing the index of a page within a Volume. Valid range: `[1, 2^32)`.
 - **`Splinter`**: A compressed bitset, used to keep track of which `pageidxs` appear in a Segment.
 - **`Segment`**: A set of pages, sorted by `pageidx`.
+- **`VolumeRef`**: A `(vid, lsn)` tuple, representing a fixed point in a Volumes history.
+
+### Volume Log
+
+A volume’s durable state consists of a **Checkpoint** and a **Log**.
+
+- **Checkpoint** — a point-in-time mapping from each non-empty `pageidx` to the version (by LSN) that was current when the checkpoint was taken.
+- **Log** — an append-only sequence of log records. Each record contains the set of pages modified since the previous LSN.
+
+#### Log Sequence Numbers (LSNs)
+
+| Property       | Definition                                                         |
+|----------------|--------------------------------------------------------------------|
+| **Domain**     | Unsigned 64-bit integer in the range `[1, 2^64)`. Zero is invalid. |
+| **Ordering**   | Strictly increasing, gap-free, and scoped per volume.              |
+| **Encoding**   | Canonical representation is `CBE64`: one’s-complement, big-endian. |
+
+#### `CBE64` Encoding
+
+- **Binary form** — 8-byte array. Bytewise comparison yields descending numeric order. Used for space-efficient storage, such as in embedded key-value stores like [Fjall].
+- **Hex form** — 16-character, zero-padded, uppercase hexadecimal string. Lexicographically sorts in the same order as the binary form. Used where human readability is preferred, such as object store keys.
+
+The CBE64 encoding allows both local key-value stores and object stores to perform forward iteration over keys to process log records in descending LSN order, without additional index structures.
+
+Because `0` is never a valid LSN, its encoding (`0xFFFFFFFFFFFFFFFF`) is available as a sentinel value.
 
 ### Remote storage
 
@@ -136,9 +162,10 @@ package graft.remote.v1;
 import "google/protobuf/timestamp.proto";
 
 // Storage must provide the following additional system metadata:
-//  - Last-Modified: The object creation or updated date
-//  - Checksum: The object's checksum
-// Allowing these fields to be omitted.
+//  - Last-Modified: The object creation or updated date.
+//  - Checksum: The object's checksum.
+//  - ETag: A hash of the object's content.
+// Allowing these fields to be omitted from the schema.
 
 // A Volume has a top level control file stored at
 // `{prefix}/volumes/{vid}/control`
@@ -158,8 +185,8 @@ message Control {
 // `{prefix}/volumes/{parent-vid}/forks/{fork-vid}`
 // Forks are immutable.
 message Fork {
-  // The VID of the parent.
-  bytes parent_vid = 1;
+  // The fork point. Must match the parent field in the Fork's Control file.
+  VolumeRef parent = 1;
 
   // The VID of the fork.
   bytes fork_vid = 2;
@@ -175,7 +202,7 @@ message VolumeRef {
 }
 
 // Checkpoints are stored at `{prefix}/volumes/{vid}/checkpoints/{lsn}`.
-// {lsn} is a 64 bit number stored as a fixed-width 16 character hex string.
+// A Checkpoint's LSN is the last LSN contained by this checkpoint.
 // Checkpoints are immutable.
 message Checkpoint {
   // The Volume ID.
@@ -189,12 +216,10 @@ message Checkpoint {
 }
 
 // Commits are stored at `{prefix}/volumes/{vid}/log/{lsn}`.
-// {lsn} is a 64 bit number stored as a fixed-width 16 character hex string.
-// Commits are immutable.
 // There are some valid cases for a commit to not include any SegmentRefs:
-//  - The volume is a fork and has rebased itself on the parent. An empty commit is used to ensure that LSNs retain monotonicity.
-//  - The commit marks a new checkpoint.
+//  - The commit marks a new Checkpoint. The corresponding Checkpoint (referenced by the `checkpoint_lsn` field) will contain the SegmentRefs associated to the checkpoint.
 //  - The Volume has been truncated or extended causing the `page_count` to change, but no new pages to be written.
+// Commits are immutable.
 message Commit {
   // The Volume ID.
   bytes vid = 1;
@@ -294,7 +319,7 @@ message SyncOp {
   // The state of this SyncOp.
   SyncState state = 4;
 
-  // The full remote commit we are attempting to sync.
+  // The full parent commit we are attempting to sync.
   // Only set when `state == Pending`.
   optional graft.remote.v1.Commit commit = 5;
 }
@@ -310,6 +335,26 @@ message LocalCommit {
 ```
 
 ### Algorithms
+
+**SyncOp** thoughts:
+- should it be called "Merge"?
+- we need SyncOp for these purposes:
+  1. to keep track of an in-progress sync, part of our 2PC write protocol
+  2. to keep track of the mapping between parent and writer LSNs in order to:
+    - know if we have pending local commits to sync
+    - to copy cached pages during fast forward
+      - this isn't needed if pages are stored by segment id, and segments are shared across Volumes
+- so if we don't need to copy over pages, we could reduce this to a single sync state Object
+  - writer ref: VolumeRef
+    - marks the last successful writer LSN that synced
+    - updated when push succeeds and on pull
+  - parent ref: VolumeRef
+    - marks the parent LSN that maps to the writer ref
+    - updated when push succeeds and on pull
+  - optional PendingCommit
+    - commit: Commit
+    - range: LSNRange - the range of LSNs we are trying to sync from the writer
+    - set when push starts, cleared when push finishes
 
 **TODO: open thoughts**
 - should sync status include an error message? or is code enough?
