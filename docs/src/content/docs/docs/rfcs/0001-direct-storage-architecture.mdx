@@ -201,18 +201,27 @@ message VolumeRef {
   uint64 lsn = 2;
 }
 
+// A snapshot of a Volume.
+message Snapshot {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The LSN of the Volume at this Snapshot.
+  uint64 lsn = 2;
+
+  // The Volume's page count at this Snapshot.
+  uint32 page_count = 3;
+}
+
 // Checkpoints are stored at `{prefix}/volumes/{vid}/checkpoints/{lsn}`.
 // A Checkpoint's LSN is the last LSN contained by this checkpoint.
 // Checkpoints are immutable.
 message Checkpoint {
-  // The Volume ID.
-  bytes vid = 1;
-
-  // The Volume's page count after replaying this checkpoint.
-  uint32 page_count = 2;
+  // The Volume Snapshot at this Checkpoint.
+  Snapshot snapshot = 1;
 
   // The list of SegmentRefs representing this Checkpoint.
-  repeated SegmentRef segments = 3;
+  repeated SegmentRef segments = 2;
 }
 
 // Commits are stored at `{prefix}/volumes/{vid}/log/{lsn}`.
@@ -221,22 +230,16 @@ message Checkpoint {
 //  - The Volume has been truncated or extended causing the `page_count` to change, but no new pages to be written.
 // Commits are immutable.
 message Commit {
-  // The Volume ID.
-  bytes vid = 1;
-
-  // The LSN of this commit.
-  uint64 lsn = 2;
-
-  // The Volume's page count after replaying this commit.
-  uint32 page_count = 3;
+  // The Volume Snapshot at this Commit.
+  Snapshot snapshot = 1;
 
   // The latest checkpoint LSN.
   // To recover the Volume's latest state, replay this checkpoint and the log starting from the checkpoint LSNs successor.
   // Earlier LSNs and checkpoints may be garbage collected at any point.
-  uint64 checkpoint_lsn = 4;
+  uint64 checkpoint_lsn = 2;
 
   // The list of SegmentRefs representing this Commit.
-  repeated SegmentRef segments = 5;
+  repeated SegmentRef segments = 3;
 }
 
 message SegmentRef {
@@ -257,15 +260,18 @@ This section documents how clients store data.
 Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, the top level keys are independent partitions. The remainder of the keys and the values are encoded using types in the following section.
 
 ```
-volumes /
-  {vid} /
-    writer -> Fork
-    parent -> VolumeRef
+volumes / {vid} /
+  // parent tags
+  writer -> VolumeId: The designated "writer" fork for this Volume.
 
-sync / {writer_vid} / {writer_lsn} -> SyncOp
+  // fork tags
+  parent -> VolumeRef
+  last_sync -> VolumeMapping
+  pending_commit -> PendingCommit
 
-log / {vid} / {lsn} -> LocalCommit
-log / {vid} / {lsn} / {sid} -> Splinter
+log / {vid} / {lsn} -> Snapshot
+
+segments / {vid} / {lsn} / {min_pageidx, max_pageidx} -> SegmentRef
 
 pages / {sid} / {pageidx} -> Page
 ```
@@ -274,6 +280,36 @@ pages / {sid} / {pageidx} -> Page
 
 Keys which are stored in the local keyspace are encoded using `zerocopy` types. `lsn` values are stored using `CBE64`, which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
 
+```rust
+enum VolumeKeyTag {
+    Writer = 1,
+    Parent = 2,
+    LastSync = 3,
+    PendingCommit = 4,
+}
+
+struct VolumeKey {
+    vid: VolumeId,
+    tag: VolumeKeyTag,
+}
+
+struct LogKey {
+    vid: VolumeId,
+    lsn: CBE64,
+}
+
+struct SegmentKey {
+    prefix: LogKey,
+    min_pageidx: PageIdx,
+    max_pageidx: PageIdx,
+}
+
+struct PageKey {
+    sid: SegmentId,
+    pageidx: PageIdx,
+}
+```
+
 Values stored locally are encoded using protobuf, using a combination of the remote storage schema and the following additional message types.
 
 ```proto
@@ -281,102 +317,62 @@ syntax = "proto3"
 
 package graft.local.v1;
 
-// An inclusive range of LSNs.
-message LsnRange {
-  uint64 inclusive_start = 1;
-  uint64 inclusive_end = 2;
+// A mapping between LSNs of a parent and a fork.
+message VolumeMapping {
+  graft.remote.v1.VolumeRef parent = 1;
+  graft.remote.v1.VolumeRef fork = 2;
 }
 
-enum SyncState {
-  SYNC_STATE_UNSPECIFIED = 0;
+// An in-progress commit to the parent. Only exists during the two-phase commit process.
+message PendingCommit {
+  // If successful, this Commit will result in this VolumeMapping.
+  VolumeMapping mapping = 1;
 
-  // This SyncOp is in the process of committing into the destination Volume.
-  SYNC_STATE_PENDING = 1;
-
-  // This SyncOp represents a fully committed relationship between a Volume and
-  // its writer.
-  SYNC_STATE_COMPLETED = 2;
-
-  // This SyncOp was rejected by the destination Volume.
-  SYNC_STATE_REJECTED = 3;
-}
-
-// SyncOp is stored at `sync/{writer_vid}/{writer_lsn}`.
-//
-// The `writer_lsn` is the last LSN in the `writer_lsns` range. Thus it marks a
-// mapping between a LSN range on the writer Volume and the corresponding LSN on
-// its parent Volume.
-message SyncOp {
-  // The writer Volume ID.
-  bytes writer_vid = 1;
-
-  // The writer LSN range.
-  LsnRange writer_lsns = 2;
-
-  // The parent reference
-  graft.remote.v1.VolumeRef parent = 3;
-
-  // The state of this SyncOp.
-  SyncState state = 4;
-
-  // The full parent commit we are attempting to sync.
-  // Only set when `state == Pending`.
-  optional graft.remote.v1.Commit commit = 5;
-}
-
-// stored at log/{vid}/{lsn}
-message LocalCommit {
-  // The Volume ID and LSN.
-  graft.remote.v1.VolumeRef ref = 1;
-
-  // The Volume's page count after replaying this commit.
-  uint32 page_count = 2;
+  // The pending commit.
+  graft.remote.v1.Commit commit = 2;
 }
 ```
 
 ### Algorithms
 
-**SyncOp** thoughts:
-- should it be called "Merge"?
-- we need SyncOp for these purposes:
-  1. to keep track of an in-progress sync, part of our 2PC write protocol
-  2. to keep track of the mapping between parent and writer LSNs in order to:
-    - know if we have pending local commits to sync
-    - to copy cached pages during fast forward
-      - this isn't needed if pages are stored by segment id, and segments are shared across Volumes
-- so if we don't need to copy over pages, we could reduce this to a single sync state Object
-  - writer ref: VolumeRef
-    - marks the last successful writer LSN that synced
-    - updated when push succeeds and on pull
-  - parent ref: VolumeRef
-    - marks the parent LSN that maps to the writer ref
-    - updated when push succeeds and on pull
-  - optional PendingCommit
-    - commit: Commit
-    - range: LSNRange - the range of LSNs we are trying to sync from the writer
-    - set when push starts, cleared when push finishes
-
 **TODO: open thoughts**
-- should sync status include an error message? or is code enough?
-- do we want a log of failed syncs stored separately from the sync log?
-  - an app basically only cares how far behind we are, and whether or not the most recent sync failed (and why)
-- do we need to track the min lsn on the writer vid to ensure monotonicity?
+While the current layout is somewhat elegant, its quite difficult to eliminate write amplification when the writer vid fast forwards (or pushes) due to commit collapse during sync.
+
+Its possible to leverage graft's existing local storage impl by adding a indirection layer allowing the same Volume to be opened simultaneously at multiple LSNs.
+
+This will retain some of the remote/local commit mapping complexity, however does solve page write amp (and eliminate fast forwarding) quite well.
+
+Another option is to lean into this much more elegant structure, and fully dedup pages using content hashes.
+- benefit: also serves to provide general page dedup (esp useful for sqlite rollback)
+- benefit: could be used to add page data hashes to commits
+- downside: increase read/write latency due to hashing and indirection
+- downside: hashes are 32 bytes which leads to a lot more write amplification, esp since page pointers will be duplicated.
+
+I could give up on full hashing and instead use a lightweight crc + local seqno to build a page id. This value only has to be local. Probably will result in a 16 byte page id (8 byte seqno, 8 byte crc) but be much faster to compute (and takes up half as much space).
 
 **TODO: plan for sync protocol**
 - snapshot
   - use last writer lsn if exists, otherwise upstream lsn
 - push
-  - build and push segments
-  - write pending SyncOp
-  - commit
+  - if pending_commit skip to committing to remote storage
+  - collect segments
+    - `start_lsn = last_sync.fork.lsn`
+    - `snapshot = first log/{writer_vid}`
+    - `iter segments/{writer_vid}/{..=start_lsn}`
+      - build segments
+  - push segments
+  - write pending_commit
+  - commit to remote storage
   - if success:
     - fjall batch
-      - write commit to parent log
-      - mark SyncOp as success
+      - write snapshot + segments to parent log
+        - optimization: segment refs here can be refs to the writer segments! this allows page reuse, however it means that the segment index will be out of sync
+      - clear pending commit
+      - update last_sync
   - if transient failure:
-    - mark SyncOp as failure, schedule retry
+    - log error, schedule retry
   - if reject:
-    - mark SyncOp as reject, disable push, wait for app resolution
+    - clear pending commit, trigger pull on parent
 - pull
   - pull commits into remote vid
   - also write commit into writer vid if exists
