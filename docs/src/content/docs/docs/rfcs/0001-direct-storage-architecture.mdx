@@ -489,6 +489,21 @@ class VolumeWriter:
 - update writer pointer on upstream vid
 - eventually GC old vid once read snapshots drop
 
+### Splinter improvements
+
+This RFC depends on the following new [Splinter] features:
+
+- `offset_of(key: u32) -> Option<usize>`
+  - returns the zero-based offset of a given key in the Splinter.
+  - returns None if the key is not contained by the Splinter.
+- `bounds() -> Option<(u32, u32)>`
+  - if the Splinter is non-empty, returns the minimum and maximum key stored in the Splinter.
+- `iter_range(offsets) -> impl Iterator<Item=u32>`
+  - returns an iterator of the keys selected by the offset range.
+  - we could instead just override `Iterator::nth` on the existing Splinter iterator. This composes with the rest of the Iterator ecosystem.
+
+All new methods should be implemented on both Splinter and SplinterRef.
+
 ## Drawbacks
 
 Why should we *not* do this?
@@ -527,3 +542,4 @@ Note that having something written down in the future-possibilities section is n
 [Fjall]: https://github.com/fjall-rs/fjall/
 [`GID`]: https://graft.rs/docs/internals/gid/
 [blake3]: https://github.com/BLAKE3-team/BLAKE3
+[Splinter]: https://github.com/orbitinghail/splinter-rs
