@@ -346,6 +346,8 @@ TODO:
   - and perhaps another lock for cross-volume ops?
     - ideally gc can be incremental and take advantage of the monotonicity of the log and segments partitions
 
+The `log` and `segments` partitions are monotonic.
+
 #### Volume Snapshot
 
 Acquire the latest snapshot for the Volume, or the Volume's designated writer if one exists.
