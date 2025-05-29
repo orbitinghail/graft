@@ -338,6 +338,14 @@ message PendingCommit {
 
 ### Algorithms
 
+#### Storage Locking
+
+TODO:
+  - feels like we need a lock to ensure that meta-level ops are non-concurrent with respect to a single volume
+  - and another lock for ensuring that commits to a single volume are serializable
+  - and perhaps another lock for cross-volume ops?
+    - ideally gc can be incremental and take advantage of the monotonicity of the log and segments partitions
+
 #### Volume Snapshot
 
 Acquire the latest snapshot for the Volume, or the Volume's designated writer if one exists.
@@ -458,6 +466,79 @@ class VolumeWriter:
 ```
 
 #### Push Volume
+
+```python
+def push_volume(parent_vid, writer_vid):
+  # isolate metadata operations on this volume
+  with metadata_lock(parent_vid):
+    pending_commit = prepare_commit(parent_vid, writer_vid)
+    remote_commit(parent_vid, writer_vid, pending_commit)
+
+def prepare_commit(parent_vid, writer_vid):
+    # ensure the writer is still the writer
+    assert_eq(read(f"volumes/{parent_vid}/writer"), writer_vid)
+
+    # check for pending commit
+    pending_commit = read(f"volumes/{writer_vid}/pending_commit")
+    if pending_commit:
+      return pending_commit
+
+    # otherwise, we need to build a new pending commit
+    parent_snapshot = first(f"log/{parent_vid}")
+    parent_checkpoint = first(f"volumes/{parent_vid}/checkpoint")
+    writer_snapshot = first(f"log/{writer_vid}")
+
+    last_sync = read(f"volumes/{writer_vid}/last_sync")
+    assert(writer_snapshot.lsn != last_sync.fork.lsn, "nothing to commit")
+
+    bottom_lsn = last_sync.fork.lsn
+    top_lsn = writer_snapshot.lsn
+
+    # build and push segments from commits
+    (segment_refs, page_count) = build_and_push_segments(writer_vid, bottom_lsn, top_lsn)
+
+    commit_lsn = parent_snapshot.lsn.next()
+
+    pending_commit = PendingCommit {
+      mapping: VolumeMapping {
+        parent: VolumeRef { vid: parent_vid, lsn: commit_lsn },
+        fork: VolumeRef { vid: writer_vid, lsn: top_lsn },
+      },
+      commit: Commit {
+        snapshot: Snapshot {
+          vid: parent_vid,
+          lsn: commit_lsn,
+          page_count
+        },
+        checkpoint_lsn: parent_checkpoint.lsn,
+        segments: segment_refs
+      }
+    }
+
+  write(f"volumes/{writer_vid}/pending_commit", pending_commit)
+
+  return pending_commit
+
+def build_and_push_segments(writer_vid, bottom_lsn, top_lsn):
+  # build up a BTreeMap<PageIdx, SegmentId> containing the last SegmentId for each page in all segments between bottom_lsn and top_lsn
+  # iterate through the BTreeMap in chunks of MAX_SEGMENT_SIZE
+  # building splinters and uploading segments as we go
+  pass
+
+def remote_commit(parent_vid, writer_vid, commit):
+  # ensure this commit matches the (parent, writer) pair
+  assert_eq(commit.mapping.parent.vid, parent_vid)
+  assert_eq(commit.mapping.fork.vid, writer_vid)
+
+  with storage.lock():
+    # ensure the writer is still the writer
+    assert_eq(read(f"volumes/{parent_vid}/writer"), writer_vid)
+
+    # ensure we are committing to the correct remote lsn
+    parent_snapshot = first(f"log/{parent_vid}")
+    assert_eq(commit.mapping.parent.lsn, parent_snapshot.lsn.next())
+
+```
 
 - if pending_commit skip to committing to remote storage
 - collect segments
