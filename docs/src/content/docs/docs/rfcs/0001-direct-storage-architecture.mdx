@@ -1,0 +1,628 @@
+---
+title: 0001 - Direct Storage Architecture
+rfc:
+  id: 0001
+  slug: direct-storage-architecture
+  startDate: 2025-05-14
+  issue: ~
+  pr: ~
+---
+
+import RfcInfo from "@components/RfcInfo.astro";
+
+<RfcInfo {...frontmatter.rfc} />
+
+Build a new Graft client library (called `graft-kernel`) which directly interfaces with object storage, eliminating the need for the MetaStore and PageStore, and setting Graft up as a viable replacement to systems like Litestream. Graft should focus on providing best-in-class PITR, branching, and sparse replication for page-based workloads.
+
+## Motivation
+
+An overview of why we should consider making this major change to Graft's architecture.
+
+### Existing state of Graft
+
+Currently Graft requires a MetaStore and PageStore to support replication to and from object storage. This architecture has the following advantages and disadvantages:
+
+**Advantages**
+- The MetaStore can efficiently rollup commits to fast forward clients, increasing performance and enabling instant read replicas
+- The PageStore acts as a smart cache, allowing clients to pull only the pages they need at the edge.
+- The PageStore is able to collocate writes to multiple Volumes in the same Segment, reducing cost for high write rates.
+
+**Disadvantages**
+- There is little isolation between data in different Volumes. Graft will need to roll out a comprehensive encryption + authorization layer to work for production workloads. This is a huge cost in terms of testing and engineering.
+- Users must run two services to take full advantage of Graft, this makes Graft much harder to use.
+
+### [Datasette]
+
+In a discussion with [Simon Willison] and [Alex Garcia], we talked about some of their dream features for SQLite + Graft:
+
+**Rollback database to earlier version**
+The ability to cheaply rollback a database would make risky features like giving an LLM read/write access to your database much safer. Additionally, the ability to branch a database at a particular version may enable risk-free experimentation and testing.
+
+**Read-only replication**
+Cheap and fast read-only replication to horizontally scale a heavy query workload over multiple machines, or simply to expose data to less-trusted users.
+
+**Composability with IAM permissions**
+Currently, Datasette uses IAM keys limited to a single S3 prefix to restrict Litestream's access to a single tenant's data. This ensures that a bug in Litestream can affect at most a single tenant.
+
+This feature implies that data does not cross "tenant" boundaries (or in this case, the configured S3 prefix).
+
+[Datasette]: https://www.datasette.cloud/
+[Simon Willison]: https://simonwillison.net/
+[Alex Garcia]: https://alexgarcia.xyz/
+
+### Object storage scalability
+
+In a discussion with a potential user, they expressed reservations due to the layer of indirection between the Graft client and object storage. Their main argument is that S3 is already proven to handle extremely high scale. They would be more comfortable using Graft if clients connected directly to object storage to pull changes. In some cases, this may also reduce costs due to free bandwidth between compute and S3.
+
+### New user experience
+
+Graft should work out of the box without needing additional services to run. By supporting direct access to object storage, it will be easier to get started and embed Graft in an application.
+
+## Guide-level Explanation
+
+A high level explanation of how this feature works, and would change the behavior of existing Graft clients such as `graft-sqlite` and `graft-fuse`.
+
+### `graft-kernel`
+
+`graft-kernel` implements the Graft Kernel which supersedes the functionality of the `graft-client` and `graft-server` crates. The Kernel provides access to a remote Volume Catalog, local storage, and client functionality to downstream crates like `graft-sqlite` and `graft-fuse`.
+
+**Volume Catalog**
+This subsystem provides push and pull functionality to Volume commit logs. It's designed to support multiple backends including direct access to object storage and the graft-proxy.
+
+**Local storage**
+This subsystem provides durable storage for the Volume Catalog, Pages, and Volume State. It's extremely similar to the existing `graft-client` storage subsystem.
+
+**Client functionality**
+Clients such as `graft-sqlite` and `graft-fuse` will use the `graft-kernel` to operate on Volumes. The Kernel is designed to be embedded in the application, performing I/O in a small set of background threads. The Kernel will be implemented as an async core wrapped with an async and sync API.
+
+### `graft-proxy`
+
+The Graft Proxy is a stateless edge service and caching layer which makes it easier for Graft to replicate to & from devices. Initially it will simply act as a pass-through proxy to object storage with its own authentication and authorization layer.
+
+Graft Proxy exposes a simple API to consumers, enabling two key performance features:
+1. Graft Proxy acts like a read through cache, ideally using ephemeral NVME drives
+2. Replica fast-forwarding: collapse a pull graft request and only return the latest segments.
+
+Eventually Graft Proxy will enhance Graft with these features:
+- volume subscriptions -> eliminate the need to poll for changes
+- granular authorization
+- direct byte range puts and gets against Volumes
+
+## Reference-level Explanation
+
+Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, edge cases, and performance implications.
+
+### Glossary
+
+- **`vid`**: A 16 byte Volume ID using [`GID`] encoding.
+- **`sid`**: A 16 byte Segment ID using [`GID`] encoding.
+- **`Snapshot`**: A frozen point-in-time view of a Volume.
+- **`lsn`**: Documented in the [Volume Log](#volume-log) section.
+- **`pageidx`**: A 4 byte page index, representing the index of a page within a Volume. Valid range: `[1, 2^32)`.
+- **`Splinter`**: A compressed bitset, used to keep track of which `pageidxs` appear in a Segment.
+- **`Segment`**: A set of pages, sorted by `pageidx`.
+- **`VolumeRef`**: A `(vid, lsn)` tuple, representing a fixed point in a Volumes history.
+
+### Volume Log
+
+A volume’s durable state consists of a **Checkpoint** and a **Log**.
+
+- **Checkpoint** — a point-in-time mapping from each non-empty `pageidx` to the version (by LSN) that was current when the checkpoint was taken.
+- **Log** — an append-only sequence of log records. Each record contains the set of pages modified since the previous LSN.
+
+#### Log Sequence Numbers (LSNs)
+
+| Property       | Definition                                                         |
+|----------------|--------------------------------------------------------------------|
+| **Domain**     | Unsigned 64-bit integer in the range `[1, 2^64)`. Zero is invalid. |
+| **Ordering**   | Strictly increasing, gap-free, and scoped per volume.              |
+| **Encoding**   | Canonical representation is `CBE64`: one’s-complement, big-endian. |
+
+#### `CBE64` Encoding
+
+- **Binary form** — 8-byte array. Bytewise comparison yields descending numeric order. Used for space-efficient storage, such as in embedded key-value stores like [Fjall].
+- **Hex form** — 16-character, zero-padded, uppercase hexadecimal string. Lexicographically sorts in the same order as the binary form. Used where human readability is preferred, such as object store keys.
+
+The CBE64 encoding allows both local key-value stores and object stores to perform forward iteration over keys to process log records in descending LSN order, without additional index structures.
+
+Because `0` is never a valid LSN, its encoding (`0xFFFFFFFFFFFFFFFF`) is available as a sentinel value.
+
+### Remote storage
+
+#### Object storage keyspace
+
+Graft will store all of a Volume's data in Object Storage using the following keyspace layout:
+
+```
+{prefix} /
+  volumes /
+    {vid} /
+      control: Control
+      forks /
+        {fork-vid}: Fork
+      checkpoints /
+        {lsn}: Checkpoint
+      log /
+        {lsn}: Commit
+      segments /
+        {sid}: Segment
+```
+
+This flexible layout allows users to isolate tenants from one another by simply providing a unique `{prefix}`. Or, ignoring `{prefix}` all-together.
+
+#### Object storage schemas
+
+All of the files aside from Segments are encoded using Protobuf. Segments are simply a set of pages stored back-to-back, ordered by `pageidx` ascending.
+
+```proto
+syntax = "proto3"
+
+package graft.remote.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Storage must provide the following additional system metadata:
+//  - Last-Modified: The object creation or updated date.
+//  - Checksum: The object's checksum.
+//  - ETag: A hash of the object's content.
+// Allowing these fields to be omitted from the schema.
+
+// A Volume has a top level control file stored at
+// `{prefix}/volumes/{vid}/control`
+// Control files are immutable.
+message Control {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The parent reference if this Volume is a fork.
+  VolumeRef parent = 2;
+
+  // The creation timestamp of this Volume.
+  google.protobuf.Timestamp created_at = 3;
+}
+
+// When a Volume is forked, a ref is first written to the parent Volume:
+// `{prefix}/volumes/{parent-vid}/forks/{fork-vid}`
+// Forks are immutable.
+message Fork {
+  // The fork point. Must match the parent field in the Fork's Control file.
+  VolumeRef parent = 1;
+
+  // The VID of the fork.
+  bytes fork_vid = 2;
+}
+
+// A reference to a Volume at a particular LSN.
+message VolumeRef {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The referenced LSN.
+  uint64 lsn = 2;
+}
+
+// A snapshot of a Volume.
+message Snapshot {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The LSN of the Volume at this Snapshot.
+  uint64 lsn = 2;
+
+  // The Volume's page count at this Snapshot.
+  uint32 page_count = 3;
+}
+
+// Checkpoints are stored at `{prefix}/volumes/{vid}/checkpoints/{lsn}`.
+// A Checkpoint's LSN is the last LSN contained by this checkpoint.
+// Checkpoints are immutable.
+message Checkpoint {
+  // The Volume Snapshot at this Checkpoint.
+  Snapshot snapshot = 1;
+
+  // The list of SegmentRefs representing this Checkpoint.
+  repeated SegmentRef segments = 2;
+}
+
+// Commits are stored at `{prefix}/volumes/{vid}/log/{lsn}`.
+// There are some valid cases for a commit to not include any SegmentRefs:
+//  - The commit marks a new Checkpoint. The corresponding Checkpoint (referenced by the `checkpoint_lsn` field) will contain the SegmentRefs associated to the checkpoint.
+//  - The Volume has been truncated or extended causing the `page_count` to change, but no new pages to be written.
+// Commits are immutable.
+message Commit {
+  // The Volume Snapshot at this Commit.
+  Snapshot snapshot = 1;
+
+  // The latest checkpoint LSN.
+  // To recover the Volume's latest state, replay this checkpoint and the log starting from the checkpoint LSNs successor.
+  // Earlier LSNs and checkpoints may be garbage collected at any point.
+  uint64 checkpoint_lsn = 2;
+
+  // The list of SegmentRefs representing this Commit.
+  repeated SegmentRef segments = 3;
+}
+
+message SegmentRef {
+  // The 16 byte Segment ID.
+  bytes sid = 1;
+
+  // The set of pageidxs stored in this Segment.
+  // Serialized using Splinter encoding.
+  bytes splinter = 2;
+}
+```
+
+### Local storage
+
+This section documents how clients store data.
+
+#### Local keyspace
+Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, the top level keys are independent partitions. The remainder of the keys and the values are encoded using types in the following section.
+
+```
+volumes / {vid} /
+  // parent properties
+  writer -> VolumeId: The designated "writer" fork for this Volume.
+
+  // fork properties
+  parent -> VolumeRef
+  last_sync -> VolumeMapping
+  pending_commit -> PendingCommit
+
+  // general properties
+  checkpoint -> VolumeRef
+
+log / {vid} / {lsn} -> Snapshot
+
+segments / {vid} / {lsn} / {min_pageidx, max_pageidx} / {sid} -> Splinter
+
+pages / {sid} / {pageidx} -> Page
+```
+
+#### Local schemas
+
+Keys which are stored in the local keyspace are encoded using `zerocopy` types. `lsn` values are stored using `CBE64`, which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
+
+```rust
+enum VolumeProperty {
+    Writer = 1,
+    Parent = 2,
+    LastSync = 3,
+    PendingCommit = 4,
+}
+
+struct VolumeKey {
+    vid: VolumeId,
+    property: VolumeProperty,
+}
+
+struct LogKey {
+    vid: VolumeId,
+    lsn: CBE64,
+}
+
+struct SegmentKey {
+    prefix: LogKey,
+    min_pageidx: PageIdx,
+    max_pageidx: PageIdx,
+}
+
+struct PageKey {
+    sid: SegmentId,
+    pageidx: PageIdx,
+}
+```
+
+Values stored locally are encoded using protobuf, using a combination of the remote storage schema and the following additional message types.
+
+```proto
+syntax = "proto3"
+
+package graft.local.v1;
+
+// A mapping between LSNs of a parent and a fork.
+message VolumeMapping {
+  graft.remote.v1.VolumeRef parent = 1;
+  graft.remote.v1.VolumeRef fork = 2;
+}
+
+// An in-progress commit to the parent. Only exists during the two-phase commit process.
+message PendingCommit {
+  // If successful, this Commit will result in this VolumeMapping.
+  VolumeMapping mapping = 1;
+
+  // The pending commit.
+  graft.remote.v1.Commit commit = 2;
+}
+```
+
+### Algorithms
+
+#### Storage Locking
+
+TODO:
+  - feels like we need a lock to ensure that meta-level ops are non-concurrent with respect to a single volume
+  - and another lock for ensuring that commits to a single volume are serializable
+  - and perhaps another lock for cross-volume ops?
+    - ideally gc can be incremental and take advantage of the monotonicity of the log and segments partitions
+
+The `log` and `segments` partitions are monotonic.
+
+#### Volume Snapshot
+
+Acquire the latest snapshot for the Volume, or the Volume's designated writer if one exists.
+
+```python
+def snapshot(vid):
+  writer = read(f"volumes/{vid}/writer")
+  if writer:
+    vid = writer
+  return first(f"log/{vid}")
+```
+
+#### Volume read
+
+Read a page from a Volume's Snapshot.
+
+```python
+def read_page(snapshot, pageidx):
+  (vid, lsn, page_count) = snapshot
+  if not page_count.contains(pageidx):
+    return None
+  for key, splinter in iter_segments(vid, lsn):
+    page_range = (min_pageidx, max_pageidx) = key.bounds()
+    if not page_range.contains(pageidx):
+      continue
+    page = read(f"pages/{key.sid}/{pageidx}")
+    if page:
+      return page
+    return remote_read_page(vid, key.sid, splinter, pageidx)
+
+def iter_segments(vid, lsn):
+  scans = []
+  cursor = vid
+  while cursor:
+    checkpoint = read(f"volumes/{cursor}/checkpoint")
+    start = lsn if cursor == vid else UINT64_MAX
+    end = checkpoint.lsn if checkpoint else 0
+    scans.push((cursor, start..=end))
+    cursor = read(f"volumes/{cursor}/parent")
+
+  result = []
+  for scan in scans:
+    top = f"segments/{scan.0}/{scan.1.start}"
+    bottom = f"segments/{scan.0}/{scan.1.end}"
+    result = chain(result, iter(top..=bottom))
+  return result
+
+def remote_read_page(vid, sid, splinter, pageidx):
+  segment_size = splinter.cardinality()
+  chunk = calculate_chunk_request(sid, splinter, pageidx)
+  # fetch the chunk from object storage, loading the pages into `pages/{sid}/{pageidx}`
+  return read(f"pages/{sid}/{pageidx}")
+
+def calculate_chunk_request(segment, pageidx):
+  # determine which portion of the segment to retrieve by inspecting which portions we've already cached and configuration
+  # in general we want to read more than 1 page at a time from s3
+  pass
+```
+
+#### Volume write
+
+Writing to a Volume requires the VID of the parent Volume as well as a read snapshot. The read snapshot should be the latest logical snapshot of the Volume, which means it may reference a Writer volume.
+
+```python
+class VolumeWriter:
+  def new(vid, snapshot):
+    self.vid = vid
+    self.snapshot = snapshot
+    self.page_count = snapshot.page_count
+    self.sid = SegmentId::random()
+    self.splinter = Splinter::new()
+
+  def read(pageidx):
+    if self.splinter.contains(pageidx):
+      return read(f"pages/{self.sid}/{pageidx}")
+    else:
+      read_page(self.snapshot, pageidx)
+
+  def write(pageidx, page):
+    self.splinter.insert(pageidx)
+    self.page_count = max(self.page_count, pageidx.pages())
+    write(f"pages/{self.sid}/{pageidx}", page)
+
+  def truncate(page_count):
+    self.page_count = page_count
+    delete_range(f"pages/{self.sid}/{page_count}"..)
+
+  # also triggered on drop
+  def rollback():
+    delete_prefix(f"pages/{sid}")
+
+  def commit():
+    storage.lock()
+
+    # verify we are the latest snapshot
+    # due to how snapshot works, this will also fail if the writer Volume has changed
+    snapshot = snapshot(self.vid)
+    if self.snapshot != snapshot:
+      raise "concurrent write"
+
+    tx = begin()
+
+    # determine the writer vid and lsn
+    writer_vid = get_or_create_writer(tx, self.vid)
+    writer_lsn = snapshot.lsn.next() if snapshot.vid == writer_vid else LSN::FIRST
+
+    tx.write(f"log/{writer_vid}/{writer_lsn}", Snapshot {
+      vid = writer_vid,
+      lsn = writer_lsn,
+      page_count = self.page_count
+    })
+
+    (min, max) = self.splinter.bounds()
+    tx.write(
+      f"log/{writer_vid}/{writer_lsn}/{min}/{max}{self.sid}",
+      self.Splinter
+    )
+```
+
+#### Push Volume
+
+```python
+def push_volume(parent_vid, writer_vid):
+  # isolate metadata operations on this volume
+  with metadata_lock(parent_vid):
+    pending_commit = prepare_commit(parent_vid, writer_vid)
+    remote_commit(parent_vid, writer_vid, pending_commit)
+
+def prepare_commit(parent_vid, writer_vid):
+    # ensure the writer is still the writer
+    assert_eq(read(f"volumes/{parent_vid}/writer"), writer_vid)
+
+    # check for pending commit
+    pending_commit = read(f"volumes/{writer_vid}/pending_commit")
+    if pending_commit:
+      return pending_commit
+
+    # otherwise, we need to build a new pending commit
+    parent_snapshot = first(f"log/{parent_vid}")
+    parent_checkpoint = first(f"volumes/{parent_vid}/checkpoint")
+    writer_snapshot = first(f"log/{writer_vid}")
+
+    last_sync = read(f"volumes/{writer_vid}/last_sync")
+    assert(writer_snapshot.lsn != last_sync.fork.lsn, "nothing to commit")
+
+    bottom_lsn = last_sync.fork.lsn
+    top_lsn = writer_snapshot.lsn
+
+    # build and push segments from commits
+    (segment_refs, page_count) = build_and_push_segments(writer_vid, bottom_lsn, top_lsn)
+
+    commit_lsn = parent_snapshot.lsn.next()
+
+    pending_commit = PendingCommit {
+      mapping: VolumeMapping {
+        parent: VolumeRef { vid: parent_vid, lsn: commit_lsn },
+        fork: VolumeRef { vid: writer_vid, lsn: top_lsn },
+      },
+      commit: Commit {
+        snapshot: Snapshot {
+          vid: parent_vid,
+          lsn: commit_lsn,
+          page_count
+        },
+        checkpoint_lsn: parent_checkpoint.lsn,
+        segments: segment_refs
+      }
+    }
+
+  write(f"volumes/{writer_vid}/pending_commit", pending_commit)
+
+  return pending_commit
+
+def build_and_push_segments(writer_vid, bottom_lsn, top_lsn):
+  # build up a BTreeMap<PageIdx, SegmentId> containing the last SegmentId for each page in all segments between bottom_lsn and top_lsn
+  # iterate through the BTreeMap in chunks of MAX_SEGMENT_SIZE
+  # building splinters and uploading segments as we go
+  pass
+
+def remote_commit(parent_vid, writer_vid, commit):
+  # ensure this commit matches the (parent, writer) pair
+  assert_eq(commit.mapping.parent.vid, parent_vid)
+  assert_eq(commit.mapping.fork.vid, writer_vid)
+
+  with storage.lock():
+    # ensure the writer is still the writer
+    assert_eq(read(f"volumes/{parent_vid}/writer"), writer_vid)
+
+    # ensure we are committing to the correct remote lsn
+    parent_snapshot = first(f"log/{parent_vid}")
+    assert_eq(commit.mapping.parent.lsn, parent_snapshot.lsn.next())
+
+```
+
+- if pending_commit skip to committing to remote storage
+- collect segments
+  - `start_lsn = last_sync.fork.lsn`
+  - `snapshot = first log/{writer_vid}`
+  - `iter segments/{writer_vid}/{..=start_lsn}`
+    - build segments
+- push segments
+- write pending_commit
+- commit to remote storage
+- if success:
+  - fjall batch
+    - write snapshot + segments to parent log
+      - optimization: segment refs here can be refs to the writer segments! this allows page reuse, however it means that the segment index will be out of sync
+    - clear pending commit
+    - update last_sync
+- if transient failure:
+  - log error, schedule retry
+- if reject:
+  - clear pending commit, trigger pull on parent
+
+#### Pull volume
+- pull commits into remote vid
+- also write commit into writer vid if exists
+  - if so, add a SyncOp mapping the remote lsn to the writer lsn
+
+#### Reset volume
+- open new writer vid
+- update writer pointer on upstream vid
+- eventually GC old vid once read snapshots drop
+
+### Splinter improvements
+
+This RFC depends on the following new [Splinter] features:
+
+- `offset_of(key: u32) -> Option<usize>`
+  - returns the zero-based offset of a given key in the Splinter.
+  - returns None if the key is not contained by the Splinter.
+- `bounds() -> Option<(u32, u32)>`
+  - if the Splinter is non-empty, returns the minimum and maximum key stored in the Splinter.
+- `iter_range(offsets) -> impl Iterator<Item=u32>`
+  - returns an iterator of the keys selected by the offset range.
+  - we could instead just override `Iterator::nth` on the existing Splinter iterator. This composes with the rest of the Iterator ecosystem.
+
+All new methods should be implemented on both Splinter and SplinterRef.
+
+## Drawbacks
+
+Why should we *not* do this?
+
+## Rationale and alternatives
+
+- Why is this design the best in the space of possible designs?
+- What other designs have been considered and what is the rationale for not choosing them?
+- What is the impact of not doing this?
+
+## Prior art
+
+Discuss prior art, both the good and the bad, in relation to this proposal. A few examples of what this can include are:
+
+- Does this feature exist in other projects and what experience has their community had?
+- Papers: Are there any published papers or great posts that discuss this? If you have some relevant papers to refer to, this can serve as a more detailed theoretical background.
+
+This section is intended to encourage you as an author to think about the lessons from other projects, provide readers of your RFC with a fuller picture. If there is no prior art, that is fine - your ideas are interesting to us whether they are brand new or inspired.
+
+## Unresolved questions
+
+- What parts of the design do you expect to resolve through the RFC process before this gets merged?
+- What parts of the design do you expect to resolve through the implementation of this feature before stabilization?
+- What related issues do you consider out of scope for this RFC that could be addressed in the future independently of the solution that comes out of this RFC?
+
+## Future possibilities
+
+Think about what the natural extension and evolution of your proposal would be and how it would affect the project as a whole in a holistic way. Try to use this section as a tool to more fully consider all possible interactions with the project in your proposal. Also consider how this all fits into the roadmap for the project.
+
+This is also a good place to "dump ideas", if they are out of scope for the RFC you are writing but otherwise related.
+
+If you have tried and cannot think of any future possibilities, you may simply state that you cannot think of anything.
+
+Note that having something written down in the future-possibilities section is not a reason to accept the current or a future RFC; such notes should be in the section on motivation or rationale in this or subsequent RFCs.  The section merely provides additional information.
+
+[Fjall]: https://github.com/fjall-rs/fjall/
+[`GID`]: https://graft.rs/docs/internals/gid/
+[blake3]: https://github.com/BLAKE3-team/BLAKE3
+[Splinter]: https://github.com/orbitinghail/splinter-rs
