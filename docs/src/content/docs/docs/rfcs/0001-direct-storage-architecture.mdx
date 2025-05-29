@@ -261,17 +261,20 @@ Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, 
 
 ```
 volumes / {vid} /
-  // parent tags
+  // parent properties
   writer -> VolumeId: The designated "writer" fork for this Volume.
 
-  // fork tags
+  // fork properties
   parent -> VolumeRef
   last_sync -> VolumeMapping
   pending_commit -> PendingCommit
 
+  // general properties
+  checkpoint -> VolumeRef
+
 log / {vid} / {lsn} -> Snapshot
 
-segments / {vid} / {lsn} / {min_pageidx, max_pageidx} -> SegmentRef
+segments / {vid} / {lsn} / {min_pageidx, max_pageidx} / {sid} -> Splinter
 
 pages / {sid} / {pageidx} -> Page
 ```
@@ -281,7 +284,7 @@ pages / {sid} / {pageidx} -> Page
 Keys which are stored in the local keyspace are encoded using `zerocopy` types. `lsn` values are stored using `CBE64`, which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
 
 ```rust
-enum VolumeKeyTag {
+enum VolumeProperty {
     Writer = 1,
     Parent = 2,
     LastSync = 3,
@@ -290,7 +293,7 @@ enum VolumeKeyTag {
 
 struct VolumeKey {
     vid: VolumeId,
-    tag: VolumeKeyTag,
+    property: VolumeProperty,
 }
 
 struct LogKey {
@@ -335,61 +338,156 @@ message PendingCommit {
 
 ### Algorithms
 
-**TODO: open thoughts**
-While the current layout is somewhat elegant, its quite difficult to eliminate write amplification when the writer vid fast forwards (or pushes) due to commit collapse during sync.
+#### Volume Snapshot
 
-Its possible to leverage graft's existing local storage impl by adding a indirection layer allowing the same Volume to be opened simultaneously at multiple LSNs.
+Acquire the latest snapshot for the Volume, or the Volume's designated writer if one exists.
 
-This will retain some of the remote/local commit mapping complexity, however does solve page write amp (and eliminate fast forwarding) quite well.
+```python
+def snapshot(vid):
+  writer = read(f"volumes/{vid}/writer")
+  if writer:
+    vid = writer
+  return first(f"log/{vid}")
+```
 
-Another option is to lean into this much more elegant structure, and fully dedup pages using content hashes.
-- benefit: also serves to provide general page dedup (esp useful for sqlite rollback)
-- benefit: could be used to add page data hashes to commits
-- downside: increase read/write latency due to hashing and indirection
-- downside: hashes are 32 bytes which leads to a lot more write amplification, esp since page pointers will be duplicated.
+#### Volume read
 
-I could give up on full hashing and instead use a lightweight crc + local seqno to build a page id. This value only has to be local. Probably will result in a 16 byte page id (8 byte seqno, 8 byte crc) but be much faster to compute (and takes up half as much space).
+Read a page from a Volume's Snapshot.
 
-**TODO: plan for sync protocol**
-- snapshot
-  - use last writer lsn if exists, otherwise upstream lsn
-- push
-  - if pending_commit skip to committing to remote storage
-  - collect segments
-    - `start_lsn = last_sync.fork.lsn`
-    - `snapshot = first log/{writer_vid}`
-    - `iter segments/{writer_vid}/{..=start_lsn}`
-      - build segments
-  - push segments
-  - write pending_commit
-  - commit to remote storage
-  - if success:
-    - fjall batch
-      - write snapshot + segments to parent log
-        - optimization: segment refs here can be refs to the writer segments! this allows page reuse, however it means that the segment index will be out of sync
-      - clear pending commit
-      - update last_sync
-  - if transient failure:
-    - log error, schedule retry
-  - if reject:
-    - clear pending commit, trigger pull on parent
-- pull
-  - pull commits into remote vid
-  - also write commit into writer vid if exists
-    - if so, add a SyncOp mapping the remote lsn to the writer lsn
-- fast forward
-  - when read snapshots close, check to see if we can fast forward the writer
+```python
+def read_page(snapshot, pageidx):
+  (vid, lsn, page_count) = snapshot
+  if not page_count.contains(pageidx):
+    return None
+  for key, splinter in iter_segments(vid, lsn):
+    page_range = (min_pageidx, max_pageidx) = key.bounds()
+    if not page_range.contains(pageidx):
+      continue
+    page = read(f"pages/{key.sid}/{pageidx}")
+    if page:
+      return page
+    return remote_read_page(vid, key.sid, splinter, pageidx)
+
+def iter_segments(vid, lsn):
+  scans = []
+  cursor = vid
+  while cursor:
+    checkpoint = read(f"volumes/{cursor}/checkpoint")
+    start = lsn if cursor == vid else UINT64_MAX
+    end = checkpoint.lsn if checkpoint else 0
+    scans.push((cursor, start..=end))
+    cursor = read(f"volumes/{cursor}/parent")
+
+  result = []
+  for scan in scans:
+    top = f"segments/{scan.0}/{scan.1.start}"
+    bottom = f"segments/{scan.0}/{scan.1.end}"
+    result = chain(result, iter(top..=bottom))
+  return result
+
+def remote_read_page(vid, sid, splinter, pageidx):
+  segment_size = splinter.cardinality()
+  chunk = calculate_chunk_request(sid, splinter, pageidx)
+  # fetch the chunk from object storage, loading the pages into `pages/{sid}/{pageidx}`
+  return read(f"pages/{sid}/{pageidx}")
+
+def calculate_chunk_request(segment, pageidx):
+  # determine which portion of the segment to retrieve by inspecting which portions we've already cached and configuration
+  # in general we want to read more than 1 page at a time from s3
+  pass
+```
+
+#### Volume write
+
+Writing to a Volume requires the VID of the parent Volume as well as a read snapshot. The read snapshot should be the latest logical snapshot of the Volume, which means it may reference a Writer volume.
+
+```python
+class VolumeWriter:
+  def new(vid, snapshot):
+    self.vid = vid
+    self.snapshot = snapshot
+    self.page_count = snapshot.page_count
+    self.sid = SegmentId::random()
+    self.splinter = Splinter::new()
+
+  def read(pageidx):
+    if self.splinter.contains(pageidx):
+      return read(f"pages/{self.sid}/{pageidx}")
+    else:
+      read_page(self.snapshot, pageidx)
+
+  def write(pageidx, page):
+    self.splinter.insert(pageidx)
+    self.page_count = max(self.page_count, pageidx.pages())
+    write(f"pages/{self.sid}/{pageidx}", page)
+
+  def truncate(page_count):
+    self.page_count = page_count
+    delete_range(f"pages/{self.sid}/{page_count}"..)
+
+  # also triggered on drop
+  def rollback():
+    delete_prefix(f"pages/{sid}")
+
+  def commit():
+    storage.lock()
+
+    # verify we are the latest snapshot
+    # due to how snapshot works, this will also fail if the writer Volume has changed
+    snapshot = snapshot(self.vid)
+    if self.snapshot != snapshot:
+      raise "concurrent write"
+
+    tx = begin()
+
+    # determine the writer vid and lsn
+    writer_vid = get_or_create_writer(tx, self.vid)
+    writer_lsn = snapshot.lsn.next() if snapshot.vid == writer_vid else LSN::FIRST
+
+    tx.write(f"log/{writer_vid}/{writer_lsn}", Snapshot {
+      vid = writer_vid,
+      lsn = writer_lsn,
+      page_count = self.page_count
+    })
+
+    (min, max) = self.splinter.bounds()
+    tx.write(
+      f"log/{writer_vid}/{writer_lsn}/{min}/{max}{self.sid}",
+      self.Splinter
+    )
+```
+
+#### Push Volume
+
+- if pending_commit skip to committing to remote storage
+- collect segments
+  - `start_lsn = last_sync.fork.lsn`
+  - `snapshot = first log/{writer_vid}`
+  - `iter segments/{writer_vid}/{..=start_lsn}`
+    - build segments
+- push segments
+- write pending_commit
+- commit to remote storage
+- if success:
   - fjall batch
-    - drop local commits up to the oldest read snapshot
-    - optimization: before dropping segments, best-effort copy cached pages into the upstream VIDs segments by following the mapping in the sync log.
-      - unless we do this during push
-    - drop any unreachable pages
-    - drop SyncOps up to new base LSN
-    - update writer vid parent ref
-- reset
-  - open new writer vid
-  - update writer pointer on upstream vid
-  - eventually GC old vid once read snapshots drop
+    - write snapshot + segments to parent log
+      - optimization: segment refs here can be refs to the writer segments! this allows page reuse, however it means that the segment index will be out of sync
+    - clear pending commit
+    - update last_sync
+- if transient failure:
+  - log error, schedule retry
+- if reject:
+  - clear pending commit, trigger pull on parent
+
+#### Pull volume
+- pull commits into remote vid
+- also write commit into writer vid if exists
+  - if so, add a SyncOp mapping the remote lsn to the writer lsn
+
+#### Reset volume
+- open new writer vid
+- update writer pointer on upstream vid
+- eventually GC old vid once read snapshots drop
 
 ## Drawbacks
 
