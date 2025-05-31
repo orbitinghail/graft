@@ -94,16 +94,18 @@ Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, 
 
 ### Glossary
 
+- **`Volume Handle`**: A reference to a local-remote Volume pair. Also responsible for tracking syncronization between a local and remote Volume. Documented more in the [Volume Handle](#volume-handle) section.
 - **`vid`**: A 16 byte Volume ID using [`GID`] encoding.
 - **`sid`**: A 16 byte Segment ID using [`GID`] encoding.
 - **`Snapshot`**: A frozen point-in-time view of a Volume.
-- **`lsn`**: Documented in the [Volume Log](#volume-log) section.
+- **`lsn`**: Documented in the [Volume log](#volume-log) section.
 - **`pageidx`**: A 4 byte page index, representing the index of a page within a Volume. Valid range: `[1, 2^32)`.
 - **`Splinter`**: A compressed bitset, used to keep track of which `pageidxs` appear in a Segment.
 - **`Segment`**: A set of pages, sorted by `pageidx`.
 - **`VolumeRef`**: A `(vid, lsn)` tuple, representing a fixed point in a Volumes history.
+- **`CommitHash`**: Documented in the [Commit hash](#commit-hash) section.
 
-### Volume Log
+### Volume log
 
 A volume’s durable state consists of a **Checkpoint** and a **Log**.
 
@@ -127,6 +129,44 @@ The CBE64 encoding allows both local key-value stores and object stores to perfo
 
 Because `0` is never a valid LSN, its encoding (`0xFFFFFFFFFFFFFFFF`) is available as a sentinel value.
 
+### Commit hash
+
+To verify data integrity, we attach a hash to each `Commit`. This hash is produced using the following method:
+
+First a sequence of Segment hashes are produced by blake3 hashing the pages in each segment in order by pageidx along with a unique header.
+
+```python
+def segment_hash(pages):
+  hasher = blake3::new()
+  hasher.write(HashHeader::Segment(PAGE_SIZE));
+  # pages must be in order by pageidx
+  for page in pages:
+    hasher.write(page)
+  return hasher.hash()
+```
+
+Then a Commit hash is produced by blake3 hashing the Segment hashes together with the `page_count` and a unique header.
+
+```python
+def commit_hash(page_count, segment_hashes):
+  hasher = blake3::new()
+  hasher.write(HashHeader::Commit(page_count));
+  # segment_hashes must be in order by pageidx
+  for hash in segment_hashes:
+    hasher.write(hash)
+  return hasher.hash()
+```
+
+### Volume Handle
+
+Rather than forcing users to reference Volumes by ID, Graft exposes Volume Handles. Volume Handles are pointers to a local and remote Volume. Volume Handles only exist on a single client, and are not shared between clients or pushed to a remote.
+
+Each Volume Handle has a name given to it at creation time. The name must match the regex `/^[a-z0-9-_]+$/` and be unique on the client.
+
+A Volume Handle always has a local-only Volume associated with it. This Volume is used for all local reads and writes.
+
+A Volume Handle may be linked to a remote Volume. In this case, the local and remote Volumes will be kept in sync by the sync subsystem.
+
 ### Remote storage
 
 #### Object storage keyspace
@@ -140,8 +180,7 @@ Graft will store all of a Volume's data in Object Storage using the following ke
       control: Control
       forks /
         {fork-vid}: Fork
-      checkpoints /
-        {lsn}: Checkpoint
+      checkpoints: CheckpointSet
       log /
         {lsn}: Commit
       segments /
@@ -213,15 +252,14 @@ message Snapshot {
   uint32 page_count = 3;
 }
 
-// Checkpoints are stored at `{prefix}/volumes/{vid}/checkpoints/{lsn}`.
-// A Checkpoint's LSN is the last LSN contained by this checkpoint.
-// Checkpoints are immutable.
-message Checkpoint {
-  // The Volume Snapshot at this Checkpoint.
-  Snapshot snapshot = 1;
+// A Volume's CheckpointSet is stored at `{prefix}/volumes/{vid}/checkpoints`.
+// CheckpointSets are updated by the checkpointer via compare-and-swap.
+message CheckpointSet {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
 
-  // The list of SegmentRefs representing this Checkpoint.
-  repeated SegmentRef segments = 2;
+  // The list of checkpoint LSNs.
+  repeated uint64 lsns = 2;
 }
 
 // Commits are stored at `{prefix}/volumes/{vid}/log/{lsn}`.
@@ -233,10 +271,8 @@ message Commit {
   // The Volume Snapshot at this Commit.
   Snapshot snapshot = 1;
 
-  // The latest checkpoint LSN.
-  // To recover the Volume's latest state, replay this checkpoint and the log starting from the checkpoint LSNs successor.
-  // Earlier LSNs and checkpoints may be garbage collected at any point.
-  uint64 checkpoint_lsn = 2;
+  // A 256 bit CommitHash of this Commit.
+  bytes hash = 2;
 
   // The list of SegmentRefs representing this Commit.
   repeated SegmentRef segments = 3;
@@ -260,17 +296,14 @@ This section documents how clients store data.
 Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, the top level keys are independent partitions. The remainder of the keys and the values are encoded using types in the following section.
 
 ```
+handles / {name} -> VolumeHandle
+
 volumes / {vid} /
-  // parent properties
-  writer -> VolumeId: The designated "writer" fork for this Volume.
-
-  // fork properties
+  // The parent reference if this Volume is a fork.
   parent -> VolumeRef
-  last_sync -> VolumeMapping
-  pending_commit -> PendingCommit
 
-  // general properties
-  checkpoint -> VolumeRef
+  // the latest LocalCheckpointSet for this Volume
+  checkpoints -> LocalCheckpointSet
 
 log / {vid} / {lsn} -> Snapshot
 
@@ -319,26 +352,133 @@ Values stored locally are encoded using protobuf, using a combination of the rem
 syntax = "proto3"
 
 package graft.local.v1;
+import "graft/remote/v1/index.proto";
 
-// A mapping between LSNs of a parent and a fork.
-message VolumeMapping {
-  graft.remote.v1.VolumeRef parent = 1;
-  graft.remote.v1.VolumeRef fork = 2;
+message LocalCheckpointSet {
+  // The etag from the last time we pulled the CheckpointSet, used to only pull
+  // changed CheckpointSets
+  bytes etag = 1;
+
+  // The list of checkpoint LSNs.
+  repeated uint64 lsns = 2;
 }
 
-// An in-progress commit to the parent. Only exists during the two-phase commit process.
-message PendingCommit {
-  // If successful, this Commit will result in this VolumeMapping.
-  VolumeMapping mapping = 1;
+message VolumeHandle {
+  // The name of the Volume Handle
+  // matches: `/^[a-z0-9-_]+$/`
+  string name = 1;
 
-  // The pending commit.
-  graft.remote.v1.Commit commit = 2;
+  // References to the local and remote Volumes, along with LSNs representing their latest successful syncronization.
+  graft.remote.v1.VolumeRef local = 2;
+  optional graft.remote.v1.VolumeRef remote = 3;
+
+  // Presense of the pending_commit field means that the Push operation is in the process of committing to the remote. If no such Push job is currently running (i.e. it was interrupted), this field must be used to resume or abort the commit process.
+  optional PendingCommit pending_commit = 4;
+}
+
+message PendingCommit {
+  // The resulting remote LSN that the push job is attempting to create
+  uint64 remote_lsn = 1;
+
+  // The associated commit hash. This is used to determine whether or not the commit has landed in the remote, in the case that we are interrupted while attempting to push.
+  bytes commit_hash = 2;
 }
 ```
 
 ### Algorithms
 
-#### Storage Locking
+**checkpointing**
+
+need to plan this out. one big thing is how to handle Forks. I think that checkpointing will need to prioritize checkpointing forks before parents in order to quickly eliminate cascading reads.
+
+pull is also a bit odd. to pull volume x, we need to also pull x's parents recursively until we encounter the nearest checkpoint. and if/when any of x's parents are checkpointed in the future, we should be aware of that so GC can clear unused volumes.
+
+by making local storage work around named refs this also doubles as keeping track of which volumes the user actually cares about.
+
+a named ref can also handle sync state / staging volume refs, centralizing all of the sync logic accordingly.
+
+need to think about the best way to handle parent/checkpoint metadata with named refs. the parent refs should be immutable so we could store them in volume specific metadata. checkpoints are mutable, however since they result in updating the segments partition, the only real need for them are:
+- to handle empty pages during reads
+- to run checkpointing locally (maybe?)
+- gc needs to know about checkpoints for reachability
+
+we could just store the latest checkpoint lsn in the snapshot? we need it during every read anyways.
+
+does this make gc more tricky? it will need to monitor all open snapshots to determine what's visible. it probably determins vis something like:
+- collect a list of volumerefs from every open snapshot and localref
+- collect a list of checkpoints by scanning every volume's log
+  - we can optimize this by storing checkpoints somewhere - they are immutable, and we only have to store the checkpoint lsns
+- resolve each volumerefs visibility into a visibility set which contains a visible lsn range for every visible volume
+  - when calculating a volumeref's visibility, look for checkpoints which exist between the oldest and newest visible lsn - these checkpoints can be used in place of the oldest lsn
+- once the visibility set has been calculated, gc can iterate through all volumes and delete lsn ranges that are inaccessible
+
+**issue: multi-parent fork + checkpoint**
+currently it seems like tracking a multi-level forked volume is tricky due to checkpointing. in theory we would need to monitor all of the parent volumes for new checkpoints in order to minimize the chance that we get impacted by remote checkpointer gc. however, we otherwise don't want to subscribe to the entire commit log of every parent volume as we need relatively little information.
+
+ideas to make this cheaper:
+- make the remote checkpoint prefix an actual log, such that clients can subscribe to checkpoint logs rather than commit logs for upstream volumes
+  - this also allows a client to subscribe to a volume's checkpoint rather than commit log, which effectively just reduces the rate of update
+- put checkpoints in prefix level multi-volume log
+  - this may become very costly for large amounts of volumes
+  - although this log could just store volume refs, pointing at the corresponding checkpoint files
+- somehow store parent checkpoint information directly in the fork's log?
+  - this means each commit may be a pointer into another volume's log
+  - possibly multiple parents away
+  - this feels dirty. lets say you start with a fork X on a parent Y
+    - checkpoint triggers at X:1, and writes a commit to X with X:1 being the checkpoint
+    - however, the rest of the commits in X's log all still reference Y, even though Y is no longer needed to resolve any read on X
+    - this is particularly bad for mutli-parent forks, where a downstream fork now *must* monitor all of the commits for all upstream parents to track checkpointing
+
+**decision: real checkpoint log per volume**
+1. enables less granular volume subscriptions which may be useful for certain kinds of workloads
+2. clients can monitor upstream volume checkpoints without monitoring their commit logs
+3. however, this composes with those upstream volumes being opened - as we just need to pull the relevant portions of the commit logs
+4. it may make sense for a volume reader to resolve the checkpoint + parent stack when opening a snapshot. this will reduce the page read cost, and make gc a bit easier. and because we write checkpoints directly to the segment log, those readers will still be able to implictly take advantage of newer checkpoints, although empty pages may still fall through.
+
+**issue: empty pages**
+- pages which are never written to, can simply be omitted
+- however, once a page has been written to, we need to also track when it's cleared
+- currently this requires writing an empty page to a segment
+  - except in the case of truncation, in which case the smaller page size implicitely clears all orphaned pages
+  - however, in this case, truncation + expansion will result in those pages becoming visible again... which may not be what the user wants
+- if segments are compressed, this isn't too bad
+- but as of right now, segments are not compressed, and thus this results in unhappy writes
+
+why are pages empty:
+1. page is implicitely empty due to being outside of the Volume's page_count
+2. the volume was extended by changing the page count, and page does not exist in any visible segment
+3. an empty page was explicitely written
+
+in theory, filesystems optimize for the first two cases, and treat the third case like any other page write.
+
+graft is already somewhat optimized for the first two cases, and can probably ignore the third case.
+
+however we do need to decide how to handle truncate + extend.
+right now, graft will expose previous page contents after truncate + extend up to the new page count.
+one way to fix this is by having the reader look at each snapshot's page size as it iterates through the commit log. if it sees any page count smaller than the requested pageidx as it scans backward, it can immediately terminate the read with an empty page
+however this does impact our read perf, as we would need to scan both the segment and snapshot log rather than just the segment log.
+  -> we could merge the logs like we originally did, allowing a single scan to read the snapshots
+
+alternatively we can just make this explicit. truncate + extend results in visibility. thus to explicitely erase a page you would need to either write an empty page, or checkpoint after the truncate.
+
+to match the expected semantics of filesystems, truncate + extend should result in empty pages... but for now we can make this a graft special. eventually we could consider adding a tombstone bitmap to commits... that would also allow arbitrary hole punching and make empty pages explicit. but at the cost of a lot more metadata in the log.
+
+#### Locks
+
+##### **`commit_lock`**
+This lock is held while writing to the `log` and `segments` partitions. This happens during the following operations:
+
+- **Volume commit**: When committing to a Volume, we hold the `commit_lock` to verify the latest snapshot and write out a new snapshot.
+- **Checkpoint**: To finish applying a checkpoint, we rewrite the snapshot and segments at the checkpoint LSN. The lock is only held to compare and swap the snapshot and update the segments.
+- **GC**: The GC optimistically determines what it can safely to without holding the lock. Once it has a plan of action, GC will incrementally hold this lock while erasing in-accessable snapshots and segments.
+
+##### **`metadata_lock(vid)`**
+This is a sharded lock which must be held when modifying the `volumes` partition for a particular Volume. It only prevents concurrent metadata operations on the same Volume. Relevant operations include:
+
+- **Push volume**: When pushing a Volume to the server.
+
+
+
 
 TODO:
   - feels like we need a lock to ensure that meta-level ops are non-concurrent with respect to a single volume
@@ -348,23 +488,45 @@ TODO:
 
 The `log` and `segments` partitions are monotonic.
 
-#### Volume Snapshot
+#### Volume Reader
 
-Acquire the latest snapshot for the Volume, or the Volume's designated writer if one exists.
-
-```python
-def snapshot(vid):
-  writer = read(f"volumes/{vid}/writer")
-  if writer:
-    vid = writer
-  return first(f"log/{vid}")
-```
-
-#### Volume read
-
-Read a page from a Volume's Snapshot.
+Reading from a Volume requires creating a `VolumeReader` from a `VolumeHandle` at either the latest or a specific snapshot.
 
 ```python
+def visibility_path(snapshot):
+  cursor = VolumeRef { vid: snapshot.vid, lsn: snapshot.lsn }
+  path = []
+  while cursor:
+    if checkpoints = read(f"volumes/{cursor.vid}/checkpoints"):
+      if checkpoint = checkpoints.for(snapshot.lsn):
+        # found checkpoint, we can terminate the path here
+        path.push((cursor, (cursor.lsn)..=(checkpoint.lsn)))
+        return path
+
+    # no checkpoint, so scan to the beginning
+    path.push((cursor, (cursor.lsn)..=1))
+    # and iterate to the parent
+    cursor = read(f"volumes/{cursor.vid}/parent")
+
+  return path
+
+class VolumeHandle:
+  # inherits properties from graft.local.v1.VolumeHandle:
+  # name, local, remote, pending_commit
+
+  def reader():
+    snapshot = last(f"log/{self.local.vid}")
+    return VolumeReader::new(snapshot)
+
+  def reader_at(snapshot):
+    assert_eq(snapshot.vid, self.local.vid)
+    return VolumeReader::new(snapshot)
+
+class VolumeReader:
+  def new(snapshot):
+    self.snapshot = snapshot
+    self.path = visibility_path(snapshot)
+
 def read_page(snapshot, pageidx):
   (vid, lsn, page_count) = snapshot
   if not page_count.contains(pageidx):
@@ -386,7 +548,7 @@ def iter_segments(vid, lsn):
     start = lsn if cursor == vid else UINT64_MAX
     end = checkpoint.lsn if checkpoint else 0
     scans.push((cursor, start..=end))
-    cursor = read(f"volumes/{cursor}/parent")
+    cursor = None if checkpoint else read(f"volumes/{cursor}/parent")
 
   result = []
   for scan in scans:
@@ -407,7 +569,7 @@ def calculate_chunk_request(segment, pageidx):
   pass
 ```
 
-#### Volume write
+#### Volume Writer
 
 Writing to a Volume requires the VID of the parent Volume as well as a read snapshot. The read snapshot should be the latest logical snapshot of the Volume, which means it may reference a Writer volume.
 
