@@ -149,7 +149,7 @@ jobs:
             type=sha,format=long
 
       - name: Build and push metastore image
-        uses: docker/build-push-action@1dc73863535b631f98b2378be8619f83b136f4a0 # v6
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
         with:
           context: .
           push: true
@@ -161,7 +161,7 @@ jobs:
           target: metastore
 
       - name: Build and push pagestore image
-        uses: docker/build-push-action@1dc73863535b631f98b2378be8619f83b136f4a0 # v6
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
         with:
           context: .
           push: true
