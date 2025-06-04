@@ -25,7 +25,7 @@ Currently Graft requires a MetaStore and PageStore to support replication to and
 **Advantages**
 - The MetaStore can efficiently rollup commits to fast forward clients, increasing performance and enabling instant read replicas
 - The PageStore acts as a smart cache, allowing clients to pull only the pages they need at the edge.
-- The PageStore is able to collocate writes to multiple Volumes in the same Segment, reducing cost for high write rates.
+- The PageStore is able to collocate writes to multiple Volumes in the same Segment which can reduce the cost and overhead of small transactions.
 
 **Disadvantages**
 - There is little isolation between data in different Volumes. Graft will need to roll out a comprehensive encryption + authorization layer to work for production workloads. This is a huge cost in terms of testing and engineering.
@@ -66,12 +66,6 @@ A high level explanation of how this feature works, and would change the behavio
 
 `graft-kernel` implements the Graft Kernel which supersedes the functionality of the `graft-client` and `graft-server` crates. The Kernel provides access to a remote Volume Catalog, local storage, and client functionality to downstream crates like `graft-sqlite` and `graft-fuse`.
 
-**Volume Catalog**
-This subsystem provides push and pull functionality to Volume commit logs. It's designed to support multiple backends including direct access to object storage and the graft-proxy.
-
-**Local storage**
-This subsystem provides durable storage for the Volume Catalog, Pages, and Volume State. It's extremely similar to the existing `graft-client` storage subsystem.
-
 **Client functionality**
 Clients such as `graft-sqlite` and `graft-fuse` will use the `graft-kernel` to operate on Volumes. The Kernel is designed to be embedded in the application, performing I/O in a small set of background threads. The Kernel will be implemented as an async core wrapped with an async and sync API.
 
@@ -80,13 +74,13 @@ Clients such as `graft-sqlite` and `graft-fuse` will use the `graft-kernel` to o
 The Graft Proxy is a stateless edge service and caching layer which makes it easier for Graft to replicate to & from devices. Initially it will simply act as a pass-through proxy to object storage with its own authentication and authorization layer.
 
 Graft Proxy exposes a simple API to consumers, enabling two key performance features:
-1. Graft Proxy acts like a read through cache, ideally using ephemeral NVME drives
+1. Graft Proxy caches reads from object storage.
 2. Replica fast-forwarding: collapse a pull graft request and only return the latest segments.
 
 Eventually Graft Proxy will enhance Graft with these features:
 - volume subscriptions -> eliminate the need to poll for changes
 - granular authorization
-- direct byte range puts and gets against Volumes
+- direct byte range puts and gets against Volumes, enabling "dumb clients".
 
 ## Reference-level Explanation
 
@@ -101,7 +95,7 @@ Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, 
 - **`lsn`**: Documented in the [Volume log](#volume-log) section.
 - **`pageidx`**: A 4 byte page index, representing the index of a page within a Volume. Valid range: `[1, 2^32)`.
 - **`Splinter`**: A compressed bitset, used to keep track of which `pageidxs` appear in a Segment.
-- **`Segment`**: A set of pages, sorted by `pageidx`.
+- **`Segment`**: A sequence of pages, sorted by `pageidx`.
 - **`VolumeRef`**: A `(vid, lsn)` tuple, representing a fixed point in a Volumes history.
 - **`CommitHash`**: Documented in the [Commit hash](#commit-hash) section.
 
@@ -120,6 +114,8 @@ A volume’s durable state consists of a **Checkpoint** and a **Log**.
 | **Ordering**   | Strictly increasing, gap-free, and scoped per volume.              |
 | **Encoding**   | Canonical representation is `CBE64`: one’s-complement, big-endian. |
 
+Because `0` is never a valid LSN, it's available as a sentinel value.
+
 #### `CBE64` Encoding
 
 - **Binary form** — 8-byte array. Bytewise comparison yields descending numeric order. Used for space-efficient storage, such as in embedded key-value stores like [Fjall].
@@ -127,13 +123,11 @@ A volume’s durable state consists of a **Checkpoint** and a **Log**.
 
 The CBE64 encoding allows both local key-value stores and object stores to perform forward iteration over keys to process log records in descending LSN order, without additional index structures.
 
-Because `0` is never a valid LSN, its encoding (`0xFFFFFFFFFFFFFFFF`) is available as a sentinel value.
-
 ### Commit hash
 
-To verify data integrity, we attach a hash to each `Commit`. This hash is produced using the following method:
+To verify data integrity, we attach a hash to each `Commit`. To compute the hash, we use the following method:
 
-First a sequence of Segment hashes are produced by blake3 hashing the pages in each segment in order by pageidx along with a unique header.
+First, a [blake3] hash is computed for each Segment:
 
 ```python
 def segment_hash(pages):
@@ -145,23 +139,27 @@ def segment_hash(pages):
   return hasher.hash()
 ```
 
-Then a Commit hash is produced by blake3 hashing the Segment hashes together with the `page_count` and a unique header.
+Then a Commit hash is produced by combining the Segment hashes together:
 
 ```python
-def commit_hash(page_count, segment_hashes):
+def commit_hash(snapshot, segment_hashes):
   hasher = blake3::new()
-  hasher.write(HashHeader::Commit(page_count));
+  hasher.write(HashHeader::Commit(snapshot));
   # segment_hashes must be in order by pageidx
   for hash in segment_hashes:
     hasher.write(hash)
   return hasher.hash()
 ```
 
+This two phase approach allows the Segment hashes to be produced in parallel, before combining them into a Commit hash.
+
+Note that the Commit's snapshot is passed in. This ensures the Hash's uniqueness incorporates the Volume ID, LSN, and page count.
+
 ### Volume Handle
 
 Rather than forcing users to reference Volumes by ID, Graft exposes Volume Handles. Volume Handles are pointers to a local and remote Volume. Volume Handles only exist on a single client, and are not shared between clients or pushed to a remote.
 
-Each Volume Handle has a name given to it at creation time. The name must match the regex `/^[a-z0-9-_]+$/` and be unique on the client.
+Each Volume Handle has a name given to it at creation time. The name must match the regex `^[_a-z][-_a-z0-9]{0,127}$` and be unique on the client.
 
 A Volume Handle always has a local-only Volume associated with it. This Volume is used for all local reads and writes.
 
@@ -175,36 +173,39 @@ Graft will store all of a Volume's data in Object Storage using the following ke
 
 ```
 {prefix} /
-  volumes /
-    {vid} /
-      control: Control
-      forks /
-        {fork-vid}: Fork
-      checkpoints: CheckpointSet
-      log /
-        {lsn}: Commit
-      segments /
-        {sid}: Segment
+  {vid} /
+    control: Control
+    forks /
+      {fork-vid}: Fork
+    checkpoints: CheckpointSet
+    log /
+      {lsn}: Commit
+    segments /
+      {sid}: Segment
 ```
 
-This flexible layout allows users to isolate tenants from one another by simply providing a unique `{prefix}`. Or, ignoring `{prefix}` all-together.
+This flexible layout allows users to isolate tenants from one another by simply providing a unique `{prefix}`. This can be helpful when using AWS IAM to scope access keys to particular S3 prefixes for example.
 
 #### Object storage schemas
 
-All of the files aside from Segments are encoded using Protobuf. Segments are simply a set of pages stored back-to-back, ordered by `pageidx` ascending.
+All of the files aside from Segments are encoded using Protobuf. Serialized Protobuf is wrapped with a zerocopy `ProtobufEnvelope`:
+
+```rust
+struct ProtobufEnvelope {
+    magic: [u8; 4],
+    version: u8,
+    _padding: [u8; 3],
+    message: [u8]
+}
+```
+
+Segments are simply encoded as a set of pages stored back-to-back, ordered by `pageidx` ascending. As they are accessed via Byte-Range requests, pages must start at offset 0. Any metadata about a Segment is contained in the Commit log.
 
 ```proto
-syntax = "proto3"
-
+syntax = "proto3";
 package graft.remote.v1;
 
 import "google/protobuf/timestamp.proto";
-
-// Storage must provide the following additional system metadata:
-//  - Last-Modified: The object creation or updated date.
-//  - Checksum: The object's checksum.
-//  - ETag: A hash of the object's content.
-// Allowing these fields to be omitted from the schema.
 
 // A Volume has a top level control file stored at
 // `{prefix}/volumes/{vid}/control`
@@ -214,7 +215,7 @@ message Control {
   bytes vid = 1;
 
   // The parent reference if this Volume is a fork.
-  VolumeRef parent = 2;
+  optional VolumeRef parent = 2;
 
   // The creation timestamp of this Volume.
   google.protobuf.Timestamp created_at = 3;
@@ -224,11 +225,11 @@ message Control {
 // `{prefix}/volumes/{parent-vid}/forks/{fork-vid}`
 // Forks are immutable.
 message Fork {
-  // The fork point. Must match the parent field in the Fork's Control file.
-  VolumeRef parent = 1;
-
   // The VID of the fork.
-  bytes fork_vid = 2;
+  bytes fork_vid = 1;
+
+  // The fork point. Must match the parent field in the Fork's Control file.
+  VolumeRef parent = 2;
 }
 
 // A reference to a Volume at a particular LSN.
@@ -316,12 +317,12 @@ pages / {sid} / {pageidx} -> Page
 
 Keys which are stored in the local keyspace are encoded using `zerocopy` types. `lsn` values are stored using `CBE64`, which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
 
+The `handles` partition is unique in that it is keyed directly by the `VolumeHandle`'s name rather than one of the following zerocopy types.
+
 ```rust
 enum VolumeProperty {
-    Writer = 1,
-    Parent = 2,
-    LastSync = 3,
-    PendingCommit = 4,
+    Parent = 1,
+    Checkpoints = 2,
 }
 
 struct VolumeKey {
@@ -335,9 +336,10 @@ struct LogKey {
 }
 
 struct SegmentKey {
-    prefix: LogKey,
+    commit: LogKey,
     min_pageidx: PageIdx,
     max_pageidx: PageIdx,
+    sid: SegmentId,
 }
 
 struct PageKey {
@@ -346,11 +348,10 @@ struct PageKey {
 }
 ```
 
-Values stored locally are encoded using protobuf, using a combination of the remote storage schema and the following additional message types.
+Values stored locally are encoded using protobuf, using a combination of the remote storage schema and the following additional message types. No envelope is needed for local values as the upgrade process can migrate local data.
 
 ```proto
-syntax = "proto3"
-
+syntax = "proto3";
 package graft.local.v1;
 import "graft/remote/v1/index.proto";
 
@@ -365,7 +366,6 @@ message LocalCheckpointSet {
 
 message VolumeHandle {
   // The name of the Volume Handle
-  // matches: `/^[a-z0-9-_]+$/`
   string name = 1;
 
   // References to the local and remote Volumes, along with LSNs representing their latest successful syncronization.
@@ -380,7 +380,7 @@ message PendingCommit {
   // The resulting remote LSN that the push job is attempting to create
   uint64 remote_lsn = 1;
 
-  // The associated commit hash. This is used to determine whether or not the commit has landed in the remote, in the case that we are interrupted while attempting to push.
+  // The associated 256 bit commit hash. This is used to determine whether or not the commit has landed in the remote, in the case that we are interrupted while attempting to push.
   bytes commit_hash = 2;
 }
 ```
@@ -439,7 +439,7 @@ ideas to make this cheaper:
 - pages which are never written to, can simply be omitted
 - however, once a page has been written to, we need to also track when it's cleared
 - currently this requires writing an empty page to a segment
-  - except in the case of truncation, in which case the smaller page size implicitely clears all orphaned pages
+  - except in the case of truncation, in which case the smaller page count implicitely clears all orphaned pages
   - however, in this case, truncation + expansion will result in those pages becoming visible again... which may not be what the user wants
 - if segments are compressed, this isn't too bad
 - but as of right now, segments are not compressed, and thus this results in unhappy writes
