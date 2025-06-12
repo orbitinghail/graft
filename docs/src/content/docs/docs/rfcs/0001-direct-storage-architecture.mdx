@@ -88,7 +88,7 @@ Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, 
 
 ### Glossary
 
-- **`Volume Handle`**: A reference to a local-remote Volume pair. Also responsible for tracking syncronization between a local and remote Volume. Documented more in the [Volume Handle](#volume-handle) section.
+- **`Volume Handle`**: A reference to a local-remote Volume pair. Also responsible for tracking synchronization between a local and remote Volume. Documented more in the [Volume Handle](#volume-handle) section.
 - **`vid`**: A 16 byte Volume ID using [`GID`] encoding.
 - **`sid`**: A 16 byte Segment ID using [`GID`] encoding.
 - **`Snapshot`**: A frozen point-in-time view of a Volume.
@@ -368,11 +368,11 @@ message VolumeHandle {
   // The name of the Volume Handle
   string name = 1;
 
-  // References to the local and remote Volumes, along with LSNs representing their latest successful syncronization.
+  // References to the local and remote Volumes, along with LSNs representing their latest successful synchronization.
   graft.remote.v1.VolumeRef local = 2;
   optional graft.remote.v1.VolumeRef remote = 3;
 
-  // Presense of the pending_commit field means that the Push operation is in the process of committing to the remote. If no such Push job is currently running (i.e. it was interrupted), this field must be used to resume or abort the commit process.
+  // Presence of the pending_commit field means that the Push operation is in the process of committing to the remote. If no such Push job is currently running (i.e. it was interrupted), this field must be used to resume or abort the commit process.
   optional PendingCommit pending_commit = 4;
 }
 
@@ -404,7 +404,7 @@ need to think about the best way to handle parent/checkpoint metadata with named
 
 we could just store the latest checkpoint lsn in the snapshot? we need it during every read anyways.
 
-does this make gc more tricky? it will need to monitor all open snapshots to determine what's visible. it probably determins vis something like:
+does this make gc more tricky? it will need to monitor all open snapshots to determine what's visible. it probably determines vis something like:
 - collect a list of volumerefs from every open snapshot and localref
 - collect a list of checkpoints by scanning every volume's log
   - we can optimize this by storing checkpoints somewhere - they are immutable, and we only have to store the checkpoint lsns
@@ -427,27 +427,27 @@ ideas to make this cheaper:
   - this feels dirty. lets say you start with a fork X on a parent Y
     - checkpoint triggers at X:1, and writes a commit to X with X:1 being the checkpoint
     - however, the rest of the commits in X's log all still reference Y, even though Y is no longer needed to resolve any read on X
-    - this is particularly bad for mutli-parent forks, where a downstream fork now *must* monitor all of the commits for all upstream parents to track checkpointing
+    - this is particularly bad for multi-parent forks, where a downstream fork now *must* monitor all of the commits for all upstream parents to track checkpointing
 
 **decision: real checkpoint log per volume**
 1. enables less granular volume subscriptions which may be useful for certain kinds of workloads
 2. clients can monitor upstream volume checkpoints without monitoring their commit logs
 3. however, this composes with those upstream volumes being opened - as we just need to pull the relevant portions of the commit logs
-4. it may make sense for a volume reader to resolve the checkpoint + parent stack when opening a snapshot. this will reduce the page read cost, and make gc a bit easier. and because we write checkpoints directly to the segment log, those readers will still be able to implictly take advantage of newer checkpoints, although empty pages may still fall through.
+4. it may make sense for a volume reader to resolve the checkpoint + parent stack when opening a snapshot. this will reduce the page read cost, and make gc a bit easier. and because we write checkpoints directly to the segment log, those readers will still be able to implictily take advantage of newer checkpoints, although empty pages may still fall through.
 
 **issue: empty pages**
 - pages which are never written to, can simply be omitted
 - however, once a page has been written to, we need to also track when it's cleared
 - currently this requires writing an empty page to a segment
-  - except in the case of truncation, in which case the smaller page count implicitely clears all orphaned pages
+  - except in the case of truncation, in which case the smaller page count implicitly clears all orphaned pages
   - however, in this case, truncation + expansion will result in those pages becoming visible again... which may not be what the user wants
 - if segments are compressed, this isn't too bad
 - but as of right now, segments are not compressed, and thus this results in unhappy writes
 
 why are pages empty:
-1. page is implicitely empty due to being outside of the Volume's page_count
+1. page is implicitly empty due to being outside of the Volume's page_count
 2. the volume was extended by changing the page count, and page does not exist in any visible segment
-3. an empty page was explicitely written
+3. an empty page was explicitly written
 
 in theory, filesystems optimize for the first two cases, and treat the third case like any other page write.
 
@@ -459,7 +459,7 @@ one way to fix this is by having the reader look at each snapshot's page size as
 however this does impact our read perf, as we would need to scan both the segment and snapshot log rather than just the segment log.
   -> we could merge the logs like we originally did, allowing a single scan to read the snapshots
 
-alternatively we can just make this explicit. truncate + extend results in visibility. thus to explicitely erase a page you would need to either write an empty page, or checkpoint after the truncate.
+alternatively we can just make this explicit. truncate + extend results in visibility. thus to explicitly erase a page you would need to either write an empty page, or checkpoint after the truncate.
 
 to match the expected semantics of filesystems, truncate + extend should result in empty pages... but for now we can make this a graft special. eventually we could consider adding a tombstone bitmap to commits... that would also allow arbitrary hole punching and make empty pages explicit. but at the cost of a lot more metadata in the log.
 
@@ -470,7 +470,7 @@ This lock is held while writing to the `log` and `segments` partitions. This hap
 
 - **Volume commit**: When committing to a Volume, we hold the `commit_lock` to verify the latest snapshot and write out a new snapshot.
 - **Checkpoint**: To finish applying a checkpoint, we rewrite the snapshot and segments at the checkpoint LSN. The lock is only held to compare and swap the snapshot and update the segments.
-- **GC**: The GC optimistically determines what it can safely to without holding the lock. Once it has a plan of action, GC will incrementally hold this lock while erasing in-accessable snapshots and segments.
+- **GC**: The GC optimistically determines what it can safely to without holding the lock. Once it has a plan of action, GC will incrementally hold this lock while erasing in-accessible snapshots and segments.
 
 ##### **`metadata_lock(vid)`**
 This is a sharded lock which must be held when modifying the `volumes` partition for a particular Volume. It only prevents concurrent metadata operations on the same Volume. Relevant operations include:
