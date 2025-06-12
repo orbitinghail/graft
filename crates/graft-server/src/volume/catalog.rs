@@ -91,7 +91,7 @@ impl TryFrom<VolumeCatalogConfig> for Config {
         let (path, temporary) = if let Some(path) = value.path {
             (path, false)
         } else {
-            (tempfile::tempdir()?.into_path(), true)
+            (tempfile::tempdir()?.keep(), true)
         };
         Ok(Config::new(path).temporary(temporary))
     }

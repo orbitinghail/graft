@@ -76,7 +76,7 @@ impl DiskCache {
         let dir = if let Some(path) = config.path {
             canonicalize(path)?
         } else {
-            tempfile::tempdir()?.into_path()
+            tempfile::tempdir()?.keep()
         };
         tracing::info!("Opening disk cache at {:?}", dir);
         Ok(Self {

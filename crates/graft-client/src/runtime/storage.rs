@@ -145,7 +145,7 @@ impl Storage {
     }
 
     pub fn open_temporary() -> Result<Self> {
-        let path = tempfile::tempdir()?.into_path();
+        let path = tempfile::tempdir()?.keep();
         tracing::debug!("opening temporary runtime storage at {}", path.display());
         Self::open_config(fjall::Config::new(path).temporary(true))
     }
