@@ -565,104 +565,170 @@ class VolumeWriter:
 
 ```python
 def push_volume(handle_name):
-  (vid, commit) = prepare_push(handle_name)
-  remote_commit(vid, commit)
+  handle = read(f"handles/{handle_name}")
+  (local_lsn, commit) = prepare_commit(handle)
+  if remote_commit(commit):
+    push_success(handle, commit, local_lsn)
+  else:
+    push_failure(handle, commit)
 
-def prepare_push(handle_name):
-    handle = read(f"handles/{handle_name}")
+def prepare_commit(handle):
+  # trigger recovery
+  if handle.pending_commit:
+    raise InterruptedPush
 
-    # trigger recovery
-    if handle.pending_commit:
-      raise InterruptedPush
+  { local, remote } = handle
 
-    # TODO: continue here
-    # basically need to check the local and remote state to compute the sync state
-    # then build and push segments
-    # then write out the pending commit
-    # then commit
-    # then take the handle lock to finalize the commit locally
+  remote_snapshot = first(f"log/{remote.vid}")
+  local_snapshot = first(f"log/{local.vid}")
 
-    parent_snapshot = first(f"log/{parent_vid}")
-    parent_checkpoint = first(f"volumes/{parent_vid}/checkpoint")
-    writer_snapshot = first(f"log/{writer_vid}")
+  top_lsn = local_snapshot.lsn
+  bottom_lsn = local.lsn
+  sync_range = top_lsn..bottom_lsn
 
-    last_sync = read(f"volumes/{writer_vid}/last_sync")
-    assert(writer_snapshot.lsn != last_sync.fork.lsn, "nothing to commit")
+  if sync_range.is_empty():
+    raise NothingToCommit
 
-    bottom_lsn = last_sync.fork.lsn
-    top_lsn = writer_snapshot.lsn
+  # build and push segments from commits
+  (segment_refs, page_count, commit_hash) = build_and_push_segments(local.vid, lsn_range, remote.vid)
 
-    # build and push segments from commits
-    (segment_refs, page_count) = build_and_push_segments(writer_vid, bottom_lsn, top_lsn)
+  commit_lsn = remote_snapshot.lsn.next()
 
-    commit_lsn = parent_snapshot.lsn.next()
+  # write out the pending commit
+  with handle_lock(handle_name):
+    # abort the push if the handle changed since we started the push process
+    if handle != read(f"handles/{handle_name}"):
+      raise RetryPush
 
-    pending_commit = PendingCommit {
-      mapping: VolumeMapping {
-        parent: VolumeRef { vid: parent_vid, lsn: commit_lsn },
-        fork: VolumeRef { vid: writer_vid, lsn: top_lsn },
-      },
-      commit: Commit {
-        snapshot: Snapshot {
-          vid: parent_vid,
-          lsn: commit_lsn,
-          page_count
-        },
-        checkpoint_lsn: parent_checkpoint.lsn,
-        segments: segment_refs
-      }
+    handle.pending_commit = PendingCommit {
+      remote_lsn = commit_lsn,
+      commit_hash
     }
+    write(f"handles/{handle_name}", handle)
 
-  write(f"volumes/{writer_vid}/pending_commit", pending_commit)
+  return (local_snapshot.lsn, Commit {
+    snapshot: Snapshot {
+      vid: remote.vid,
+      lsn: commit_lsn,
+      page_count
+    },
+    hash: commit_hash,
+    segments: segment_refs
+  })
 
-  return pending_commit
-
-def build_and_push_segments(writer_vid, bottom_lsn, top_lsn):
-  # build up a BTreeMap<PageIdx, SegmentId> containing the last SegmentId for each page in all segments between bottom_lsn and top_lsn
+def build_and_push_segments(local_vid, lsn_range, remote_vid):
+  # build up a BTreeMap<PageIdx, SegmentId> containing the last SegmentId for each page in all segments in lsn range on the local volume
   # iterate through the BTreeMap in chunks of MAX_SEGMENT_SIZE
-  # building splinters and uploading segments as we go
+  # building splinters and uploading segments as we go to the remote volume's segment store
+  #
+  # IF we expect to be querying the remote volume anytime soon, we can optionally write out segments to our local page store.
+
   pass
 
-def remote_commit(parent_vid, writer_vid, commit):
-  # ensure this commit matches the (parent, writer) pair
-  assert_eq(commit.mapping.parent.vid, parent_vid)
-  assert_eq(commit.mapping.fork.vid, writer_vid)
+def remote_commit(commit):
+  path = f"{PREFIX}/{commit.snapshot.vid}/log/{commit.snapshot.lsn}"
+  match object_store.write_if_not_exists(path, commit) {
+    Ok() => true,
+    Err(err) => false
+  }
 
-  with storage.lock():
-    # ensure the writer is still the writer
-    assert_eq(read(f"volumes/{parent_vid}/writer"), writer_vid)
+def push_success(handle, commit, local_lsn):
+  {vid, lsn} = commit.snapshot
 
-    # ensure we are committing to the correct remote lsn
-    parent_snapshot = first(f"log/{parent_vid}")
-    assert_eq(commit.mapping.parent.lsn, parent_snapshot.lsn.next())
+  # prepare a fjall transaction
+  tx = begin()
 
+  tx.write(f"log/{vid}/{lsn}", commit.snapshot)
+
+  for segment in commit.segments:
+    bounds = segment.splinter.bounds()
+    path = f"segments/{vid}/{lsn}/{bounds}/{segment.sid}"
+    tx.write(path, segment.splinter)
+
+  new_handle = handle.clone()
+  new_handle.pending_commit = None
+  new_handle.local = VolumeRef {
+    vid: handle.local.vid,
+    lsn: local_lsn
+  }
+  new_handle.remote = VolumeRef {
+    vid: handle.remote.vid,
+    lsn
+  }
+  tx.write(f"handles/{handle.name}", new_handle)
+
+  with handle_lock(handle.name):
+    # panic if handle has changed
+    assert(handle == read(f"handles/{handle_name}"))
+
+    with volume_lock(commit.snapshot.vid):
+      # panic if someone already wrote the remote lsn
+      assert(not read(f"log/{vid}/{lsn}"))
+
+      tx.commit()
+
+def push_failure(handle, commit):
+  # push failed, clear pending commit
+  with handle_lock(handle.name):
+    # panic if handle has changed
+    assert(handle == read(f"handles/{handle_name}"))
+    handle.pending_commit = None
+    write(f"handles/{handle.name}", handle)
 ```
-
-- if pending_commit skip to committing to remote storage
-- collect segments
-  - `start_lsn = last_sync.fork.lsn`
-  - `snapshot = first log/{writer_vid}`
-  - `iter segments/{writer_vid}/{..=start_lsn}`
-    - build segments
-- push segments
-- write pending_commit
-- commit to remote storage
-- if success:
-  - fjall batch
-    - write snapshot + segments to parent log
-      - optimization: segment refs here can be refs to the writer segments! this allows page reuse, however it means that the segment index will be out of sync
-    - clear pending commit
-    - update last_sync
-- if transient failure:
-  - log error, schedule retry
-- if reject:
-  - clear pending commit, trigger pull on parent
 
 #### Pull volume
 
-- pull commits into remote vid
-- also write commit into writer vid if exists
-  - if so, add a SyncOp mapping the remote lsn to the writer lsn
+```python
+def pull_volume(vid):
+  # snapshot the volume
+  snapshot = first(f"log/{vid}")
+
+  tx = begin()
+
+  # TODO: this needs to recursively pull parents
+
+  # pull changes from object store
+  for commit in remote_iter_commits(vid, snapshot.lsn):
+    lsn = commit.snapshot.lsn
+    tx.write(f"log/{vid}/{lsn}", commit.snapshot)
+
+    for segment in commit.segments:
+      bounds = segment.splinter.bounds()
+      path = f"segments/{vid}/{lsn}/{bounds}/{segment.sid}"
+      tx.write(path, segment.splinter)
+
+  with volume_lock(vid):
+    # assert the volume hasn't changed
+    assert(snapshot == first(f"log/{vid}"))
+    tx.commit()
+
+def remote_iter_commits(vid, start_lsn):
+  # return an iterator of Commit's over {prefix}/log/{start_lsn..}
+  pass
+```
+
+#### Sync remote volume to local
+
+In this new architecture we split up pulling the remote volume and syncing it into the local volume.
+
+```python
+
+def sync_remote_to_local(handle_name):
+  handle = read(f"handles/{handle_name}")
+
+  # we can safely sync the latest remote snapshot into the local volume if the local volume has no outstanding local changes.
+
+  local_snapshot = first(f"log/{handle.local.vid}")
+  if local_snapshot.lsn != handle.local.lsn:
+    raise OutstandingLocalChanges
+
+  # no outstanding changes! we can sync
+  tx = begin()
+
+  remote_snapshot
+
+
+```
 
 #### Reset volume
 
