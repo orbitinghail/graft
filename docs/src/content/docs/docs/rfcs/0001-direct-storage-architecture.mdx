@@ -23,11 +23,13 @@ An overview of why we should consider making this major change to Graft's archit
 Currently Graft requires a MetaStore and PageStore to support replication to and from object storage. This architecture has the following advantages and disadvantages:
 
 **Advantages**
+
 - The MetaStore can efficiently rollup commits to fast forward clients, increasing performance and enabling instant read replicas
 - The PageStore acts as a smart cache, allowing clients to pull only the pages they need at the edge.
 - The PageStore is able to collocate writes to multiple Volumes in the same Segment which can reduce the cost and overhead of small transactions.
 
 **Disadvantages**
+
 - There is little isolation between data in different Volumes. Graft will need to roll out a comprehensive encryption + authorization layer to work for production workloads. This is a huge cost in terms of testing and engineering.
 - Users must run two services to take full advantage of Graft, this makes Graft much harder to use.
 
@@ -74,10 +76,12 @@ Clients such as `graft-sqlite` and `graft-fuse` will use the `graft-kernel` to o
 The Graft Proxy is a stateless edge service and caching layer which makes it easier for Graft to replicate to & from devices. Initially it will simply act as a pass-through proxy to object storage with its own authentication and authorization layer.
 
 Graft Proxy exposes a simple API to consumers, enabling two key performance features:
+
 1. Graft Proxy caches reads from object storage.
 2. Replica fast-forwarding: collapse a pull graft request and only return the latest segments.
 
 Eventually Graft Proxy will enhance Graft with these features:
+
 - volume subscriptions -> eliminate the need to poll for changes
 - granular authorization
 - direct byte range puts and gets against Volumes, enabling "dumb clients".
@@ -108,15 +112,17 @@ A volume’s durable state consists of a **Checkpoint** and a **Log**.
 
 #### Log Sequence Numbers (LSNs)
 
-| Property       | Definition                                                         |
-|----------------|--------------------------------------------------------------------|
-| **Domain**     | Unsigned 64-bit integer in the range `[1, 2^64)`. Zero is invalid. |
-| **Ordering**   | Strictly increasing, gap-free, and scoped per volume.              |
-| **Encoding**   | Canonical representation is `CBE64`: one’s-complement, big-endian. |
+| Property     | Definition                                                         |
+| ------------ | ------------------------------------------------------------------ |
+| **Domain**   | Unsigned 64-bit integer in the range `[1, 2^64)`. Zero is invalid. |
+| **Ordering** | Strictly increasing, gap-free, and scoped per volume.              |
+| **Encoding** | Canonical representation is `CBE64`: one’s-complement, big-endian. |
 
 Because `0` is never a valid LSN, it's available as a sentinel value.
 
 #### `CBE64` Encoding
+
+`CBE64` stands for Ones-**C**ompliment **B**ig **E**dian.
 
 - **Binary form** — 8-byte array. Bytewise comparison yields descending numeric order. Used for space-efficient storage, such as in embedded key-value stores like [Fjall].
 - **Hex form** — 16-character, zero-padded, uppercase hexadecimal string. Lexicographically sorts in the same order as the binary form. Used where human readability is preferred, such as object store keys.
@@ -159,7 +165,7 @@ Note that the Commit's snapshot is passed in. This ensures the Hash's uniqueness
 
 Rather than forcing users to reference Volumes by ID, Graft exposes Volume Handles. Volume Handles are pointers to a local and remote Volume. Volume Handles only exist on a single client, and are not shared between clients or pushed to a remote.
 
-Each Volume Handle has a name given to it at creation time. The name must match the regex `^[_a-z][-_a-z0-9]{0,127}$` and be unique on the client.
+Each Volume Handle has a name given to it at creation time. The name must match the regex `^[_a-z][-_a-z0-9]{0,127}$` (alphanumeric, starts with number or underscore, max len 128 chars) and be unique on the client.
 
 A Volume Handle always has a local-only Volume associated with it. This Volume is used for all local reads and writes.
 
@@ -191,11 +197,18 @@ This flexible layout allows users to isolate tenants from one another by simply 
 All of the files aside from Segments are encoded using Protobuf. Serialized Protobuf is wrapped with a zerocopy `ProtobufEnvelope`:
 
 ```rust
+enum ProtobufMessage {
+    GraftRemoteV1Control = 1,
+    GraftRemoteV1Fork = 2,
+    GraftRemoteV1CheckpointSet = 3,
+    GraftRemoteV1Commit = 4,
+}
+
 struct ProtobufEnvelope {
     magic: [u8; 4],
-    version: u8,
     _padding: [u8; 3],
-    message: [u8]
+    message: ProtobufMessage,
+    data: [u8]
 }
 ```
 
@@ -264,9 +277,9 @@ message CheckpointSet {
 }
 
 // Commits are stored at `{prefix}/volumes/{vid}/log/{lsn}`.
-// There are some valid cases for a commit to not include any SegmentRefs:
-//  - The commit marks a new Checkpoint. The corresponding Checkpoint (referenced by the `checkpoint_lsn` field) will contain the SegmentRefs associated to the checkpoint.
-//  - The Volume has been truncated or extended causing the `page_count` to change, but no new pages to be written.
+// A commit may not include any SegmentRefs if only the Volume's page count has
+// changed. This happens when the Volume is extended or truncated without
+// additional writes.
 // Commits are immutable.
 message Commit {
   // The Volume Snapshot at this Commit.
@@ -294,6 +307,7 @@ message SegmentRef {
 This section documents how clients store data.
 
 #### Local keyspace
+
 Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, the top level keys are independent partitions. The remainder of the keys and the values are encoded using types in the following section.
 
 ```
@@ -315,7 +329,7 @@ pages / {sid} / {pageidx} -> Page
 
 #### Local schemas
 
-Keys which are stored in the local keyspace are encoded using `zerocopy` types. `lsn` values are stored using `CBE64`, which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
+Keys which are stored in the local keyspace are encoded using `zerocopy` types. `lsn` values are stored using [`CBE64`](#cbe64-encoding), which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
 
 The `handles` partition is unique in that it is keyed directly by the `VolumeHandle`'s name rather than one of the following zerocopy types.
 
@@ -380,136 +394,43 @@ message PendingCommit {
   // The resulting remote LSN that the push job is attempting to create
   uint64 remote_lsn = 1;
 
-  // The associated 256 bit commit hash. This is used to determine whether or not the commit has landed in the remote, in the case that we are interrupted while attempting to push.
+  // The associated 256 bit blake3 commit hash. This is used to determine
+  // whether or not the commit has landed in the remote, in the case that we are
+  // interrupted while attempting to push.
   bytes commit_hash = 2;
 }
 ```
 
 ### Algorithms
 
-**checkpointing**
-
-need to plan this out. one big thing is how to handle Forks. I think that checkpointing will need to prioritize checkpointing forks before parents in order to quickly eliminate cascading reads.
-
-pull is also a bit odd. to pull volume x, we need to also pull x's parents recursively until we encounter the nearest checkpoint. and if/when any of x's parents are checkpointed in the future, we should be aware of that so GC can clear unused volumes.
-
-by making local storage work around named refs this also doubles as keeping track of which volumes the user actually cares about.
-
-a named ref can also handle sync state / staging volume refs, centralizing all of the sync logic accordingly.
-
-need to think about the best way to handle parent/checkpoint metadata with named refs. the parent refs should be immutable so we could store them in volume specific metadata. checkpoints are mutable, however since they result in updating the segments partition, the only real need for them are:
-- to handle empty pages during reads
-- to run checkpointing locally (maybe?)
-- gc needs to know about checkpoints for reachability
-
-we could just store the latest checkpoint lsn in the snapshot? we need it during every read anyways.
-
-does this make gc more tricky? it will need to monitor all open snapshots to determine what's visible. it probably determines vis something like:
-- collect a list of volumerefs from every open snapshot and localref
-- collect a list of checkpoints by scanning every volume's log
-  - we can optimize this by storing checkpoints somewhere - they are immutable, and we only have to store the checkpoint lsns
-- resolve each volumerefs visibility into a visibility set which contains a visible lsn range for every visible volume
-  - when calculating a volumeref's visibility, look for checkpoints which exist between the oldest and newest visible lsn - these checkpoints can be used in place of the oldest lsn
-- once the visibility set has been calculated, gc can iterate through all volumes and delete lsn ranges that are inaccessible
-
-**issue: multi-parent fork + checkpoint**
-currently it seems like tracking a multi-level forked volume is tricky due to checkpointing. in theory we would need to monitor all of the parent volumes for new checkpoints in order to minimize the chance that we get impacted by remote checkpointer gc. however, we otherwise don't want to subscribe to the entire commit log of every parent volume as we need relatively little information.
-
-ideas to make this cheaper:
-- make the remote checkpoint prefix an actual log, such that clients can subscribe to checkpoint logs rather than commit logs for upstream volumes
-  - this also allows a client to subscribe to a volume's checkpoint rather than commit log, which effectively just reduces the rate of update
-- put checkpoints in prefix level multi-volume log
-  - this may become very costly for large amounts of volumes
-  - although this log could just store volume refs, pointing at the corresponding checkpoint files
-- somehow store parent checkpoint information directly in the fork's log?
-  - this means each commit may be a pointer into another volume's log
-  - possibly multiple parents away
-  - this feels dirty. lets say you start with a fork X on a parent Y
-    - checkpoint triggers at X:1, and writes a commit to X with X:1 being the checkpoint
-    - however, the rest of the commits in X's log all still reference Y, even though Y is no longer needed to resolve any read on X
-    - this is particularly bad for multi-parent forks, where a downstream fork now *must* monitor all of the commits for all upstream parents to track checkpointing
-
-**decision: real checkpoint log per volume**
-1. enables less granular volume subscriptions which may be useful for certain kinds of workloads
-2. clients can monitor upstream volume checkpoints without monitoring their commit logs
-3. however, this composes with those upstream volumes being opened - as we just need to pull the relevant portions of the commit logs
-4. it may make sense for a volume reader to resolve the checkpoint + parent stack when opening a snapshot. this will reduce the page read cost, and make gc a bit easier. and because we write checkpoints directly to the segment log, those readers will still be able to implictily take advantage of newer checkpoints, although empty pages may still fall through.
-
-**issue: empty pages**
-- pages which are never written to, can simply be omitted
-- however, once a page has been written to, we need to also track when it's cleared
-- currently this requires writing an empty page to a segment
-  - except in the case of truncation, in which case the smaller page count implicitly clears all orphaned pages
-  - however, in this case, truncation + expansion will result in those pages becoming visible again... which may not be what the user wants
-- if segments are compressed, this isn't too bad
-- but as of right now, segments are not compressed, and thus this results in unhappy writes
-
-why are pages empty:
-1. page is implicitly empty due to being outside of the Volume's page_count
-2. the volume was extended by changing the page count, and page does not exist in any visible segment
-3. an empty page was explicitly written
-
-in theory, filesystems optimize for the first two cases, and treat the third case like any other page write.
-
-graft is already somewhat optimized for the first two cases, and can probably ignore the third case.
-
-however we do need to decide how to handle truncate + extend.
-right now, graft will expose previous page contents after truncate + extend up to the new page count.
-one way to fix this is by having the reader look at each snapshot's page size as it iterates through the commit log. if it sees any page count smaller than the requested pageidx as it scans backward, it can immediately terminate the read with an empty page
-however this does impact our read perf, as we would need to scan both the segment and snapshot log rather than just the segment log.
-  -> we could merge the logs like we originally did, allowing a single scan to read the snapshots
-
-alternatively we can just make this explicit. truncate + extend results in visibility. thus to explicitly erase a page you would need to either write an empty page, or checkpoint after the truncate.
-
-to match the expected semantics of filesystems, truncate + extend should result in empty pages... but for now we can make this a graft special. eventually we could consider adding a tombstone bitmap to commits... that would also allow arbitrary hole punching and make empty pages explicit. but at the cost of a lot more metadata in the log.
+This section details the various key algorithms powering Graft's new direct storage architecture.
 
 #### Locks
 
-##### **`commit_lock`**
-This lock is held while writing to the `log` and `segments` partitions. This happens during the following operations:
+The new direct storage architecture uses sharded locks to minimize contention. We need to take extreme care whenever we hold more than one lock in the same thread to ensure that we can't deadlock due to lock ordering.
 
-- **Volume commit**: When committing to a Volume, we hold the `commit_lock` to verify the latest snapshot and write out a new snapshot.
-- **Checkpoint**: To finish applying a checkpoint, we rewrite the snapshot and segments at the checkpoint LSN. The lock is only held to compare and swap the snapshot and update the segments.
+##### **`handle_lock(name)`**
+
+This sharded lock is held while modifying a Volume Handle. This happens during the following operations.
+
+- **Pull Volume**: After updating the remote and local volumes we complete the pull operation by updating the Volume Handle while holding the handle_lock.
+- **Push Volume**: We hold the handle_lock to record the pending commit, as well as later to complete the push and land the commit in the remote volume.
+
+TODO/Q: do we need to hold the handle lock while updating the local and/or remote volume during push/pull?
+
+##### **`volume_lock(vid)`**
+
+The sharded Volume lock must be held when updating a Volume.
+
+- **Volume commit**: When committing to a Volume, we hold the `volume_lock` to verify the latest snapshot and write out a new snapshot.
+- **Checkpoint**: To finish applying a checkpoint, we rewrite the snapshot and segments at the checkpoint LSN. The lock is only held while we update the log, segments, and checkpoints.
 - **GC**: The GC optimistically determines what it can safely to without holding the lock. Once it has a plan of action, GC will incrementally hold this lock while erasing in-accessible snapshots and segments.
-
-##### **`metadata_lock(vid)`**
-This is a sharded lock which must be held when modifying the `volumes` partition for a particular Volume. It only prevents concurrent metadata operations on the same Volume. Relevant operations include:
-
-- **Push volume**: When pushing a Volume to the server.
-
-
-
-
-TODO:
-  - feels like we need a lock to ensure that meta-level ops are non-concurrent with respect to a single volume
-  - and another lock for ensuring that commits to a single volume are serializable
-  - and perhaps another lock for cross-volume ops?
-    - ideally gc can be incremental and take advantage of the monotonicity of the log and segments partitions
-
-The `log` and `segments` partitions are monotonic.
 
 #### Volume Reader
 
 Reading from a Volume requires creating a `VolumeReader` from a `VolumeHandle` at either the latest or a specific snapshot.
 
 ```python
-def visibility_path(snapshot):
-  cursor = VolumeRef { vid: snapshot.vid, lsn: snapshot.lsn }
-  path = []
-  while cursor:
-    if checkpoints = read(f"volumes/{cursor.vid}/checkpoints"):
-      if checkpoint = checkpoints.for(snapshot.lsn):
-        # found checkpoint, we can terminate the path here
-        path.push((cursor, (cursor.lsn)..=(checkpoint.lsn)))
-        return path
-
-    # no checkpoint, so scan to the beginning
-    path.push((cursor, (cursor.lsn)..=1))
-    # and iterate to the parent
-    cursor = read(f"volumes/{cursor.vid}/parent")
-
-  return path
-
 class VolumeHandle:
   # inherits properties from graft.local.v1.VolumeHandle:
   # name, local, remote, pending_commit
@@ -522,38 +443,51 @@ class VolumeHandle:
     assert_eq(snapshot.vid, self.local.vid)
     return VolumeReader::new(snapshot)
 
+def visibility_path(snapshot):
+  cursor = VolumeRef { vid: snapshot.vid, lsn: snapshot.lsn }
+  path = []
+  while cursor:
+    if checkpoints = read(f"volumes/{cursor.vid}/checkpoints"):
+      if checkpoint = checkpoints.for(snapshot.lsn):
+        # found checkpoint, we can terminate the path here
+        path.push((cursor.vid, (cursor.lsn)..=(checkpoint.lsn)))
+        return path
+
+    # no checkpoint, so scan to the beginning
+    path.push((cursor.vid, (cursor.lsn)..=1))
+    # and iterate to the parent
+    cursor = read(f"volumes/{cursor.vid}/parent")
+
+  return path
+
 class VolumeReader:
   def new(snapshot):
     self.snapshot = snapshot
     self.path = visibility_path(snapshot)
 
-def read_page(snapshot, pageidx):
-  (vid, lsn, page_count) = snapshot
-  if not page_count.contains(pageidx):
-    return None
-  for key, splinter in iter_segments(vid, lsn):
-    page_range = (min_pageidx, max_pageidx) = key.bounds()
-    if not page_range.contains(pageidx):
-      continue
-    page = read(f"pages/{key.sid}/{pageidx}")
-    if page:
-      return page
-    return remote_read_page(vid, key.sid, splinter, pageidx)
+  def read_page(self, pageidx):
+    if not self.snapshot.page_count.contains(pageidx):
+      return None
+    for key, splinter in iter_segments(self.path):
+      {vid, lsn, page_range} = key
+      page_count = read(f"log/{vid}/{lsn}").page_count
+      if not (
+          # handle truncate+extend
+          page_count.contains(pageidx)
+          # segment elimination
+          and page_range.contains(pageidx)
+          and splinter.contains(pageidx)):
+        continue
+      page = read(f"pages/{key.sid}/{pageidx}")
+      if page:
+        return page
+      return remote_read_page(vid, key.sid, splinter, pageidx)
 
-def iter_segments(vid, lsn):
-  scans = []
-  cursor = vid
-  while cursor:
-    checkpoint = read(f"volumes/{cursor}/checkpoint")
-    start = lsn if cursor == vid else UINT64_MAX
-    end = checkpoint.lsn if checkpoint else 0
-    scans.push((cursor, start..=end))
-    cursor = None if checkpoint else read(f"volumes/{cursor}/parent")
-
+def iter_segments(path):
   result = []
-  for scan in scans:
-    top = f"segments/{scan.0}/{scan.1.start}"
-    bottom = f"segments/{scan.0}/{scan.1.end}"
+  for (vid, scan) in path:
+    top = f"segments/{vid}/{scan.start}"
+    bottom = f"segments/{vid}/{scan.end}"
     result = chain(result, iter(top..=bottom))
   return result
 
@@ -571,13 +505,10 @@ def calculate_chunk_request(segment, pageidx):
 
 #### Volume Writer
 
-Writing to a Volume requires the VID of the parent Volume as well as a read snapshot. The read snapshot should be the latest logical snapshot of the Volume, which means it may reference a Writer volume.
-
 ```python
 class VolumeWriter:
-  def new(vid, snapshot):
-    self.vid = vid
-    self.snapshot = snapshot
+  def new(snapshot):
+    self.reader = VolumeReader::new(snapshot)
     self.page_count = snapshot.page_count
     self.sid = SegmentId::random()
     self.splinter = Splinter::new()
@@ -586,7 +517,7 @@ class VolumeWriter:
     if self.splinter.contains(pageidx):
       return read(f"pages/{self.sid}/{pageidx}")
     else:
-      read_page(self.snapshot, pageidx)
+      self.reader.read_page(pageidx)
 
   def write(pageidx, page):
     self.splinter.insert(pageidx)
@@ -602,52 +533,55 @@ class VolumeWriter:
     delete_prefix(f"pages/{sid}")
 
   def commit():
-    storage.lock()
+    snapshot = self.reader.snapshot
+    vid = snapshot.vid
 
-    # verify we are the latest snapshot
-    # due to how snapshot works, this will also fail if the writer Volume has changed
-    snapshot = snapshot(self.vid)
-    if self.snapshot != snapshot:
-      raise "concurrent write"
+    with volume_lock(snapshot.vid):
+      # verify we are the latest snapshot
+      latest_snapshot = last(f"log/{vid}")
+      if snapshot != latest_snapshot:
+        raise "concurrent write"
 
-    tx = begin()
+      tx = begin()
 
-    # determine the writer vid and lsn
-    writer_vid = get_or_create_writer(tx, self.vid)
-    writer_lsn = snapshot.lsn.next() if snapshot.vid == writer_vid else LSN::FIRST
+      commit_lsn = snapshot.lsn.next()
 
-    tx.write(f"log/{writer_vid}/{writer_lsn}", Snapshot {
-      vid = writer_vid,
-      lsn = writer_lsn,
-      page_count = self.page_count
-    })
+      tx.write(f"log/{vid}/{commit_lsn}", Snapshot {
+        vid,
+        lsn = commit_lsn,
+        page_count = self.page_count
+      })
 
-    (min, max) = self.splinter.bounds()
-    tx.write(
-      f"log/{writer_vid}/{writer_lsn}/{min}/{max}{self.sid}",
-      self.Splinter
-    )
+      (min, max) = self.splinter.bounds()
+      tx.write(
+        f"segments/{vid}/{commit_lsn}/{min}/{max}{self.sid}",
+        self.splinter
+      )
+
+      tx.commit()
 ```
 
 #### Push Volume
 
 ```python
-def push_volume(parent_vid, writer_vid):
-  # isolate metadata operations on this volume
-  with metadata_lock(parent_vid):
-    pending_commit = prepare_commit(parent_vid, writer_vid)
-    remote_commit(parent_vid, writer_vid, pending_commit)
+def push_volume(handle_name):
+  (vid, commit) = prepare_push(handle_name)
+  remote_commit(vid, commit)
 
-def prepare_commit(parent_vid, writer_vid):
-    # ensure the writer is still the writer
-    assert_eq(read(f"volumes/{parent_vid}/writer"), writer_vid)
+def prepare_push(handle_name):
+    handle = read(f"handles/{handle_name}")
 
-    # check for pending commit
-    pending_commit = read(f"volumes/{writer_vid}/pending_commit")
-    if pending_commit:
-      return pending_commit
+    # trigger recovery
+    if handle.pending_commit:
+      raise InterruptedPush
 
-    # otherwise, we need to build a new pending commit
+    # TODO: continue here
+    # basically need to check the local and remote state to compute the sync state
+    # then build and push segments
+    # then write out the pending commit
+    # then commit
+    # then take the handle lock to finalize the commit locally
+
     parent_snapshot = first(f"log/{parent_vid}")
     parent_checkpoint = first(f"volumes/{parent_vid}/checkpoint")
     writer_snapshot = first(f"log/{writer_vid}")
@@ -725,11 +659,13 @@ def remote_commit(parent_vid, writer_vid, commit):
   - clear pending commit, trigger pull on parent
 
 #### Pull volume
+
 - pull commits into remote vid
 - also write commit into writer vid if exists
   - if so, add a SyncOp mapping the remote lsn to the writer lsn
 
 #### Reset volume
+
 - open new writer vid
 - update writer pointer on upstream vid
 - eventually GC old vid once read snapshots drop
@@ -751,7 +687,7 @@ All new methods should be implemented on both Splinter and SplinterRef.
 
 ## Drawbacks
 
-Why should we *not* do this?
+Why should we _not_ do this?
 
 ## Rationale and alternatives
 
@@ -782,7 +718,7 @@ This is also a good place to "dump ideas", if they are out of scope for the RFC 
 
 If you have tried and cannot think of any future possibilities, you may simply state that you cannot think of anything.
 
-Note that having something written down in the future-possibilities section is not a reason to accept the current or a future RFC; such notes should be in the section on motivation or rationale in this or subsequent RFCs.  The section merely provides additional information.
+Note that having something written down in the future-possibilities section is not a reason to accept the current or a future RFC; such notes should be in the section on motivation or rationale in this or subsequent RFCs. The section merely provides additional information.
 
 [Fjall]: https://github.com/fjall-rs/fjall/
 [`GID`]: https://graft.rs/docs/internals/gid/
