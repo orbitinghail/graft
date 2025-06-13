@@ -314,8 +314,8 @@ Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, 
 handles / {name} -> VolumeHandle
 
 volumes / {vid} /
-  // The parent reference if this Volume is a fork.
-  parent -> VolumeRef
+  // The Volume's Control, includes it's parent reference
+  control -> Control
 
   // the latest LocalCheckpointSet for this Volume
   checkpoints -> LocalCheckpointSet
@@ -335,7 +335,7 @@ The `handles` partition is unique in that it is keyed directly by the `VolumeHan
 
 ```rust
 enum VolumeProperty {
-    Parent = 1,
+    Control = 1,
     Checkpoints = 2,
 }
 
@@ -416,15 +416,13 @@ This sharded lock is held while modifying a Volume Handle. This happens during t
 - **Pull Volume**: After updating the remote and local volumes we complete the pull operation by updating the Volume Handle while holding the handle_lock.
 - **Push Volume**: We hold the handle_lock to record the pending commit, as well as later to complete the push and land the commit in the remote volume.
 
-TODO/Q: do we need to hold the handle lock while updating the local and/or remote volume during push/pull?
-
 ##### **`volume_lock(vid)`**
 
-The sharded Volume lock must be held when updating a Volume.
+The sharded volume lock must be held while modifying a Volume's properties in the `volumes` partition. Properties include `checkpoints` and `control`.
 
-- **Volume commit**: When committing to a Volume, we hold the `volume_lock` to verify the latest snapshot and write out a new snapshot.
-- **Checkpoint**: To finish applying a checkpoint, we rewrite the snapshot and segments at the checkpoint LSN. The lock is only held while we update the log, segments, and checkpoints.
-- **GC**: The GC optimistically determines what it can safely to without holding the lock. Once it has a plan of action, GC will incrementally hold this lock while erasing in-accessible snapshots and segments.
+##### **`commit_lock(vid)`**
+
+When committing to a Volume, we hold the `commit_lock` to verify the latest snapshot and write out a new snapshot.
 
 #### Volume Reader
 
@@ -456,7 +454,7 @@ def visibility_path(snapshot):
     # no checkpoint, so scan to the beginning
     path.push((cursor.vid, (cursor.lsn)..=1))
     # and iterate to the parent
-    cursor = read(f"volumes/{cursor.vid}/parent")
+    cursor = read(f"volumes/{cursor.vid}/control").parent
 
   return path
 
@@ -536,30 +534,56 @@ class VolumeWriter:
     snapshot = self.reader.snapshot
     vid = snapshot.vid
 
-    with volume_lock(snapshot.vid):
-      # verify we are the latest snapshot
-      latest_snapshot = last(f"log/{vid}")
-      if snapshot != latest_snapshot:
-        raise "concurrent write"
+    tx = begin()
 
-      tx = begin()
+    # verify we are the latest snapshot
+    latest_snapshot = tx.first(f"log/{vid}")
+    if snapshot != latest_snapshot:
+      raise "concurrent write"
 
-      commit_lsn = snapshot.lsn.next()
+    commit_lsn = snapshot.lsn.next()
 
-      tx.write(f"log/{vid}/{commit_lsn}", Snapshot {
-        vid,
-        lsn = commit_lsn,
-        page_count = self.page_count
-      })
+    tx.write(f"log/{vid}/{commit_lsn}", Snapshot {
+      vid,
+      lsn = commit_lsn,
+      page_count = self.page_count
+    })
 
-      (min, max) = self.splinter.bounds()
-      tx.write(
-        f"segments/{vid}/{commit_lsn}/{min}/{max}{self.sid}",
-        self.splinter
-      )
+    (min, max) = self.splinter.bounds()
+    tx.write(
+      f"segments/{vid}/{commit_lsn}/{min}/{max}{self.sid}",
+      self.splinter
+    )
 
-      tx.commit()
+    tx.commit()
 ```
+
+## TODO: Braindump
+I'm considering using Fjall txns to eliminate some/all of my explicit locks...
+however, it might be tricky due to how Fjall SSI txns work.
+main issue in mind is conflicts between GC and commit due to commit holding a read reference on the entire prefix in order to acquire the latest snapshot.
+
+If instead we continue with locks, we effectively need three locks:
+1. to ensure that volume handles aren't corrupted
+2. to prevent concurrent volume operations
+3. to serialize volume commits
+
+The interesting case seems to be operations. Effectively we want to parallellize operations like push, pull, reset, checkpoint, gc. Most of the operations can be made idempotent (other than where they touch the latest commit and/or the handle). Thus, the main reason for any kind of lock is more about eliminating duplicate work.
+
+Currently the only source of dup work is during pull while recursively walking and backfilling parents. If two volumes share the same parent we may concurrently backfill the parent, potentially leading to wasted work.
+
+Can we handle this case with a object_store fetcher? Sorta like a transaction. Effectively we open a object store reader which lets us fetch keys. Under the hood it dedups concurrent fetches, and also keeps around any fetches until all concurrent txns close.
+
+I think this would work, so long as the code basically worked like:
+- open object store reader
+- *then* check to see what we need to fetch
+- then fetch
+- then commit any changes
+- then close the reader
+
+Thus, the lifetime of the reader is > the lifetime of visible effect. I think that with this design, there shouldn't be a way for a duplicate fetch to occur which would have been prevented by checking local state.
+
+This utility in theory allows us to eliminate the volume lock and just lean into making more of our operations idempotent.
 
 #### Push Volume
 
@@ -679,16 +703,65 @@ def push_failure(handle, commit):
 #### Pull volume
 
 ```python
-def pull_volume(vid):
-  # snapshot the volume
-  snapshot = first(f"log/{vid}")
+def fetch_visibility_path(vid, lsn):
+  cursor = VolumeRef { vid, lsn }
+  path = []
+  while cursor:
+    { vid, lsn } = cursor
+
+    # load the control if it doesn't exist
+    if not tx.read(f"volumes/{vid}/control"):
+      control = object_store.fetch(f"{PREFIX}/{vid}/control")
+      tx.write(f"volumes/{vid}/control", control)
+
+    # update checkpoints if it doesn't exist or has changed
+    etag = tx.read(f"volumes/{vid}/checkpoints").etag
+    checkpoints = object_store.fetch(f"{PREFIX}/{vid}/checkpoints", etag)
+    if checkpoints:
+      tx.write(f"volumes/{vid}/checkpoints", checkpoints.into())
+
+    if checkpoints = tx.read(f"volumes/{vid}/checkpoints"):
+      if checkpoint_lsn = checkpoints.for(lsn):
+        # found checkpoint, we can terminate the path here
+        path.push((vid, (lsn)..=(checkpoint_lsn)))
+        return path
+
+    # no checkpoint, so scan to the beginning
+    path.push((vid, (lsn)..=1))
+    # and iterate to the parent
+    cursor = tx.read(f"volumes/{vid}/control").parent
+
+  return (tx, path)
+
+def pull_volume(vid, max_lsn=LSN::MAX):
+  # retrieve the latest snapshot <= max_lsn
+  snapshot = first(f"log/{vid}/{max_lsn}"..)
+  # refresh the visibility path
+  path = fetch_visibility_path(vid, snapshot.lsn)
+
+  # fetch all commits in path
+  for (vid, scan) in path:
+    fetch_commits(vid, scan)
+
 
   tx = begin()
 
-  # TODO: this needs to recursively pull parents
+  # load the control if it doesn't exist
+  if not read(f"volumes/{vid}/control"):
+    control = object_store.fetch(f"{PREFIX}/{vid}/control")
+    tx.write(f"volumes/{vid}/control", control)
+
+  # update checkpoints if it doesn't exist or has changed
+  etag = read(f"volumes/{vid}/checkpoints").etag
+  checkpoints = object_store.fetch(f"{PREFIX}/{vid}/checkpoints", etag)
+  if checkpoints:
+    tx.write(f"volumes/{vid}/checkpoints", checkpoints)
+
+  # start iterating commits either at the most recent checkpoint or after the latest snapshot, whichever is latest
+  min_lsn = checkpoints.for(max_lsn).max(snapshot.lsn)
 
   # pull changes from object store
-  for commit in remote_iter_commits(vid, snapshot.lsn):
+  for commit in remote_iter_commits(vid, min_lsn..=max_lsn):
     lsn = commit.snapshot.lsn
     tx.write(f"log/{vid}/{lsn}", commit.snapshot)
 
@@ -702,9 +775,16 @@ def pull_volume(vid):
     assert(snapshot == first(f"log/{vid}"))
     tx.commit()
 
-def remote_iter_commits(vid, start_lsn):
-  # return an iterator of Commit's over {prefix}/log/{start_lsn..}
-  pass
+# lsn_range may have an unbounded end in which case this function will stop fetching commits once it finds the last commit
+def fetch_commits(vid, lsn_range):
+  for commit in fetch_range(f"{PREFIX}/{vid}/log/{lsn_range}"):
+    lsn = commit.snapshot.lsn
+    write(f"log/{vid}/{lsn}", commit.snapshot)
+
+    for segment in commit.segments:
+      bounds = segment.splinter.bounds()
+      path = f"segments/{vid}/{lsn}/{bounds}/{segment.sid}"
+      write(path, segment.splinter)
 ```
 
 #### Sync remote volume to local
