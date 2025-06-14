@@ -58,7 +58,7 @@ In a discussion with a potential user, they expressed reservations due to the la
 
 ### New user experience
 
-Graft should work out of the box without needing additional services to run. By supporting direct access to object storage, it will be easier to get started and embed Graft in an application.
+Graft should work out of the box without requiring additional services to run. By supporting direct access to object storage, it will be easier to get started and embed Graft in an application.
 
 ## Guide-level Explanation
 
@@ -73,7 +73,7 @@ Clients such as `graft-sqlite` and `graft-fuse` will use the `graft-kernel` to o
 
 ### `graft-proxy`
 
-The Graft Proxy is a stateless edge service and caching layer which makes it easier for Graft to replicate to & from devices. Initially it will simply act as a pass-through proxy to object storage with its own authentication and authorization layer.
+The Graft Proxy is an optional stateless edge service and caching layer which makes it easier for Graft to replicate to & from devices. Initially it will simply act as a pass-through proxy to object storage with its own authentication and authorization layer.
 
 Graft Proxy exposes a simple API to consumers, enabling two key performance features:
 
@@ -165,7 +165,7 @@ Note that the Commit's snapshot is passed in. This ensures the Hash's uniqueness
 
 Rather than forcing users to reference Volumes by ID, Graft exposes Volume Handles. Volume Handles are pointers to a local and remote Volume. Volume Handles only exist on a single client, and are not shared between clients or pushed to a remote.
 
-Each Volume Handle has a name given to it at creation time. The name must match the regex `^[_a-z][-_a-z0-9]{0,127}$` (alphanumeric, starts with number or underscore, max len 128 chars) and be unique on the client.
+Each Volume Handle has a name given to it at creation time. The name must match the regex `^[_a-z][-_a-z0-9]{0,127}$` (alphanumeric, starts with letter or underscore, max len 128 chars) and be unique on the client.
 
 A Volume Handle always has a local-only Volume associated with it. This Volume is used for all local reads and writes.
 
@@ -221,7 +221,7 @@ package graft.remote.v1;
 import "google/protobuf/timestamp.proto";
 
 // A Volume has a top level control file stored at
-// `{prefix}/volumes/{vid}/control`
+// `{prefix}/{vid}/control`
 // Control files are immutable.
 message Control {
   // The Volume ID stored as a 16 byte GID.
@@ -235,7 +235,7 @@ message Control {
 }
 
 // When a Volume is forked, a ref is first written to the parent Volume:
-// `{prefix}/volumes/{parent-vid}/forks/{fork-vid}`
+// `{prefix}/{parent-vid}/forks/{fork-vid}`
 // Forks are immutable.
 message Fork {
   // The VID of the fork.
@@ -266,7 +266,7 @@ message Snapshot {
   uint32 page_count = 3;
 }
 
-// A Volume's CheckpointSet is stored at `{prefix}/volumes/{vid}/checkpoints`.
+// A Volume's CheckpointSet is stored at `{prefix}/{vid}/checkpoints`.
 // CheckpointSets are updated by the checkpointer via compare-and-swap.
 message CheckpointSet {
   // The Volume ID stored as a 16 byte GID.
@@ -276,7 +276,7 @@ message CheckpointSet {
   repeated uint64 lsns = 2;
 }
 
-// Commits are stored at `{prefix}/volumes/{vid}/log/{lsn}`.
+// Commits are stored at `{prefix}/{vid}/log/{lsn}`.
 // A commit may not include any SegmentRefs if only the Volume's page count has
 // changed. This happens when the Volume is extended or truncated without
 // additional writes.
@@ -407,40 +407,25 @@ This section details the various key algorithms powering Graft's new direct stor
 
 #### Locks
 
-The new direct storage architecture uses sharded locks to minimize contention. We need to take extreme care whenever we hold more than one lock in the same thread to ensure that we can't deadlock due to lock ordering.
+Similar to the existing Graft architecture, we will start with one coarse `storage_lock` which must be held when we are doing any read-modify-update transaction on storage.
 
-##### **`handle_lock(name)`**
+**Lock rules:**
+- never hold the lock while performing IO other than storage operations
+- hold the lock for the smallest time possible
 
-This sharded lock is held while modifying a Volume Handle. This happens during the following operations.
+**When to hold the lock:**
+- Modifying the Volume Handle
+- Committing to a Volume
 
-- **Pull Volume**: After updating the remote and local volumes we complete the pull operation by updating the Volume Handle while holding the handle_lock.
-- **Push Volume**: We hold the handle_lock to record the pending commit, as well as later to complete the push and land the commit in the remote volume.
-
-##### **`volume_lock(vid)`**
-
-The sharded volume lock must be held while modifying a Volume's properties in the `volumes` partition. Properties include `checkpoints` and `control`.
-
-##### **`commit_lock(vid)`**
-
-When committing to a Volume, we hold the `commit_lock` to verify the latest snapshot and write out a new snapshot.
+**When not to hold the lock:**
+- When the operation is idempotent, for example when we are writing to the pages partition or updating a Volume's checkpoint set
+- When performing read operations; use a Fjall instant instead
 
 #### Volume Reader
 
 Reading from a Volume requires creating a `VolumeReader` from a `VolumeHandle` at either the latest or a specific snapshot.
 
 ```python
-class VolumeHandle:
-  # inherits properties from graft.local.v1.VolumeHandle:
-  # name, local, remote, pending_commit
-
-  def reader():
-    snapshot = last(f"log/{self.local.vid}")
-    return VolumeReader::new(snapshot)
-
-  def reader_at(snapshot):
-    assert_eq(snapshot.vid, self.local.vid)
-    return VolumeReader::new(snapshot)
-
 def visibility_path(snapshot):
   cursor = VolumeRef { vid: snapshot.vid, lsn: snapshot.lsn }
   path = []
@@ -533,57 +518,30 @@ class VolumeWriter:
   def commit():
     snapshot = self.reader.snapshot
     vid = snapshot.vid
-
-    tx = begin()
-
-    # verify we are the latest snapshot
-    latest_snapshot = tx.first(f"log/{vid}")
-    if snapshot != latest_snapshot:
-      raise "concurrent write"
-
     commit_lsn = snapshot.lsn.next()
 
-    tx.write(f"log/{vid}/{commit_lsn}", Snapshot {
+    batch = storage.batch()
+
+    batch.write(f"log/{vid}/{commit_lsn}", Snapshot {
       vid,
       lsn = commit_lsn,
       page_count = self.page_count
     })
 
     (min, max) = self.splinter.bounds()
-    tx.write(
+    batch.write(
       f"segments/{vid}/{commit_lsn}/{min}/{max}{self.sid}",
       self.splinter
     )
 
-    tx.commit()
+    with storage_lock:
+      # verify we are the latest snapshot
+      latest_snapshot = first(f"log/{vid}")
+      if snapshot != latest_snapshot:
+        raise "concurrent write"
+
+      batch.commit()
 ```
-
-## TODO: Braindump
-I'm considering using Fjall txns to eliminate some/all of my explicit locks...
-however, it might be tricky due to how Fjall SSI txns work.
-main issue in mind is conflicts between GC and commit due to commit holding a read reference on the entire prefix in order to acquire the latest snapshot.
-
-If instead we continue with locks, we effectively need three locks:
-1. to ensure that volume handles aren't corrupted
-2. to prevent concurrent volume operations
-3. to serialize volume commits
-
-The interesting case seems to be operations. Effectively we want to parallellize operations like push, pull, reset, checkpoint, gc. Most of the operations can be made idempotent (other than where they touch the latest commit and/or the handle). Thus, the main reason for any kind of lock is more about eliminating duplicate work.
-
-Currently the only source of dup work is during pull while recursively walking and backfilling parents. If two volumes share the same parent we may concurrently backfill the parent, potentially leading to wasted work.
-
-Can we handle this case with a object_store fetcher? Sorta like a transaction. Effectively we open a object store reader which lets us fetch keys. Under the hood it dedups concurrent fetches, and also keeps around any fetches until all concurrent txns close.
-
-I think this would work, so long as the code basically worked like:
-- open object store reader
-- *then* check to see what we need to fetch
-- then fetch
-- then commit any changes
-- then close the reader
-
-Thus, the lifetime of the reader is > the lifetime of visible effect. I think that with this design, there shouldn't be a way for a duplicate fetch to occur which would have been prevented by checking local state.
-
-This utility in theory allows us to eliminate the volume lock and just lean into making more of our operations idempotent.
 
 #### Push Volume
 
@@ -591,10 +549,9 @@ This utility in theory allows us to eliminate the volume lock and just lean into
 def push_volume(handle_name):
   handle = read(f"handles/{handle_name}")
   (local_lsn, commit) = prepare_commit(handle)
-  if remote_commit(commit):
-    push_success(handle, commit, local_lsn)
-  else:
-    push_failure(handle, commit)
+  match remote_commit(commit):
+    Ok() => push_success(handle, commit, local_lsn)
+    Err() => push_failure(handle, commit)
 
 def prepare_commit(handle):
   # trigger recovery
@@ -605,6 +562,11 @@ def prepare_commit(handle):
 
   remote_snapshot = first(f"log/{remote.vid}")
   local_snapshot = first(f"log/{local.vid}")
+
+  # we can only push if the remote has not changed since the last time we synced
+  if remote_snapshot.lsn != remote.lsn:
+    # this situation can only occur in normal operation if the local volume has diverged from the remote. I.e. a remote commit happened concurrently with a local commit preventing fast forward
+    raise Diverged
 
   top_lsn = local_snapshot.lsn
   bottom_lsn = local.lsn
@@ -619,10 +581,14 @@ def prepare_commit(handle):
   commit_lsn = remote_snapshot.lsn.next()
 
   # write out the pending commit
-  with handle_lock(handle_name):
+  with storage_lock:
     # abort the push if the handle changed since we started the push process
     if handle != read(f"handles/{handle_name}"):
-      raise RetryPush
+      raise Retry
+
+    # abort the push if the remote snapshot changed since we started the push process
+    if remote_snapshot != first(f"log/{remote.vid}"):
+      raise Retry
 
     handle.pending_commit = PendingCommit {
       remote_lsn = commit_lsn,
@@ -651,49 +617,46 @@ def build_and_push_segments(local_vid, lsn_range, remote_vid):
 
 def remote_commit(commit):
   path = f"{PREFIX}/{commit.snapshot.vid}/log/{commit.snapshot.lsn}"
-  match object_store.write_if_not_exists(path, commit) {
-    Ok() => true,
-    Err(err) => false
-  }
+  object_store.write_if_not_exists(path, commit)
 
 def push_success(handle, commit, local_lsn):
   {vid, lsn} = commit.snapshot
 
-  # prepare a fjall transaction
-  tx = begin()
+  batch = storage.batch()
 
-  tx.write(f"log/{vid}/{lsn}", commit.snapshot)
+  batch.write(f"log/{vid}/{lsn}", commit.snapshot)
 
   for segment in commit.segments:
     bounds = segment.splinter.bounds()
     path = f"segments/{vid}/{lsn}/{bounds}/{segment.sid}"
-    tx.write(path, segment.splinter)
+    batch.write(path, segment.splinter)
 
-  new_handle = handle.clone()
-  new_handle.pending_commit = None
-  new_handle.local = VolumeRef {
-    vid: handle.local.vid,
-    lsn: local_lsn
+  new_handle = VolumeHandle {
+    pending_commit = None,
+    local = VolumeRef {
+      vid: handle.local.vid,
+      lsn: local_lsn
+    },
+    remote = VolumeRef {
+      vid: handle.remote.vid,
+      lsn
+    },
+    ...handle
   }
-  new_handle.remote = VolumeRef {
-    vid: handle.remote.vid,
-    lsn
-  }
-  tx.write(f"handles/{handle.name}", new_handle)
+  batch.write(f"handles/{handle.name}", new_handle)
 
-  with handle_lock(handle.name):
+  with storage_lock:
     # panic if handle has changed
     assert(handle == read(f"handles/{handle_name}"))
 
-    with volume_lock(commit.snapshot.vid):
-      # panic if someone already wrote the remote lsn
-      assert(not read(f"log/{vid}/{lsn}"))
+    # panic if someone already wrote the remote lsn
+    assert(not read(f"log/{vid}/{lsn}"))
 
-      tx.commit()
+    batch.commit()
 
 def push_failure(handle, commit):
   # push failed, clear pending commit
-  with handle_lock(handle.name):
+  with storage_lock:
     # panic if handle has changed
     assert(handle == read(f"handles/{handle_name}"))
     handle.pending_commit = None
@@ -701,6 +664,8 @@ def push_failure(handle, commit):
 ```
 
 #### Pull volume
+
+The Pull Volume operation only fetches a Volume at a particular LSN.
 
 ```python
 def fetch_visibility_path(vid, lsn):
@@ -710,17 +675,17 @@ def fetch_visibility_path(vid, lsn):
     { vid, lsn } = cursor
 
     # load the control if it doesn't exist
-    if not tx.read(f"volumes/{vid}/control"):
+    if not read(f"volumes/{vid}/control"):
       control = object_store.fetch(f"{PREFIX}/{vid}/control")
-      tx.write(f"volumes/{vid}/control", control)
+      write(f"volumes/{vid}/control", control)
 
     # update checkpoints if it doesn't exist or has changed
-    etag = tx.read(f"volumes/{vid}/checkpoints").etag
-    checkpoints = object_store.fetch(f"{PREFIX}/{vid}/checkpoints", etag)
+    prev_checkpoints = read(f"volumes/{vid}/checkpoints")
+    checkpoints = object_store.fetch(f"{PREFIX}/{vid}/checkpoints", prev_checkpoints.etag)
     if checkpoints:
-      tx.write(f"volumes/{vid}/checkpoints", checkpoints.into())
+      update_checkpoints(prev_checkpoints, checkpoints)
 
-    if checkpoints = tx.read(f"volumes/{vid}/checkpoints"):
+    if checkpoints = read(f"volumes/{vid}/checkpoints"):
       if checkpoint_lsn = checkpoints.for(lsn):
         # found checkpoint, we can terminate the path here
         path.push((vid, (lsn)..=(checkpoint_lsn)))
@@ -729,9 +694,14 @@ def fetch_visibility_path(vid, lsn):
     # no checkpoint, so scan to the beginning
     path.push((vid, (lsn)..=1))
     # and iterate to the parent
-    cursor = tx.read(f"volumes/{vid}/control").parent
+    cursor = read(f"volumes/{vid}/control").parent
 
-  return (tx, path)
+  return path
+
+def update_checkpoints(vid, old_checkpoints, new_checkpoints):
+  new_lsns = new_checkpoints.lsns - old_checkpoints.lsns
+  fetch_commits(vid, new_lsns)
+  write(f"volumes/{vid}/checkpoints", new_checkpoints.into())
 
 def pull_volume(vid, max_lsn=LSN::MAX):
   # retrieve the latest snapshot <= max_lsn
@@ -743,41 +713,11 @@ def pull_volume(vid, max_lsn=LSN::MAX):
   for (vid, scan) in path:
     fetch_commits(vid, scan)
 
-
-  tx = begin()
-
-  # load the control if it doesn't exist
-  if not read(f"volumes/{vid}/control"):
-    control = object_store.fetch(f"{PREFIX}/{vid}/control")
-    tx.write(f"volumes/{vid}/control", control)
-
-  # update checkpoints if it doesn't exist or has changed
-  etag = read(f"volumes/{vid}/checkpoints").etag
-  checkpoints = object_store.fetch(f"{PREFIX}/{vid}/checkpoints", etag)
-  if checkpoints:
-    tx.write(f"volumes/{vid}/checkpoints", checkpoints)
-
-  # start iterating commits either at the most recent checkpoint or after the latest snapshot, whichever is latest
-  min_lsn = checkpoints.for(max_lsn).max(snapshot.lsn)
-
-  # pull changes from object store
-  for commit in remote_iter_commits(vid, min_lsn..=max_lsn):
-    lsn = commit.snapshot.lsn
-    tx.write(f"log/{vid}/{lsn}", commit.snapshot)
-
-    for segment in commit.segments:
-      bounds = segment.splinter.bounds()
-      path = f"segments/{vid}/{lsn}/{bounds}/{segment.sid}"
-      tx.write(path, segment.splinter)
-
-  with volume_lock(vid):
-    # assert the volume hasn't changed
-    assert(snapshot == first(f"log/{vid}"))
-    tx.commit()
-
-# lsn_range may have an unbounded end in which case this function will stop fetching commits once it finds the last commit
-def fetch_commits(vid, lsn_range):
-  for commit in fetch_range(f"{PREFIX}/{vid}/log/{lsn_range}"):
+# lsns may be a range of lsns (possibly unbounded)
+# or a set of lsns
+# in the unbounded range case, fetch_all will stop fetching once it discovers the end of the range
+def fetch_commits(vid, lsns):
+  for commit in fetch_all(f"{PREFIX}/{vid}/log/{lsns}"):
     lsn = commit.snapshot.lsn
     write(f"log/{vid}/{lsn}", commit.snapshot)
 
@@ -802,12 +742,39 @@ def sync_remote_to_local(handle_name):
   if local_snapshot.lsn != handle.local.lsn:
     raise OutstandingLocalChanges
 
-  # no outstanding changes! we can sync
-  tx = begin()
+  # check to see if we have any changes to sync
+  remote_snapshot = first(f"log/{handle.remote.vid}")
+  lsn_range = remote_snapshot.lsn..handle.remote.lsn
 
-  remote_snapshot
+  if lsn_range.is_empty():
+    raise NothingToSync
 
+  # sync lsn range from remote to local, this requires copying each commit and mapping the LSNs to the local volume's LSN space
+  commits = prepare_commits(local_snapshot, handle.remote.vid, lsn_range)
 
+  batch = storage.batch()
+  for commit in commits:
+    {vid, lsn} = commit.snapshot
+    batch.write(f"log/{vid}/{lsn}", commit.snapshot)
+
+    for segment in commit.segments:
+      bounds = segment.splinter.bounds()
+      path = f"segments/{vid}/{lsn}/{bounds}/{segment.sid}"
+      batch.write(path, segment.splinter)
+
+  with storage_lock:
+    if local_snapshot != first(f"log/{handle.local.vid}"):
+      raise Retry
+
+    batch.commit()
+
+def prepare_commits(local_snapshot, remote_vid, lsn_range):
+  snapshots = iter_range(f"log/{handle.remote.vid}/{lsn_range}")
+  segments = iter_range(f"segments/{handle.remote.vid}/{lsn_range}")
+
+  # build up an array of commits by mapping each sequential snapshot + associated segments to the next local lsn
+
+  return commits
 ```
 
 #### Reset volume
