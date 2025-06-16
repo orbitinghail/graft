@@ -40,7 +40,7 @@ jobs:
 
       - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
 
-      - uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1 # v1
+      - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: 1.86
           components: clippy, rustfmt
@@ -52,7 +52,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
 
-      - uses: taiki-e/install-action@735e5933943122c5ac182670a935f54a949265c1 # v2
+      - uses: taiki-e/install-action@cfe1303741c2e620e5f7daa667105e0da1316db9 # v2
         with:
           tool: cargo-nextest
 
