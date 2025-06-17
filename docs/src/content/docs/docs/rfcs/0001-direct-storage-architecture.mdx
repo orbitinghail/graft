@@ -5,7 +5,7 @@ rfc:
   slug: direct-storage-architecture
   startDate: 2025-05-14
   issue: ~
-  pr: ~
+  pr: 131
 ---
 
 import RfcInfo from "@components/RfcInfo.astro";
@@ -73,12 +73,13 @@ Clients such as `graft-sqlite` and `graft-fuse` will use the `graft-kernel` to o
 
 ### `graft-proxy`
 
-The Graft Proxy is an optional stateless edge service and caching layer which makes it easier for Graft to replicate to & from devices. Initially it will simply act as a pass-through proxy to object storage with its own authentication and authorization layer.
+The Graft Proxy is an optional stateless edge service and caching layer which makes it easier for Graft to replicate to & from devices.
 
 Graft Proxy exposes a simple API to consumers, enabling two key performance features:
 
 1. Graft Proxy caches reads from object storage.
-2. Replica fast-forwarding: collapse a pull graft request and only return the latest segments.
+2. Virtual overlay of commits and segments
+  - rather than passing straight through to object store, the proxy is able to coalesce multiple commits into one larger commit for clients to efficiently fast forward and only download interesting portions of segments.
 
 Eventually Graft Proxy will enhance Graft with these features:
 
@@ -99,7 +100,7 @@ Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, 
 - **`lsn`**: Documented in the [Volume log](#volume-log) section.
 - **`pageidx`**: A 4 byte page index, representing the index of a page within a Volume. Valid range: `[1, 2^32)`.
 - **`Splinter`**: A compressed bitset, used to keep track of which `pageidxs` appear in a Segment.
-- **`Segment`**: A sequence of pages, sorted by `pageidx`.
+- **`Segment`**: A compressed sequence of pages, sorted by `pageidx`. Documented in the [Segment Encoding](#segment-encoding) section.
 - **`VolumeRef`**: A `(vid, lsn)` tuple, representing a fixed point in a Volumes history.
 - **`CommitHash`**: Documented in the [Commit hash](#commit-hash) section.
 
@@ -131,33 +132,21 @@ The CBE64 encoding allows both local key-value stores and object stores to perfo
 
 ### Commit hash
 
-To verify data integrity, we attach a hash to each `Commit`. To compute the hash, we use the following method:
-
-First, a [blake3] hash is computed for each Segment:
+To verify data integrity, we attach a [blake3] hash to each `Commit`.
 
 ```python
-def segment_hash(pages):
+def commit_hash(snapshot, pages):
   hasher = blake3::new()
-  hasher.write(HashHeader::Segment(PAGE_SIZE));
+  # unique 4 byte magic number identifying commits
+  hasher.write(COMMIT_MAGIC))
+  hasher.write(snapshot.vid)
+  hasher.write(snapshot.lsn)
+  hasher.write(snapshot.page_count)
   # pages must be in order by pageidx
   for page in pages:
-    hasher.write(page)
-  return hasher.hash()
-```
-
-Then a Commit hash is produced by combining the Segment hashes together:
-
-```python
-def commit_hash(snapshot, segment_hashes):
-  hasher = blake3::new()
-  hasher.write(HashHeader::Commit(snapshot));
-  # segment_hashes must be in order by pageidx
-  for hash in segment_hashes:
     hasher.write(hash)
   return hasher.hash()
 ```
-
-This two phase approach allows the Segment hashes to be produced in parallel, before combining them into a Commit hash.
 
 Note that the Commit's snapshot is passed in. This ensures the Hash's uniqueness incorporates the Volume ID, LSN, and page count.
 
@@ -170,6 +159,14 @@ Each Volume Handle has a name given to it at creation time. The name must match 
 A Volume Handle always has a local-only Volume associated with it. This Volume is used for all local reads and writes.
 
 A Volume Handle may be linked to a remote Volume. In this case, the local and remote Volumes will be kept in sync by the sync subsystem.
+
+### Segment Encoding
+
+Pages are stored in Segments, which provide seekable compression over ranges of pages. Internally Segments are sequences of compressed Frames. All of the pages in a Segment are stored in order by `PageIdx`.
+
+Segments currently compress each Frame using zstd with the trailing checksum enabled. Graft may add support for other compression methods in the future.
+
+To read a page from a Segment, the client must first retrieve the relevant `SegmentRef` from the `Commit`. Then the client may use the frame index to search for the correct frame. This allows Clients to download only the relevant byte offsets from a Segment.
 
 ### Remote storage
 
@@ -212,7 +209,7 @@ struct ProtobufEnvelope {
 }
 ```
 
-Segments are simply encoded as a set of pages stored back-to-back, ordered by `pageidx` ascending. As they are accessed via Byte-Range requests, pages must start at offset 0. Any metadata about a Segment is contained in the Commit log.
+Segments are compressed sets of pages. Their encoding is documented in the [Segment Encoding](#segment-encoding) section, and their metadata is stored in the `SegmentRef` message.
 
 ```proto
 syntax = "proto3";
@@ -254,6 +251,16 @@ message VolumeRef {
   uint64 lsn = 2;
 }
 
+// A Volume's CheckpointSet is stored at `{prefix}/{vid}/checkpoints`.
+// CheckpointSets are updated by the checkpointer via compare-and-swap.
+message CheckpointSet {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The list of checkpoint LSNs.
+  repeated uint64 lsns = 2;
+}
+
 // A snapshot of a Volume.
 message Snapshot {
   // The Volume ID stored as a 16 byte GID.
@@ -266,18 +273,8 @@ message Snapshot {
   uint32 page_count = 3;
 }
 
-// A Volume's CheckpointSet is stored at `{prefix}/{vid}/checkpoints`.
-// CheckpointSets are updated by the checkpointer via compare-and-swap.
-message CheckpointSet {
-  // The Volume ID stored as a 16 byte GID.
-  bytes vid = 1;
-
-  // The list of checkpoint LSNs.
-  repeated uint64 lsns = 2;
-}
-
 // Commits are stored at `{prefix}/{vid}/log/{lsn}`.
-// A commit may not include any SegmentRefs if only the Volume's page count has
+// A commit may not include a SegmentRef if only the Volume's page count has
 // changed. This happens when the Volume is extended or truncated without
 // additional writes.
 // Commits are immutable.
@@ -285,11 +282,17 @@ message Commit {
   // The Volume Snapshot at this Commit.
   Snapshot snapshot = 1;
 
-  // A 256 bit CommitHash of this Commit.
-  bytes hash = 2;
+  // An optional 256 bit CommitHash of this Commit.
+  // Always present on Remote Volume commits.
+  // May be omitted on Local commits.
+  optional bytes hash = 2;
 
-  // The list of SegmentRefs representing this Commit.
-  repeated SegmentRef segments = 3;
+  // If this Commit contains any pages, `segment_ref` records details on the relevant Segment.
+  optional SegmentRef segment_ref = 3;
+
+  // If this commit is a checkpoint, this timestamp is set and records the time
+  // the commit was made a checkpoint
+  optional google.protobuf.Timestamp checkpoint_ts = 4;
 }
 
 message SegmentRef {
@@ -299,6 +302,19 @@ message SegmentRef {
   // The set of pageidxs stored in this Segment.
   // Serialized using Splinter encoding.
   bytes splinter = 2;
+
+  // An index of frames contained by the Segment.
+  // Empty on Local Segments which have not been encoded and uploaded to object
+  // storage.
+  repeated SegmentFrame frames = 3;
+}
+
+message SegmentFrame {
+  // The length of the compressed frame in bytes.
+  uint32 frame_size = 1;
+
+  // The last pageidx stored in the frame
+  uint32 last_pageidx = 2;
 }
 ```
 
@@ -314,15 +330,13 @@ Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, 
 handles / {name} -> VolumeHandle
 
 volumes / {vid} /
-  // The Volume's Control, includes it's parent reference
+  // The Volume's Control, includes its parent reference
   control -> Control
 
   // the latest LocalCheckpointSet for this Volume
   checkpoints -> LocalCheckpointSet
 
-log / {vid} / {lsn} -> Snapshot
-
-segments / {vid} / {lsn} / {min_pageidx, max_pageidx} / {sid} -> Splinter
+log / {vid} / {lsn} -> Commit
 
 pages / {sid} / {pageidx} -> Page
 ```
@@ -339,23 +353,19 @@ enum VolumeProperty {
     Checkpoints = 2,
 }
 
+/// Key for the `volumes` partition
 struct VolumeKey {
     vid: VolumeId,
     property: VolumeProperty,
 }
 
-struct LogKey {
+/// Key for the `log` partition
+struct CommitKey {
     vid: VolumeId,
     lsn: CBE64,
 }
 
-struct SegmentKey {
-    commit: LogKey,
-    min_pageidx: PageIdx,
-    max_pageidx: PageIdx,
-    sid: SegmentId,
-}
-
+/// Key for the `pages` partition
 struct PageKey {
     sid: SegmentId,
     pageidx: PageIdx,
@@ -451,39 +461,47 @@ class VolumeReader:
   def read_page(self, pageidx):
     if not self.snapshot.page_count.contains(pageidx):
       return None
-    for key, splinter in iter_segments(self.path):
-      {vid, lsn, page_range} = key
-      page_count = read(f"log/{vid}/{lsn}").page_count
+    for key, commit in iter_commits(self.path):
+      { snapshot, segment_ref } = commit
       if not (
           # handle truncate+extend
-          page_count.contains(pageidx)
-          # segment elimination
-          and page_range.contains(pageidx)
-          and splinter.contains(pageidx)):
+          snapshot.page_count.contains(pageidx)
+          and segment_ref.splinter.contains(pageidx)):
         continue
       page = read(f"pages/{key.sid}/{pageidx}")
       if page:
         return page
-      return remote_read_page(vid, key.sid, splinter, pageidx)
+      return remote_read_page(snapshot.vid, key.sid, segment_ref, pageidx)
 
-def iter_segments(path):
+def iter_commits(path):
   result = []
   for (vid, scan) in path:
-    top = f"segments/{vid}/{scan.start}"
-    bottom = f"segments/{vid}/{scan.end}"
+    top = f"log/{vid}/{scan.start}"
+    bottom = f"log/{vid}/{scan.end}"
     result = chain(result, iter(top..=bottom))
   return result
 
-def remote_read_page(vid, sid, splinter, pageidx):
-  segment_size = splinter.cardinality()
-  chunk = calculate_chunk_request(sid, splinter, pageidx)
-  # fetch the chunk from object storage, loading the pages into `pages/{sid}/{pageidx}`
-  return read(f"pages/{sid}/{pageidx}")
+def remote_read_page(vid, sid, segment_ref, pageidx):
+  # first we need to determine which frame in the segment contains the relevant
+  # page
+  bytes = (0, 0)
+  pages = (0, 0)
+  for frame in segment_ref.frames:
+    if pageidx > f.last_pageidx:
+      break
+    bytes = (bytes.end, bytes.end + frame.frame_size)
+    pages = (pages.end+1, frame.last_pageidx)
 
-def calculate_chunk_request(segment, pageidx):
-  # determine which portion of the segment to retrieve by inspecting which portions we've already cached and configuration
-  # in general we want to read more than 1 page at a time from s3
-  pass
+  # fetch the frame from object storage, loading the pages into `pages/{sid}/{pageidx}`
+  frame = object_store.fetch(
+    f"{PREFIX}/{vid}/segments/{sid}", bytes)
+  frame = zstd.decompress(frame)
+  for (pi, page) in zip(
+    segment_ref.splinter.iter_range(pages), frame.split(PAGESIZE)
+  ):
+    write(f"pages/{sid}/{pi}", page)
+
+  return read(f"pages/{sid}/{pageidx}")
 ```
 
 #### Volume Writer
@@ -520,27 +538,25 @@ class VolumeWriter:
     vid = snapshot.vid
     commit_lsn = snapshot.lsn.next()
 
-    batch = storage.batch()
-
-    batch.write(f"log/{vid}/{commit_lsn}", Snapshot {
-      vid,
-      lsn = commit_lsn,
-      page_count = self.page_count
-    })
-
-    (min, max) = self.splinter.bounds()
-    batch.write(
-      f"segments/{vid}/{commit_lsn}/{min}/{max}{self.sid}",
-      self.splinter
-    )
-
     with storage_lock:
       # verify we are the latest snapshot
-      latest_snapshot = first(f"log/{vid}")
+      latest_snapshot = first(f"log/{vid}").snapshot
       if snapshot != latest_snapshot:
         raise "concurrent write"
 
-      batch.commit()
+      write(f"log/{vid}/{commit_lsn}", Commit {
+        snapshot = Snapshot {
+          vid,
+          lsn = commit_lsn,
+          page_count = self.page_count
+        },
+        # no hash for commits to a local volume
+        segment = SegmentRef {
+          sid: self.sid,
+          splinter: self.splinter,
+          # no frame info for commits to a local volume
+        }
+      })
 ```
 
 #### Push Volume
@@ -576,7 +592,7 @@ def prepare_commit(handle):
     raise NothingToCommit
 
   # build and push segments from commits
-  (segment_refs, page_count, commit_hash) = build_and_push_segments(local.vid, lsn_range, remote.vid)
+  (segment_ref, commit_hash) = build_and_push_segments(local.vid, lsn_range, remote.vid)
 
   commit_lsn = remote_snapshot.lsn.next()
 
@@ -600,20 +616,18 @@ def prepare_commit(handle):
     snapshot: Snapshot {
       vid: remote.vid,
       lsn: commit_lsn,
-      page_count
+      page_count: local_snapshot.page_count
     },
     hash: commit_hash,
-    segments: segment_refs
+    segment_ref
   })
 
 def build_and_push_segments(local_vid, lsn_range, remote_vid):
-  # build up a BTreeMap<PageIdx, SegmentId> containing the last SegmentId for each page in all segments in lsn range on the local volume
-  # iterate through the BTreeMap in chunks of MAX_SEGMENT_SIZE
-  # building splinters and uploading segments as we go to the remote volume's segment store
+  # merge segments from all local commits in the lsn_range into one segment which is uploaded to the remote
   #
   # IF we expect to be querying the remote volume anytime soon, we can optionally write out segments to our local page store.
 
-  pass
+  return (segment_ref, commit_hash)
 
 def remote_commit(commit):
   path = f"{PREFIX}/{commit.snapshot.vid}/log/{commit.snapshot.lsn}"
@@ -624,12 +638,7 @@ def push_success(handle, commit, local_lsn):
 
   batch = storage.batch()
 
-  batch.write(f"log/{vid}/{lsn}", commit.snapshot)
-
-  for segment in commit.segments:
-    bounds = segment.splinter.bounds()
-    path = f"segments/{vid}/{lsn}/{bounds}/{segment.sid}"
-    batch.write(path, segment.splinter)
+  batch.write(f"log/{vid}/{lsn}", commit)
 
   new_handle = VolumeHandle {
     pending_commit = None,
@@ -646,10 +655,10 @@ def push_success(handle, commit, local_lsn):
   batch.write(f"handles/{handle.name}", new_handle)
 
   with storage_lock:
-    # panic if handle has changed
+    # fail if handle has changed
     assert(handle == read(f"handles/{handle_name}"))
 
-    # panic if someone already wrote the remote lsn
+    # fail if the remote lsn already exists
     assert(not read(f"log/{vid}/{lsn}"))
 
     batch.commit()
@@ -663,9 +672,9 @@ def push_failure(handle, commit):
     write(f"handles/{handle.name}", handle)
 ```
 
-#### Pull volume
+#### Pull & Fetch Volume
 
-The Pull Volume operation only fetches a Volume at a particular LSN.
+The Pull and Fetch Volume operations support incrementally pulling or fully fetching a Volume respectively.
 
 ```python
 def fetch_visibility_path(vid, lsn):
@@ -700,10 +709,10 @@ def fetch_visibility_path(vid, lsn):
 
 def update_checkpoints(vid, old_checkpoints, new_checkpoints):
   new_lsns = new_checkpoints.lsns - old_checkpoints.lsns
-  fetch_commits(vid, new_lsns)
+  fetch_commits(vid, new_lsns, replace=True)
   write(f"volumes/{vid}/checkpoints", new_checkpoints.into())
 
-def pull_volume(vid, max_lsn=LSN::MAX):
+def fetch_volume(vid, max_lsn=LSN::MAX):
   # retrieve the latest snapshot <= max_lsn
   snapshot = first(f"log/{vid}/{max_lsn}"..)
   # refresh the visibility path
@@ -713,18 +722,28 @@ def pull_volume(vid, max_lsn=LSN::MAX):
   for (vid, scan) in path:
     fetch_commits(vid, scan)
 
+def pull_volume(vid):
+  snapshot = first(f"log/{vid}")
+  # refresh the visibility path, to update any checkpoints
+  fetch_visibility_path(vid, snapshot.lsn)
+  fetch_commits(vid, snapshot.lsn..)
+
 # lsns may be a range of lsns (possibly unbounded)
 # or a set of lsns
 # in the unbounded range case, fetch_all will stop fetching once it discovers the end of the range
-def fetch_commits(vid, lsns):
+# if replace is True, this function will refetch all commits in range
+def fetch_commits(vid, lsns, replace=False):
+  lsns = lsns if replace else remove_fetched_lsns(lsns)
   for commit in fetch_all(f"{PREFIX}/{vid}/log/{lsns}"):
     lsn = commit.snapshot.lsn
-    write(f"log/{vid}/{lsn}", commit.snapshot)
+    with storage_lock:
+      # we take the lock here to ensure that we serialize with other read-modify-update operations on the log.
+      # in theory we don't need to worry about conflicting with other operations since pulling commits from a remote is idempotent
+      write(f"log/{vid}/{lsn}", commit)
 
-    for segment in commit.segments:
-      bounds = segment.splinter.bounds()
-      path = f"segments/{vid}/{lsn}/{bounds}/{segment.sid}"
-      write(path, segment.splinter)
+def remove_fetched_lsns(lsns):
+  # return a new lsn set that only contains unfetched lsns
+  return lsns
 ```
 
 #### Sync remote volume to local
@@ -755,12 +774,7 @@ def sync_remote_to_local(handle_name):
   batch = storage.batch()
   for commit in commits:
     {vid, lsn} = commit.snapshot
-    batch.write(f"log/{vid}/{lsn}", commit.snapshot)
-
-    for segment in commit.segments:
-      bounds = segment.splinter.bounds()
-      path = f"segments/{vid}/{lsn}/{bounds}/{segment.sid}"
-      batch.write(path, segment.splinter)
+    batch.write(f"log/{vid}/{lsn}", commit)
 
   with storage_lock:
     if local_snapshot != first(f"log/{handle.local.vid}"):
@@ -769,69 +783,58 @@ def sync_remote_to_local(handle_name):
     batch.commit()
 
 def prepare_commits(local_snapshot, remote_vid, lsn_range):
-  snapshots = iter_range(f"log/{handle.remote.vid}/{lsn_range}")
-  segments = iter_range(f"segments/{handle.remote.vid}/{lsn_range}")
-
-  # build up an array of commits by mapping each sequential snapshot + associated segments to the next local lsn
-
+  remote_commits = iter_range(f"log/{handle.remote.vid}/{lsn_range}")
+  # build up an array of local commits by mapping each remote commit to the next local lsn
   return commits
 ```
 
 #### Reset volume
 
-- open new writer vid
-- update writer pointer on upstream vid
-- eventually GC old vid once read snapshots drop
+It's possible to reset the local volume for a Volume Handle by creating a new Local Volume and potentially copying over unsynced local commits. GC will be able to clean up the orphaned local volume once all snapshots have closed.
+
+We should automatically reset local volumes when their log hits some configurable point and they've synced with the remote recently.
+
+We can also use a reset to throw away local changes.
+
+### GC and Checkpointing
+
+#### Local garbage collection
+
+To perform GC locally, we will need to keep track of all open Snapshots and Handles. For now GC will focus on eliminating inaccessible data:
+
+- unreferenced Volumes
+- unreferenced Segments
+  - taking care not to eliminate in-progress writes
+
+An interesting aspect of GC is whether or not it will delete portions of a Volume's commit log which are no longer accessible. For remote volumes, since we can always redownload a log, we just need to ensure that only unreferenced portions of the log are removed - i.e. not directly visible in the visibility_path computation from any snapshot or handle. For local volumes, we will just wait until they are Reset and then cleanup the orphaned local volume id.
+
+#### Checkpointing
+
+The checkpointing process involves picking a VID/LSN based on some checkpoint heuristics, and then rewriting the commit to reference a new segment that contains all non-empty pages of the entire Volume. Then recording the checkpoint LSN in the checkpoint set for the volume.
+
+The Checkpoint algorithm is made crash safe by first scanning for checkpoints that have been written but are not also present in the CheckpointSet.
+
+#### Remote garbage collection
+
+Remote GC must take care to not truncate a Volume's history which is referenced by a Fork. So, when GC decides based on heuristics to checkpoint a volume, it will first check the Volume's forks to determine if there are any references that would be truncated. For each such reference, GC must first checkpoint the fork.
+
+GC will use the `checkpoint_ts` associated with commit checkpoints to ensure that relevant checkpoints have lived "long enough" to shadow truncated data. I.e. long enough that hopefully all the clients have picked them up.
 
 ### Splinter improvements
 
 This RFC depends on the following new [Splinter] features:
 
-- `offset_of(key: u32) -> Option<usize>`
-  - returns the zero-based offset of a given key in the Splinter.
-  - returns None if the key is not contained by the Splinter.
-- `bounds() -> Option<(u32, u32)>`
-  - if the Splinter is non-empty, returns the minimum and maximum key stored in the Splinter.
-- `iter_range(offsets) -> impl Iterator<Item=u32>`
-  - returns an iterator of the keys selected by the offset range.
-  - we could instead just override `Iterator::nth` on the existing Splinter iterator. This composes with the rest of the Iterator ecosystem.
+- `iter_range(keys: Range<u32>) -> impl Iterator<Item=u32>`
+  - returns an iterator over keys contained by the range which are present in
+  the Splinter.
 
 All new methods should be implemented on both Splinter and SplinterRef.
 
 ## Drawbacks
 
-Why should we _not_ do this?
+It's a huge amount of work? Architecturally I think this is much better than the current state of Graft. And it opens up more opportunities to work with new customers. It also makes Graft a bit more standalone and simpler to run which will make new users happier.
 
-## Rationale and alternatives
-
-- Why is this design the best in the space of possible designs?
-- What other designs have been considered and what is the rationale for not choosing them?
-- What is the impact of not doing this?
-
-## Prior art
-
-Discuss prior art, both the good and the bad, in relation to this proposal. A few examples of what this can include are:
-
-- Does this feature exist in other projects and what experience has their community had?
-- Papers: Are there any published papers or great posts that discuss this? If you have some relevant papers to refer to, this can serve as a more detailed theoretical background.
-
-This section is intended to encourage you as an author to think about the lessons from other projects, provide readers of your RFC with a fuller picture. If there is no prior art, that is fine - your ideas are interesting to us whether they are brand new or inspired.
-
-## Unresolved questions
-
-- What parts of the design do you expect to resolve through the RFC process before this gets merged?
-- What parts of the design do you expect to resolve through the implementation of this feature before stabilization?
-- What related issues do you consider out of scope for this RFC that could be addressed in the future independently of the solution that comes out of this RFC?
-
-## Future possibilities
-
-Think about what the natural extension and evolution of your proposal would be and how it would affect the project as a whole in a holistic way. Try to use this section as a tool to more fully consider all possible interactions with the project in your proposal. Also consider how this all fits into the roadmap for the project.
-
-This is also a good place to "dump ideas", if they are out of scope for the RFC you are writing but otherwise related.
-
-If you have tried and cannot think of any future possibilities, you may simply state that you cannot think of anything.
-
-Note that having something written down in the future-possibilities section is not a reason to accept the current or a future RFC; such notes should be in the section on motivation or rationale in this or subsequent RFCs. The section merely provides additional information.
+I think the biggest drawback is that there won't be a metastore to perform client fast forwarding. This will make fetches after long periods of being offline a bit less optimal. However, I think it's ok to solve this with a optional service (graft-proxy) rather than requiring it. Graft proxy can provide its own virtual overlay of commits and segments - allowing all the same optimizations the metastore and pagestore is able to do now.
 
 [Fjall]: https://github.com/fjall-rs/fjall/
 [`GID`]: https://graft.rs/docs/internals/gid/
