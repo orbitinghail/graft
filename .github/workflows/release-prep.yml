@@ -235,7 +235,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: 1.86
-          targets: ${{ join(matrix.platform.targets, ",") }}
+          targets: ${{ join(matrix.platform.targets, ',') }}
 
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -250,11 +250,13 @@ jobs:
 
       - name: Build libgraft
         run: |
-          cargo build --release \
-            --no-default-features \
-            --features precept/disabled ${{ matrix.platform.features }} \
-            --package graft-sqlite-extension \
-            --target ${{ matrix.platform.target }}
+          for target in ${{ join(matrix.platform.targets, ' ') }}; do
+            cargo build --release \
+              --no-default-features \
+              --features precept/disabled ${{ matrix.platform.features }} \
+              --package graft-sqlite-extension \
+              --target $target
+          done
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
