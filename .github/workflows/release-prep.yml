@@ -235,7 +235,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: 1.86
-          targets: ${{ matrix.platform.targets }}
+          targets: ${{ join(matrix.platform.targets, ",") }}
 
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
