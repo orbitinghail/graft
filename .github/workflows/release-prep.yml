@@ -253,7 +253,7 @@ jobs:
           for target in ${{ join(matrix.platform.targets, ' ') }}; do
             cargo build --release \
               --no-default-features \
-              --features precept/disabled ${{ matrix.platform.features }} \
+              --features precept/disabled,${{ matrix.platform.features }} \
               --package graft-sqlite-extension \
               --target $target
           done
