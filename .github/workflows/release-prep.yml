@@ -196,7 +196,7 @@ jobs:
               target/x86_64-pc-windows-msvc/release/graft.dll
               target/aarch64-pc-windows-msvc/release/graft.dll
 
-          - runs-on: macos-15
+          - runs-on: macos-14
             features: dynamic
             targets:
               - x86_64-apple-darwin
@@ -206,7 +206,7 @@ jobs:
               target/x86_64-apple-darwin/release/libgraft.dylib
               target/aarch64-apple-darwin/release/libgraft.dylib
 
-          - runs-on: macos-15
+          - runs-on: macos-14
             features: static
             targets:
               - aarch64-apple-ios
@@ -216,7 +216,7 @@ jobs:
               target/aarch64-apple-ios/release/libgraft.a
               target/aarch64-apple-ios-sim/release/libgraft.a
 
-    name: Building extension on ${{ matrix.platform.runs-on }}
+    name: Building ${{ matrix.platform.artifact-name }} artifact
     runs-on: ${{ matrix.platform.runs-on }}
     permissions:
       contents: read
@@ -246,7 +246,8 @@ jobs:
       - name: Pre-build osx
         if: startsWith(matrix.platform.runs-on, 'macos')
         run: |
-          echo "LIBCLANG_PATH=$(brew --prefix llvm@16)/lib" >> $GITHUB_ENV
+          set -euo pipefail
+          echo "LIBCLANG_PATH=$(brew --prefix llvm@15)/lib" >> $GITHUB_ENV
 
       - name: Build libgraft
         run: |
