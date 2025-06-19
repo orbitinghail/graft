@@ -1400,6 +1400,7 @@ name = "graft-sqlite-extension"
 version = "0.1.4"
 dependencies = [
  "config",
+ "culprit",
  "graft-client",
  "graft-core",
  "graft-sqlite",
@@ -3199,9 +3200,9 @@ dependencies = [
 
 [[package]]
 name = "sqlite-plugin"
-version = "0.3.1"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6490dec8c916f4a340989e2c6001446d182b576dc923e6d6ed2ced8e38dc5a8c"
+checksum = "8cbff4aac8be78a982cc6b3fa71a0f0e6e2176be9335ec3f62e751a357c73ea9"
 dependencies = [
  "bindgen",
 ]

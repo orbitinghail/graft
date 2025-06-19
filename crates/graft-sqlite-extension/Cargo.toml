@@ -10,7 +10,7 @@ rust-version = { workspace = true }
 
 [lib]
 name = "graft"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 graft-core = { path = "../graft-core", version = "0.1.4" }
@@ -22,9 +22,15 @@ tracing = { workspace = true }
 platform-dirs = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 config = { workspace = true, features = ["toml"] }
-sqlite-plugin = { workspace = true, features = ["dynamic"] }
+sqlite-plugin = { workspace = true, default-features = false }
 precept = { workspace = true }
 url = { workspace = true, features = ["serde"] }
+culprit = { workspace = true }
+
+[features]
+default = ["dynamic"]
+dynamic = ["sqlite-plugin/dynamic"]
+static = ["sqlite-plugin/static"]
 
 [lints]
 workspace = true

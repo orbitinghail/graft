@@ -1,4 +1,7 @@
-use std::{ffi::c_void, fs::OpenOptions, path::PathBuf, sync::Mutex, time::Duration};
+use std::{
+    borrow::Cow, error::Error, ffi::c_void, fs::OpenOptions, path::PathBuf, sync::Mutex,
+    time::Duration,
+};
 
 use config::{Config, FileFormat};
 use graft_client::{
@@ -10,9 +13,8 @@ use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{TracingConsumer, init_tracing_with_writer};
 use serde::Deserialize;
 use sqlite_plugin::{
-    sqlite3_api_routines,
-    vars::SQLITE_OK_LOAD_PERMANENTLY,
-    vfs::{RegisterOpts, register_dynamic},
+    vars,
+    vfs::{RegisterOpts, SqliteErr},
 };
 use url::Url;
 
@@ -70,15 +72,33 @@ pub fn setup_log_file(path: PathBuf, cid: &ClientId) {
     tracing::info!("Log file opened");
 }
 
-/// Register the VFS with `SQLite`.
-/// # Safety
-/// This function should only be called by sqlite's extension loading mechanism.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn sqlite3_graft_init(
-    _db: *mut c_void,
-    _pz_err_msg: *mut *mut c_void,
-    p_api: *mut sqlite3_api_routines,
-) -> std::os::raw::c_int {
+struct InitErr(SqliteErr, Cow<'static, str>);
+
+impl<E: Error> From<E> for InitErr {
+    fn from(err: E) -> Self {
+        InitErr(vars::SQLITE_INTERNAL, err.to_string().into())
+    }
+}
+
+/// Write an error message to the SQLite error message pointer if it is not null.
+/// Safety:
+#[cfg(feature = "dynamic")]
+fn write_err_msg(
+    p_api: *mut sqlite_plugin::sqlite3_api_routines,
+    msg: &str,
+    out: *mut *const std::ffi::c_char,
+) -> Result<(), SqliteErr> {
+    if !out.is_null() {
+        unsafe {
+            let p_api = p_api.as_ref().ok_or(vars::SQLITE_INTERNAL)?;
+            let api = sqlite_plugin::vfs::SqliteApi::new_dynamic(p_api)?;
+            api.mprintf(msg, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
     let files = [
         // load from the user's application dir first
         platform_dirs::AppDirs::new(Some("graft"), true)
@@ -100,12 +120,9 @@ pub unsafe extern "C" fn sqlite3_graft_init(
     let config = Config::builder()
         .add_source(files)
         .add_source(config::Environment::with_prefix("GRAFT"))
-        .build()
-        .expect("failed to load config");
+        .build()?;
 
-    let config: ExtensionConfig = config
-        .try_deserialize()
-        .expect("failed to deserialize config");
+    let config: ExtensionConfig = config.try_deserialize()?;
 
     if let Some(path) = config.log_file {
         setup_log_file(path, &config.client_id);
@@ -121,19 +138,57 @@ pub unsafe extern "C" fn sqlite3_graft_init(
 
     runtime
         .start_sync_task(Duration::from_secs(1), 8, config.autosync, "graft-sync")
-        .unwrap();
+        .map_err(|c| c.into_err())?;
 
-    let vfs = GraftVfs::new(runtime);
+    Ok((
+        RegisterOpts { make_default: config.make_default },
+        GraftVfs::new(runtime),
+    ))
+}
 
-    if let Err(err) = unsafe {
-        register_dynamic(
-            p_api,
-            c"graft".to_owned(),
-            vfs,
-            RegisterOpts { make_default: config.make_default },
-        )
-    } {
-        return err;
+/// Register the VFS with `SQLite`.
+/// # Safety
+/// This function should only be called by sqlite's extension loading mechanism.
+#[cfg(feature = "dynamic")]
+#[unsafe(no_mangle)]
+pub extern "C" fn sqlite3_graft_init(
+    _db: *mut c_void,
+    pz_err_msg: *mut *const std::ffi::c_char,
+    p_api: *mut sqlite_plugin::sqlite3_api_routines,
+) -> std::os::raw::c_int {
+    match init_vfs().and_then(|(opts, vfs)| {
+        if let Err(err) =
+            unsafe { sqlite_plugin::vfs::register_dynamic(p_api, c"graft".to_owned(), vfs, opts) }
+        {
+            Err(InitErr(err, "Failed to register Graft VFS".into()))
+        } else {
+            Ok(())
+        }
+    }) {
+        Ok(()) => sqlite_plugin::vars::SQLITE_OK_LOAD_PERMANENTLY,
+        Err(err) => match write_err_msg(p_api, err.1.as_ref(), pz_err_msg) {
+            Ok(()) => err.0,
+            Err(e) => e,
+        },
     }
-    SQLITE_OK_LOAD_PERMANENTLY
+}
+
+/// Register the VFS with `SQLite`.
+/// # Safety
+/// This function must be passed a pointer to a valid SQLite db connection.
+#[cfg(feature = "static")]
+pub extern "C" fn graft_static_init(_db: *mut c_void) -> std::os::raw::c_int {
+    match init_vfs().and_then(|(opts, vfs)| {
+        if let Err(err) = sqlite_plugin::vfs::register_static(c"graft".to_owned(), vfs, opts) {
+            Err(InitErr(err, "Failed to register Graft VFS".into()))
+        } else {
+            Ok(())
+        }
+    }) {
+        Ok(()) => 0,
+        Err(err) => {
+            let _ = err.1;
+            err.0
+        }
+    }
 }

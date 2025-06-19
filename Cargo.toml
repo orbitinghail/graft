@@ -19,7 +19,7 @@ async-trait = "0.1.88"
 hex = "0.4"
 rusty_paseto = "0.7.2"
 platform-dirs = "0.3.0"
-sqlite-plugin = { version = "0.3", default-features = false }
+sqlite-plugin = { version = "0.4.1", default-features = false }
 splinter-rs = "0.1"
 precept = "0.1"
 anyhow = "1.0"
