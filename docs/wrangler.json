@@ -1,5 +1,5 @@
 {
-  "name": "graft",
+  "name": "graft-dev",
   "compatibility_date": "2025-06-19",
   "assets": {
     "directory": "./dist"
