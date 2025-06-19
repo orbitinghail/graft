@@ -83,7 +83,7 @@ jobs:
       - name: system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential
+          sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential fuse3 libfuse3-dev
 
       - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
@@ -196,7 +196,7 @@ jobs:
               target/x86_64-pc-windows-msvc/release/graft.dll
               target/aarch64-pc-windows-msvc/release/graft.dll
 
-          - runs-on: macos-15
+          - runs-on: macos-14
             features: dynamic
             targets:
               - x86_64-apple-darwin
@@ -206,7 +206,7 @@ jobs:
               target/x86_64-apple-darwin/release/libgraft.dylib
               target/aarch64-apple-darwin/release/libgraft.dylib
 
-          - runs-on: macos-15
+          - runs-on: macos-14
             features: static
             targets:
               - aarch64-apple-ios
@@ -216,7 +216,7 @@ jobs:
               target/aarch64-apple-ios/release/libgraft.a
               target/aarch64-apple-ios-sim/release/libgraft.a
 
-    name: Building extension on ${{ matrix.platform.runs-on }}
+    name: Building ${{ matrix.platform.artifact-name }} artifact
     runs-on: ${{ matrix.platform.runs-on }}
     permissions:
       contents: read
@@ -235,7 +235,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: 1.86
-          targets: ${{ matrix.platform.targets }}
+          targets: ${{ join(matrix.platform.targets, ',') }}
 
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -246,15 +246,18 @@ jobs:
       - name: Pre-build osx
         if: startsWith(matrix.platform.runs-on, 'macos')
         run: |
-          echo "LIBCLANG_PATH=$(brew --prefix llvm@16)/lib" >> $GITHUB_ENV
+          set -euo pipefail
+          echo "LIBCLANG_PATH=$(brew --prefix llvm@15)/lib" >> $GITHUB_ENV
 
       - name: Build libgraft
         run: |
-          cargo build --release \
-            --no-default-features \
-            --features precept/disabled ${{ matrix.platform.features }} \
-            --package graft-sqlite-extension \
-            --target ${{ matrix.platform.target }}
+          for target in ${{ join(matrix.platform.targets, ' ') }}; do
+            cargo build --release \
+              --no-default-features \
+              --features precept/disabled,${{ matrix.platform.features }} \
+              --package graft-sqlite-extension \
+              --target $target
+          done
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -294,7 +297,7 @@ jobs:
       - name: Upload universal library artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ios-universal
+          name: libgraft.xcframework
           path: libgraft.xcframework
 
   package:
@@ -325,7 +328,7 @@ jobs:
           curl -L https://github.com/carlsverre/sqlite-dist/releases/download/v0.1.0-prerelease.1/sqlite-dist > sqlite-dist
           chmod +x sqlite-dist
 
-      - name: Download artifacts
+      - name: Download dynamic artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: dynamic-*
@@ -347,11 +350,11 @@ jobs:
           VERSION=${{ needs.validate.outputs.version }}
           ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${VERSION}
 
-      - name: Download artifacts
+      - name: Download ios-universal libgraft.xcframework artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: ios-universal
-          path: dist/ios-universal
+          name: libgraft.xcframework
+          path: dist/libgraft.xcframework
 
       - name: Package archives
         run: just run package-archives

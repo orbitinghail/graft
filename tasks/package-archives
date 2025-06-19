@@ -22,6 +22,9 @@ fi
 CHECKSUM_FILE="$OUTPUT_DIR/checksums.txt"
 touch "$CHECKSUM_FILE"
 
+echo "Processing '$DIST_DIR':"
+tree "$DIST_DIR"
+
 for platform in "$DIST_DIR"/*; do
     platform_name=$(basename "$platform")
     echo "Processing platform: $platform_name"
@@ -44,10 +47,10 @@ for platform in "$DIST_DIR"/*; do
             zip -j "$OUTPUT_DIR/$archive_name" "$DIST_DIR/$platform_name/$libname" >/dev/null
             ;;
 
-        ios-universal)
+        libgraft.xcframework)
             libname="libgraft.xcframework"
-            archive_name="libgraft-ios-universal.tar.gz"
-            tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR/$platform_name" "$libname"
+            archive_name="libgraft.xcframework.tar.gz"
+            tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR" "$libname"
             ;;
 
         *)
