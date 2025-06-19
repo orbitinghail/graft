@@ -83,7 +83,7 @@ jobs:
       - name: system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential
+          sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential fuse3 libfuse3-dev
 
       - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
@@ -176,53 +176,47 @@ jobs:
     strategy:
       matrix:
         platform:
-          - os-name: linux-x86_64
-            runs-on: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            setup: |
-              sudo apt-get update
-              sudo apt-get install -y mold libclang-dev clang
-            pre-build: ""
-            artifact_name: libgraft.so
+          - runs-on: ubuntu-24.04
+            features: dynamic
+            targets:
+              - x86_64-unknown-linux-gnu
+              - aarch64-unknown-linux-gnu
+            artifact-name: dynamic-linux
+            artifacts: |
+              target/x86_64-unknown-linux-gnu/release/libgraft.so
+              target/aarch64-unknown-linux-gnu/release/libgraft.so
 
-          - os-name: linux-aarch64
-            runs-on: ubuntu-24.04
-            target: aarch64-unknown-linux-gnu
-            setup: |
-              sudo apt-get update
-              sudo apt-get install -y mold libclang-dev clang gcc-aarch64-linux-gnu
-            pre-build: ""
-            artifact_name: libgraft.so
+          - runs-on: windows-2022
+            features: dynamic
+            targets:
+              - x86_64-pc-windows-msvc
+              - aarch64-pc-windows-msvc
+            artifact-name: dynamic-windows
+            artifacts: |
+              target/x86_64-pc-windows-msvc/release/graft.dll
+              target/aarch64-pc-windows-msvc/release/graft.dll
 
-          - os-name: windows-x86_64
-            runs-on: windows-2022
-            target: x86_64-pc-windows-msvc
-            setup: ""
-            pre-build: ""
-            artifact_name: graft.dll
+          - runs-on: macos-14
+            features: dynamic
+            targets:
+              - x86_64-apple-darwin
+              - aarch64-apple-darwin
+            artifact-name: dynamic-macos
+            artifacts: |
+              target/x86_64-apple-darwin/release/libgraft.dylib
+              target/aarch64-apple-darwin/release/libgraft.dylib
 
-          - os-name: windows-aarch64
-            runs-on: windows-2022
-            target: aarch64-pc-windows-msvc
-            setup: ""
-            pre-build: ""
-            artifact_name: graft.dll
+          - runs-on: macos-14
+            features: static
+            targets:
+              - aarch64-apple-ios
+              - aarch64-apple-ios-sim
+            artifact-name: static-ios
+            artifacts: |
+              target/aarch64-apple-ios/release/libgraft.a
+              target/aarch64-apple-ios-sim/release/libgraft.a
 
-          - os-name: macos-x86_64
-            runs-on: macOS-14
-            target: x86_64-apple-darwin
-            setup: ""
-            pre-build: export LIBCLANG_PATH=$(brew --prefix llvm@15)/lib
-            artifact_name: libgraft.dylib
-
-          - os-name: macos-aarch64
-            runs-on: macOS-14
-            target: aarch64-apple-darwin
-            setup: ""
-            pre-build: export LIBCLANG_PATH=$(brew --prefix llvm@15)/lib
-            artifact_name: libgraft.dylib
-
-    name: Build - ${{ matrix.platform.os-name }}
+    name: Building ${{ matrix.platform.artifact-name }} artifact
     runs-on: ${{ matrix.platform.runs-on }}
     permissions:
       contents: read
@@ -233,12 +227,15 @@ jobs:
 
     steps:
       - name: system dependencies
-        run: ${{ matrix.platform.setup }}
+        if: startsWith(matrix.platform.runs-on, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mold libclang-dev clang gcc-aarch64-linux-gnu
 
       - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: 1.86
-          targets: ${{ matrix.platform.target }}
+          targets: ${{ join(matrix.platform.targets, ',') }}
 
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -246,25 +243,66 @@ jobs:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
 
+      - name: Pre-build osx
+        if: startsWith(matrix.platform.runs-on, 'macos')
+        run: |
+          set -euo pipefail
+          echo "LIBCLANG_PATH=$(brew --prefix llvm@15)/lib" >> $GITHUB_ENV
+
       - name: Build libgraft
         run: |
-          ${{ matrix.platform.pre-build }}
-          cargo build --release \
-            --features precept/disabled \
-            --package graft-sqlite-extension \
-            --target ${{ matrix.platform.target }}
-          ${{ matrix.platform.post-build }}
+          for target in ${{ join(matrix.platform.targets, ' ') }}; do
+            cargo build --release \
+              --no-default-features \
+              --features precept/disabled,${{ matrix.platform.features }} \
+              --package graft-sqlite-extension \
+              --target $target
+          done
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ${{ matrix.platform.os-name }}
-          path: target/${{ matrix.platform.target }}/release/${{ matrix.platform.artifact_name }}
+          name: ${{ matrix.platform.artifact-name }}
+          path: ${{ matrix.platform.artifacts }}
           if-no-files-found: error
           retention-days: 3
 
+  build-ios-universal:
+    runs-on: macos-15
+    needs: [build]
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+          persist-credentials: false
+
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: static-ios
+          path: input/
+
+      - name: build ios universal library
+        run: |
+          set -euo pipefail
+          xcodebuild -create-xcframework \
+            -library input/aarch64-apple-ios/release/libgraft.a \
+                    -headers crates/graft-sqlite-extension/include \
+            -library input/aarch64-apple-ios-sim/release/libgraft.a \
+                    -headers crates/graft-sqlite-extension/include \
+            -output libgraft.xcframework
+
+      - name: Upload universal library artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: libgraft.xcframework
+          path: libgraft.xcframework
+
   package:
     runs-on: ubuntu-24.04
-    needs: [docker, build, validate, crates]
+    needs: [docker, build, build-ios-universal, validate, crates]
 
     permissions:
       contents: write
@@ -290,15 +328,33 @@ jobs:
           curl -L https://github.com/carlsverre/sqlite-dist/releases/download/v0.1.0-prerelease.1/sqlite-dist > sqlite-dist
           chmod +x sqlite-dist
 
-      - name: Download artifacts
+      - name: Download dynamic artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          path: dist/
+          pattern: dynamic-*
+          path: builds/
+          merge-multiple: true
+
+      - name: Reorganize build artifacts
+        run: |
+          mkdir -p dist/{linux,windows,macos}-{x86_64,aarch64}
+          mv builds/x86_64-unknown-linux-gnu/release/libgraft.so     dist/linux-x86_64/libgraft.so
+          mv builds/aarch64-unknown-linux-gnu/release/libgraft.so    dist/linux-aarch64/libgraft.so
+          mv builds/x86_64-pc-windows-msvc/release/graft.dll         dist/windows-x86_64/graft.dll
+          mv builds/aarch64-pc-windows-msvc/release/graft.dll        dist/windows-aarch64/graft.dll
+          mv builds/x86_64-apple-darwin/release/libgraft.dylib       dist/macos-x86_64/libgraft.dylib
+          mv builds/aarch64-apple-darwin/release/libgraft.dylib      dist/macos-aarch64/libgraft.dylib
 
       - name: Run SQLite dist
         run: |
           VERSION=${{ needs.validate.outputs.version }}
           ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${VERSION}
+
+      - name: Download ios-universal libgraft.xcframework artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: libgraft.xcframework
+          path: dist/libgraft.xcframework
 
       - name: Package archives
         run: just run package-archives
