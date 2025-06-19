@@ -22,6 +22,9 @@ fi
 CHECKSUM_FILE="$OUTPUT_DIR/checksums.txt"
 touch "$CHECKSUM_FILE"
 
+echo "Processing '$DIST_DIR':"
+tree "$DIST_DIR"
+
 for platform in "$DIST_DIR"/*; do
     platform_name=$(basename "$platform")
     echo "Processing platform: $platform_name"

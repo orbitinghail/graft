@@ -328,7 +328,7 @@ jobs:
           curl -L https://github.com/carlsverre/sqlite-dist/releases/download/v0.1.0-prerelease.1/sqlite-dist > sqlite-dist
           chmod +x sqlite-dist
 
-      - name: Download artifacts
+      - name: Download dynamic artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: dynamic-*
@@ -350,7 +350,7 @@ jobs:
           VERSION=${{ needs.validate.outputs.version }}
           ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${VERSION}
 
-      - name: Download artifacts
+      - name: Download ios-universal artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ios-universal
