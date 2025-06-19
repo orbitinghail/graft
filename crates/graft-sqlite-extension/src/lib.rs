@@ -80,7 +80,7 @@ impl<E: Error> From<E> for InitErr {
     }
 }
 
-/// Write an error message to the SQLite error message pointer if it is not null.
+/// Write an error message to the `SQLite` error message pointer if it is not null.
 /// Safety:
 #[cfg(feature = "dynamic")]
 fn write_err_msg(
@@ -151,7 +151,7 @@ fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
 /// This function should only be called by sqlite's extension loading mechanism.
 #[cfg(feature = "dynamic")]
 #[unsafe(no_mangle)]
-pub extern "C" fn sqlite3_graft_init(
+pub unsafe extern "C" fn sqlite3_graft_init(
     _db: *mut c_void,
     pz_err_msg: *mut *const std::ffi::c_char,
     p_api: *mut sqlite_plugin::sqlite3_api_routines,
@@ -177,7 +177,7 @@ pub extern "C" fn sqlite3_graft_init(
 /// # Safety
 /// This function must be passed a pointer to a valid SQLite db connection.
 #[cfg(feature = "static")]
-pub extern "C" fn graft_static_init(_db: *mut c_void) -> std::os::raw::c_int {
+pub unsafe extern "C" fn graft_static_init(_db: *mut c_void) -> std::os::raw::c_int {
     match init_vfs().and_then(|(opts, vfs)| {
         if let Err(err) = sqlite_plugin::vfs::register_static(c"graft".to_owned(), vfs, opts) {
             Err(InitErr(err, "Failed to register Graft VFS".into()))
