@@ -253,7 +253,7 @@ jobs:
         if: matrix.platform.features == 'static'
         run: |
           set -euo pipefail
-          echo "RUSTFLAGS='-C link-arg=-Wl,-undefined,dynamic_lookup'" >> $GITHUB_ENV
+          echo "RUSTFLAGS=-C link-arg=-Wl,-undefined,dynamic_lookup" >> $GITHUB_ENV
 
       - name: Build libgraft
         run: |
