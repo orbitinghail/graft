@@ -2,7 +2,7 @@
 title: Ruby
 description: Use the Graft SQLite extension with Ruby
 sidebar:
-  order: 0
+  order: 2
 ---
 
 ```bash

@@ -1,0 +1,76 @@
+---
+title: Swift / iOS
+description: Use the Graft SQLite extension with Swift on iOS
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution">
+  The Graft Swift package currently has only been tested on the iOS Simulator. Further work and testing is required to support more Swift/Apple platforms. If you need additional platforms please [file an issue]. Thanks!
+</Aside>
+
+## Usage
+
+Follow these steps to add [libgraft.swift] to your Xcode project using the Swift Package Manager:
+
+1. **Open your Xcode project**.
+
+2. **Go to** `File` > `Add Package Dependencies...`
+
+3. **Enter the repository URL** for `libgraft.swift` in the search bar (top right):
+
+   ```
+   https://github.com/orbitinghail/libgraft.swift.git
+   ```
+
+4. **Select the version** you want to use (probably the latest).
+
+5. **Click "Add Package"**.
+
+6. **Add the libgraft "Package Product" to your application target** on the next screen.
+
+7. **Import and initialize the library** during application startup:
+
+   ```swift
+   // first, you need to import libgraft
+   import libgraft
+   ```
+
+   ```swift
+   // then add this to your application startup process
+   // this example assumes you are using GRDB for SQLite
+   let fm = FileManager.default
+   let supportDir = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+   let configPath = supportDir.appendingPathComponent("graft-config.toml")
+   let dataPath = supportDir.appendingPathComponent("data")
+
+   // write out a libgraft config file and set the GRAFT_CONFIG env variable
+   let config = """
+   data_dir = "\(dataPath.path)"
+   autosync = false
+   make_default = true
+   """
+   try config.write(to: configPath, atomically: true, encoding: .utf8)
+   setenv("GRAFT_CONFIG", configPath.path, 1)
+
+   // Initialize graft with an in-memory SQLite database managed by GRDB
+   let tempDB = try DatabaseQueue()
+   _ = tempDB.inDatabase { db in libgraft.graft_static_init(db.sqliteConnection) }
+
+   // Open a Graft backed database with a random Volume ID through GRDB
+   let db = try DatabaseQueue(path: "random")
+   ```
+
+## Notes
+
+The libgraft.swift Package contains a statically compiled version of the libgraft SQLite extension. When you add it to your Swift project, Swift will statically link libgraft during compilation. This will fail if libgraft is unable to find SQLite symbols at compile time.
+
+The system version of SQLite included on iOS should be sufficient for Graft to work. So pull in SQLite using any mechanism you prefer.
+
+The example in the previous section uses [GRDB] which is a nice wrapper around SQLite. But it's not required.
+
+[GRDB]: https://github.com/groue/GRDB.swift
+[file an issue]: https://github.com/orbitinghail/graft/issues/new
+[libgraft.swift]: https://github.com/orbitinghail/libgraft.swift
