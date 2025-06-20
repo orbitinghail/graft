@@ -18,7 +18,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' || (
         github.event_name == 'check_run' &&
-        github.event.check_run.name == 'Cloudflare Pages' &&
+        github.event.check_run.name == 'Workers Builds: graft-dev' &&
         github.event.check_run.conclusion == 'success' &&
         github.ref == 'refs/heads/main'
       )
