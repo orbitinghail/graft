@@ -209,3 +209,11 @@ jobs:
           uv publish distx/pip/*
           uv publish distx/datasette/*
           uv publish distx/sqlite_utils/*
+
+      - name: Publish libgraft Swift package
+        uses: benc-uk/workflow-dispatch@e2e5e9a103e331dad343f381a29e654aea3cf8fc # v1.2.4
+        with:
+          workflow: update.yml
+          repo: orbitinghail/libgraft.swift
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
