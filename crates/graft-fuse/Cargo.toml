@@ -9,10 +9,10 @@ homepage.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-graft-core = { path = "../graft-core", version = "0.1.4" }
-graft-client = { path = "../graft-client", version = "0.1.4" }
-graft-sqlite = { path = "../graft-sqlite", version = "0.1.4" }
-graft-tracing = { path = "../graft-tracing", version = "0.1.4" }
+graft-core = { path = "../graft-core", version = "0.1.5" }
+graft-client = { path = "../graft-client", version = "0.1.5" }
+graft-sqlite = { path = "../graft-sqlite", version = "0.1.5" }
+graft-tracing = { path = "../graft-tracing", version = "0.1.5" }
 
 fuser = { workspace = true, features = ["abi-7-31"] }
 libc = { workspace = true }
