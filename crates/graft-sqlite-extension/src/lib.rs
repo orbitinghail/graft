@@ -177,6 +177,7 @@ pub unsafe extern "C" fn sqlite3_graft_init(
 /// # Safety
 /// This function must be passed a pointer to a valid SQLite db connection.
 #[cfg(feature = "static")]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn graft_static_init(_db: *mut c_void) -> std::os::raw::c_int {
     match init_vfs().and_then(|(opts, vfs)| {
         if let Err(err) = sqlite_plugin::vfs::register_static(c"graft".to_owned(), vfs, opts) {

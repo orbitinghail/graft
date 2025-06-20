@@ -249,6 +249,12 @@ jobs:
           set -euo pipefail
           echo "LIBCLANG_PATH=$(brew --prefix llvm@15)/lib" >> $GITHUB_ENV
 
+      - name: Static Rustflags
+        if: matrix.platform.features == 'static'
+        run: |
+          set -euo pipefail
+          echo "RUSTFLAGS='-C link-arg=-Wl,-undefined,dynamic_lookup'" >> $GITHUB_ENV
+
       - name: Build libgraft
         run: |
           for target in ${{ join(matrix.platform.targets, ' ') }}; do
