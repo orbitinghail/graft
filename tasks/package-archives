@@ -49,8 +49,8 @@ for platform in "$DIST_DIR"/*; do
 
         libgraft.xcframework)
             libname="libgraft.xcframework"
-            archive_name="libgraft.xcframework.tar.gz"
-            tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR" "$libname"
+            archive_name="libgraft.xcframework.zip"
+            (cd $DIST_DIR; zip "$OUTPUT_DIR/$archive_name" "$libname" >/dev/null)
             ;;
 
         *)
