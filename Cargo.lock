@@ -1296,7 +1296,6 @@ dependencies = [
 name = "graft-fuse"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
  "clap",
  "fuser",
  "graft-client",
@@ -1304,7 +1303,6 @@ dependencies = [
  "graft-sqlite",
  "graft-tracing",
  "libc",
- "precept",
  "quick_cache",
  "rusqlite",
  "serde",
@@ -1313,7 +1311,6 @@ dependencies = [
  "sqlite-plugin",
  "thiserror 2.0.12",
  "toml",
- "tracing",
  "url",
 ]
 
@@ -1352,7 +1349,6 @@ dependencies = [
  "graft-tracing",
  "hashbrown 0.15.4",
  "http",
- "itertools 0.14.0",
  "lsm-tree",
  "measured",
  "memmap2",
@@ -1400,7 +1396,6 @@ name = "graft-sqlite-extension"
 version = "0.1.5"
 dependencies = [
  "config",
- "culprit",
  "graft-client",
  "graft-core",
  "graft-sqlite",

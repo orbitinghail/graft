@@ -25,7 +25,6 @@ config = { workspace = true, features = ["toml"] }
 sqlite-plugin = { workspace = true, default-features = false }
 precept = { workspace = true }
 url = { workspace = true, features = ["serde"] }
-culprit = { workspace = true }
 
 [features]
 default = ["dynamic"]

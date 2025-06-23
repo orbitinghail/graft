@@ -23,7 +23,6 @@ precept = { workspace = true, features = ["antithesis"] }
 event-listener = { workspace = true }
 culprit = { workspace = true }
 tryiter = { workspace = true }
-itertools = { workspace = true }
 tokio = { workspace = true, features = [
   "bytes",
   "rt-multi-thread",
