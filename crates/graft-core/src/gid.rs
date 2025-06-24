@@ -6,6 +6,13 @@ use std::{
 
 use bytes::Bytes;
 use prefix::Prefix;
+use prost::{
+    DecodeError, Message,
+    encoding::{
+        DecodeContext, WireType, check_wire_type, decode_varint, encode_key, encode_varint,
+        skip_field,
+    },
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::GidTimestamp;
@@ -37,6 +44,7 @@ mod time;
     Immutable,
     KnownLayout,
     Unaligned,
+    Default,
 )]
 #[repr(C)]
 pub struct Gid<P: Prefix> {
@@ -224,6 +232,62 @@ impl<'de, P: Prefix> Deserialize<'de> for Gid<P> {
         }
     }
 }
+
+macro_rules! derive_message_for_gid {
+    ($gid:ty) => {
+        impl Message for $gid {
+            fn encode_raw(&self, buf: &mut impl bytes::BufMut)
+            where
+                Self: Sized,
+            {
+                encode_key(1, WireType::LengthDelimited, buf);
+                encode_varint(GID_SIZE.as_u64(), buf);
+                buf.put_slice(self.as_bytes());
+            }
+
+            fn merge_field(
+                &mut self,
+                tag: u32,
+                wire_type: WireType,
+                buf: &mut impl bytes::Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), prost::DecodeError>
+            where
+                Self: Sized,
+            {
+                if tag == 1 {
+                    check_wire_type(WireType::LengthDelimited, wire_type)?;
+                    let len = decode_varint(buf)?;
+                    if len > buf.remaining() as u64 {
+                        return Err(DecodeError::new("buffer underflow"));
+                    }
+                    let len = len as usize;
+                    if len != GID_SIZE.as_usize() {
+                        return Err(DecodeError::new("invalid gid length"));
+                    }
+                    *self = Self::try_read_from_bytes(buf.chunk())
+                        .map_err(|err| DecodeError::new(format!("failed to parse gid: {err}")))?;
+                    Ok(())
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+
+            fn encoded_len(&self) -> usize {
+                GID_SIZE.as_usize()
+            }
+
+            fn clear(&mut self) {
+                self.prefix = Default::default();
+                self.ts = GidTimestamp::ZERO;
+                self.random = [0; 9];
+            }
+        }
+    };
+}
+
+derive_message_for_gid!(VolumeId);
+derive_message_for_gid!(SegmentId);
 
 #[cfg(test)]
 mod tests {

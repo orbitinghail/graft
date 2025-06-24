@@ -7,8 +7,8 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Control {
     /// The Volume ID stored as a 16 byte GID.
-    #[prost(bytes="bytes", tag="1")]
-    pub vid: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag="1")]
+    pub vid: ::core::option::Option<::graft_core::gid::VolumeId>,
     /// The parent reference if this Volume is a fork.
     #[prost(message, optional, tag="2")]
     pub parent: ::core::option::Option<VolumeRef>,
@@ -23,8 +23,8 @@ pub struct Control {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Fork {
     /// The VID of the fork.
-    #[prost(bytes="bytes", tag="1")]
-    pub fork_vid: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag="1")]
+    pub fork_vid: ::core::option::Option<::graft_core::gid::VolumeId>,
     /// The fork point. Must match the parent field in the Fork's Control file.
     #[prost(message, optional, tag="2")]
     pub parent: ::core::option::Option<VolumeRef>,
@@ -34,8 +34,8 @@ pub struct Fork {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VolumeRef {
     /// The Volume ID stored as a 16 byte GID.
-    #[prost(bytes="bytes", tag="1")]
-    pub vid: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag="1")]
+    pub vid: ::core::option::Option<::graft_core::gid::VolumeId>,
     /// The referenced LSN.
     #[prost(uint64, tag="2")]
     pub lsn: u64,
@@ -46,8 +46,8 @@ pub struct VolumeRef {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckpointSet {
     /// The Volume ID stored as a 16 byte GID.
-    #[prost(bytes="bytes", tag="1")]
-    pub vid: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag="1")]
+    pub vid: ::core::option::Option<::graft_core::gid::VolumeId>,
     /// The list of checkpoint LSNs.
     #[prost(uint64, repeated, tag="2")]
     pub lsns: ::prost::alloc::vec::Vec<u64>,
@@ -57,8 +57,8 @@ pub struct CheckpointSet {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
     /// The Volume ID stored as a 16 byte GID.
-    #[prost(bytes="bytes", tag="1")]
-    pub vid: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag="1")]
+    pub vid: ::core::option::Option<::graft_core::gid::VolumeId>,
     /// The LSN of the Volume at this Snapshot.
     #[prost(uint64, tag="2")]
     pub lsn: u64,
@@ -95,8 +95,8 @@ pub struct Commit {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SegmentRef {
     /// The 16 byte Segment ID.
-    #[prost(bytes="bytes", tag="1")]
-    pub sid: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag="1")]
+    pub sid: ::core::option::Option<::graft_core::gid::SegmentId>,
     /// The set of pageidxs stored in this Segment.
     /// Serialized using Splinter encoding.
     #[prost(bytes="bytes", tag="2")]

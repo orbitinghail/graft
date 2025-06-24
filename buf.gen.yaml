@@ -4,6 +4,8 @@ plugins:
     out: crates/graft-proto/src/
     opt:
       - bytes=.
+      - extern_path=.graft.core.v1.VolumeId=::graft_core::gid::VolumeId
+      - extern_path=.graft.core.v1.SegmentId=::graft_core::gid::SegmentId
 
 inputs:
   - directory: proto

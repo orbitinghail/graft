@@ -4,7 +4,17 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 #[derive(
-    Clone, PartialEq, Eq, PartialOrd, Ord, IntoBytes, FromBytes, Immutable, KnownLayout, Unaligned,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    IntoBytes,
+    FromBytes,
+    Immutable,
+    KnownLayout,
+    Unaligned,
+    Default,
 )]
 #[repr(transparent)]
 pub struct GidTimestamp([u8; 6]);

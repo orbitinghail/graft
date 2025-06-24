@@ -2,13 +2,14 @@ syntax = "proto3";
 package graft.remote.v1;
 
 import "google/protobuf/timestamp.proto";
+import "graft/core/v1/gid.proto";
 
 // A Volume has a top level control file stored at
 // `{prefix}/{vid}/control`
 // Control files are immutable.
 message Control {
   // The Volume ID stored as a 16 byte GID.
-  bytes vid = 1;
+  graft.core.v1.VolumeId vid = 1;
 
   // The parent reference if this Volume is a fork.
   optional VolumeRef parent = 2;
@@ -22,7 +23,7 @@ message Control {
 // Forks are immutable.
 message Fork {
   // The VID of the fork.
-  bytes fork_vid = 1;
+  graft.core.v1.VolumeId fork_vid = 1;
 
   // The fork point. Must match the parent field in the Fork's Control file.
   VolumeRef parent = 2;
@@ -31,7 +32,7 @@ message Fork {
 // A reference to a Volume at a particular LSN.
 message VolumeRef {
   // The Volume ID stored as a 16 byte GID.
-  bytes vid = 1;
+  graft.core.v1.VolumeId vid = 1;
 
   // The referenced LSN.
   uint64 lsn = 2;
@@ -41,7 +42,7 @@ message VolumeRef {
 // CheckpointSets are updated by the checkpointer via compare-and-swap.
 message CheckpointSet {
   // The Volume ID stored as a 16 byte GID.
-  bytes vid = 1;
+  graft.core.v1.VolumeId vid = 1;
 
   // The list of checkpoint LSNs.
   repeated uint64 lsns = 2;
@@ -50,7 +51,7 @@ message CheckpointSet {
 // A snapshot of a Volume.
 message Snapshot {
   // The Volume ID stored as a 16 byte GID.
-  bytes vid = 1;
+  graft.core.v1.VolumeId vid = 1;
 
   // The LSN of the Volume at this Snapshot.
   uint64 lsn = 2;
@@ -84,7 +85,7 @@ message Commit {
 
 message SegmentRef {
   // The 16 byte Segment ID.
-  bytes sid = 1;
+  graft.core.v1.SegmentId sid = 1;
 
   // The set of pageidxs stored in this Segment.
   // Serialized using Splinter encoding.

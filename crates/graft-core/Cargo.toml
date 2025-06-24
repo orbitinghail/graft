@@ -26,6 +26,7 @@ static_assertions = { workspace = true }
 thiserror = { workspace = true }
 zerocopy = { workspace = true }
 assert_matches = { workspace = true }
+prost = { workspace = true }
 
 [dev-dependencies]
 graft-test = { path = "../graft-test" }

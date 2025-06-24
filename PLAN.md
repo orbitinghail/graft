@@ -6,8 +6,7 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 
 - [x] graft-kernel scaffolding
 - [x] protobuf local + remote schemas
-- [ ] optimized message types: LSN, GID, PageCount, PageIndex
-  - pagecount/pageindex/lsn may be optimized into a single NonZero type
+- [x] optimized message type: GID
 - [ ] local storage
 - [ ] remote storage
 - [ ] async kernel

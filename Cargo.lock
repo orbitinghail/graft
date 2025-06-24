@@ -1285,6 +1285,7 @@ dependencies = [
  "foldhash",
  "graft-test",
  "hashbrown 0.15.4",
+ "prost",
  "rand",
  "serde",
  "static_assertions",
