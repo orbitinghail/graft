@@ -4,7 +4,6 @@ plugins:
     out: crates/graft-proto/src/
     opt:
       - bytes=.
-      - file_descriptor_set
 
 inputs:
   - directory: proto
