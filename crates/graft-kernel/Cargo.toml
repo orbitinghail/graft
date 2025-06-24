@@ -1,0 +1,27 @@
+[package]
+name = "graft-kernel"
+version = "0.1.0"
+edition = "2024"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+graft-core = { path = "../graft-core" }
+graft-proto = { path = "../graft-proto" }
+graft-tracing = { path = "../graft-tracing" }
+
+splinter-rs = { workspace = true }
+precept = { workspace = true, features = ["antithesis"] }
+culprit = { workspace = true }
+
+fjall = { workspace = true }
+
+[dev-dependencies]
+graft-core = { path = "../graft-core", features = ["testutil"] }
+graft-test = { path = "../graft-test" }

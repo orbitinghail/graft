@@ -1315,6 +1315,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "graft-kernel"
+version = "0.1.0"
+dependencies = [
+ "culprit",
+ "fjall",
+ "graft-core",
+ "graft-proto",
+ "graft-test",
+ "graft-tracing",
+ "precept",
+ "splinter-rs",
+]
+
+[[package]]
 name = "graft-proto"
 version = "0.1.5"
 dependencies = [

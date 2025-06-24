@@ -1,0 +1,105 @@
+syntax = "proto3";
+package graft.remote.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// A Volume has a top level control file stored at
+// `{prefix}/{vid}/control`
+// Control files are immutable.
+message Control {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The parent reference if this Volume is a fork.
+  optional VolumeRef parent = 2;
+
+  // The creation timestamp of this Volume.
+  google.protobuf.Timestamp created_at = 3;
+}
+
+// When a Volume is forked, a ref is first written to the parent Volume:
+// `{prefix}/{parent-vid}/forks/{fork-vid}`
+// Forks are immutable.
+message Fork {
+  // The VID of the fork.
+  bytes fork_vid = 1;
+
+  // The fork point. Must match the parent field in the Fork's Control file.
+  VolumeRef parent = 2;
+}
+
+// A reference to a Volume at a particular LSN.
+message VolumeRef {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The referenced LSN.
+  uint64 lsn = 2;
+}
+
+// A Volume's CheckpointSet is stored at `{prefix}/{vid}/checkpoints`.
+// CheckpointSets are updated by the checkpointer via compare-and-swap.
+message CheckpointSet {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The list of checkpoint LSNs.
+  repeated uint64 lsns = 2;
+}
+
+// A snapshot of a Volume.
+message Snapshot {
+  // The Volume ID stored as a 16 byte GID.
+  bytes vid = 1;
+
+  // The LSN of the Volume at this Snapshot.
+  uint64 lsn = 2;
+
+  // The Volume's page count at this Snapshot.
+  uint32 page_count = 3;
+}
+
+// Commits are stored at `{prefix}/{vid}/log/{lsn}`.
+// A commit may not include a SegmentRef if only the Volume's page count has
+// changed. This happens when the Volume is extended or truncated without
+// additional writes.
+// Commits are immutable.
+message Commit {
+  // The Volume Snapshot at this Commit.
+  Snapshot snapshot = 1;
+
+  // An optional 256 bit CommitHash of this Commit.
+  // Always present on Remote Volume commits.
+  // May be omitted on Local commits.
+  optional bytes hash = 2;
+
+  // If this Commit contains any pages, `segment_ref` records details on the
+  // relevant Segment.
+  optional SegmentRef segment_ref = 3;
+
+  // If this commit is a checkpoint, this timestamp is set and records the time
+  // the commit was made a checkpoint
+  optional google.protobuf.Timestamp checkpoint_ts = 4;
+}
+
+message SegmentRef {
+  // The 16 byte Segment ID.
+  bytes sid = 1;
+
+  // The set of pageidxs stored in this Segment.
+  // Serialized using Splinter encoding.
+  bytes splinter = 2;
+
+  // An index of frames contained by the Segment.
+  // Empty on Local Segments which have not been encoded and uploaded to object
+  // storage.
+  repeated SegmentFrame frames = 3;
+}
+
+message SegmentFrame {
+  // The length of the compressed frame in bytes.
+  uint32 frame_size = 1;
+
+  // The last pageidx stored in the frame
+  uint32 last_pageidx = 2;
+}
