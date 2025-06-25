@@ -1319,6 +1319,7 @@ dependencies = [
 name = "graft-kernel"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "culprit",
  "fjall",
  "graft-core",
@@ -1327,6 +1328,8 @@ dependencies = [
  "graft-tracing",
  "precept",
  "splinter-rs",
+ "thiserror 2.0.12",
+ "zerocopy",
 ]
 
 [[package]]

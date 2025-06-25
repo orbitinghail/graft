@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-use crate::page_count::PageCount;
+use crate::{cbe::CBE32, page_count::PageCount};
 
 #[derive(
     Clone,
@@ -214,6 +214,22 @@ impl<E: zerocopy::ByteOrder> TryFrom<zerocopy::U32<E>> for PageIdx {
     fn try_from(value: zerocopy::U32<E>) -> Result<Self, Self::Error> {
         let n = value.get();
         n.try_into()
+    }
+}
+
+impl From<PageIdx> for CBE32 {
+    #[inline]
+    fn from(pageidx: PageIdx) -> Self {
+        CBE32::new(pageidx.0.get())
+    }
+}
+
+impl TryFrom<&CBE32> for PageIdx {
+    type Error = ConvertToPageIdxErr;
+
+    #[inline]
+    fn try_from(cbe: &CBE32) -> Result<Self, Self::Error> {
+        cbe.get().try_into()
     }
 }
 

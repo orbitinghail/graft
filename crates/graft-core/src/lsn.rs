@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
 
+use crate::cbe::CBE64;
+
 #[derive(Debug, Error)]
 #[error("LSN must be non-zero")]
 pub struct InvalidLSN;
@@ -180,6 +182,22 @@ impl<E: zerocopy::ByteOrder> TryFrom<zerocopy::U64<E>> for LSN {
             Some(lsn) => Ok(Self(lsn)),
             None => Err(InvalidLSN),
         }
+    }
+}
+
+impl From<LSN> for CBE64 {
+    #[inline]
+    fn from(lsn: LSN) -> Self {
+        CBE64::new(lsn.0.get())
+    }
+}
+
+impl TryFrom<&CBE64> for LSN {
+    type Error = InvalidLSN;
+
+    #[inline]
+    fn try_from(cbe: &CBE64) -> Result<Self, Self::Error> {
+        cbe.get().try_into()
     }
 }
 

@@ -1,6 +1,7 @@
 pub mod byte_unit;
 pub mod cbe;
 pub mod gid;
+pub mod handle_id;
 pub mod hash_table;
 pub mod lsn;
 pub mod page;

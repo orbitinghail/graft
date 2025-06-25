@@ -154,7 +154,7 @@ Note that the Commit's snapshot is passed in. This ensures the Hash's uniqueness
 
 Rather than forcing users to reference Volumes by ID, Graft exposes Volume Handles. Volume Handles are pointers to a local and remote Volume. Volume Handles only exist on a single client, and are not shared between clients or pushed to a remote.
 
-Each Volume Handle has a name given to it at creation time. The name must match the regex `^[_a-zA-Z][-_a-zA-Z0-9]{0,127}$` (alphanumeric, starts with letter or underscore, max len 128 chars) and be unique on the client.
+Each Volume Handle has a name given to it at creation time. The name must match the regex `^[-_a-zA-Z0-9]{0,128}$` (alphanumeric, starts with letter or underscore, max len 128 chars) and be unique on the client.
 
 A Volume Handle always has a local-only Volume associated with it. This Volume is used for all local reads and writes.
 
