@@ -1319,6 +1319,7 @@ dependencies = [
 name = "graft-kernel"
 version = "0.1.0"
 dependencies = [
+ "assert_matches",
  "bytes",
  "culprit",
  "fjall",
