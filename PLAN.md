@@ -11,7 +11,7 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 - [ ] remote storage
 - [ ] async kernel
   - ideally agnostic to async runtime
-- [ ] Splinter iter_range
+- [x] Splinter iter_range
 - [ ] Volume Handle
 - [ ] Volume Reader
 - [ ] Volume Writer
