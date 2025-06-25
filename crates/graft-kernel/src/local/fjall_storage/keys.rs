@@ -299,21 +299,18 @@ mod tests {
     fn handle_key_invalid() {
         // invalid characters
         let slice: Slice = Slice::from(*b"bad id");
-        let result: Result<HandleKey, _> = slice.try_into();
-        let err = match result {
-            Ok(_) => panic!("expected error"),
-            Err(e) => e,
-        };
+        let err: Culprit<KeyDecodeErr> = HandleKey::try_from(slice).err().unwrap();
+        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidHandleId(_));
+
+        // empty
+        let slice: Slice = Slice::from(*b"");
+        let err: Culprit<KeyDecodeErr> = HandleKey::try_from(slice).err().unwrap();
         assert_matches!(*err.ctx(), KeyDecodeErr::InvalidHandleId(_));
 
         // too long
         let long = "a".repeat(graft_core::handle_id::MAX_HANDLE_ID_LEN + 1);
         let slice: Slice = long.as_bytes().into();
-        let result: Result<HandleKey, _> = slice.try_into();
-        let err = match result {
-            Ok(_) => panic!("expected error"),
-            Err(e) => e,
-        };
+        let err: Culprit<KeyDecodeErr> = HandleKey::try_from(slice).err().unwrap();
         assert_matches!(*err.ctx(), KeyDecodeErr::InvalidHandleId(_));
     }
 
@@ -335,11 +332,15 @@ mod tests {
         // wrong size (missing property byte)
         let mut bytes = vid.as_bytes().to_vec();
         let slice: Slice = bytes.clone().into();
-        let result: Result<VolumeKey, _> = slice.try_into();
-        let err = match result {
-            Ok(_) => panic!("expected error"),
-            Err(e) => e,
-        };
+        let err: Culprit<KeyDecodeErr> = VolumeKey::try_from(slice).err().unwrap();
+        assert_matches!(
+            *err.ctx(),
+            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
+        );
+
+        // empty
+        let slice: Slice = Slice::from(*b"");
+        let err: Culprit<KeyDecodeErr> = VolumeKey::try_from(slice).err().unwrap();
         assert_matches!(
             *err.ctx(),
             KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
@@ -348,11 +349,7 @@ mod tests {
         // invalid enum tag
         bytes.push(0xff);
         let slice: Slice = bytes.into();
-        let result: Result<VolumeKey, _> = slice.try_into();
-        let err = match result {
-            Ok(_) => panic!("expected error"),
-            Err(e) => e,
-        };
+        let err: Culprit<KeyDecodeErr> = VolumeKey::try_from(slice).err().unwrap();
         assert_matches!(
             *err.ctx(),
             KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidData)
@@ -389,20 +386,20 @@ mod tests {
         builder.extend_from_slice(vid.as_bytes());
         builder.extend_from_slice(CBE64::new(0).as_bytes());
         let slice: Slice = builder.freeze().into();
-        let result: Result<CommitKey, _> = slice.try_into();
-        let err = match result {
-            Ok(_) => panic!("expected error"),
-            Err(e) => e,
-        };
+        let err: Culprit<KeyDecodeErr> = CommitKey::try_from(slice).err().unwrap();
         assert_matches!(*err.ctx(), KeyDecodeErr::InvalidLSN(_));
 
         // wrong size
         let slice: Slice = Slice::from(*b"short");
-        let result: Result<CommitKey, _> = slice.try_into();
-        let err = match result {
-            Ok(_) => panic!("expected error"),
-            Err(e) => e,
-        };
+        let err: Culprit<KeyDecodeErr> = CommitKey::try_from(slice).err().unwrap();
+        assert_matches!(
+            *err.ctx(),
+            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
+        );
+
+        // empty
+        let slice: Slice = Slice::from(*b"");
+        let err: Culprit<KeyDecodeErr> = CommitKey::try_from(slice).err().unwrap();
         assert_matches!(
             *err.ctx(),
             KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
@@ -439,20 +436,20 @@ mod tests {
         builder.extend_from_slice(sid.as_bytes());
         builder.extend_from_slice(CBE32::new(0).as_bytes());
         let slice: Slice = builder.freeze().into();
-        let result: Result<PageKey, _> = slice.try_into();
-        let err = match result {
-            Ok(_) => panic!("expected error"),
-            Err(e) => e,
-        };
+        let err: Culprit<KeyDecodeErr> = PageKey::try_from(slice).err().unwrap();
         assert_matches!(*err.ctx(), KeyDecodeErr::InvalidPageIdx(_));
 
         // wrong size
         let slice: Slice = Slice::from(*b"short");
-        let result: Result<PageKey, _> = slice.try_into();
-        let err = match result {
-            Ok(_) => panic!("expected error"),
-            Err(e) => e,
-        };
+        let err: Culprit<KeyDecodeErr> = PageKey::try_from(slice).err().unwrap();
+        assert_matches!(
+            *err.ctx(),
+            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
+        );
+
+        // empty
+        let slice: Slice = Slice::from(*b"");
+        let err: Culprit<KeyDecodeErr> = PageKey::try_from(slice).err().unwrap();
         assert_matches!(
             *err.ctx(),
             KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
