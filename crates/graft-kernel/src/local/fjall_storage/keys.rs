@@ -283,4 +283,179 @@ impl TryFrom<Slice> for PageKey {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use bytes::BytesMut;
+
+    #[graft_test::test]
+    fn handle_key_roundtrip() {
+        let slice: Slice = HandleKey::new(HandleId::new("test-handle").unwrap()).into();
+        let parsed: HandleKey = slice.try_into().unwrap();
+        assert_eq!(parsed.handle().as_str(), "test-handle");
+    }
+
+    #[graft_test::test]
+    fn handle_key_invalid() {
+        // invalid characters
+        let slice: Slice = Slice::from(*b"bad id");
+        let result: Result<HandleKey, _> = slice.try_into();
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        };
+        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidHandleId(_));
+
+        // too long
+        let long = "a".repeat(graft_core::handle_id::MAX_HANDLE_ID_LEN + 1);
+        let slice: Slice = long.as_bytes().into();
+        let result: Result<HandleKey, _> = slice.try_into();
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        };
+        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidHandleId(_));
+    }
+
+    #[graft_test::test]
+    fn volume_key_roundtrip() {
+        let vid = VolumeId::random();
+        for prop in [VolumeProp::Control, VolumeProp::Checkpoints] {
+            let key = VolumeKey::new(vid.clone(), prop);
+            let slice: Slice = key.clone().into();
+            let parsed: VolumeKey = slice.try_into().unwrap();
+            assert_eq!(parsed, key);
+        }
+    }
+
+    #[graft_test::test]
+    fn volume_key_invalid() {
+        let vid = VolumeId::random();
+
+        // wrong size (missing property byte)
+        let mut bytes = vid.as_bytes().to_vec();
+        let slice: Slice = bytes.clone().into();
+        let result: Result<VolumeKey, _> = slice.try_into();
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        };
+        assert_matches!(
+            *err.ctx(),
+            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
+        );
+
+        // invalid enum tag
+        bytes.push(0xff);
+        let slice: Slice = bytes.into();
+        let result: Result<VolumeKey, _> = slice.try_into();
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        };
+        assert_matches!(
+            *err.ctx(),
+            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidData)
+        );
+    }
+
+    #[graft_test::test]
+    fn commit_key_roundtrip() {
+        let vid = VolumeId::random();
+        let lsn = LSN::new(123);
+
+        let mut buf = BytesMut::with_capacity(16 + 8);
+        buf.extend_from_slice(vid.as_bytes());
+        buf.extend_from_slice(CBE64::from(lsn).as_bytes());
+        let slice: Slice = buf.freeze().into();
+
+        let parsed: CommitKey = slice.clone().try_into().unwrap();
+        assert_eq!(parsed.vid(), &vid);
+        assert_eq!(parsed.lsn(), &lsn);
+
+        let mut buf = BytesMut::with_capacity(16 + 8);
+        buf.extend_from_slice(parsed.vid().as_bytes());
+        buf.extend_from_slice(CBE64::from(*parsed.lsn()).as_bytes());
+        let encoded: Slice = buf.freeze().into();
+        assert_eq!(slice.as_ref(), encoded.as_ref());
+    }
+
+    #[graft_test::test]
+    fn commit_key_invalid() {
+        let vid = VolumeId::random();
+
+        // zero LSN is invalid
+        let mut builder = BytesMut::new();
+        builder.extend_from_slice(vid.as_bytes());
+        builder.extend_from_slice(CBE64::new(0).as_bytes());
+        let slice: Slice = builder.freeze().into();
+        let result: Result<CommitKey, _> = slice.try_into();
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        };
+        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidLSN(_));
+
+        // wrong size
+        let slice: Slice = Slice::from(*b"short");
+        let result: Result<CommitKey, _> = slice.try_into();
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        };
+        assert_matches!(
+            *err.ctx(),
+            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
+        );
+    }
+
+    #[graft_test::test]
+    fn page_key_roundtrip() {
+        let sid = SegmentId::random();
+        let idx = PageIdx::new(5);
+
+        let mut buf = BytesMut::with_capacity(16 + 4);
+        buf.extend_from_slice(sid.as_bytes());
+        buf.extend_from_slice(CBE32::from(idx).as_bytes());
+        let slice: Slice = buf.freeze().into();
+
+        let parsed: PageKey = slice.clone().try_into().unwrap();
+        assert_eq!(parsed.sid(), &sid);
+        assert_eq!(parsed.pageidx(), &idx);
+
+        let mut buf = BytesMut::with_capacity(16 + 4);
+        buf.extend_from_slice(parsed.sid().as_bytes());
+        buf.extend_from_slice(CBE32::from(*parsed.pageidx()).as_bytes());
+        let encoded: Slice = buf.freeze().into();
+        assert_eq!(slice.as_ref(), encoded.as_ref());
+    }
+
+    #[graft_test::test]
+    fn page_key_invalid() {
+        let sid = SegmentId::random();
+
+        // zero page index
+        let mut builder = BytesMut::new();
+        builder.extend_from_slice(sid.as_bytes());
+        builder.extend_from_slice(CBE32::new(0).as_bytes());
+        let slice: Slice = builder.freeze().into();
+        let result: Result<PageKey, _> = slice.try_into();
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        };
+        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidPageIdx(_));
+
+        // wrong size
+        let slice: Slice = Slice::from(*b"short");
+        let result: Result<PageKey, _> = slice.try_into();
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        };
+        assert_matches!(
+            *err.ctx(),
+            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
+        );
+    }
+}
