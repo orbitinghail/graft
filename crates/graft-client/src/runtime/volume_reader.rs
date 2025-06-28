@@ -7,7 +7,7 @@ use graft_core::{
     lsn::LSN,
     page::{EMPTY_PAGE, Page},
 };
-use splinter_rs::Splinter;
+use splinter_rs::{Splinter, SplinterWrite};
 use tracing::field;
 
 use crate::{ClientErr, ClientPair, oracle::Oracle};

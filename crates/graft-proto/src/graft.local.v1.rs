@@ -7,16 +7,16 @@ pub struct LocalCheckpointSet {
     /// changed CheckpointSets
     #[prost(bytes="bytes", tag="1")]
     pub etag: ::prost::bytes::Bytes,
-    /// The list of checkpoint LSNs.
-    #[prost(uint64, repeated, tag="2")]
-    pub lsns: ::prost::alloc::vec::Vec<u64>,
+    /// The set of checkpoint LSNs.
+    #[prost(message, optional, tag="2")]
+    pub lsns: ::core::option::Option<super::super::core::v1::LsnSet>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VolumeHandle {
-    /// The name of the Volume Handle
-    #[prost(string, tag="1")]
-    pub name: ::prost::alloc::string::String,
+    /// The id of the Volume Handle
+    #[prost(message, optional, tag="1")]
+    pub id: ::core::option::Option<::graft_core::handle_id::HandleId>,
     /// References to the local and remote Volumes, along with LSNs representing
     /// their latest successful synchronization.
     #[prost(message, optional, tag="2")]
@@ -34,12 +34,12 @@ pub struct VolumeHandle {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PendingCommit {
     /// The resulting remote LSN that the push job is attempting to create
-    #[prost(uint64, tag="1")]
-    pub remote_lsn: u64,
+    #[prost(message, optional, tag="1")]
+    pub remote_lsn: ::core::option::Option<::graft_core::lsn::LSN>,
     /// The associated 256 bit blake3 commit hash. This is used to determine
     /// whether or not the commit has landed in the remote, in the case that we are
     /// interrupted while attempting to push.
-    #[prost(bytes="bytes", tag="2")]
-    pub commit_hash: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag="2")]
+    pub commit_hash: ::core::option::Option<::graft_core::commit_hash::CommitHash>,
 }
 // @@protoc_insertion_point(module)

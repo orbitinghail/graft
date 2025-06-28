@@ -1288,6 +1288,7 @@ dependencies = [
  "prost",
  "rand",
  "serde",
+ "splinter-rs",
  "static_assertions",
  "thiserror 2.0.12",
  "zerocopy",
@@ -3200,9 +3201,9 @@ dependencies = [
 
 [[package]]
 name = "splinter-rs"
-version = "0.2.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12d6b1234c6f3bcb2798e4ec5ede7b97ecb66c30d262ba6b43ea9e68c73b045f"
+checksum = "a3a0653728c35c0e022e985a59d89ad1a85a13a96ba150000981646f65dd7cb8"
 dependencies = [
  "bytes",
  "culprit",

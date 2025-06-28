@@ -1,0 +1,10 @@
+syntax = "proto3";
+package graft.core.v1;
+
+// A Log Sequence Number (LSN) is a 64-bit non-zero unsigned integer that
+// represents a point in the log of a Volume. LSNs are allocated strictly
+// sequentially per Volume.
+message LSN { uint64 lsn = 1; }
+
+// A set of LSNs
+message LSNSet { repeated uint64 lsns = 1; }

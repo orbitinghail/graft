@@ -2,19 +2,23 @@ syntax = "proto3";
 package graft.local.v1;
 
 import "graft/remote/v1/messages.proto";
+import "graft/core/v1/gid.proto";
+import "graft/core/v1/lsn.proto";
+import "graft/core/v1/handle_id.proto";
+import "graft/core/v1/commit_hash.proto";
 
 message LocalCheckpointSet {
   // The etag from the last time we pulled the CheckpointSet, used to only pull
   // changed CheckpointSets
   bytes etag = 1;
 
-  // The list of checkpoint LSNs.
-  repeated uint64 lsns = 2;
+  // The set of checkpoint LSNs.
+  graft.core.v1.LSNSet lsns = 2;
 }
 
 message VolumeHandle {
-  // The name of the Volume Handle
-  string name = 1;
+  // The id of the Volume Handle
+  graft.core.v1.HandleId id = 1;
 
   // References to the local and remote Volumes, along with LSNs representing
   // their latest successful synchronization.
@@ -30,10 +34,10 @@ message VolumeHandle {
 
 message PendingCommit {
   // The resulting remote LSN that the push job is attempting to create
-  uint64 remote_lsn = 1;
+  graft.core.v1.LSN remote_lsn = 1;
 
   // The associated 256 bit blake3 commit hash. This is used to determine
   // whether or not the commit has landed in the remote, in the case that we are
   // interrupted while attempting to push.
-  bytes commit_hash = 2;
+  graft.core.v1.CommitHash commit_hash = 2;
 }

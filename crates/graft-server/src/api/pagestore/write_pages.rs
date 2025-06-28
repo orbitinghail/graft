@@ -9,6 +9,7 @@ use graft_proto::{
     pagestore::v1::{WritePagesRequest, WritePagesResponse},
 };
 use hashbrown::HashSet;
+use splinter_rs::SplinterRead;
 
 use crate::api::{error::ApiErrCtx, response::ProtoResponse};
 

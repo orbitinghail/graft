@@ -4,8 +4,14 @@ plugins:
     out: crates/graft-proto/src/
     opt:
       - bytes=.
+      - extern_path=.graft.core.v1.CommitHash=::graft_core::commit_hash::CommitHash
       - extern_path=.graft.core.v1.VolumeId=::graft_core::gid::VolumeId
       - extern_path=.graft.core.v1.SegmentId=::graft_core::gid::SegmentId
+      - extern_path=.graft.core.v1.Graft=::graft_core::graft::Graft
+      - extern_path=.graft.core.v1.HandleId=::graft_core::handle_id::HandleId
+      - extern_path=.graft.core.v1.LSN=::graft_core::lsn::LSN
+      - extern_path=.graft.core.v1.PageIdx=::graft_core::page_idx::PageIdx
+      - extern_path=.graft.core.v1.PageCount=::graft_core::page_count::PageCount
 
 inputs:
   - directory: proto

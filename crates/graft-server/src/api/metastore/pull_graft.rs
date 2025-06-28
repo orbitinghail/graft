@@ -104,6 +104,7 @@ mod tests {
     use axum_test::TestServer;
     use graft_core::{SegmentId, gid::ClientId, lsn::LSN, page_count::PageCount};
     use prost::Message;
+    use splinter_rs::SplinterRead;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,

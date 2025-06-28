@@ -106,6 +106,7 @@ impl<'a> KeyReader<'a> {
     }
 }
 
+/// Key for the `handles` partition
 pub struct HandleKey(HandleId);
 
 impl HandleKey {
@@ -229,7 +230,7 @@ impl TryFrom<Slice> for CommitKey {
         let mut reader = KeyReader::new(slice.as_ref());
         let key = Self {
             vid: reader.read_convert::<VolumeId, _, _>(|vid| Ok(vid.clone()))?,
-            lsn: reader.read_convert::<CBE64, _, _>(|cbe| Ok(LSN::try_from(cbe)?))?,
+            lsn: reader.read_convert::<CBE64, _, _>(|cbe| Ok(cbe.try_into()?))?,
         };
         reader.close()?;
         Ok(key)
@@ -275,7 +276,7 @@ impl TryFrom<Slice> for PageKey {
         let mut reader = KeyReader::new(slice.as_ref());
         let key = Self {
             sid: reader.read_convert::<SegmentId, _, _>(|sid| Ok(sid.clone()))?,
-            pageidx: reader.read_convert::<CBE32, _, _>(|cbe| Ok(PageIdx::try_from(cbe)?))?,
+            pageidx: reader.read_convert::<CBE32, _, _>(|cbe| Ok(cbe.try_into()?))?,
         };
         reader.close()?;
         Ok(key)
