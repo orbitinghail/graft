@@ -15,6 +15,11 @@ pub mod graft {
             include!("graft.pagestore.v1.rs");
         }
     }
+    pub mod core {
+        pub mod v1 {
+            include!("graft.core.v1.rs");
+        }
+    }
     pub mod remote {
         pub mod v1 {
             include!("graft.remote.v1.rs");

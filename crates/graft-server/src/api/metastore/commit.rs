@@ -5,7 +5,7 @@ use culprit::{Culprit, ResultExt};
 use graft_core::{VolumeId, gid::ClientId, lsn::LSN, page_count::PageCount};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
 use splinter_rs::{
-    Splinter,
+    Splinter, SplinterRead,
     ops::{Cut, Union},
 };
 

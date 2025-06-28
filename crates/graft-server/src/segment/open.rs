@@ -6,7 +6,7 @@ use culprit::Culprit;
 use graft_core::{
     PageIdx, SegmentId, VolumeId, byte_unit::ByteUnit, page::Page, page_count::PageCount,
 };
-use splinter_rs::Splinter;
+use splinter_rs::{Splinter, SplinterWrite};
 use thiserror::Error;
 use zerocopy::IntoBytes;
 
