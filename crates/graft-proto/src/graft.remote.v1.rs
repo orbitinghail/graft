@@ -37,8 +37,8 @@ pub struct VolumeRef {
     #[prost(message, optional, tag="1")]
     pub vid: ::core::option::Option<::graft_core::gid::VolumeId>,
     /// The referenced LSN.
-    #[prost(uint64, tag="2")]
-    pub lsn: u64,
+    #[prost(message, optional, tag="2")]
+    pub lsn: ::core::option::Option<::graft_core::lsn::LSN>,
 }
 /// A Volume's CheckpointSet is stored at `{prefix}/{vid}/checkpoints`.
 /// CheckpointSets are updated by the checkpointer via compare-and-swap.
@@ -48,9 +48,9 @@ pub struct CheckpointSet {
     /// The Volume ID stored as a 16 byte GID.
     #[prost(message, optional, tag="1")]
     pub vid: ::core::option::Option<::graft_core::gid::VolumeId>,
-    /// The list of checkpoint LSNs.
-    #[prost(uint64, repeated, tag="2")]
-    pub lsns: ::prost::alloc::vec::Vec<u64>,
+    /// The set of checkpoint LSNs.
+    #[prost(message, optional, tag="2")]
+    pub lsns: ::core::option::Option<super::super::core::v1::LsnSet>,
 }
 /// A snapshot of a Volume.
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -60,11 +60,11 @@ pub struct Snapshot {
     #[prost(message, optional, tag="1")]
     pub vid: ::core::option::Option<::graft_core::gid::VolumeId>,
     /// The LSN of the Volume at this Snapshot.
-    #[prost(uint64, tag="2")]
-    pub lsn: u64,
+    #[prost(message, optional, tag="2")]
+    pub lsn: ::core::option::Option<::graft_core::lsn::LSN>,
     /// The Volume's page count at this Snapshot.
-    #[prost(uint32, tag="3")]
-    pub page_count: u32,
+    #[prost(message, optional, tag="3")]
+    pub page_count: ::core::option::Option<::graft_core::page_count::PageCount>,
 }
 /// Commits are stored at `{prefix}/{vid}/log/{lsn}`.
 /// A commit may not include a SegmentRef if only the Volume's page count has
@@ -77,11 +77,11 @@ pub struct Commit {
     /// The Volume Snapshot at this Commit.
     #[prost(message, optional, tag="1")]
     pub snapshot: ::core::option::Option<Snapshot>,
-    /// An optional 256 bit CommitHash of this Commit.
+    /// An optional CommitHash for this Commit.
     /// Always present on Remote Volume commits.
     /// May be omitted on Local commits.
-    #[prost(bytes="bytes", optional, tag="2")]
-    pub hash: ::core::option::Option<::prost::bytes::Bytes>,
+    #[prost(message, optional, tag="2")]
+    pub hash: ::core::option::Option<::graft_core::commit_hash::CommitHash>,
     /// If this Commit contains any pages, `segment_ref` records details on the
     /// relevant Segment.
     #[prost(message, optional, tag="3")]
@@ -98,9 +98,8 @@ pub struct SegmentRef {
     #[prost(message, optional, tag="1")]
     pub sid: ::core::option::Option<::graft_core::gid::SegmentId>,
     /// The set of pageidxs stored in this Segment.
-    /// Serialized using Splinter encoding.
-    #[prost(bytes="bytes", tag="2")]
-    pub splinter: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag="2")]
+    pub graft: ::core::option::Option<::graft_core::graft::Graft>,
     /// An index of frames contained by the Segment.
     /// Empty on Local Segments which have not been encoded and uploaded to object
     /// storage.
@@ -114,7 +113,7 @@ pub struct SegmentFrame {
     #[prost(uint32, tag="1")]
     pub frame_size: u32,
     /// The last pageidx stored in the frame
-    #[prost(uint32, tag="2")]
-    pub last_pageidx: u32,
+    #[prost(message, optional, tag="2")]
+    pub last_pageidx: ::core::option::Option<::graft_core::page_idx::PageIdx>,
 }
 // @@protoc_insertion_point(module)

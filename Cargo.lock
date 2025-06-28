@@ -1288,6 +1288,7 @@ dependencies = [
  "prost",
  "rand",
  "serde",
+ "splinter-rs",
  "static_assertions",
  "thiserror 2.0.12",
  "zerocopy",

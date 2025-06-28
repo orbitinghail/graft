@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{ops::Deref, str::FromStr};
 
 use thiserror::Error;
 
@@ -24,6 +24,19 @@ impl HandleId {
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
     }
+
+    fn validate<T: Deref<Target = str>>(raw: T) -> Result<T, HandleIdErr> {
+        if raw.is_empty()
+            || raw.len() > MAX_HANDLE_ID_LEN
+            || !raw
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            Err(HandleIdErr)
+        } else {
+            Ok(raw)
+        }
+    }
 }
 
 impl TryFrom<&[u8]> for HandleId {
@@ -35,19 +48,16 @@ impl TryFrom<&[u8]> for HandleId {
     }
 }
 
+impl From<String> for HandleId {
+    fn from(raw: String) -> Self {
+        Self(raw)
+    }
+}
+
 impl FromStr for HandleId {
     type Err = HandleIdErr;
 
     fn from_str(raw: &str) -> Result<Self, Self::Err> {
-        if raw.is_empty()
-            || raw.len() > MAX_HANDLE_ID_LEN
-            || !raw
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-        {
-            Err(HandleIdErr)
-        } else {
-            Ok(Self(raw.to_string()))
-        }
+        Self::validate(raw).map(|s| HandleId(s.to_string()))
     }
 }

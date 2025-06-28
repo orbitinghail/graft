@@ -3,6 +3,10 @@ package graft.remote.v1;
 
 import "google/protobuf/timestamp.proto";
 import "graft/core/v1/gid.proto";
+import "graft/core/v1/lsn.proto";
+import "graft/core/v1/page.proto";
+import "graft/core/v1/graft.proto";
+import "graft/core/v1/commit_hash.proto";
 
 // A Volume has a top level control file stored at
 // `{prefix}/{vid}/control`
@@ -35,7 +39,7 @@ message VolumeRef {
   graft.core.v1.VolumeId vid = 1;
 
   // The referenced LSN.
-  uint64 lsn = 2;
+  graft.core.v1.LSN lsn = 2;
 }
 
 // A Volume's CheckpointSet is stored at `{prefix}/{vid}/checkpoints`.
@@ -44,8 +48,8 @@ message CheckpointSet {
   // The Volume ID stored as a 16 byte GID.
   graft.core.v1.VolumeId vid = 1;
 
-  // The list of checkpoint LSNs.
-  repeated uint64 lsns = 2;
+  // The set of checkpoint LSNs.
+  graft.core.v1.LSNSet lsns = 2;
 }
 
 // A snapshot of a Volume.
@@ -54,10 +58,10 @@ message Snapshot {
   graft.core.v1.VolumeId vid = 1;
 
   // The LSN of the Volume at this Snapshot.
-  uint64 lsn = 2;
+  graft.core.v1.LSN lsn = 2;
 
   // The Volume's page count at this Snapshot.
-  uint32 page_count = 3;
+  graft.core.v1.PageCount page_count = 3;
 }
 
 // Commits are stored at `{prefix}/{vid}/log/{lsn}`.
@@ -69,10 +73,10 @@ message Commit {
   // The Volume Snapshot at this Commit.
   Snapshot snapshot = 1;
 
-  // An optional 256 bit CommitHash of this Commit.
+  // An optional CommitHash for this Commit.
   // Always present on Remote Volume commits.
   // May be omitted on Local commits.
-  optional bytes hash = 2;
+  optional graft.core.v1.CommitHash hash = 2;
 
   // If this Commit contains any pages, `segment_ref` records details on the
   // relevant Segment.
@@ -88,8 +92,7 @@ message SegmentRef {
   graft.core.v1.SegmentId sid = 1;
 
   // The set of pageidxs stored in this Segment.
-  // Serialized using Splinter encoding.
-  bytes splinter = 2;
+  graft.core.v1.Graft graft = 2;
 
   // An index of frames contained by the Segment.
   // Empty on Local Segments which have not been encoded and uploaded to object
@@ -102,5 +105,5 @@ message SegmentFrame {
   uint32 frame_size = 1;
 
   // The last pageidx stored in the frame
-  uint32 last_pageidx = 2;
+  graft.core.v1.PageIdx last_pageidx = 2;
 }
