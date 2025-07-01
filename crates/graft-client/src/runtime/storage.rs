@@ -25,7 +25,7 @@ use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
 use parking_lot::{Mutex, MutexGuard};
 use snapshot::{RemoteMapping, Snapshot};
-use splinter_rs::{DecodeErr, Splinter, SplinterRef};
+use splinter_rs::{DecodeErr, Splinter, SplinterRead, SplinterRef, SplinterWrite};
 use tracing::field;
 use tryiter::{TryIterator, TryIteratorExt};
 use volume_state::{

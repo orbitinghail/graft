@@ -3,14 +3,14 @@ mod keys;
 pub struct FjallStorage {
     keyspace: fjall::Keyspace,
 
-    /// This partition maps VolumeHandle IDs to VolumeHandles
-    /// {HandleId} -> VolumeHandle
+    /// This partition maps `VolumeHandle` IDs to `VolumeHandles`
+    /// {`HandleId`} -> `VolumeHandle`
     /// Keyed by `keys::HandleKey`
     handles: fjall::Partition,
 
     /// This partition stores Volume properties
     /// {vid} / control -> Control
-    /// {vid} / checkpoints -> LocalCheckpointSet
+    /// {vid} / checkpoints -> `LocalCheckpointSet`
     /// Keyed by `keys::VolumeKey`
     volumes: fjall::Partition,
 

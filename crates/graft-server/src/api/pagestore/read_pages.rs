@@ -5,6 +5,7 @@ use culprit::ResultExt;
 use futures::{FutureExt, TryStreamExt, stream::FuturesUnordered};
 use graft_core::{VolumeId, lsn::LSN};
 use graft_proto::pagestore::v1::{PageAtIdx, ReadPagesRequest, ReadPagesResponse};
+use splinter_rs::SplinterRead;
 use splinter_rs::{Splinter, ops::Cut};
 
 use crate::api::error::ApiErrCtx;
@@ -110,6 +111,7 @@ mod tests {
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path};
     use prost::Message;
+    use splinter_rs::SplinterWrite;
     use tokio::sync::mpsc;
 
     use crate::{

@@ -91,7 +91,7 @@ impl<'a> KeyReader<'a> {
         ZK: TryFromBytes + KnownLayout + Immutable + Unaligned + 'a,
         F: FnMut(&ZK) -> Result<T, Culprit<KeyDecodeErr>>,
     {
-        let (zk, rest) = ZK::try_ref_from_prefix(&self.slice)?;
+        let (zk, rest) = ZK::try_ref_from_prefix(self.slice)?;
         self.slice = rest;
         convert(zk)
     }
@@ -169,7 +169,7 @@ impl VolumeKey {
         self.prop
     }
 
-    /// Attempts to directly transmute a byte slice into a &VolumeKey.
+    /// Attempts to directly transmute a byte slice into a &`VolumeKey`.
     #[inline]
     pub fn try_ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<KeyDecodeErr>> {
         Self::try_ref_from_unaligned_bytes(bytes).or_ctx(KeyDecodeErr::CorruptKey)

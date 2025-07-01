@@ -8,7 +8,7 @@ pub const MAX_HANDLE_ID_LEN: usize = 128;
 #[error("Invalid handle ID")]
 pub struct HandleIdErr;
 
-/// Represents a VolumeHandle's id. HandleIds are human readable, but must
+/// Represents a `VolumeHandle`'s id. `HandleIds` are human readable, but must
 /// conform to the regex: `^[-_a-zA-Z0-9]{0,128}$`
 pub struct HandleId(String);
 

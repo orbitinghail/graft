@@ -33,7 +33,7 @@ Reveal the most recent 16 errors and warnings encountered during background sync
 
 #### **`pragma graft_reset`**
 
-This pragma drops all local changes and forcibly resets to the latest server Snapshot. Make sure you are ok with loosing local changes permanently when running this pragma.
+This pragma drops all local changes and forcibly resets to the latest server Snapshot. Make sure you are ok with losing local changes permanently when running this pragma.
 
 #### **`pragma graft_version`**
 
