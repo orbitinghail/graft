@@ -246,7 +246,7 @@ impl<'de, P: Prefix> Deserialize<'de> for Gid<P> {
 }
 
 derive_zerocopy_encoding!(
-    encode type (Gid<P>)
+    encode borrowed type (Gid<P>)
     with size (GID_SIZE.as_usize())
     with for overwrite (Gid::<P>::EMPTY)
     with generics (P: Prefix)
@@ -255,9 +255,13 @@ derive_zerocopy_encoding!(
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
 
     use assert_matches::assert_matches;
+    use bilrost::{BorrowedMessage, Message, OwnedMessage};
     use rand::random;
+
+    use crate::codec::zerocopy_encoding::CowEncoding;
 
     use super::*;
 
@@ -300,7 +304,7 @@ mod tests {
     }
 
     #[graft_test::test]
-    fn test_round_trip() {
+    fn test_parse_round_trip() {
         let id = SegmentId::random();
 
         // round trip through pretty format
@@ -367,5 +371,45 @@ mod tests {
             VolumeId::try_from(raw).unwrap_err(),
             GidParseErr::Corrupt(ZerocopyErr::InvalidData)
         );
+    }
+
+    #[graft_test::test]
+    fn test_bilrost() {
+        #[derive(Message, Debug, PartialEq, Eq)]
+        struct TestMsg {
+            vid: VolumeId,
+            sid: SegmentId,
+            cid: ClientId,
+        }
+
+        let msg = TestMsg {
+            vid: VolumeId::random(),
+            sid: SegmentId::random(),
+            cid: ClientId::random(),
+        };
+        let b = msg.encode_to_bytes();
+        let decoded: TestMsg = TestMsg::decode(b).unwrap();
+        assert_eq!(decoded, msg, "Decoded message does not match original");
+    }
+
+    #[graft_test::test]
+    fn test_bilrost_borrowed() {
+        #[derive(Message, Debug, PartialEq, Eq)]
+        struct TestMsg<'a> {
+            #[bilrost(encoding(CowEncoding))]
+            vid: Cow<'a, VolumeId>,
+            #[bilrost(encoding(CowEncoding))]
+            sid: Cow<'a, SegmentId>,
+            #[bilrost(encoding(CowEncoding))]
+            cid: Cow<'a, ClientId>,
+        }
+        let msg = TestMsg {
+            vid: Cow::Owned(VolumeId::random()),
+            sid: Cow::Owned(SegmentId::random()),
+            cid: Cow::Owned(ClientId::random()),
+        };
+        let b = msg.encode_to_vec();
+        let decoded = TestMsg::decode_borrowed(b.as_slice()).unwrap();
+        assert_eq!(decoded, msg, "Decoded message does not match original");
     }
 }

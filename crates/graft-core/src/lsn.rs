@@ -46,7 +46,6 @@ impl LSN {
     pub const FIRST: Self = unsafe { Self::new_unchecked(1) };
     pub const LAST: Self = unsafe { Self::new_unchecked(u64::MAX) };
     pub const ALL: RangeInclusive<Self> = Self::FIRST..=Self::LAST;
-    pub const SIZE: usize = std::mem::size_of::<Self>();
 
     #[inline]
     pub fn new(lsn: u64) -> Self {
@@ -204,7 +203,7 @@ impl TryFrom<&CBE64> for LSN {
 
 derive_zerocopy_encoding!(
     encode type (LSN)
-    with size (LSN::SIZE)
+    with size (std::mem::size_of::<LSN>())
     with for overwrite (LSN::new(1))
 );
 
