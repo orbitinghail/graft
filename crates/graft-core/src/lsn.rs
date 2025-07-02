@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
 
-use crate::cbe::CBE64;
+use crate::{cbe::CBE64, derive_zerocopy_encoding};
 
 #[derive(Debug, Error)]
 #[error("LSN must be non-zero")]
@@ -46,6 +46,7 @@ impl LSN {
     pub const FIRST: Self = unsafe { Self::new_unchecked(1) };
     pub const LAST: Self = unsafe { Self::new_unchecked(u64::MAX) };
     pub const ALL: RangeInclusive<Self> = Self::FIRST..=Self::LAST;
+    pub const SIZE: usize = std::mem::size_of::<Self>();
 
     #[inline]
     pub fn new(lsn: u64) -> Self {
@@ -201,6 +202,12 @@ impl TryFrom<&CBE64> for LSN {
     }
 }
 
+derive_zerocopy_encoding!(
+    encode type (LSN)
+    with size (LSN::SIZE)
+    with for overwrite (LSN::new(1))
+);
+
 pub trait LSNRangeExt {
     fn try_len(&self) -> Option<usize>;
     fn try_start(&self) -> Option<LSN>;
@@ -276,11 +283,26 @@ impl Iterator for LSNRangeIter {
 
 #[cfg(test)]
 mod tests {
+    use bilrost::{Message, OwnedMessage};
+
     use super::*;
 
     #[graft_test::test]
     fn test_lsn_next() {
         let lsn = LSN::FIRST;
         assert_eq!(lsn.saturating_next(), 2);
+    }
+
+    #[graft_test::test]
+    fn test_lsn_bilrost() {
+        #[derive(Message, Debug, PartialEq, Eq)]
+        struct TestMsg {
+            lsn: Option<LSN>,
+        }
+
+        let msg = TestMsg { lsn: Some(LSN::new(12345)) };
+        let b = msg.encode_to_bytes();
+        let decoded_msg = TestMsg::decode(b).unwrap();
+        assert_eq!(decoded_msg, msg);
     }
 }

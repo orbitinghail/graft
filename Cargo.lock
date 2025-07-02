@@ -328,6 +328,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
+name = "bilrost"
+version = "0.1013.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "640b021fedf44f44640771b2c3e5ec53ff0122d89b3fd1448e6880da0ace787b"
+dependencies = [
+ "bilrost-derive",
+ "bytes",
+ "thin-vec",
+]
+
+[[package]]
+name = "bilrost-derive"
+version = "0.1013.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9910598cd6a5c5ee053af712bbb3385e96b4eb4adc043b24a69b6c37004ba22"
+dependencies = [
+ "eyre",
+ "itertools 0.14.0",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.72.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1006,6 +1030,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "eyre"
+version = "0.6.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cd915d99f24784cdc19fd37ef22b97e3ff0ae756c7e492e9fbfe897d61e2aec"
+dependencies = [
+ "indenter",
+ "once_cell",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1278,6 +1312,7 @@ name = "graft-core"
 version = "0.1.5"
 dependencies = [
  "assert_matches",
+ "bilrost",
  "blake3",
  "bs58",
  "bytes",
@@ -1285,7 +1320,6 @@ dependencies = [
  "foldhash",
  "graft-test",
  "hashbrown 0.15.4",
- "prost",
  "rand",
  "serde",
  "splinter-rs",
@@ -1807,6 +1841,12 @@ dependencies = [
  "icu_normalizer",
  "icu_properties",
 ]
+
+[[package]]
+name = "indenter"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
 
 [[package]]
 name = "indexmap"
@@ -3295,6 +3335,12 @@ dependencies = [
  "rustix",
  "windows-sys 0.59.0",
 ]
+
+[[package]]
+name = "thin-vec"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "144f754d318415ac792f9d69fc87abbbfc043ce2ef041c60f16ad828f638717d"
 
 [[package]]
 name = "thiserror"

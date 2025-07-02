@@ -77,6 +77,22 @@ const_assert_ne!(Volume::Value as u8, Segment::Value as u8);
 const_assert_ne!(Volume::Value as u8, Client::Value as u8);
 const_assert_ne!(Segment::Value as u8, Client::Value as u8);
 
+pub trait ConstDefault {
+    const DEFAULT: Self;
+}
+
+impl ConstDefault for Volume {
+    const DEFAULT: Self = Volume::Value;
+}
+
+impl ConstDefault for Segment {
+    const DEFAULT: Self = Segment::Value;
+}
+
+impl ConstDefault for Client {
+    const DEFAULT: Self = Client::Value;
+}
+
 pub trait Prefix:
     Clone
     + PartialEq
@@ -90,6 +106,7 @@ pub trait Prefix:
     + KnownLayout
     + Default
     + Unaligned
+    + ConstDefault
 {
 }
 

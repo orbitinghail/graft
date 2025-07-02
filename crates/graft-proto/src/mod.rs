@@ -20,14 +20,4 @@ pub mod graft {
             include!("graft.core.v1.rs");
         }
     }
-    pub mod remote {
-        pub mod v1 {
-            include!("graft.remote.v1.rs");
-        }
-    }
-    pub mod local {
-        pub mod v1 {
-            include!("graft.local.v1.rs");
-        }
-    }
 }

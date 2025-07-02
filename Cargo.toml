@@ -28,6 +28,7 @@ axum-test = "17.2"
 blake3 = "1.7"
 bs58 = "0.5"
 bytes = "1.10"
+bilrost = "0.1013"
 circular-buffer = "1.1"
 clap = "4.5"
 config = { version = "0.15", features = ["toml"] }

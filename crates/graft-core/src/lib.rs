@@ -1,5 +1,6 @@
 pub mod byte_unit;
 pub mod cbe;
+pub mod codec;
 pub mod commit_hash;
 pub mod gid;
 pub mod graft;
@@ -14,8 +15,6 @@ pub mod zerocopy_ext;
 pub use gid::{ClientId, SegmentId, VolumeId};
 pub use page_count::PageCount;
 pub use page_idx::PageIdx;
-
-mod protoutil;
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;

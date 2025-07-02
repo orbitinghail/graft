@@ -6,7 +6,6 @@ use std::{
 
 use bytes::Bytes;
 use prefix::Prefix;
-use prost::DecodeError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::GidTimestamp;
@@ -17,8 +16,7 @@ use zerocopy::{
 
 use crate::{
     byte_unit::ByteUnit,
-    derive_newtype_message_bytes,
-    protoutil::NewtypeMessageBytes,
+    derive_zerocopy_encoding,
     zerocopy_ext::{TryFromBytesExt, ZerocopyErr},
 };
 
@@ -40,7 +38,6 @@ mod time;
     Immutable,
     KnownLayout,
     Unaligned,
-    Default,
 )]
 #[repr(C)]
 pub struct Gid<P: Prefix> {
@@ -57,10 +54,21 @@ static_assertions::assert_eq_size!(VolumeId, [u8; GID_SIZE.as_usize()]);
 
 impl<P: Prefix> Gid<P> {
     pub const SIZE: ByteUnit = GID_SIZE;
+    pub const EMPTY: Self = Self {
+        prefix: P::DEFAULT,
+        ts: GidTimestamp::ZERO,
+        random: [0; 9],
+    };
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self == &Self::EMPTY
+    }
+
+    #[inline]
     pub fn random() -> Self {
         Self {
-            prefix: P::default(),
+            prefix: P::DEFAULT,
             ts: GidTimestamp::now(),
             random: rand::random(),
         }
@@ -77,12 +85,20 @@ impl<P: Prefix> Gid<P> {
         pretty[pretty.len() - SHORT_LEN..].to_owned()
     }
 
+    #[inline]
     pub fn as_time(&self) -> SystemTime {
         self.ts.as_time()
     }
 
     pub fn copy_to_bytes(&self) -> Bytes {
         Bytes::copy_from_slice(self.as_bytes())
+    }
+}
+
+impl<P: Prefix> Default for Gid<P> {
+    #[inline]
+    fn default() -> Self {
+        Self::EMPTY
     }
 }
 
@@ -229,27 +245,13 @@ impl<'de, P: Prefix> Deserialize<'de> for Gid<P> {
     }
 }
 
-impl<P: Prefix> NewtypeMessageBytes for Gid<P> {
-    fn encode(&self) -> impl bytes::Buf {
-        self.as_bytes()
-    }
-
-    fn decode(&mut self, buf: Bytes) -> Result<(), DecodeError> {
-        if buf.len() != GID_SIZE.as_usize() {
-            return Err(DecodeError::new("invalid gid length"));
-        }
-        *self = Self::try_read_from_bytes(&buf)
-            .map_err(|err| DecodeError::new(format!("failed to parse gid: {err}")))?;
-        Ok(())
-    }
-
-    fn serialized_size(&self) -> usize {
-        GID_SIZE.as_usize()
-    }
-}
-
-derive_newtype_message_bytes!(VolumeId);
-derive_newtype_message_bytes!(SegmentId);
+derive_zerocopy_encoding!(
+    encode type (Gid<P>)
+    with size (GID_SIZE.as_usize())
+    with for overwrite (Gid::<P>::EMPTY)
+    with generics (P: Prefix)
+    with empty state (Gid::<P>::EMPTY)
+);
 
 #[cfg(test)]
 mod tests {
