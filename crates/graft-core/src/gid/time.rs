@@ -49,3 +49,29 @@ impl From<SystemTime> for GidTimestamp {
         Self(bytes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gid_timestamp_now() {
+        let now = GidTimestamp::now();
+        assert!(now != GidTimestamp::ZERO);
+    }
+
+    #[test]
+    fn test_gid_timestamp_from_system_time() {
+        fn st_ms(st: SystemTime) -> u128 {
+            st.duration_since(UNIX_EPOCH).unwrap().as_millis()
+        }
+        let now = SystemTime::now();
+        let gid_ts: GidTimestamp = now.into();
+        assert_eq!(st_ms(gid_ts.as_time()), st_ms(now));
+    }
+
+    #[test]
+    fn test_gid_timestamp_zero() {
+        assert_eq!(GidTimestamp::ZERO.as_time(), UNIX_EPOCH);
+    }
+}

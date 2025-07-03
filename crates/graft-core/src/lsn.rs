@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
 
-use crate::cbe::CBE64;
+use crate::{cbe::CBE64, derive_newtype_proxy};
 
 #[derive(Debug, Error)]
 #[error("LSN must be non-zero")]
@@ -117,6 +117,13 @@ impl Display for LSN {
     }
 }
 
+impl Default for LSN {
+    #[inline]
+    fn default() -> Self {
+        Self::FIRST
+    }
+}
+
 impl<'a> TryFrom<&'a u64> for &'a LSN {
     type Error = InvalidLSN;
 
@@ -200,6 +207,20 @@ impl TryFrom<&CBE64> for LSN {
         cbe.get().try_into()
     }
 }
+
+derive_newtype_proxy!(
+    newtype (LSN)
+    with empty value (LSN::FIRST)
+    with proxy type (u64) and encoding (::bilrost::encoding::Varint)
+    with sample value (LSN::new(12345))
+    into_proxy (&self) {
+        self.0.get()
+    }
+    from_proxy (&mut self, proxy) {
+        *self = Self::try_from(proxy).map_err(|_| DecodeErrorKind::InvalidValue)?;
+        Ok(())
+    }
+);
 
 pub trait LSNRangeExt {
     fn try_len(&self) -> Option<usize>;

@@ -1,0 +1,6 @@
+syntax = "proto3";
+package graft.core.v1;
+
+// A Graft is a set of unique PageIdxs. It's internally serialized using
+// Splinter.
+message Graft { bytes splinter = 1; }

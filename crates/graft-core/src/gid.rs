@@ -6,13 +6,6 @@ use std::{
 
 use bytes::Bytes;
 use prefix::Prefix;
-use prost::{
-    DecodeError, Message,
-    encoding::{
-        DecodeContext, WireType, check_wire_type, decode_varint, encode_key, encode_varint,
-        skip_field,
-    },
-};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::GidTimestamp;
@@ -23,6 +16,7 @@ use zerocopy::{
 
 use crate::{
     byte_unit::ByteUnit,
+    derive_zerocopy_encoding,
     zerocopy_ext::{TryFromBytesExt, ZerocopyErr},
 };
 
@@ -44,7 +38,6 @@ mod time;
     Immutable,
     KnownLayout,
     Unaligned,
-    Default,
 )]
 #[repr(C)]
 pub struct Gid<P: Prefix> {
@@ -61,10 +54,21 @@ static_assertions::assert_eq_size!(VolumeId, [u8; GID_SIZE.as_usize()]);
 
 impl<P: Prefix> Gid<P> {
     pub const SIZE: ByteUnit = GID_SIZE;
+    pub const EMPTY: Self = Self {
+        prefix: P::DEFAULT,
+        ts: GidTimestamp::ZERO,
+        random: [0; 9],
+    };
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self == &Self::EMPTY
+    }
+
+    #[inline]
     pub fn random() -> Self {
         Self {
-            prefix: P::default(),
+            prefix: P::DEFAULT,
             ts: GidTimestamp::now(),
             random: rand::random(),
         }
@@ -81,12 +85,20 @@ impl<P: Prefix> Gid<P> {
         pretty[pretty.len() - SHORT_LEN..].to_owned()
     }
 
+    #[inline]
     pub fn as_time(&self) -> SystemTime {
         self.ts.as_time()
     }
 
     pub fn copy_to_bytes(&self) -> Bytes {
         Bytes::copy_from_slice(self.as_bytes())
+    }
+}
+
+impl<P: Prefix> Default for Gid<P> {
+    #[inline]
+    fn default() -> Self {
+        Self::EMPTY
     }
 }
 
@@ -233,67 +245,22 @@ impl<'de, P: Prefix> Deserialize<'de> for Gid<P> {
     }
 }
 
-macro_rules! derive_message_for_gid {
-    ($gid:ty) => {
-        impl Message for $gid {
-            fn encode_raw(&self, buf: &mut impl bytes::BufMut)
-            where
-                Self: Sized,
-            {
-                encode_key(1, WireType::LengthDelimited, buf);
-                encode_varint(GID_SIZE.as_u64(), buf);
-                buf.put_slice(self.as_bytes());
-            }
-
-            fn merge_field(
-                &mut self,
-                tag: u32,
-                wire_type: WireType,
-                buf: &mut impl bytes::Buf,
-                ctx: DecodeContext,
-            ) -> Result<(), prost::DecodeError>
-            where
-                Self: Sized,
-            {
-                if tag == 1 {
-                    check_wire_type(WireType::LengthDelimited, wire_type)?;
-                    let len = decode_varint(buf)?;
-                    if len > buf.remaining() as u64 {
-                        return Err(DecodeError::new("buffer underflow"));
-                    }
-                    let len = len as usize;
-                    if len != GID_SIZE.as_usize() {
-                        return Err(DecodeError::new("invalid gid length"));
-                    }
-                    *self = Self::try_read_from_bytes(buf.chunk())
-                        .map_err(|err| DecodeError::new(format!("failed to parse gid: {err}")))?;
-                    Ok(())
-                } else {
-                    skip_field(wire_type, tag, buf, ctx)
-                }
-            }
-
-            fn encoded_len(&self) -> usize {
-                GID_SIZE.as_usize()
-            }
-
-            fn clear(&mut self) {
-                self.prefix = Default::default();
-                self.ts = GidTimestamp::ZERO;
-                self.random = [0; 9];
-            }
-        }
-    };
-}
-
-derive_message_for_gid!(VolumeId);
-derive_message_for_gid!(SegmentId);
+derive_zerocopy_encoding!(
+    encode borrowed type (Gid<P>)
+    with size (GID_SIZE.as_usize())
+    with empty (Gid::<P>::EMPTY)
+    with generics (P: Prefix)
+);
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
 
     use assert_matches::assert_matches;
+    use bilrost::{BorrowedMessage, Message, OwnedMessage};
     use rand::random;
+
+    use crate::codec::zerocopy_encoding::CowEncoding;
 
     use super::*;
 
@@ -336,7 +303,7 @@ mod tests {
     }
 
     #[graft_test::test]
-    fn test_round_trip() {
+    fn test_parse_round_trip() {
         let id = SegmentId::random();
 
         // round trip through pretty format
@@ -403,5 +370,52 @@ mod tests {
             VolumeId::try_from(raw).unwrap_err(),
             GidParseErr::Corrupt(ZerocopyErr::InvalidData)
         );
+    }
+
+    #[graft_test::test]
+    fn test_bilrost() {
+        #[derive(Message, Debug, PartialEq, Eq)]
+        struct TestMsg {
+            vid: VolumeId,
+            sid: SegmentId,
+            cid: ClientId,
+
+            vids: Vec<VolumeId>,
+        }
+
+        let msg = TestMsg {
+            vid: VolumeId::random(),
+            sid: SegmentId::random(),
+            cid: ClientId::random(),
+
+            vids: vec![VolumeId::random(), VolumeId::random()],
+        };
+        let b = msg.encode_to_bytes();
+        let decoded: TestMsg = TestMsg::decode(b).unwrap();
+        assert_eq!(decoded, msg, "Decoded message does not match original");
+    }
+
+    #[graft_test::test]
+    fn test_bilrost_borrowed() {
+        #[derive(Message, Debug, PartialEq, Eq)]
+        struct TestMsg<'a> {
+            #[bilrost(encoding(CowEncoding))]
+            vid: Cow<'a, VolumeId>,
+            #[bilrost(encoding(CowEncoding))]
+            sid: Cow<'a, SegmentId>,
+            #[bilrost(encoding(CowEncoding))]
+            cid: Cow<'a, ClientId>,
+        }
+        let msg = TestMsg {
+            vid: Cow::Owned(VolumeId::random()),
+            sid: Cow::Owned(SegmentId::random()),
+            cid: Cow::Owned(ClientId::random()),
+        };
+        let b = msg.encode_to_vec();
+        let decoded = TestMsg::decode_borrowed(b.as_slice()).unwrap();
+        assert_eq!(decoded, msg, "Decoded message does not match original");
+        assert_matches!(decoded.vid, Cow::Borrowed(_));
+        assert_matches!(decoded.sid, Cow::Borrowed(_));
+        assert_matches!(decoded.cid, Cow::Borrowed(_));
     }
 }

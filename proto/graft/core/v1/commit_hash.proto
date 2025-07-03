@@ -1,0 +1,5 @@
+syntax = "proto3";
+package graft.core.v1;
+
+// A 32 byte (256 bit) CommitHash of a Commit.
+message CommitHash { bytes data = 1; }

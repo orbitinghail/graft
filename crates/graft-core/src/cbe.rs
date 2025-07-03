@@ -1,30 +1,26 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-/// A ones-complement big-endian encoded unsigned integer, stored in a
-/// fixed-size byte array. This value is unaligned and suitable for use within
-/// zerocopy datastructures. It's purpose is to encode unsigned numbers in a
-/// descending numeric order when compared alphanumerically.
-#[derive(
-    IntoBytes,
-    FromBytes,
-    Immutable,
-    KnownLayout,
-    Unaligned,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Clone,
-    Copy,
-)]
-#[repr(transparent)]
-pub struct CBE<const N: usize>([u8; N]);
-
 macro_rules! define_cbe {
     ($name:ident, $native:ident, $bytes:expr) => {
-        pub type $name = CBE<$bytes>;
-
-        static_assertions::assert_eq_size!($name, [u8; $bytes]);
+        /// A ones-complement big-endian encoded unsigned integer, stored in a
+        /// fixed-size byte array. This value is unaligned and suitable for use within
+        /// zerocopy datastructures. It's purpose is to encode unsigned numbers in a
+        /// descending numeric order when compared alphanumerically.
+        #[derive(
+            IntoBytes,
+            FromBytes,
+            Immutable,
+            KnownLayout,
+            Unaligned,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Clone,
+            Copy,
+        )]
+        #[repr(transparent)]
+        pub struct $name([u8; $bytes]);
 
         impl $name {
             pub const ZERO: Self = Self([0xff; $bytes]);
@@ -109,7 +105,6 @@ pub(crate) mod tests {
             assert_eq!(cbe, expected);
             assert_eq!(cbe.get(), value);
             assert_eq!(CBE64::from(value), expected);
-            assert_eq!(CBE64::from(expected), expected);
         }
     }
 
@@ -149,7 +144,6 @@ pub(crate) mod tests {
             assert_eq!(cbe, expected);
             assert_eq!(cbe.get(), value);
             assert_eq!(CBE32::from(value), expected);
-            assert_eq!(CBE32::from(expected), expected);
         }
     }
 
