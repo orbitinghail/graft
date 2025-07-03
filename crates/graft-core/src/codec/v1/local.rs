@@ -6,8 +6,8 @@ use crate::{codec::v1::remote::VolumeRef, commit_hash::CommitHash, handle_id::Ha
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct LocalCheckpointSet {
-    /// The etag from the last time we pulled the CheckpointSet, used to only pull
-    /// changed CheckpointSets
+    /// The etag from the last time we pulled the `CheckpointSet`, used to only pull
+    /// changed `CheckpointSets`
     #[bilrost(1)]
     etag: Bytes,
 
@@ -30,7 +30,7 @@ pub struct VolumeHandle {
     #[bilrost(3)]
     remote: Option<VolumeRef>,
 
-    /// Presence of the pending_commit field means that the Push operation is in
+    /// Presence of the `pending_commit` field means that the Push operation is in
     /// the process of committing to the remote. If no such Push job is currently
     /// running (i.e. it was interrupted), this field must be used to resume or
     /// abort the commit process.

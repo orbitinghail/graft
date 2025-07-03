@@ -66,7 +66,7 @@ impl TryFrom<ByteString> for HandleId {
     type Error = HandleIdErr;
 
     fn try_from(raw: ByteString) -> Result<Self, Self::Error> {
-        Self::validate(raw).map(|s| HandleId(s))
+        Self::validate(raw).map(HandleId)
     }
 }
 

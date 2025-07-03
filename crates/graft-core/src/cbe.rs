@@ -105,7 +105,6 @@ pub(crate) mod tests {
             assert_eq!(cbe, expected);
             assert_eq!(cbe.get(), value);
             assert_eq!(CBE64::from(value), expected);
-            assert_eq!(CBE64::from(expected), expected);
         }
     }
 
@@ -145,7 +144,6 @@ pub(crate) mod tests {
             assert_eq!(cbe, expected);
             assert_eq!(cbe.get(), value);
             assert_eq!(CBE32::from(value), expected);
-            assert_eq!(CBE32::from(expected), expected);
         }
     }
 
