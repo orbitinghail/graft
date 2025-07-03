@@ -2,21 +2,21 @@ use std::any::type_name;
 
 use bilrost::DecodeError;
 
+use crate::zerocopy_ext::ZerocopyErr;
+
 pub struct CowEncoding<E = bilrost::encoding::General>(E);
 bilrost::encoding_implemented_via_value_encoding!(CowEncoding<E>, with generics(E));
 bilrost::implement_core_empty_state_rules!(CowEncoding<E>, with generics(E));
 
-pub(crate) fn map_zerocopy_err<T: zerocopy::TryFromBytes, A, S, V>(
-    err: zerocopy::ConvertError<A, S, V>,
-) -> bilrost::DecodeError {
+pub(crate) fn map_zerocopy_err<T>(err: ZerocopyErr) -> bilrost::DecodeError {
     let mut e = DecodeError::new(bilrost::DecodeErrorKind::InvalidValue);
     e.push(
         match err {
-            zerocopy::ConvertError::Alignment(_) => {
+            ZerocopyErr::InvalidAlignment => {
                 "source alignment does not match destination alignment"
             }
-            zerocopy::ConvertError::Size(_) => "source size does not match destination size",
-            zerocopy::ConvertError::Validity(_) => {
+            ZerocopyErr::InvalidSize => "source size does not match destination size",
+            ZerocopyErr::InvalidData => {
                 "source bytes are not a valid value of the destination type"
             }
         },
@@ -133,7 +133,8 @@ macro_rules! derive_zerocopy_encoding {
                     let buf = buf.take_length_delimited()?;
                     let mut bytes = [0u8; $size];
                     bytes.as_mut_slice().put(buf.take_all());
-                    *value = <$ty>::try_read_from_bytes(&bytes).map_err(map_zerocopy_err::<$ty, _, _, _>)?;
+                    *value = <$ty>::try_read_from_bytes(&bytes)
+                        .map_err(|e| map_zerocopy_err::<$ty>(e.into()))?;
                     Ok(())
                 }
             }
@@ -154,6 +155,7 @@ macro_rules! derive_zerocopy_encoding {
         );
         const _:() = {
             use $crate::codec::zerocopy_encoding::{CowEncoding, map_zerocopy_err};
+            use $crate::zerocopy_ext::TryFromBytesExt;
             use ::bilrost::encoding::{
                 Wiretyped, WireType, GeneralGeneric, ValueEncoder,
                 ValueDecoder, Capped, DecodeContext, ValueBorrowDecoder,
@@ -162,7 +164,7 @@ macro_rules! derive_zerocopy_encoding {
             use ::bilrost::DecodeError;
             use ::bilrost::buf::ReverseBuf;
             use ::bytes::{BufMut, Buf};
-            use ::zerocopy::{TryFromBytes, Unaligned};
+            use ::zerocopy::Unaligned;
             use ::std::borrow::Cow;
 
             const WIRE_SIZE: usize = $size + encoded_len_varint($size as u64);
@@ -264,9 +266,8 @@ macro_rules! derive_zerocopy_encoding {
                     _ctx: DecodeContext,
                 ) -> Result<(), DecodeError> {
                     let bytes = buf.take_borrowed_length_delimited()?;
-                    *value = Cow::Borrowed(<$ty>::try_ref_from_bytes(&bytes).map_err(
-                        map_zerocopy_err::<$ty, _, _, _>
-                    )?);
+                    *value = Cow::Borrowed(<$ty>::try_ref_from_unaligned_bytes(&bytes)
+                        .map_err(|e| map_zerocopy_err::<$ty>(e.into()))?);
                     Ok(())
                 }
             }
