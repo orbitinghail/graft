@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
 
-use crate::{cbe::CBE64, derive_zerocopy_encoding};
+use crate::{cbe::CBE64, derive_newtype_proxy};
 
 #[derive(Debug, Error)]
 #[error("LSN must be non-zero")]
@@ -117,6 +117,13 @@ impl Display for LSN {
     }
 }
 
+impl Default for LSN {
+    #[inline]
+    fn default() -> Self {
+        Self::FIRST
+    }
+}
+
 impl<'a> TryFrom<&'a u64> for &'a LSN {
     type Error = InvalidLSN;
 
@@ -201,10 +208,18 @@ impl TryFrom<&CBE64> for LSN {
     }
 }
 
-derive_zerocopy_encoding!(
-    encode type (LSN)
-    with size (std::mem::size_of::<LSN>())
-    with for overwrite (LSN::new(1))
+derive_newtype_proxy!(
+    newtype (LSN)
+    with empty value (LSN::FIRST)
+    with proxy type (u64) and encoding (::bilrost::encoding::Varint)
+    with sample value (LSN::new(12345))
+    into_proxy (&self) {
+        self.0.get()
+    }
+    from_proxy (&mut self, proxy) {
+        *self = Self::try_from(proxy).map_err(|_| DecodeErrorKind::InvalidValue)?;
+        Ok(())
+    }
 );
 
 pub trait LSNRangeExt {
@@ -282,26 +297,11 @@ impl Iterator for LSNRangeIter {
 
 #[cfg(test)]
 mod tests {
-    use bilrost::{Message, OwnedMessage};
-
     use super::*;
 
     #[graft_test::test]
     fn test_lsn_next() {
         let lsn = LSN::FIRST;
         assert_eq!(lsn.saturating_next(), 2);
-    }
-
-    #[graft_test::test]
-    fn test_lsn_bilrost() {
-        #[derive(Message, Debug, PartialEq, Eq)]
-        struct TestMsg {
-            lsn: Option<LSN>,
-        }
-
-        let msg = TestMsg { lsn: Some(LSN::new(12345)) };
-        let b = msg.encode_to_bytes();
-        let decoded_msg = TestMsg::decode(b).unwrap();
-        assert_eq!(decoded_msg, msg);
     }
 }

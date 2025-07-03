@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-use crate::{cbe::CBE32, page_count::PageCount};
+use crate::{cbe::CBE32, derive_newtype_proxy, page_count::PageCount};
 
 #[derive(
     Clone,
@@ -299,6 +299,20 @@ impl PageIdxRangeExt for std::ops::RangeInclusive<PageIdx> {
         PageIdxIter::new(*self.start(), self.end().saturating_next())
     }
 }
+
+derive_newtype_proxy!(
+    newtype (PageIdx)
+    with empty value (PageIdx::FIRST)
+    with proxy type (u32) and encoding (::bilrost::encoding::Varint)
+    with sample value (PageIdx::new(12345))
+    into_proxy (&self) {
+        self.0.get()
+    }
+    from_proxy (&mut self, proxy) {
+        *self = Self::try_from(proxy).map_err(|_| DecodeErrorKind::InvalidValue)?;
+        Ok(())
+    }
+);
 
 #[cfg(test)]
 mod tests {

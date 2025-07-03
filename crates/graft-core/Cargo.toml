@@ -20,6 +20,7 @@ culprit = { workspace = true }
 blake3 = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
+bytestring = { workspace = true }
 foldhash = { workspace = true }
 hashbrown = { workspace = true }
 rand = { workspace = true }
@@ -28,7 +29,8 @@ static_assertions = { workspace = true }
 thiserror = { workspace = true }
 zerocopy = { workspace = true }
 assert_matches = { workspace = true }
-bilrost = { workspace = true }
+bilrost = { workspace = true, features = ["bytestring", "smallvec"] }
+smallvec = { workspace = true }
 
 [dev-dependencies]
 graft-test = { path = "../graft-test" }

@@ -5,6 +5,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::{
     byte_unit::ByteUnit,
+    derive_newtype_proxy,
     page::PAGESIZE,
     page_idx::{PageIdx, PageIdxIter},
 };
@@ -170,3 +171,17 @@ impl<E: zerocopy::ByteOrder> From<zerocopy::U32<E>> for PageCount {
         Self::new(value.get())
     }
 }
+
+derive_newtype_proxy!(
+    newtype (PageCount)
+    with empty value (PageCount::ZERO)
+    with proxy type (u32) and encoding (::bilrost::encoding::Varint)
+    with sample value (PageCount::new(10))
+    into_proxy (&self) {
+        self.0
+    }
+    from_proxy (&mut self, proxy) {
+        self.0 = proxy;
+        Ok(())
+    }
+);

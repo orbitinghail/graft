@@ -13,7 +13,6 @@ workspace = true
 
 [dependencies]
 graft-core = { path = "../graft-core" }
-graft-proto = { path = "../graft-proto" }
 graft-tracing = { path = "../graft-tracing" }
 
 splinter-rs = { workspace = true }
@@ -24,6 +23,7 @@ fjall = { workspace = true }
 zerocopy = { workspace = true }
 thiserror = { workspace = true }
 bytes = { workspace = true }
+bilrost = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }

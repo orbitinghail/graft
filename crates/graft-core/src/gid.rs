@@ -248,9 +248,8 @@ impl<'de, P: Prefix> Deserialize<'de> for Gid<P> {
 derive_zerocopy_encoding!(
     encode borrowed type (Gid<P>)
     with size (GID_SIZE.as_usize())
-    with for overwrite (Gid::<P>::EMPTY)
+    with empty (Gid::<P>::EMPTY)
     with generics (P: Prefix)
-    with empty state (Gid::<P>::EMPTY)
 );
 
 #[cfg(test)]
@@ -380,12 +379,16 @@ mod tests {
             vid: VolumeId,
             sid: SegmentId,
             cid: ClientId,
+
+            vids: Vec<VolumeId>,
         }
 
         let msg = TestMsg {
             vid: VolumeId::random(),
             sid: SegmentId::random(),
             cid: ClientId::random(),
+
+            vids: vec![VolumeId::random(), VolumeId::random()],
         };
         let b = msg.encode_to_bytes();
         let decoded: TestMsg = TestMsg::decode(b).unwrap();
@@ -411,5 +414,8 @@ mod tests {
         let b = msg.encode_to_vec();
         let decoded = TestMsg::decode_borrowed(b.as_slice()).unwrap();
         assert_eq!(decoded, msg, "Decoded message does not match original");
+        assert_matches!(decoded.vid, Cow::Borrowed(_));
+        assert_matches!(decoded.sid, Cow::Borrowed(_));
+        assert_matches!(decoded.cid, Cow::Borrowed(_));
     }
 }

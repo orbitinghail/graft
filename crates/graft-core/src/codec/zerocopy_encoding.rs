@@ -30,15 +30,15 @@ macro_rules! derive_zerocopy_encoding {
     (
         encode type ($ty:ty)
         with size ($size:expr)
-        with for overwrite ($for_overwrite:expr)
+        with empty ($empty:expr)
         $(with generics ($($impl_generics:tt)*))?
-        $(with empty state ($empty:expr))?
     ) => {
         const _:() = {
             use $crate::codec::zerocopy_encoding::map_zerocopy_err;
             use ::bilrost::encoding::{
                 Wiretyped, WireType, ForOverwrite, GeneralGeneric, ValueEncoder,
                 PlainBytes, encoded_len_varint, ValueDecoder, Capped, DecodeContext,
+                EmptyState,
             };
             use ::bilrost::DecodeError;
             use ::bilrost::buf::ReverseBuf;
@@ -55,7 +55,27 @@ macro_rules! derive_zerocopy_encoding {
             impl$(<$($impl_generics)*>)? ForOverwrite<(), $ty> for () {
                 #[inline]
                 fn for_overwrite() -> $ty {
-                    $for_overwrite
+                    $empty
+                }
+            }
+
+            impl$(<$($impl_generics)*>)? EmptyState<(), $ty> for () {
+                #[inline]
+                fn empty() -> $ty
+                where
+                    $ty: Sized,
+                {
+                    $empty
+                }
+
+                #[inline]
+                fn is_empty(val: &$ty) -> bool {
+                    *val == $empty
+                }
+
+                #[inline]
+                fn clear(val: &mut $ty) {
+                    *val = $empty;
                 }
             }
 
@@ -117,52 +137,35 @@ macro_rules! derive_zerocopy_encoding {
                     Ok(())
                 }
             }
-
-            derive_zerocopy_encoding!(
-                @empty
-                encode type ($ty)
-                with size ($size)
-                with for overwrite ($for_overwrite)
-                $(with generics ($($impl_generics)*))?
-                with empty state $(($empty))?
-            );
         };
     };
 
     (
         encode borrowed type ($ty:ty)
         with size ($size:expr)
-        with for overwrite ($for_overwrite:expr)
+        with empty ($empty:expr)
         $(with generics ($($impl_generics:tt)*))?
-        $(with empty state ($empty:expr))?
     ) => {
         derive_zerocopy_encoding!(
             encode type ($ty)
             with size ($size)
-            with for overwrite ($for_overwrite)
+            with empty ($empty)
             $(with generics ($($impl_generics)*))?
-            $(with empty state ($empty))?
-        );
-        derive_zerocopy_encoding!(
-            @empty
-            encode borrowed type ($ty)
-            with size ($size)
-            with for overwrite ($for_overwrite)
-            $(with generics ($($impl_generics)*))?
-            with empty state $(($empty))?
         );
         const _:() = {
             use $crate::codec::zerocopy_encoding::{CowEncoding, map_zerocopy_err};
             use ::bilrost::encoding::{
                 Wiretyped, WireType, GeneralGeneric, ValueEncoder,
                 ValueDecoder, Capped, DecodeContext, ValueBorrowDecoder,
-                ForOverwrite,
+                ForOverwrite, encoded_len_varint, EmptyState
             };
             use ::bilrost::DecodeError;
             use ::bilrost::buf::ReverseBuf;
             use ::bytes::{BufMut, Buf};
             use ::zerocopy::{TryFromBytes, Unaligned};
             use ::std::borrow::Cow;
+
+            const WIRE_SIZE: usize = $size + encoded_len_varint($size as u64);
 
             #[doc(hidden)]
             trait AssertIsZerocopy: Unaligned {}
@@ -174,7 +177,27 @@ macro_rules! derive_zerocopy_encoding {
             impl<'a, const __G:u8 $(,$($impl_generics)*)?> ForOverwrite<Enc<__G>, Cow<'a, $ty>> for () {
                 #[inline]
                 fn for_overwrite() -> Cow<'a, $ty> {
-                    Cow::Owned($for_overwrite)
+                    Cow::Owned($empty)
+                }
+            }
+
+            impl<'a, const __G:u8 $(,$($impl_generics)*)?> EmptyState<Enc<__G>, Cow<'a, $ty>> for () {
+                #[inline]
+                fn empty() -> Cow<'a, $ty>
+                where
+                    Cow<'a, $ty>: Sized,
+                {
+                    Cow::Owned($empty)
+                }
+
+                #[inline]
+                fn is_empty(val: &Cow<'a, $ty>) -> bool {
+                    **val == $empty
+                }
+
+                #[inline]
+                fn clear(val: &mut Cow<'a, $ty>) {
+                    *val = Cow::Owned($empty);
                 }
             }
 
@@ -183,7 +206,7 @@ macro_rules! derive_zerocopy_encoding {
                 const WIRE_TYPE: WireType = WireType::LengthDelimited;
             }
 
-            impl<const __G:u8 $(,$($impl_generics)*)?> ValueEncoder<Enc<__G>, Cow<'_, $ty>> for ()
+            impl<'a, const __G:u8 $(,$($impl_generics)*)?> ValueEncoder<Enc<__G>, Cow<'a, $ty>> for ()
             {
                 #[inline]
                 fn encode_value<B: BufMut + ?Sized>(value: &Cow<$ty>, buf: &mut B) {
@@ -198,6 +221,25 @@ macro_rules! derive_zerocopy_encoding {
                 #[inline]
                 fn value_encoded_len(value: &Cow<$ty>) -> usize {
                     <() as ValueEncoder<GeneralGeneric<__G>, _>>::value_encoded_len(&**value)
+                }
+
+                #[inline]
+                fn many_values_encoded_len<I>(values: I) -> usize
+                where
+                    I: ExactSizeIterator,
+                    I::Item: std::ops::Deref<Target = Cow<'a, $ty>>,
+                {
+                    let many_size = WIRE_SIZE
+                        .checked_mul(values.len())
+                        .expect(concat!("Overflow in many_values_encoded_len for ", stringify!($ty)));
+                    debug_assert_eq!(
+                        values
+                            .map(|val| Self::value_encoded_len(&val.as_bytes()))
+                            .sum::<usize>(),
+                        many_size,
+                        concat!("Invalid size in derive_zerocopy_encoding for ", stringify!($ty))
+                    );
+                    many_size
                 }
             }
 
@@ -229,89 +271,5 @@ macro_rules! derive_zerocopy_encoding {
                 }
             }
         };
-    };
-
-    (
-        @empty
-        encode type ($ty:ty)
-        with size ($size:expr)
-        with for overwrite ($for_overwrite:expr)
-        $(with generics ($($impl_generics:tt)*))?
-        with empty state ($empty:expr)
-    ) => {
-        impl$(<$($impl_generics)*>)? ::bilrost::encoding::EmptyState<(), $ty> for () {
-            #[inline]
-            fn empty() -> $ty
-            where
-                $ty: Sized,
-            {
-                $empty
-            }
-
-            #[inline]
-            fn is_empty(val: &$ty) -> bool {
-                *val == $empty
-            }
-
-            #[inline]
-            fn clear(val: &mut $ty) {
-                *val = $empty;
-            }
-        }
-    };
-    (
-        @empty
-        encode type ($ty:ty)
-        with size ($size:expr)
-        with for overwrite ($for_overwrite:expr)
-        $(with generics ($($impl_generics:tt)*))?
-        with empty state
-    ) => {
-    };
-
-    (
-        @empty
-        encode borrowed type ($ty:ty)
-        with size ($size:expr)
-        with for overwrite ($for_overwrite:expr)
-        $(with generics ($($impl_generics:tt)*))?
-        with empty state ($empty:expr)
-    ) => {
-        const _:() = {
-            use $crate::codec::zerocopy_encoding::CowEncoding;
-            use ::bilrost::encoding::{ GeneralGeneric, EmptyState };
-            use ::std::borrow::Cow;
-
-            type Enc<const G: u8> = CowEncoding<GeneralGeneric<G>>;
-
-            impl<'a, const __G:u8 $(,$($impl_generics)*)?> EmptyState<Enc<__G>, Cow<'a, $ty>> for () {
-                #[inline]
-                fn empty() -> Cow<'a, $ty>
-                where
-                    Cow<'a, $ty>: Sized,
-                {
-                    Cow::Owned($empty)
-                }
-
-                #[inline]
-                fn is_empty(val: &Cow<'a, $ty>) -> bool {
-                    **val == $empty
-                }
-
-                #[inline]
-                fn clear(val: &mut Cow<'a, $ty>) {
-                    *val = Cow::Owned($empty);
-                }
-            }
-        };
-    };
-    (
-        @empty
-        encode borrowed type ($ty:ty)
-        with size ($size:expr)
-        with for overwrite ($for_overwrite:expr)
-        $(with generics ($($impl_generics:tt)*))?
-        with empty state
-    ) => {
     };
 }
