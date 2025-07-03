@@ -22,11 +22,11 @@ pub struct VolumeHandle {
     #[bilrost(1)]
     id: HandleId,
 
-    /// Reference to the latest syncronization point for the local Volume.
+    /// Reference to the latest synchronization point for the local Volume.
     #[bilrost(2)]
     local: VolumeRef,
 
-    /// Reference to the latest syncronization point for the remote Volume.
+    /// Reference to the latest synchronization point for the remote Volume.
     #[bilrost(3)]
     remote: Option<VolumeRef>,
 
