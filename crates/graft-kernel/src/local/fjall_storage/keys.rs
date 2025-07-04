@@ -1,200 +1,55 @@
-use bytes::{BufMut, BytesMut};
-use culprit::{Culprit, ResultExt};
+use bytes::Bytes;
+use culprit::Result;
 use fjall::Slice;
 use graft_core::{
     PageIdx, SegmentId, VolumeId,
     cbe::{CBE32, CBE64},
-    handle_id::{HandleId, HandleIdErr},
-    lsn::{InvalidLSN, LSN},
-    page_idx::ConvertToPageIdxErr,
-    zerocopy_ext::{TryFromBytesExt, ZerocopyErr},
+    handle_id::HandleId,
+    lsn::LSN,
+    zerocopy_ext::TryFromBytesExt,
 };
-use zerocopy::{ConvertError, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
-#[derive(Debug, thiserror::Error)]
-pub enum KeyDecodeErr {
-    #[error("Corrupt key: {0}")]
-    CorruptKey(#[from] ZerocopyErr),
+use crate::local::fjall_storage::fjall_repr::FjallRepr;
 
-    #[error("Invalid LSN: {0}")]
-    InvalidLSN(#[from] InvalidLSN),
+use super::fjall_repr::DecodeErr;
 
-    #[error("Invalid page index: {0}")]
-    InvalidPageIdx(#[from] ConvertToPageIdxErr),
-
-    #[error("Invalid handle ID: {0}")]
-    InvalidHandleId(#[from] HandleIdErr),
-}
-
-impl<A, S, V> From<ConvertError<A, S, V>> for KeyDecodeErr {
+impl FjallRepr for HandleId {
     #[inline]
-    fn from(value: ConvertError<A, S, V>) -> Self {
-        Self::CorruptKey(value.into())
-    }
-}
-
-struct KeyBuilder {
-    builder: BytesMut,
-}
-
-impl KeyBuilder {
-    /// Creates a new `KeyBuilder` with the specified length.
-    /// SAFETY:
-    /// len must be exactly equal to the length of the resulting key
-    fn new(len: usize) -> Self {
-        // Use `with_capacity` & `set_len`` to avoid zeroing the buffer
-        let mut builder = BytesMut::with_capacity(len);
-
-        // SAFETY:
-        // 1. we just allocated `len` bytes
-        // 2. we will panic if the caller doesn't write exactly `len` bytes to the builder
-        #[allow(unsafe_code)]
-        unsafe {
-            builder.set_len(len);
-        }
-
-        Self { builder }
-    }
-
-    fn put_slice(mut self, src: &[u8]) -> Self {
-        assert!(
-            self.builder.spare_capacity_mut().len() >= src.len(),
-            "KeyBuilder: not enough capacity"
-        );
-        self.builder.put_slice(src);
-        self
-    }
-
-    fn build(self) -> Slice {
-        assert!(
-            self.builder.capacity() == self.builder.len(),
-            "KeyBuilder: declared capacity does not match written byte count"
-        );
-        self.builder.freeze().into()
-    }
-}
-
-struct KeyReader<'a> {
-    slice: &'a [u8],
-}
-
-impl<'a> KeyReader<'a> {
-    /// Creates a new `KeyReader` from the given byte slice.
-    #[inline]
-    fn new(key: &'a [u8]) -> Self {
-        Self { slice: key }
+    fn as_slice(&self) -> Slice {
+        Bytes::from(self.clone()).into()
     }
 
     #[inline]
-    fn read_convert<ZK, T, F>(&mut self, mut convert: F) -> Result<T, Culprit<KeyDecodeErr>>
-    where
-        ZK: TryFromBytes + KnownLayout + Immutable + Unaligned + 'a,
-        F: FnMut(&ZK) -> Result<T, Culprit<KeyDecodeErr>>,
-    {
-        let (zk, rest) = ZK::try_ref_from_prefix(self.slice)?;
-        self.slice = rest;
-        convert(zk)
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
+        Ok(Bytes::from(slice).try_into()?)
+    }
+}
+
+impl FjallRepr for VolumeId {
+    #[inline]
+    fn as_slice(&self) -> Slice {
+        self.copy_to_bytes().into()
     }
 
     #[inline]
-    fn close(&self) -> Result<(), Culprit<KeyDecodeErr>> {
-        if !self.slice.is_empty() {
-            Err(KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize).into())
-        } else {
-            Ok(())
-        }
-    }
-}
-
-/// Key for the `handles` partition
-pub struct HandleKey(HandleId);
-
-impl HandleKey {
-    #[inline]
-    pub fn new(hid: HandleId) -> Self {
-        Self(hid)
-    }
-
-    #[inline]
-    pub fn handle(&self) -> &HandleId {
-        &self.0
-    }
-}
-
-impl From<HandleKey> for Slice {
-    fn from(key: HandleKey) -> Slice {
-        key.0.as_bytes().into()
-    }
-}
-
-impl TryFrom<Slice> for HandleKey {
-    type Error = Culprit<KeyDecodeErr>;
-
-    fn try_from(slice: Slice) -> Result<Self, Self::Error> {
-        Ok(Self(HandleId::try_from(slice.as_ref()).or_into_ctx()?))
-    }
-}
-
-#[derive(
-    Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned, Clone, Copy, PartialEq, Eq,
-)]
-#[repr(u8)]
-pub enum VolumeProp {
-    Control = 1,
-    Checkpoints = 2,
-}
-
-/// Key for the `volumes` partition
-#[derive(
-    Debug, KnownLayout, Immutable, TryFromBytes, IntoBytes, Unaligned, Clone, PartialEq, Eq,
-)]
-#[repr(C)]
-pub struct VolumeKey {
-    vid: VolumeId,
-    prop: VolumeProp,
-}
-
-impl VolumeKey {
-    #[inline]
-    pub fn new(vid: VolumeId, prop: VolumeProp) -> Self {
-        Self { vid, prop }
-    }
-
-    #[inline]
-    pub fn vid(&self) -> &VolumeId {
-        &self.vid
-    }
-
-    #[inline]
-    pub fn property(&self) -> VolumeProp {
-        self.prop
-    }
-
-    /// Attempts to directly transmute a byte slice into a &`VolumeKey`.
-    #[inline]
-    pub fn try_ref_from_bytes(bytes: &[u8]) -> Result<&Self, Culprit<KeyDecodeErr>> {
-        Self::try_ref_from_unaligned_bytes(bytes).or_ctx(KeyDecodeErr::CorruptKey)
-    }
-}
-
-impl From<VolumeKey> for Slice {
-    fn from(key: VolumeKey) -> Slice {
-        key.as_bytes().into()
-    }
-}
-
-impl TryFrom<Slice> for VolumeKey {
-    type Error = Culprit<KeyDecodeErr>;
-
-    fn try_from(slice: Slice) -> Result<Self, Self::Error> {
-        Ok(Self::try_read_from_bytes(slice.as_ref())?)
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
+        Ok(Bytes::from(slice).try_into()?)
     }
 }
 
 /// Key for the `log` partition
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CommitKey {
     vid: VolumeId,
     lsn: LSN,
+}
+
+#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct SerializedCommitKey {
+    vid: VolumeId,
+    lsn: CBE64,
 }
 
 impl CommitKey {
@@ -214,33 +69,38 @@ impl CommitKey {
     }
 }
 
-impl From<CommitKey> for Slice {
-    fn from(key: CommitKey) -> Slice {
-        KeyBuilder::new(/* vid = */ 16 + /* lsn = */ 8)
-            .put_slice(key.vid.as_bytes())
-            .put_slice(CBE64::from(key.lsn).as_bytes())
-            .build()
+impl FjallRepr for CommitKey {
+    fn as_slice(&self) -> Slice {
+        Slice::new(
+            SerializedCommitKey {
+                vid: self.vid.clone(),
+                lsn: self.lsn.into(),
+            }
+            .as_bytes(),
+        )
     }
-}
 
-impl TryFrom<Slice> for CommitKey {
-    type Error = Culprit<KeyDecodeErr>;
-
-    fn try_from(slice: Slice) -> Result<Self, Self::Error> {
-        let mut reader = KeyReader::new(slice.as_ref());
-        let key = Self {
-            vid: reader.read_convert::<VolumeId, _, _>(|vid| Ok(vid.clone()))?,
-            lsn: reader.read_convert::<CBE64, _, _>(|cbe| Ok(cbe.try_into()?))?,
-        };
-        reader.close()?;
-        Ok(key)
+    fn try_from_slice(slice: Slice) -> culprit::Result<Self, DecodeErr> {
+        let ser = SerializedCommitKey::try_ref_from_unaligned_bytes(&slice)?;
+        Ok(CommitKey {
+            vid: ser.vid.clone(),
+            lsn: LSN::try_from(ser.lsn)?,
+        })
     }
 }
 
 /// Key for the `pages` partition
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PageKey {
     sid: SegmentId,
     pageidx: PageIdx,
+}
+
+#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct SerializedPageKey {
+    sid: SegmentId,
+    pageidx: CBE32,
 }
 
 impl PageKey {
@@ -260,211 +120,106 @@ impl PageKey {
     }
 }
 
-impl From<PageKey> for Slice {
-    fn from(key: PageKey) -> Slice {
-        KeyBuilder::new(/* sid = */ 16 + /* pageidx = */ 4)
-            .put_slice(key.sid.as_bytes())
-            .put_slice(CBE32::from(key.pageidx).as_bytes())
-            .build()
+impl FjallRepr for PageKey {
+    fn as_slice(&self) -> Slice {
+        Slice::new(
+            SerializedPageKey {
+                sid: self.sid.clone(),
+                pageidx: self.pageidx.into(),
+            }
+            .as_bytes(),
+        )
     }
-}
 
-impl TryFrom<Slice> for PageKey {
-    type Error = Culprit<KeyDecodeErr>;
-
-    fn try_from(slice: Slice) -> Result<Self, Self::Error> {
-        let mut reader = KeyReader::new(slice.as_ref());
-        let key = Self {
-            sid: reader.read_convert::<SegmentId, _, _>(|sid| Ok(sid.clone()))?,
-            pageidx: reader.read_convert::<CBE32, _, _>(|cbe| Ok(cbe.try_into()?))?,
-        };
-        reader.close()?;
-        Ok(key)
+    fn try_from_slice(slice: Slice) -> culprit::Result<Self, DecodeErr> {
+        let ser = SerializedPageKey::try_ref_from_unaligned_bytes(&slice)?;
+        Ok(PageKey {
+            sid: ser.sid.clone(),
+            pageidx: PageIdx::try_from(ser.pageidx)?,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::local::fjall_storage::fjall_repr::testutil::{
+        test_invalid, test_roundtrip, test_serialized_order,
+    };
+
     use super::*;
-    use assert_matches::assert_matches;
-    use bytes::BytesMut;
 
     #[graft_test::test]
-    fn handle_key_roundtrip() {
-        let slice: Slice = HandleKey::new(HandleId::new("test-handle").unwrap()).into();
-        let parsed: HandleKey = slice.try_into().unwrap();
-        assert_eq!(parsed.handle().as_str(), "test-handle");
+    fn test_handle_id() {
+        test_roundtrip(HandleId::new("test-handle").unwrap());
+        test_invalid::<HandleId>(b"bad id");
+        test_invalid::<HandleId>(b"");
+        test_invalid::<HandleId>(&b"a".repeat(graft_core::handle_id::MAX_HANDLE_ID_LEN + 1));
     }
 
     #[graft_test::test]
-    fn handle_key_invalid() {
-        // invalid characters
-        let slice: Slice = Slice::from("bad id");
-        let err: Culprit<KeyDecodeErr> = HandleKey::try_from(slice).err().unwrap();
-        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidHandleId(_));
-
-        // empty
-        let slice: Slice = Slice::from("");
-        let err: Culprit<KeyDecodeErr> = HandleKey::try_from(slice).err().unwrap();
-        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidHandleId(_));
-
-        // too long
-        let long = "a".repeat(graft_core::handle_id::MAX_HANDLE_ID_LEN + 1);
-        let slice: Slice = long.as_bytes().into();
-        let err: Culprit<KeyDecodeErr> = HandleKey::try_from(slice).err().unwrap();
-        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidHandleId(_));
+    fn test_volume_id() {
+        test_roundtrip(VolumeId::random());
+        test_roundtrip(VolumeId::EMPTY);
+        test_invalid::<VolumeId>(b"");
+        test_invalid::<VolumeId>(b"asdf");
+        test_invalid::<VolumeId>(SegmentId::random().as_bytes());
     }
 
     #[graft_test::test]
-    fn volume_key_roundtrip() {
-        let vid = VolumeId::random();
-        for prop in [VolumeProp::Control, VolumeProp::Checkpoints] {
-            let key = VolumeKey::new(vid.clone(), prop);
-            let slice: Slice = key.clone().into();
-            let parsed: VolumeKey = slice.try_into().unwrap();
-            assert_eq!(parsed, key);
-        }
-    }
-
-    #[graft_test::test]
-    fn volume_key_try_ref_from_bytes() {
-        let vid = VolumeId::random();
-        for prop in [VolumeProp::Control, VolumeProp::Checkpoints] {
-            let key = VolumeKey::new(vid.clone(), prop);
-            let slice: Slice = key.clone().into();
-            let parsed: &VolumeKey = VolumeKey::try_ref_from_bytes(slice.as_ref()).unwrap();
-            assert_eq!(parsed, &key);
-        }
-    }
-
-    #[graft_test::test]
-    fn volume_key_invalid() {
-        let vid = VolumeId::random();
-
-        // wrong size (missing property byte)
-        let mut bytes = vid.as_bytes().to_vec();
-        let slice: Slice = bytes.clone().into();
-        let err: Culprit<KeyDecodeErr> = VolumeKey::try_from(slice).err().unwrap();
-        assert_matches!(
-            *err.ctx(),
-            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
-        );
-
-        // empty
-        let slice: Slice = Slice::from("");
-        let err: Culprit<KeyDecodeErr> = VolumeKey::try_from(slice).err().unwrap();
-        assert_matches!(
-            *err.ctx(),
-            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
-        );
-
-        // invalid enum tag
-        bytes.push(0xff);
-        let slice: Slice = bytes.into();
-        let err: Culprit<KeyDecodeErr> = VolumeKey::try_from(slice).err().unwrap();
-        assert_matches!(
-            *err.ctx(),
-            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidData)
-        );
-    }
-
-    #[graft_test::test]
-    fn commit_key_roundtrip() {
-        let vid = VolumeId::random();
-        let lsn = LSN::new(123);
-
-        let mut buf = BytesMut::with_capacity(16 + 8);
-        buf.extend_from_slice(vid.as_bytes());
-        buf.extend_from_slice(CBE64::from(lsn).as_bytes());
-        let slice: Slice = buf.freeze().into();
-
-        let parsed: CommitKey = slice.clone().try_into().unwrap();
-        assert_eq!(parsed.vid(), &vid);
-        assert_eq!(parsed.lsn(), &lsn);
-
-        let mut buf = BytesMut::with_capacity(16 + 8);
-        buf.extend_from_slice(parsed.vid().as_bytes());
-        buf.extend_from_slice(CBE64::from(*parsed.lsn()).as_bytes());
-        let encoded: Slice = buf.freeze().into();
-        assert_eq!(slice.as_ref(), encoded.as_ref());
-    }
-
-    #[graft_test::test]
-    fn commit_key_invalid() {
-        let vid = VolumeId::random();
+    fn test_commit_key() {
+        test_roundtrip(CommitKey::new(VolumeId::random(), LSN::new(123)));
 
         // zero LSN is invalid
-        let mut builder = BytesMut::new();
-        builder.extend_from_slice(vid.as_bytes());
-        builder.extend_from_slice(CBE64::new(0).as_bytes());
-        let slice: Slice = builder.freeze().into();
-        let err: Culprit<KeyDecodeErr> = CommitKey::try_from(slice).err().unwrap();
-        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidLSN(_));
-
-        // wrong size
-        let slice: Slice = Slice::from("short");
-        let err: Culprit<KeyDecodeErr> = CommitKey::try_from(slice).err().unwrap();
-        assert_matches!(
-            *err.ctx(),
-            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
+        test_invalid::<CommitKey>(
+            SerializedCommitKey {
+                vid: VolumeId::random(),
+                lsn: CBE64::new(0),
+            }
+            .as_bytes(),
         );
 
-        // empty
-        let slice: Slice = Slice::from("");
-        let err: Culprit<KeyDecodeErr> = CommitKey::try_from(slice).err().unwrap();
-        assert_matches!(
-            *err.ctx(),
-            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
-        );
+        test_invalid::<CommitKey>(b"short");
+        test_invalid::<CommitKey>(b"");
+
+        // CommitKeys must naturally sort in descending order by LSN
+        let vid1: VolumeId = "GonvRDHqjHwNsCpPBET3Ly".parse().unwrap();
+        let vid2: VolumeId = "GonvRDHruDyBB6s6RmuiSZ".parse().unwrap();
+        test_serialized_order(&[
+            CommitKey::new(vid1.clone(), LSN::new(4)),
+            CommitKey::new(vid1.clone(), LSN::new(3)),
+            CommitKey::new(vid1.clone(), LSN::new(2)),
+            CommitKey::new(vid1.clone(), LSN::new(1)),
+            CommitKey::new(vid2.clone(), LSN::new(2)),
+            CommitKey::new(vid2.clone(), LSN::new(1)),
+        ]);
     }
 
     #[graft_test::test]
-    fn page_key_roundtrip() {
-        let sid = SegmentId::random();
-        let idx = PageIdx::new(5);
+    fn test_page_key() {
+        test_roundtrip(PageKey::new(SegmentId::random(), PageIdx::new(42)));
 
-        let mut buf = BytesMut::with_capacity(16 + 4);
-        buf.extend_from_slice(sid.as_bytes());
-        buf.extend_from_slice(CBE32::from(idx).as_bytes());
-        let slice: Slice = buf.freeze().into();
-
-        let parsed: PageKey = slice.clone().try_into().unwrap();
-        assert_eq!(parsed.sid(), &sid);
-        assert_eq!(parsed.pageidx(), &idx);
-
-        let mut buf = BytesMut::with_capacity(16 + 4);
-        buf.extend_from_slice(parsed.sid().as_bytes());
-        buf.extend_from_slice(CBE32::from(*parsed.pageidx()).as_bytes());
-        let encoded: Slice = buf.freeze().into();
-        assert_eq!(slice.as_ref(), encoded.as_ref());
-    }
-
-    #[graft_test::test]
-    fn page_key_invalid() {
-        let sid = SegmentId::random();
-
-        // zero page index
-        let mut builder = BytesMut::new();
-        builder.extend_from_slice(sid.as_bytes());
-        builder.extend_from_slice(CBE32::new(0).as_bytes());
-        let slice: Slice = builder.freeze().into();
-        let err: Culprit<KeyDecodeErr> = PageKey::try_from(slice).err().unwrap();
-        assert_matches!(*err.ctx(), KeyDecodeErr::InvalidPageIdx(_));
-
-        // wrong size
-        let slice: Slice = Slice::from("short");
-        let err: Culprit<KeyDecodeErr> = PageKey::try_from(slice).err().unwrap();
-        assert_matches!(
-            *err.ctx(),
-            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
+        // zero page index is invalid
+        test_invalid::<PageKey>(
+            SerializedPageKey {
+                sid: SegmentId::random(),
+                pageidx: CBE32::new(0),
+            }
+            .as_bytes(),
         );
 
-        // empty
-        let slice: Slice = Slice::from("");
-        let err: Culprit<KeyDecodeErr> = PageKey::try_from(slice).err().unwrap();
-        assert_matches!(
-            *err.ctx(),
-            KeyDecodeErr::CorruptKey(ZerocopyErr::InvalidSize)
-        );
+        test_invalid::<PageKey>(b"short");
+        test_invalid::<PageKey>(b"");
+
+        // PageKeys must naturally sort in descending order by page index
+        let sid1: SegmentId = "LkykngWAEj8KaTkYeg5ZBY".parse().unwrap();
+        let sid2: SegmentId = "LkykngWBbT1v8zGaRpdbpK".parse().unwrap();
+        test_serialized_order(&[
+            PageKey::new(sid1.clone(), PageIdx::new(4)),
+            PageKey::new(sid1.clone(), PageIdx::new(3)),
+            PageKey::new(sid1.clone(), PageIdx::new(2)),
+            PageKey::new(sid1.clone(), PageIdx::new(1)),
+            PageKey::new(sid2.clone(), PageIdx::new(2)),
+            PageKey::new(sid2.clone(), PageIdx::new(1)),
+        ]);
     }
 }

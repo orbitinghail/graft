@@ -13,6 +13,7 @@ static STATIC_EMPTY_PAGE: [u8; PAGESIZE.as_usize()] = [0; PAGESIZE.as_usize()];
 pub const EMPTY_PAGE: Page = Page(Bytes::from_static(&STATIC_EMPTY_PAGE));
 
 #[derive(Clone, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct Page(Bytes);
 
 impl Page {
