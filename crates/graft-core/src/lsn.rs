@@ -199,11 +199,11 @@ impl From<LSN> for CBE64 {
     }
 }
 
-impl TryFrom<&CBE64> for LSN {
+impl TryFrom<CBE64> for LSN {
     type Error = InvalidLSN;
 
     #[inline]
-    fn try_from(cbe: &CBE64) -> Result<Self, Self::Error> {
+    fn try_from(cbe: CBE64) -> Result<Self, Self::Error> {
         cbe.get().try_into()
     }
 }

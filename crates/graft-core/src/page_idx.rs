@@ -224,11 +224,11 @@ impl From<PageIdx> for CBE32 {
     }
 }
 
-impl TryFrom<&CBE32> for PageIdx {
+impl TryFrom<CBE32> for PageIdx {
     type Error = ConvertToPageIdxErr;
 
     #[inline]
-    fn try_from(cbe: &CBE32) -> Result<Self, Self::Error> {
+    fn try_from(cbe: CBE32) -> Result<Self, Self::Error> {
         cbe.get().try_into()
     }
 }
