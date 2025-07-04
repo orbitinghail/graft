@@ -9,8 +9,13 @@ use crate::derive_newtype_proxy;
 pub const MAX_HANDLE_ID_LEN: usize = 128;
 
 #[derive(Debug, Error)]
-#[error("Invalid handle ID")]
-pub struct HandleIdErr;
+pub enum HandleIdErr {
+    #[error("Handle IDs must conform to the regex: ^[-_a-zA-Z0-9]{{0,128}}$")]
+    InvalidFormat,
+
+    #[error("Handle ID must be a valid UTF-8 string")]
+    InvalidUtf8(#[from] std::str::Utf8Error),
+}
 
 /// Represents a `VolumeHandle`'s id. `HandleIds` are human readable, but must
 /// conform to the regex: `^[-_a-zA-Z0-9]{0,128}$`
@@ -40,7 +45,7 @@ impl HandleId {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
         {
-            Err(HandleIdErr)
+            Err(HandleIdErr::InvalidFormat)
         } else {
             Ok(raw)
         }
@@ -57,7 +62,7 @@ impl TryFrom<&[u8]> for HandleId {
     type Error = HandleIdErr;
 
     fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        let raw_str = std::str::from_utf8(raw).map_err(|_| HandleIdErr)?;
+        let raw_str = std::str::from_utf8(raw)?;
         raw_str.parse()
     }
 }
@@ -67,6 +72,14 @@ impl TryFrom<ByteString> for HandleId {
 
     fn try_from(raw: ByteString) -> Result<Self, Self::Error> {
         Self::validate(raw).map(HandleId)
+    }
+}
+
+impl TryFrom<Bytes> for HandleId {
+    type Error = HandleIdErr;
+
+    fn try_from(raw: Bytes) -> Result<Self, Self::Error> {
+        Ok(Self::try_from(ByteString::try_from(raw)?)?)
     }
 }
 
