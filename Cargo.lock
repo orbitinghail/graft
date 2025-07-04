@@ -1376,7 +1376,9 @@ dependencies = [
  "graft-test",
  "graft-tracing",
  "precept",
+ "rand",
  "splinter-rs",
+ "static_assertions",
  "thiserror 2.0.12",
  "zerocopy",
 ]
