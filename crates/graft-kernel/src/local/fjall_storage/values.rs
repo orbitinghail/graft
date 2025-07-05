@@ -1,18 +1,16 @@
-use bilrost::{Message, OwnedMessage};
 use bytes::Bytes;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
 use graft_core::{
-    codec::v1::{local, remote},
-    page::Page,
+    codec::Codec, commit::Commit, page::Page, volume_handle::VolumeHandle, volume_meta::VolumeMeta,
 };
 
 use crate::local::fjall_storage::fjall_repr::{DecodeErr, FjallRepr};
 
-macro_rules! bilrost_fjall_repr {
+macro_rules! codec_as_fjall_repr {
     ($($ty:ty),+) => {
         $(
-            static_assertions::assert_impl_all!($ty: bilrost::Message, bilrost::OwnedMessage);
+            static_assertions::assert_impl_all!($ty: Codec);
 
             impl FjallRepr for $ty {
                 #[inline]
@@ -23,14 +21,14 @@ macro_rules! bilrost_fjall_repr {
                 #[inline]
                 fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr>
                 {
-                    Ok(<$ty>::decode(Bytes::from(slice))?)
+                    Ok(<$ty>::decode(Bytes::from(slice)).or_into_ctx()?)
                 }
             }
         )+
     };
 }
 
-bilrost_fjall_repr!(remote::Commit, local::VolumeHandle, local::LocalControl);
+codec_as_fjall_repr!(Commit, VolumeHandle, VolumeMeta);
 
 impl FjallRepr for Page {
     #[inline]
@@ -71,7 +69,7 @@ mod tests {
     }
 
     #[graft_test::test]
-    fn test_local_control() {
-        // test local::LocalControl
+    fn test_volume_meta() {
+        // test local::VolumeMeta
     }
 }

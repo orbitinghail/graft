@@ -12,43 +12,43 @@ use crate::{
 pub struct VolumeRef {
     /// The referenced Volume ID
     #[bilrost(1)]
-    vid: VolumeId,
+    pub vid: VolumeId,
 
     /// The referenced LSN.
     #[bilrost(2)]
-    lsn: LSN,
+    pub lsn: LSN,
 }
 
 /// A Volume has a top level control file stored at
 /// `{prefix}/{vid}/control`
 /// Control files are immutable.
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
-pub struct Control {
+pub struct VolumeControl {
     /// The Volume's ID
     #[bilrost(1)]
-    vid: VolumeId,
+    pub vid: VolumeId,
 
     /// The parent reference if this Volume is a fork.
     #[bilrost(2)]
-    parent: Option<VolumeRef>,
+    pub parent: Option<VolumeRef>,
 
     /// The creation timestamp of this Volume.
     #[bilrost(3)]
-    created_at: SystemTime,
+    pub created_at: SystemTime,
 }
 
 /// When a Volume is forked, a ref is first written to the parent Volume:
 /// `{prefix}/{parent-vid}/forks/{fork-vid}`
 /// Forks are immutable.
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
-pub struct Fork {
+pub struct VolumeFork {
     /// The VID of the fork.
     #[bilrost(1)]
-    vid: VolumeId,
+    pub vid: VolumeId,
 
     /// The fork point. Must match the parent field in the Fork's Control file.
     #[bilrost(2)]
-    parent: VolumeRef,
+    pub parent: VolumeRef,
 }
 
 /// A Volume's `CheckpointSet` is stored at `{prefix}/{vid}/checkpoints`.
@@ -57,11 +57,11 @@ pub struct Fork {
 pub struct CheckpointSet {
     /// The ID of the Volume containing this `CheckpointSet`
     #[bilrost(1)]
-    vid: VolumeId,
+    pub vid: VolumeId,
 
     /// The set of checkpoint LSNs.
     #[bilrost(2)]
-    lsns: SmallVec<[LSN; 2]>,
+    pub lsns: SmallVec<[LSN; 2]>,
 }
 
 /// A Volume Snapshot.
@@ -69,15 +69,15 @@ pub struct CheckpointSet {
 pub struct Snapshot {
     /// The Volume's ID
     #[bilrost(1)]
-    vid: VolumeId,
+    pub vid: VolumeId,
 
     /// The Snapshot LSN
     #[bilrost(2)]
-    lsn: LSN,
+    pub lsn: LSN,
 
     /// The Volume's `PageCount` at this LSN.
     #[bilrost(3)]
-    page_count: PageCount,
+    pub page_count: PageCount,
 }
 
 /// Commits are stored at `{prefix}/{vid}/log/{lsn}`.
@@ -89,48 +89,48 @@ pub struct Snapshot {
 pub struct Commit {
     /// The Volume Snapshot at this Commit.
     #[bilrost(1)]
-    snapshot: Snapshot,
+    pub snapshot: Snapshot,
 
     /// An optional `CommitHash` for this Commit.
     /// Always present on Remote Volume commits.
     /// May be omitted on Local commits.
     #[bilrost(2)]
-    commit_hash: Option<CommitHash>,
+    pub commit_hash: Option<CommitHash>,
 
     /// If this Commit contains any pages, `segment_ref` records details on the
     /// relevant Segment.
     #[bilrost(3)]
-    segment_ref: Option<SegmentRef>,
+    pub segment_ref: Option<SegmentRef>,
 
     /// If this commit is a checkpoint, this timestamp is set and records the time
     /// the commit was made a checkpoint
     #[bilrost(4)]
-    checkpointed_at: Option<SystemTime>,
+    pub checkpointed_at: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct SegmentRef {
     /// The Segment ID
     #[bilrost(1)]
-    sid: SegmentId,
+    pub sid: SegmentId,
 
     /// The Graft of `PageIdxs` contained by this Segment.
     #[bilrost(2)]
-    graft: Graft,
+    pub graft: Graft,
 
     /// An index of `SegmentFrames` contained by this Segment.
     /// Empty on local Segments which have not been encoded and uploaded to object storage.
     #[bilrost(3)]
-    frames: SmallVec<[SegmentFrame; 2]>,
+    pub frames: SmallVec<[SegmentFrame; 2]>,
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct SegmentFrame {
     /// The number of Pages contained in this `SegmentFrame`.
     #[bilrost(1)]
-    page_count: PageCount,
+    pub page_count: PageCount,
 
     /// The last `PageIdx` contained by this `SegmentFrame`.
     #[bilrost(2)]
-    last_pageidx: PageIdx,
+    pub last_pageidx: PageIdx,
 }
