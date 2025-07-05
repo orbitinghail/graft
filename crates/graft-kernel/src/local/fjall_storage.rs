@@ -1,11 +1,6 @@
 use graft_core::{
-    VolumeId,
-    codec::v1::{
-        local::{LocalControl, VolumeHandle},
-        remote::Commit,
-    },
-    handle_id::HandleId,
-    page::Page,
+    VolumeId, commit::Commit, handle_id::HandleId, lsn::LSN, page::Page,
+    volume_handle::VolumeHandle, volume_meta::VolumeMeta, volume_ref::VolumeRef,
 };
 
 use crate::local::fjall_storage::{
@@ -27,9 +22,9 @@ pub struct FjallStorage {
     handles: TypedPartition<HandleId, VolumeHandle>,
 
     /// This partition stores metadata about each Volume
-    /// {vid} -> LocalControl
+    /// {vid} -> VolumeMeta
     /// Keyed by `keys::VolumeKey`
-    volumes: TypedPartition<VolumeId, LocalControl>,
+    volumes: TypedPartition<VolumeId, VolumeMeta>,
 
     /// This partition stores commits
     /// {vid} / {lsn} -> Commit
@@ -40,4 +35,9 @@ pub struct FjallStorage {
     /// {sid} / {pageidx} -> Page
     /// Keyed by `keys::PageKey`
     pages: TypedPartition<PageKey, Page>,
+}
+
+fn foo() {
+    let vr = VolumeRef::new(VolumeId::random(), LSN::FIRST);
+    vr.lsn;
 }

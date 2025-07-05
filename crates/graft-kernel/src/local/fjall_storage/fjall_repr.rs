@@ -9,8 +9,8 @@ use graft_core::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeErr {
-    #[error("Bilrost error: {0}")]
-    Bilrost(#[from] bilrost::DecodeError),
+    #[error("Encoding error: {0}")]
+    Codec(#[from] graft_core::codec::DecodeErr),
 
     #[error(transparent)]
     PageSizeErr(#[from] graft_core::page::PageSizeErr),
