@@ -1,6 +1,7 @@
+use bilrost::encoding::PlainBytes;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-use crate::{byte_unit::ByteUnit, derive_zerocopy_encoding};
+use crate::{byte_unit::ByteUnit, derive_newtype_proxy, derive_zerocopy_encoding};
 
 const HASH_SIZE: ByteUnit = ByteUnit::new(32);
 
@@ -46,7 +47,7 @@ impl From<CommitHash> for [u8; HASH_SIZE.as_usize()] {
 static_assertions::assert_eq_size!(CommitHash, [u8; HASH_SIZE.as_usize()]);
 
 derive_zerocopy_encoding!(
-    encode borrowed type (CommitHash)
+    encode type (CommitHash)
     with size (HASH_SIZE.as_usize())
     with empty (CommitHash::ZERO)
 );
@@ -54,10 +55,8 @@ derive_zerocopy_encoding!(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codec::zerocopy_encoding::CowEncoding;
     use assert_matches::assert_matches;
     use bilrost::{BorrowedMessage, Message, OwnedMessage};
-    use std::borrow::Cow;
 
     #[graft_test::test]
     fn test_bilrost() {
@@ -70,21 +69,5 @@ mod tests {
         let b = msg.encode_to_bytes();
         let decoded: TestMsg = TestMsg::decode(b).unwrap();
         assert_eq!(decoded, msg, "Decoded message does not match original");
-    }
-
-    #[graft_test::test]
-    fn test_bilrost_borrowed() {
-        #[derive(Message, Debug, PartialEq, Eq)]
-        struct TestMsg<'a> {
-            #[bilrost(encoding(CowEncoding))]
-            hash: Option<Cow<'a, CommitHash>>,
-        }
-        let msg = TestMsg {
-            hash: Some(Cow::Owned(CommitHash::random())),
-        };
-        let b = msg.encode_to_vec();
-        let decoded = TestMsg::decode_borrowed(b.as_slice()).unwrap();
-        assert_eq!(decoded, msg, "Decoded message does not match original");
-        assert_matches!(decoded.hash, Some(Cow::Borrowed(_)));
     }
 }
