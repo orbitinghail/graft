@@ -1,6 +1,6 @@
 use std::{fmt::Debug, ops::Deref};
 
-use bytes::{Bytes, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use culprit::Culprit;
 use thiserror::Error;
 
@@ -12,6 +12,25 @@ static_assertions::const_assert!(PAGESIZE.is_power_of_two());
 static STATIC_EMPTY_PAGE: [u8; PAGESIZE.as_usize()] = [0; PAGESIZE.as_usize()];
 pub const EMPTY_PAGE: Page = Page(Bytes::from_static(&STATIC_EMPTY_PAGE));
 
+#[derive(Debug, Error)]
+#[error("Pages must have size {PAGESIZE}")]
+pub struct PageSizeErr;
+
+impl PageSizeErr {
+    #[track_caller]
+    fn check(size: usize) -> Result<(), Culprit<Self>> {
+        if size != PAGESIZE.as_usize() {
+            let size = ByteUnit::new(size as u64);
+            Err(Culprit::new_with_note(
+                Self,
+                format!("invalid page size {size}"),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Page(Bytes);
@@ -20,6 +39,11 @@ impl Page {
     /// Returns true if all of the page's bytes are 0.
     pub fn is_empty(&self) -> bool {
         self.0.as_ref() == STATIC_EMPTY_PAGE
+    }
+
+    pub fn from_buf<T: Buf>(mut buf: T) -> Result<Self, Culprit<PageSizeErr>> {
+        PageSizeErr::check(buf.remaining())?;
+        Ok(Page(buf.copy_to_bytes(buf.remaining())))
     }
 }
 
@@ -36,10 +60,6 @@ impl AsRef<[u8]> for Page {
         &self.0
     }
 }
-
-#[derive(Debug, Error)]
-#[error("Pages must have size {PAGESIZE}")]
-pub struct PageSizeErr;
 
 impl From<&[u8; PAGESIZE.as_usize()]> for Page {
     fn from(value: &[u8; PAGESIZE.as_usize()]) -> Self {
@@ -71,14 +91,7 @@ impl TryFrom<Bytes> for Page {
     type Error = Culprit<PageSizeErr>;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
-        if value.len() != PAGESIZE.as_usize() {
-            let size = ByteUnit::new(value.len() as u64);
-            return Err(Culprit::new_with_note(
-                PageSizeErr,
-                format!("invalid page size {size}"),
-            ));
-        }
-
+        PageSizeErr::check(value.len())?;
         Ok(Page(value))
     }
 }
@@ -87,14 +100,7 @@ impl TryFrom<&[u8]> for Page {
     type Error = Culprit<PageSizeErr>;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() != PAGESIZE.as_usize() {
-            let size = ByteUnit::new(value.len() as u64);
-            return Err(Culprit::new_with_note(
-                PageSizeErr,
-                format!("invalid page size {size}"),
-            ));
-        }
-
+        PageSizeErr::check(value.len())?;
         Ok(Page(Bytes::copy_from_slice(value)))
     }
 }
