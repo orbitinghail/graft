@@ -1378,9 +1378,12 @@ dependencies = [
  "lsm-tree",
  "precept",
  "rand",
+ "smallvec",
  "splinter-rs",
  "static_assertions",
+ "tempfile",
  "thiserror 2.0.12",
+ "tracing",
  "tryiter",
  "zerocopy",
 ]

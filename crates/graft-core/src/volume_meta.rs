@@ -21,5 +21,5 @@ pub struct VolumeMeta {
 
     /// The set of checkpoint LSNs.
     #[bilrost(4)]
-    lsns: SmallVec<[LSN; 2]>,
+    checkpoints: SmallVec<[LSN; 2]>,
 }
