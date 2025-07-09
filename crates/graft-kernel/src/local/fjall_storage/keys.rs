@@ -4,51 +4,22 @@ use fjall::Slice;
 use graft_core::{
     PageIdx, SegmentId, VolumeId,
     cbe::{CBE32, CBE64},
-    handle_id::{HandleId, HandleIdErr},
-    lsn::{InvalidLSN, LSN},
-    page_idx::ConvertToPageIdxErr,
-    zerocopy_ext::{TryFromBytesExt, ZerocopyErr},
+    handle_id::HandleId,
+    lsn::LSN,
+    zerocopy_ext::TryFromBytesExt,
 };
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
-#[derive(Debug, thiserror::Error)]
-pub enum DecodeErr {
-    #[error("Invalid LSN: {0}")]
-    InvalidLSN(#[from] InvalidLSN),
-
-    #[error("Zerocopy error: {0}")]
-    Zerocopy(#[from] ZerocopyErr),
-
-    #[error("Invalid page index: {0}")]
-    InvalidPageIdx(#[from] ConvertToPageIdxErr),
-
-    #[error("Invalid handle ID: {0}")]
-    InvalidHandleId(#[from] HandleIdErr),
-
-    #[error("Invalid VolumeID: {0}")]
-    GidParseErr(#[from] graft_core::gid::GidParseErr),
-}
-
-pub trait FjallKey: Sized {
-    /// Converts the key into a type that can be cheaply converted into a byte
-    /// slice. For ZeroCopy types, this may simply be the raw bytes of the key.
-    fn as_slice(&self) -> impl AsRef<[u8]>;
-
-    /// Converts a Fjall Slice into a Key.
-    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr>;
-
-    /// Converts the Key into a Fjall Slice
-    #[inline]
-    fn into_slice(self) -> Slice {
-        Slice::new(self.as_slice().as_ref())
-    }
-}
+use crate::{
+    local::fjall_storage::fjall_repr::{DecodeErr, FjallRepr},
+    proxy_to_fjall_repr,
+};
 
 pub trait FjallKeyPrefix {
     type Prefix: AsRef<[u8]>;
 }
 
-impl FjallKey for HandleId {
+impl FjallRepr for HandleId {
     #[inline]
     fn as_slice(&self) -> impl AsRef<[u8]> {
         self.as_bytes()
@@ -65,7 +36,7 @@ impl FjallKey for HandleId {
     }
 }
 
-impl FjallKey for VolumeId {
+impl FjallRepr for VolumeId {
     #[inline]
     fn as_slice(&self) -> impl AsRef<[u8]> {
         self.as_bytes()
@@ -75,28 +46,6 @@ impl FjallKey for VolumeId {
     fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
         VolumeId::try_from(Bytes::from(slice)).or_into_ctx()
     }
-}
-
-macro_rules! proxy_key_codec {
-    (
-        encode key ($key:ty) using proxy ($proxy:ty)
-        into_proxy(&$self:ident) $into_proxy:block
-        from_proxy($iproxy:ident) $from_proxy:block
-    ) => {
-        impl FjallKey for $key {
-            #[inline]
-            fn as_slice(&$self) -> impl AsRef<[u8]> {
-                $into_proxy
-            }
-
-            #[inline]
-            fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-                let $iproxy: &$proxy =
-                    <$proxy>::try_ref_from_unaligned_bytes(&slice).or_into_ctx()?;
-                $from_proxy
-            }
-        }
-    };
 }
 
 /// Key for the `log` partition
@@ -141,8 +90,8 @@ impl FjallKeyPrefix for CommitKey {
     type Prefix = VolumeId;
 }
 
-proxy_key_codec!(
-    encode key (CommitKey) using proxy (SerializedCommitKey)
+proxy_to_fjall_repr!(
+    encode (CommitKey) using proxy (SerializedCommitKey)
     into_proxy(&self) {
         SerializedCommitKey {
             vid: self.vid.clone(),
@@ -199,8 +148,8 @@ impl FjallKeyPrefix for PageKey {
     type Prefix = SegmentId;
 }
 
-proxy_key_codec!(
-    encode key (PageKey) using proxy (SerializedPageKey)
+proxy_to_fjall_repr!(
+    encode (PageKey) using proxy (SerializedPageKey)
     into_proxy(&self) {
         SerializedPageKey {
             sid: self.sid.clone(),
@@ -217,49 +166,11 @@ proxy_key_codec!(
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Debug;
+    use crate::local::fjall_storage::fjall_repr::testutil::{
+        test_invalid, test_roundtrip, test_serialized_order,
+    };
 
     use super::*;
-
-    /// Tests that a FjallKey value can be encoded to a slice and then decoded back to the original value.
-    #[track_caller]
-    fn test_roundtrip<T>(value: T)
-    where
-        T: FjallKey + PartialEq + Clone + Debug,
-    {
-        let slice = value.clone().into_slice();
-        let decoded = T::try_from_slice(slice).expect("Failed to decode");
-        assert_eq!(value, decoded, "Roundtrip failed");
-    }
-
-    /// Tests that a FjallKey value correctly fails to decode invalid data.
-    #[track_caller]
-    fn test_invalid<T: FjallKey>(slice: &[u8]) {
-        assert!(
-            T::try_from_slice(Slice::from(slice)).is_err(),
-            "Expected error for invalid slice"
-        );
-    }
-
-    /// Tests that a FjallKey type serializes to the expected ordering.
-    #[track_caller]
-    fn test_serialized_order<T>(values: &[T])
-    where
-        T: FjallKey + PartialEq + Clone + Debug,
-    {
-        // serialize every element of T into a list of Slice
-        let mut slices: Vec<Slice> = values.iter().cloned().map(|v| v.into_slice()).collect();
-
-        // then sort the list of slices by their natural bytewise order
-        slices.sort();
-
-        // then verify that the resulting list of slices is in the same order as
-        // the values array
-        for (i, slice) in slices.into_iter().enumerate() {
-            let decoded = T::try_from_slice(slice).expect("Failed to decode");
-            assert_eq!(decoded, values[i], "Order mismatch at index {}", i);
-        }
-    }
 
     #[graft_test::test]
     fn test_handle_id() {
