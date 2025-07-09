@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 
 use crate::{VolumeId, lsn::LSN, volume_ref::VolumeRef};
 
-#[derive(Debug, Clone, Message, PartialEq, Eq)]
+#[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct VolumeMeta {
     /// The Volume's ID
     #[bilrost(1)]
@@ -17,9 +17,20 @@ pub struct VolumeMeta {
     /// The etag from the last time we pulled the `CheckpointSet`, used to only pull
     /// changed `CheckpointSets`
     #[bilrost(3)]
-    etag: Bytes,
+    etag: Option<Bytes>,
 
     /// The set of checkpoint LSNs.
     #[bilrost(4)]
     checkpoints: SmallVec<[LSN; 2]>,
+}
+
+impl VolumeMeta {
+    pub fn new(
+        vid: VolumeId,
+        parent: Option<VolumeRef>,
+        etag: Option<Bytes>,
+        checkpoints: SmallVec<[LSN; 2]>,
+    ) -> Self {
+        Self { vid, parent, etag, checkpoints }
+    }
 }
