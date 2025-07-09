@@ -3,7 +3,7 @@ use bilrost::Message;
 use crate::{VolumeId, lsn::LSN};
 
 /// A reference to a Volume at a particular LSN.
-#[derive(Debug, Clone, Message, PartialEq, Eq)]
+#[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct VolumeRef {
     /// The referenced Volume ID
     #[bilrost(1)]

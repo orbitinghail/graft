@@ -1,9 +1,9 @@
 use bilrost::Message;
 
-use crate::{PageCount, VolumeId, lsn::LSN};
+use crate::{PageCount, VolumeId, commit::Commit, lsn::LSN};
 
 /// A Volume Snapshot.
-#[derive(Debug, Clone, Message, PartialEq, Eq)]
+#[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct Snapshot {
     /// The Volume's ID
     #[bilrost(1)]
@@ -18,4 +18,14 @@ pub struct Snapshot {
     page_count: PageCount,
 }
 
-impl Snapshot {}
+impl Snapshot {
+    pub fn new(vid: VolumeId, lsn: LSN, page_count: PageCount) -> Self {
+        Self { vid, lsn, page_count }
+    }
+}
+
+impl From<Snapshot> for Commit {
+    fn from(snapshot: Snapshot) -> Self {
+        Commit::new(snapshot.vid, snapshot.lsn, snapshot.page_count)
+    }
+}

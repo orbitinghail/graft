@@ -2,7 +2,7 @@ use bilrost::Message;
 
 use crate::{commit_hash::CommitHash, handle_id::HandleId, lsn::LSN, volume_ref::VolumeRef};
 
-#[derive(Debug, Clone, Message, PartialEq, Eq)]
+#[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct VolumeHandle {
     /// The Handle ID
     #[bilrost(1)]
@@ -35,4 +35,31 @@ pub struct PendingCommit {
     /// while attempting to push.
     #[bilrost(2)]
     commit_hash: CommitHash,
+}
+
+impl VolumeHandle {
+    pub fn new(
+        id: HandleId,
+        local: VolumeRef,
+        remote: Option<VolumeRef>,
+        pending_commit: Option<PendingCommit>,
+    ) -> Self {
+        Self { id, local, remote, pending_commit }
+    }
+
+    pub fn id(&self) -> &HandleId {
+        &self.id
+    }
+
+    pub fn local(&self) -> &VolumeRef {
+        &self.local
+    }
+
+    pub fn remote(&self) -> Option<&VolumeRef> {
+        self.remote.as_ref()
+    }
+
+    pub fn pending_commit(&self) -> Option<&PendingCommit> {
+        self.pending_commit.as_ref()
+    }
 }

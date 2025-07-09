@@ -4,7 +4,8 @@ use bilrost::Message;
 use smallvec::SmallVec;
 
 use crate::{
-    PageCount, PageIdx, SegmentId, commit_hash::CommitHash, graft::Graft, snapshot::Snapshot,
+    PageCount, PageIdx, SegmentId, VolumeId, commit_hash::CommitHash, graft::Graft, lsn::LSN,
+    snapshot::Snapshot,
 };
 
 /// Commits are stored at `{prefix}/{vid}/log/{lsn}`.
@@ -12,7 +13,7 @@ use crate::{
 /// changed. This happens when the Volume is extended or truncated without
 /// additional writes.
 /// Commits are immutable.
-#[derive(Debug, Clone, Message, PartialEq, Eq)]
+#[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct Commit {
     /// The Volume Snapshot at this Commit.
     #[bilrost(1)]
@@ -60,4 +61,30 @@ pub struct SegmentFrame {
     /// The last `PageIdx` contained by this `SegmentFrame`.
     #[bilrost(2)]
     last_pageidx: PageIdx,
+}
+
+impl Commit {
+    /// Creates a new Commit for the given snapshot info
+    pub fn new(vid: VolumeId, lsn: LSN, page_count: PageCount) -> Self {
+        Self {
+            snapshot: Snapshot::new(vid, lsn, page_count),
+            commit_hash: None,
+            segment_ref: None,
+            checkpointed_at: None,
+        }
+    }
+
+    pub fn with_commit_hash(self, commit_hash: Option<CommitHash>) -> Self {
+        Self { commit_hash, ..self }
+    }
+
+    /// Sets the segment reference for this commit.
+    pub fn with_segment_ref(self, segment_ref: Option<SegmentRef>) -> Self {
+        Self { segment_ref, ..self }
+    }
+
+    /// Sets the checkpointed timestamp for this commit.
+    pub fn with_checkpointed_at(self, checkpointed_at: Option<SystemTime>) -> Self {
+        Self { checkpointed_at, ..self }
+    }
 }

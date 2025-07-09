@@ -70,7 +70,7 @@ macro_rules! proxy_to_fjall_repr {
 #[cfg(test)]
 pub mod testutil {
     use super::*;
-    use std::fmt::Debug;
+    use std::{fmt::Debug, ops::Deref};
 
     /// Tests that a FjallRepr value can be encoded to a slice and then decoded back to the original value.
     #[track_caller]
@@ -89,6 +89,16 @@ pub mod testutil {
         assert!(
             T::try_from_slice(Slice::from(slice)).is_err(),
             "Expected error for invalid slice"
+        );
+    }
+
+    /// Tests that a FjallRepr value decodes empty data into it's default repr.
+    #[track_caller]
+    pub fn test_empty_default<T: FjallRepr + Default + Debug + PartialEq>() {
+        assert_eq!(
+            T::try_from_slice(Slice::new(b"")).expect("failed to decode"),
+            T::default(),
+            "Expected empty slice to decode to default value"
         );
     }
 
