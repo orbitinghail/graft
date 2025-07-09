@@ -1375,11 +1375,13 @@ dependencies = [
  "graft-core",
  "graft-test",
  "graft-tracing",
+ "lsm-tree",
  "precept",
  "rand",
  "splinter-rs",
  "static_assertions",
  "thiserror 2.0.12",
+ "tryiter",
  "zerocopy",
 ]
 
