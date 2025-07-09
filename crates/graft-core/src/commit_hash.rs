@@ -1,7 +1,6 @@
-use bilrost::encoding::PlainBytes;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-use crate::{byte_unit::ByteUnit, derive_newtype_proxy, derive_zerocopy_encoding};
+use crate::{byte_unit::ByteUnit, derive_zerocopy_encoding};
 
 const HASH_SIZE: ByteUnit = ByteUnit::new(32);
 
@@ -55,8 +54,7 @@ derive_zerocopy_encoding!(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
-    use bilrost::{BorrowedMessage, Message, OwnedMessage};
+    use bilrost::{Message, OwnedMessage};
 
     #[graft_test::test]
     fn test_bilrost() {
