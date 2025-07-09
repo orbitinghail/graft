@@ -2,11 +2,7 @@ use std::path::Path;
 
 use fjall::PartitionCreateOptions;
 use graft_core::{
-    VolumeId,
-    codec::{self, BilrostCodec, PageCodec},
-    commit::Commit,
-    handle_id::HandleId,
-    volume_handle::VolumeHandle,
+    VolumeId, commit::Commit, handle_id::HandleId, page::Page, volume_handle::VolumeHandle,
     volume_meta::VolumeMeta,
 };
 
@@ -20,8 +16,10 @@ use crate::{
 
 use culprit::Result;
 
+mod fjall_repr;
 pub mod keys;
 mod typed_partition;
+mod values;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FjallStorageErr {
@@ -31,11 +29,8 @@ pub enum FjallStorageErr {
     #[error("Fjall LSM Tree error: {0}")]
     LsmTreeErr(#[from] lsm_tree::Error),
 
-    #[error("Codec error: {0}")]
-    CodecDecodeErr(#[from] codec::DecodeErr),
-
-    #[error("Key decode error: {0}")]
-    KeyDecodeErr(#[from] keys::DecodeErr),
+    #[error("Failed to decode key: {0}")]
+    DecodeErr(#[from] fjall_repr::DecodeErr),
 
     #[error("I/O Error: {0}")]
     IoErr(#[from] std::io::Error),
@@ -47,22 +42,22 @@ pub struct FjallStorage {
     /// This partition maps `VolumeHandle` IDs to `VolumeHandles`
     /// {`HandleId`} -> `VolumeHandle`
     /// Keyed by `keys::HandleKey`
-    handles: TypedPartition<HandleId, BilrostCodec<VolumeHandle>>,
+    handles: TypedPartition<HandleId, VolumeHandle>,
 
     /// This partition stores metadata about each Volume
     /// {vid} -> VolumeMeta
     /// Keyed by `keys::VolumeKey`
-    volumes: TypedPartition<VolumeId, BilrostCodec<VolumeMeta>>,
+    volumes: TypedPartition<VolumeId, VolumeMeta>,
 
     /// This partition stores commits
     /// {vid} / {lsn} -> Commit
     /// Keyed by `keys::CommitKey`
-    log: TypedPartition<CommitKey, BilrostCodec<Commit>>,
+    log: TypedPartition<CommitKey, Commit>,
 
     /// This partition stores Pages
     /// {sid} / {pageidx} -> Page
     /// Keyed by `keys::PageKey`
-    pages: TypedPartition<PageKey, PageCodec>,
+    pages: TypedPartition<PageKey, Page>,
 }
 
 impl FjallStorage {
@@ -93,7 +88,7 @@ impl FjallStorage {
 
     pub fn snapshot(&self, vid: &VolumeId) -> Result<Option<TrackedSnapshot>, FjallStorageErr> {
         let seqno = self.keyspace.instant();
-        if let Some(commit) = TypedPartition::snapshot_at(&self.log, seqno).first(vid)? {
+        if let Some(commit) = self.log.snapshot_at(seqno).first(vid)? {
             todo!("need to compute the commit's SearchPath")
         }
         Ok(None)
