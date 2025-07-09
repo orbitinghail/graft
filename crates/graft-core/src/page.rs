@@ -1,4 +1,7 @@
-use std::{fmt::Debug, ops::Deref};
+use std::{
+    fmt::Debug,
+    ops::{Index, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo},
+};
 
 use bytes::{Buf, Bytes, BytesMut};
 use culprit::Culprit;
@@ -45,19 +48,39 @@ impl Page {
         PageSizeErr::check(buf.remaining())?;
         Ok(Page(buf.copy_to_bytes(buf.remaining())))
     }
-}
 
-impl Deref for Page {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 }
 
+macro_rules! derive_index_ops {
+    ($($idx:ty),+) => {
+        $(
+            impl Index<$idx> for Page {
+                type Output = [u8];
+
+                #[inline]
+                fn index(&self, index: $idx) -> &Self::Output {
+                    &self.0.as_ref()[index]
+                }
+            }
+        )+
+    };
+}
+derive_index_ops!(
+    Range<usize>,
+    RangeTo<usize>,
+    RangeFrom<usize>,
+    RangeFull,
+    RangeInclusive<usize>
+);
+
 impl AsRef<[u8]> for Page {
+    #[inline]
     fn as_ref(&self) -> &[u8] {
-        &self.0
+        self.0.as_ref()
     }
 }
 

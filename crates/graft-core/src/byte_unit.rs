@@ -204,14 +204,16 @@ impl Serialize for ByteUnit {
 }
 
 impl<T: Into<ByteUnit> + Copy> PartialEq<T> for ByteUnit {
+    #[inline(always)]
     fn eq(&self, other: &T) -> bool {
-        self.0 == (*other).into().0
+        self.0 == Into::<ByteUnit>::into(*other).0
     }
 }
 
 impl<T: Into<ByteUnit> + Copy> PartialOrd<T> for ByteUnit {
+    #[inline(always)]
     fn partial_cmp(&self, other: &T) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&(*other).into().0)
+        self.0.partial_cmp(&Into::<ByteUnit>::into(*other).0)
     }
 }
 
@@ -220,7 +222,7 @@ impl<T: Into<ByteUnit>> Mul<T> for ByteUnit {
 
     #[inline(always)]
     fn mul(self, rhs: T) -> Self::Output {
-        ByteUnit(self.0.saturating_mul(rhs.into().0))
+        ByteUnit(self.0.saturating_mul(Into::<ByteUnit>::into(rhs).0))
     }
 }
 
@@ -229,7 +231,7 @@ impl<T: Into<ByteUnit>> Add<T> for ByteUnit {
 
     #[inline(always)]
     fn add(self, rhs: T) -> Self::Output {
-        ByteUnit(self.0.saturating_add(rhs.into().0))
+        ByteUnit(self.0.saturating_add(Into::<ByteUnit>::into(rhs).0))
     }
 }
 impl<T: Into<ByteUnit>> Sub<T> for ByteUnit {
@@ -237,7 +239,7 @@ impl<T: Into<ByteUnit>> Sub<T> for ByteUnit {
 
     #[inline(always)]
     fn sub(self, rhs: T) -> Self::Output {
-        ByteUnit(self.0.saturating_sub(rhs.into().0))
+        ByteUnit(self.0.saturating_sub(Into::<ByteUnit>::into(rhs).0))
     }
 }
 
@@ -246,7 +248,7 @@ impl<T: Into<ByteUnit>> Div<T> for ByteUnit {
 
     #[inline(always)]
     fn div(self, rhs: T) -> Self::Output {
-        ByteUnit(self.0.saturating_div(rhs.into().0))
+        ByteUnit(self.0.saturating_div(Into::<ByteUnit>::into(rhs).0))
     }
 }
 
@@ -255,7 +257,7 @@ impl<T: Into<ByteUnit>> Rem<T> for ByteUnit {
 
     #[inline(always)]
     fn rem(self, rhs: T) -> Self::Output {
-        let value = rhs.into().0;
+        let value = Into::<ByteUnit>::into(rhs).0;
         match value {
             0 => ByteUnit(0),
             _ => ByteUnit(self.0 % value),
@@ -268,7 +270,7 @@ impl<T: Into<ByteUnit>> Shl<T> for ByteUnit {
 
     #[inline(always)]
     fn shl(self, rhs: T) -> Self::Output {
-        ByteUnit(self.0 << rhs.into().0)
+        ByteUnit(self.0 << Into::<ByteUnit>::into(rhs).0)
     }
 }
 
@@ -277,7 +279,7 @@ impl<T: Into<ByteUnit>> Shr<T> for ByteUnit {
 
     #[inline(always)]
     fn shr(self, rhs: T) -> Self::Output {
-        ByteUnit(self.0 >> rhs.into().0)
+        ByteUnit(self.0 >> Into::<ByteUnit>::into(rhs).0)
     }
 }
 
