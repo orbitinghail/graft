@@ -30,7 +30,7 @@ macro_rules! derive_zerocopy_encoding {
         $(with generics ($($impl_generics:tt)*))?
     ) => {
         const _:() = {
-            use $crate::codec::zerocopy_encoding::map_zerocopy_err;
+            use $crate::bilrost_util::zerocopy_encoding::map_zerocopy_err;
             use ::bilrost::encoding::{
                 Wiretyped, WireType, ForOverwrite, GeneralGeneric, ValueEncoder,
                 PlainBytes, encoded_len_varint, ValueDecoder, Capped, DecodeContext,
