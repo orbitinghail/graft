@@ -55,7 +55,8 @@ impl From<io::Error> for SegmentReaderErr {
 }
 
 fn print_page(page: Page, max: usize) {
-    for &byte in page.iter().take(max) {
+    assert!(max <= PAGESIZE);
+    for &byte in &page[..max] {
         // if byte is a printable ascii character
         if byte.is_ascii_alphanumeric() || byte.is_ascii_punctuation() || byte.is_ascii_whitespace()
         {

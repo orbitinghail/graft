@@ -263,7 +263,7 @@ pub fn load_tracker(
     // record the hash of the page tracker for debugging
     span.record("hash", PageHash::new(&first_page).to_string());
 
-    let page_tracker = PageTracker::read_from_bytes(&first_page)?;
+    let page_tracker = PageTracker::read_from_bytes(&first_page[..])?;
 
     // ensure the page tracker is only empty when we expect it to be
     expect_always_or_unreachable!(
