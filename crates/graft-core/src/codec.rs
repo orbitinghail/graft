@@ -1,7 +1,6 @@
 use bilrost::OwnedMessage;
 use bytes::{Buf, BufMut, Bytes};
 use culprit::ResultExt;
-use zerocopy::IntoBytes;
 
 use crate::page::{Page, PageSizeErr};
 

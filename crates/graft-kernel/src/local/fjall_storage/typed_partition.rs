@@ -24,8 +24,8 @@ where
     K: FjallKey,
     C: Codec,
 {
-    pub fn new(
-        keyspace: Keyspace,
+    pub fn open(
+        keyspace: &Keyspace,
         name: &str,
         opts: PartitionCreateOptions,
     ) -> culprit::Result<Self, FjallStorageErr> {
@@ -93,7 +93,7 @@ where
 
     pub fn prefix<P>(
         &self,
-        prefix: P,
+        prefix: &P,
     ) -> impl Iterator<Item = culprit::Result<(K, C::Message), FjallStorageErr>>
     where
         K: FjallKeyPrefix<Prefix = P>,
@@ -105,7 +105,7 @@ where
         }
     }
 
-    pub fn first<P>(&self, prefix: P) -> culprit::Result<Option<C::Message>, FjallStorageErr>
+    pub fn first<P>(&self, prefix: &P) -> culprit::Result<Option<C::Message>, FjallStorageErr>
     where
         K: FjallKeyPrefix<Prefix = P>,
         P: AsRef<[u8]>,

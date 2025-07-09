@@ -256,7 +256,7 @@ derive_zerocopy_encoding!(
 mod tests {
 
     use assert_matches::assert_matches;
-    use bilrost::{BorrowedMessage, Message, OwnedMessage};
+    use bilrost::{Message, OwnedMessage};
     use rand::random;
 
     use super::*;
