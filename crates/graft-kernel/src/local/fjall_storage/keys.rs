@@ -44,6 +44,10 @@ pub trait FjallKey: Sized {
     }
 }
 
+pub trait FjallKeyPrefix {
+    type Prefix: AsRef<[u8]>;
+}
+
 impl FjallKey for HandleId {
     #[inline]
     fn as_slice(&self) -> impl AsRef<[u8]> {
@@ -133,6 +137,10 @@ impl AsRef<[u8]> for SerializedCommitKey {
     }
 }
 
+impl FjallKeyPrefix for CommitKey {
+    type Prefix = VolumeId;
+}
+
 proxy_key_codec!(
     encode key (CommitKey) using proxy (SerializedCommitKey)
     into_proxy(&self) {
@@ -185,6 +193,10 @@ impl AsRef<[u8]> for SerializedPageKey {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
+}
+
+impl FjallKeyPrefix for PageKey {
+    type Prefix = SegmentId;
 }
 
 proxy_key_codec!(
