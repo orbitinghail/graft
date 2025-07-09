@@ -11,7 +11,7 @@ macro_rules! derive_newtype_proxy {
         from_proxy(&mut $self2:ident, $proxy:ident) $from_proxy:block
     ) => {
         const _: () = {
-            use $crate::codec::newtype_proxy::NewTypeProxyTag;
+            use $crate::bilrost_util::newtype_proxy::NewTypeProxyTag;
             use ::bilrost::encoding::{ Proxiable, ForOverwrite, EmptyState };
             use ::bilrost::DecodeErrorKind;
 

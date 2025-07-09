@@ -3,26 +3,21 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
-use bytes::Bytes;
 use culprit::ResultExt;
 use fjall::{Keyspace, KvPair, PartitionCreateOptions, Slice};
-use graft_core::codec::Codec;
 use tryiter::TryIteratorExt;
 
-use crate::local::fjall_storage::{
-    FjallStorageErr,
-    keys::{FjallKey, FjallKeyPrefix},
-};
+use crate::local::fjall_storage::{FjallStorageErr, fjall_repr::FjallRepr, keys::FjallKeyPrefix};
 
-pub struct TypedPartition<K, C> {
+pub struct TypedPartition<K, V> {
     partition: fjall::Partition,
-    _phantom: PhantomData<(K, C)>,
+    _phantom: PhantomData<(K, V)>,
 }
 
-impl<K, C> TypedPartition<K, C>
+impl<K, V> TypedPartition<K, V>
 where
-    K: FjallKey,
-    C: Codec,
+    K: FjallRepr,
+    V: FjallRepr,
 {
     pub fn open(
         keyspace: &Keyspace,
@@ -36,14 +31,13 @@ where
     }
 
     #[inline]
-    pub fn insert(&self, key: K, val: C::Message) -> culprit::Result<(), FjallStorageErr> {
-        self.partition
-            .insert(key.into_slice(), C::encode_to_bytes(val))?;
+    pub fn insert(&self, key: K, val: V) -> culprit::Result<(), FjallStorageErr> {
+        self.partition.insert(key.into_slice(), val.into_slice())?;
         Ok(())
     }
 
     #[inline]
-    pub fn snapshot(&self) -> TypedPartitionSnapshot<K, C> {
+    pub fn snapshot(&self) -> TypedPartitionSnapshot<K, V> {
         TypedPartitionSnapshot {
             snapshot: self.partition.snapshot(),
             _phantom: PhantomData,
@@ -51,7 +45,7 @@ where
     }
 
     #[inline]
-    pub fn snapshot_at(&self, seqno: fjall::Instant) -> TypedPartitionSnapshot<K, C> {
+    pub fn snapshot_at(&self, seqno: fjall::Instant) -> TypedPartitionSnapshot<K, V> {
         TypedPartitionSnapshot {
             snapshot: self.partition.snapshot_at(seqno),
             _phantom: PhantomData,
@@ -59,20 +53,19 @@ where
     }
 }
 
-pub struct TypedPartitionSnapshot<K, C> {
+pub struct TypedPartitionSnapshot<K, V> {
     snapshot: fjall::Snapshot,
-    _phantom: PhantomData<(K, C)>,
+    _phantom: PhantomData<(K, V)>,
 }
 
-impl<K, C> TypedPartitionSnapshot<K, C>
+impl<K, V> TypedPartitionSnapshot<K, V>
 where
-    K: FjallKey,
-    C: Codec,
+    K: FjallRepr,
+    V: FjallRepr,
 {
-    pub fn get(&self, key: K) -> culprit::Result<Option<C::Message>, FjallStorageErr> {
+    pub fn get(&self, key: &K) -> culprit::Result<Option<V>, FjallStorageErr> {
         if let Some(slice) = self.snapshot.get(key.as_slice())? {
-            let bytes = Bytes::from(slice);
-            return Ok(Some(C::decode(bytes).or_into_ctx()?));
+            return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
         }
         return Ok(None);
     }
@@ -80,12 +73,12 @@ where
     pub fn range<R: RangeBounds<K>>(
         &self,
         range: R,
-    ) -> impl Iterator<Item = culprit::Result<(K, C::Message), FjallStorageErr>> {
+    ) -> impl Iterator<Item = culprit::Result<(K, V), FjallStorageErr>> {
         let r: (Bound<Slice>, Bound<Slice>) = (
             range.start_bound().map(|b| b.as_slice().as_ref().into()),
             range.end_bound().map(|b| b.as_slice().as_ref().into()),
         );
-        TypedPartitionIter::<K, C, _> {
+        TypedPartitionIter::<K, V, _> {
             iter: self.snapshot.range(r),
             _phantom: PhantomData,
         }
@@ -94,18 +87,18 @@ where
     pub fn prefix<P>(
         &self,
         prefix: &P,
-    ) -> impl Iterator<Item = culprit::Result<(K, C::Message), FjallStorageErr>>
+    ) -> impl Iterator<Item = culprit::Result<(K, V), FjallStorageErr>>
     where
         K: FjallKeyPrefix<Prefix = P>,
         P: AsRef<[u8]>,
     {
-        TypedPartitionIter::<K, C, _> {
+        TypedPartitionIter::<K, V, _> {
             iter: self.snapshot.prefix(prefix),
             _phantom: PhantomData,
         }
     }
 
-    pub fn first<P>(&self, prefix: &P) -> culprit::Result<Option<C::Message>, FjallStorageErr>
+    pub fn first<P>(&self, prefix: &P) -> culprit::Result<Option<V>, FjallStorageErr>
     where
         K: FjallKeyPrefix<Prefix = P>,
         P: AsRef<[u8]>,
@@ -118,33 +111,33 @@ where
     }
 }
 
-pub struct TypedPartitionIter<K, C, I> {
+pub struct TypedPartitionIter<K, V, I> {
     iter: I,
-    _phantom: PhantomData<(K, C)>,
+    _phantom: PhantomData<(K, V)>,
 }
 
-impl<K, C, I> TypedPartitionIter<K, C, I>
+impl<K, V, I> TypedPartitionIter<K, V, I>
 where
-    K: FjallKey,
-    C: Codec,
+    K: FjallRepr,
+    V: FjallRepr,
     I: DoubleEndedIterator<Item = Result<KvPair, lsm_tree::Error>>,
 {
-    fn try_next(&mut self) -> culprit::Result<Option<(K, C::Message)>, FjallStorageErr> {
+    fn try_next(&mut self) -> culprit::Result<Option<(K, V)>, FjallStorageErr> {
         if let Some((key, val)) = self.iter.try_next()? {
             Ok(Some((
                 K::try_from_slice(key).or_into_ctx()?,
-                C::decode(Bytes::from(val)).or_into_ctx()?,
+                V::try_from_slice(val).or_into_ctx()?,
             )))
         } else {
             Ok(None)
         }
     }
 
-    fn try_next_back(&mut self) -> culprit::Result<Option<(K, C::Message)>, FjallStorageErr> {
+    fn try_next_back(&mut self) -> culprit::Result<Option<(K, V)>, FjallStorageErr> {
         if let Some((key, val)) = self.iter.next_back().transpose()? {
             Ok(Some((
                 K::try_from_slice(key).or_into_ctx()?,
-                C::decode(Bytes::from(val)).or_into_ctx()?,
+                V::try_from_slice(val).or_into_ctx()?,
             )))
         } else {
             Ok(None)
@@ -152,13 +145,13 @@ where
     }
 }
 
-impl<K, C, I> Iterator for TypedPartitionIter<K, C, I>
+impl<K, V, I> Iterator for TypedPartitionIter<K, V, I>
 where
-    K: FjallKey,
-    C: Codec,
+    K: FjallRepr,
+    V: FjallRepr,
     I: DoubleEndedIterator<Item = Result<KvPair, lsm_tree::Error>>,
 {
-    type Item = culprit::Result<(K, C::Message), FjallStorageErr>;
+    type Item = culprit::Result<(K, V), FjallStorageErr>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -166,10 +159,10 @@ where
     }
 }
 
-impl<K, C, I> DoubleEndedIterator for TypedPartitionIter<K, C, I>
+impl<K, V, I> DoubleEndedIterator for TypedPartitionIter<K, V, I>
 where
-    K: FjallKey,
-    C: Codec,
+    K: FjallRepr,
+    V: FjallRepr,
     I: DoubleEndedIterator<Item = Result<KvPair, lsm_tree::Error>>,
 {
     #[inline]

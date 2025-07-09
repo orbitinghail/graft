@@ -7,8 +7,6 @@ pub mod page;
 pub mod page_count;
 pub mod page_idx;
 
-pub mod codec;
-
 pub mod checkpoint_set;
 pub mod commit;
 pub mod snapshot;
@@ -18,6 +16,7 @@ pub mod volume_handle;
 pub mod volume_meta;
 pub mod volume_ref;
 
+pub mod bilrost_util;
 pub mod byte_unit;
 pub mod cbe;
 pub mod hash_table;
