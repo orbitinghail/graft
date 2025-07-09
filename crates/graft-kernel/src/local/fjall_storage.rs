@@ -1,6 +1,6 @@
 use graft_core::{
     VolumeId,
-    codec::{BilrostCodec, PageCodec},
+    codec::{self, BilrostCodec, PageCodec},
     commit::Commit,
     handle_id::HandleId,
     volume_handle::VolumeHandle,
@@ -12,8 +12,23 @@ use crate::local::fjall_storage::{
     typed_partition::TypedPartition,
 };
 
-mod keys;
+pub mod keys;
 mod typed_partition;
+
+#[derive(Debug, thiserror::Error)]
+pub enum FjallStorageErr {
+    #[error("Fjall error: {0}")]
+    FjallErr(#[from] fjall::Error),
+
+    #[error("Fjall LSM Tree error: {0}")]
+    LsmTreeErr(#[from] lsm_tree::Error),
+
+    #[error("Codec error: {0}")]
+    CodecDecodeErr(#[from] codec::DecodeErr),
+
+    #[error("Key decode error: {0}")]
+    KeyDecodeErr(#[from] keys::DecodeErr),
+}
 
 pub struct FjallStorage {
     keyspace: fjall::Keyspace,

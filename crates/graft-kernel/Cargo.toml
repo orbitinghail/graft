@@ -20,11 +20,13 @@ precept = { workspace = true, features = ["antithesis"] }
 culprit = { workspace = true }
 
 fjall = { workspace = true }
+lsm-tree = { workspace = true }
 zerocopy = { workspace = true }
 thiserror = { workspace = true }
 bytes = { workspace = true }
 bilrost = { workspace = true }
 static_assertions = { workspace = true }
+tryiter = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
