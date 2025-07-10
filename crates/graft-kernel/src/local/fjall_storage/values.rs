@@ -54,10 +54,9 @@ impl_fjallrepr_for_bilrost!(VolumeHandle, VolumeMeta, Commit);
 #[cfg(test)]
 mod tests {
     use graft_core::{
-        PageCount, VolumeId, handle_id::HandleId, lsn::LSN, page::PAGESIZE, snapshot::Snapshot,
-        volume_ref::VolumeRef,
+        PageCount, VolumeId, checkpoint_set::CheckpointSet, handle_id::HandleId, lsn::LSN,
+        page::PAGESIZE, volume_ref::VolumeRef,
     };
-    use smallvec::{SmallVec, smallvec};
 
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_empty_default, test_invalid, test_roundtrip,
@@ -90,7 +89,7 @@ mod tests {
             VolumeId::random(),
             Some(VolumeRef::new(VolumeId::random(), LSN::new(123))),
             Some(Bytes::from_static(b"asdf")),
-            smallvec![LSN::new(123)],
+            CheckpointSet::from([LSN::new(123)].as_ref()),
         ));
         test_empty_default::<VolumeMeta>();
         test_invalid::<VolumeMeta>(&b"abc".repeat(123));

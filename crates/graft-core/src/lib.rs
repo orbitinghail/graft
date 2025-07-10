@@ -9,7 +9,6 @@ pub mod page_idx;
 
 pub mod checkpoint_set;
 pub mod commit;
-pub mod snapshot;
 pub mod volume_control;
 pub mod volume_fork;
 pub mod volume_handle;
