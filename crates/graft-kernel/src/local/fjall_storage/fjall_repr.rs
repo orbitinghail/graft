@@ -70,7 +70,7 @@ macro_rules! proxy_to_fjall_repr {
 #[cfg(test)]
 pub mod testutil {
     use super::*;
-    use std::{fmt::Debug, ops::Deref};
+    use std::fmt::Debug;
 
     /// Tests that a FjallRepr value can be encoded to a slice and then decoded back to the original value.
     #[track_caller]

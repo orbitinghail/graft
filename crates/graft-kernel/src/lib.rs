@@ -3,5 +3,5 @@ pub mod local {
 }
 
 pub mod search_path;
-pub mod tracked_snapshot;
+pub mod snapshot;
 pub mod volume_reader;

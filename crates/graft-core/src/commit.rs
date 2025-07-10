@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 
 use crate::{
     PageCount, PageIdx, SegmentId, VolumeId, commit_hash::CommitHash, graft::Graft, lsn::LSN,
-    snapshot::Snapshot,
+    volume_ref::VolumeRef,
 };
 
 /// Commits are stored at `{prefix}/{vid}/log/{lsn}`.
@@ -15,24 +15,32 @@ use crate::{
 /// Commits are immutable.
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct Commit {
-    /// The Volume Snapshot at this Commit.
+    /// The Volume's ID.
     #[bilrost(1)]
-    snapshot: Snapshot,
+    vid: VolumeId,
+
+    /// The LSN of the Commit.
+    #[bilrost(2)]
+    lsn: LSN,
+
+    /// The Volume's `PageCount` as of this Commit.
+    #[bilrost(3)]
+    page_count: PageCount,
 
     /// An optional `CommitHash` for this Commit.
     /// Always present on Remote Volume commits.
     /// May be omitted on Local commits.
-    #[bilrost(2)]
+    #[bilrost(4)]
     commit_hash: Option<CommitHash>,
 
     /// If this Commit contains any pages, `segment_ref` records details on the
     /// relevant Segment.
-    #[bilrost(3)]
+    #[bilrost(5)]
     segment_ref: Option<SegmentRef>,
 
     /// If this commit is a checkpoint, this timestamp is set and records the time
     /// the commit was made a checkpoint
-    #[bilrost(4)]
+    #[bilrost(6)]
     checkpointed_at: Option<SystemTime>,
 }
 
@@ -67,7 +75,9 @@ impl Commit {
     /// Creates a new Commit for the given snapshot info
     pub fn new(vid: VolumeId, lsn: LSN, page_count: PageCount) -> Self {
         Self {
-            snapshot: Snapshot::new(vid, lsn, page_count),
+            vid,
+            lsn,
+            page_count,
             commit_hash: None,
             segment_ref: None,
             checkpointed_at: None,
@@ -86,5 +96,37 @@ impl Commit {
     /// Sets the checkpointed timestamp for this commit.
     pub fn with_checkpointed_at(self, checkpointed_at: Option<SystemTime>) -> Self {
         Self { checkpointed_at, ..self }
+    }
+
+    pub fn vid(&self) -> &VolumeId {
+        &self.vid
+    }
+
+    pub fn lsn(&self) -> LSN {
+        self.lsn
+    }
+
+    pub fn vref(&self) -> VolumeRef {
+        VolumeRef::new(self.vid.clone(), self.lsn)
+    }
+
+    pub fn page_count(&self) -> PageCount {
+        self.page_count
+    }
+
+    pub fn commit_hash(&self) -> Option<&CommitHash> {
+        self.commit_hash.as_ref()
+    }
+
+    pub fn segment_ref(&self) -> Option<&SegmentRef> {
+        self.segment_ref.as_ref()
+    }
+
+    pub fn checkpointed_at(&self) -> Option<&SystemTime> {
+        self.checkpointed_at.as_ref()
+    }
+
+    pub fn is_checkpoint(&self) -> bool {
+        self.checkpointed_at.is_some()
     }
 }

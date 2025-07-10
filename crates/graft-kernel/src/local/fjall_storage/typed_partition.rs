@@ -73,7 +73,8 @@ where
     pub fn range<R: RangeBounds<K>>(
         &self,
         range: R,
-    ) -> impl Iterator<Item = culprit::Result<(K, V), FjallStorageErr>> {
+    ) -> impl DoubleEndedIterator<Item = culprit::Result<(K, V), FjallStorageErr>> + use<R, K, V>
+    {
         let r: (Bound<Slice>, Bound<Slice>) = (
             range.start_bound().map(|b| b.as_slice().as_ref().into()),
             range.end_bound().map(|b| b.as_slice().as_ref().into()),
@@ -87,7 +88,7 @@ where
     pub fn prefix<P>(
         &self,
         prefix: &P,
-    ) -> impl Iterator<Item = culprit::Result<(K, V), FjallStorageErr>>
+    ) -> impl DoubleEndedIterator<Item = culprit::Result<(K, V), FjallStorageErr>>
     where
         K: FjallKeyPrefix<Prefix = P>,
         P: AsRef<[u8]>,
