@@ -1,8 +1,7 @@
 use bilrost::Message;
 use bytes::Bytes;
-use smallvec::SmallVec;
 
-use crate::{VolumeId, lsn::LSN, volume_ref::VolumeRef};
+use crate::{VolumeId, checkpoint_set::CheckpointSet, volume_ref::VolumeRef};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct VolumeMeta {
@@ -21,7 +20,7 @@ pub struct VolumeMeta {
 
     /// The set of checkpoint LSNs.
     #[bilrost(4)]
-    checkpoints: SmallVec<[LSN; 2]>,
+    checkpoints: CheckpointSet,
 }
 
 impl VolumeMeta {
@@ -29,8 +28,24 @@ impl VolumeMeta {
         vid: VolumeId,
         parent: Option<VolumeRef>,
         etag: Option<Bytes>,
-        checkpoints: SmallVec<[LSN; 2]>,
+        checkpoints: CheckpointSet,
     ) -> Self {
         Self { vid, parent, etag, checkpoints }
+    }
+
+    pub fn vid(&self) -> &VolumeId {
+        &self.vid
+    }
+
+    pub fn parent(&self) -> Option<&VolumeRef> {
+        self.parent.as_ref()
+    }
+
+    pub fn etag(&self) -> Option<&Bytes> {
+        self.etag.as_ref()
+    }
+
+    pub fn checkpoints(&self) -> &CheckpointSet {
+        &self.checkpoints
     }
 }
