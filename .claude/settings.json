@@ -1,6 +1,12 @@
 {
   "permissions": {
-    "allow": ["Bash(cargo:*)", "Bash(jq:*)", "Bash(just:*)"],
+    "allow": [
+      "Bash(cargo:*)",
+      "Bash(jq:*)",
+      "Bash(just:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
     "deny": [],
     "defaultMode": "acceptEdits"
   }
