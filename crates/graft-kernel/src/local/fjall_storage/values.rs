@@ -54,8 +54,12 @@ impl_fjallrepr_for_bilrost!(VolumeHandle, VolumeMeta, Commit);
 #[cfg(test)]
 mod tests {
     use graft_core::{
-        PageCount, VolumeId, checkpoint_set::CheckpointSet, handle_id::HandleId, lsn::LSN,
-        page::PAGESIZE, volume_ref::VolumeRef,
+        PageCount, VolumeId,
+        checkpoint_set::CheckpointSet,
+        handle_id::HandleId,
+        lsn::LSN,
+        page::{EMPTY_PAGE, PAGESIZE},
+        volume_ref::VolumeRef,
     };
 
     use crate::local::fjall_storage::fjall_repr::testutil::{
@@ -67,7 +71,7 @@ mod tests {
     #[graft_test::test]
     fn test_page() {
         test_roundtrip(Page::test_filled(123));
-        test_invalid::<Page>(b"");
+        test_roundtrip(EMPTY_PAGE);
         test_invalid::<Page>(&b"a".repeat(PAGESIZE.as_usize() + 1));
     }
 
