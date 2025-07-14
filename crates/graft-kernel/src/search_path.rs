@@ -1,24 +1,46 @@
-use graft_core::{VolumeId, lsn::LSN};
+use std::ops::RangeInclusive;
+
+use graft_core::{
+    VolumeId,
+    lsn::{LSN, LSNRangeExt},
+};
 use smallvec::SmallVec;
 
+/// A SearchPath represents a ordered set of Volumes along with a LSN range for
+/// each Volume. SearchPaths are used to search for the latest commit containing
+/// a page. Volumes appearing earlier in a SearchPath will shadow Volumes
+/// appearing later.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SearchPath {
     path: SmallVec<[PathEntry; 1]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PathEntry {
+pub struct PathEntry {
     vid: VolumeId,
-    lsn_high: LSN,
-    lsn_low: LSN,
+    lsns: RangeInclusive<LSN>,
 }
 
 impl SearchPath {
-    pub fn push(&mut self, vid: VolumeId, lsn_high: LSN, lsn_low: LSN) {
+    pub fn append(&mut self, vid: VolumeId, lsns: RangeInclusive<LSN>) {
         assert!(
-            lsn_high >= lsn_low,
-            "lsn_high must be greater than or equal to lsn_low"
+            lsns.try_len().is_some_and(|l| l > 0),
+            "LSN range must be in the form low..=high"
         );
-        self.path.push(PathEntry { vid, lsn_high, lsn_low });
+        self.path.push(PathEntry { vid, lsns });
+    }
+
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &PathEntry> {
+        self.path.iter()
+    }
+}
+
+impl PathEntry {
+    pub fn vid(&self) -> &VolumeId {
+        &self.vid
+    }
+
+    pub fn lsns(&self) -> &RangeInclusive<LSN> {
+        &self.lsns
     }
 }

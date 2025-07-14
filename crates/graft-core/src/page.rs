@@ -40,6 +40,7 @@ pub struct Page(Bytes);
 
 impl Page {
     /// Returns true if all of the page's bytes are 0.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.0.as_ref() == STATIC_EMPTY_PAGE
     }
@@ -52,6 +53,11 @@ impl Page {
     #[inline]
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    #[inline]
+    pub fn into_bytes(self) -> Bytes {
+        self.0
     }
 }
 
@@ -85,18 +91,21 @@ impl AsRef<[u8]> for Page {
 }
 
 impl From<&[u8; PAGESIZE.as_usize()]> for Page {
+    #[inline]
     fn from(value: &[u8; PAGESIZE.as_usize()]) -> Self {
         Page(Bytes::copy_from_slice(value))
     }
 }
 
 impl From<Page> for Bytes {
+    #[inline]
     fn from(value: Page) -> Self {
         value.0
     }
 }
 
 impl From<Page> for BytesMut {
+    #[inline]
     fn from(value: Page) -> Self {
         value.0.into()
     }
@@ -105,6 +114,7 @@ impl From<Page> for BytesMut {
 impl TryFrom<BytesMut> for Page {
     type Error = Culprit<PageSizeErr>;
 
+    #[inline]
     fn try_from(value: BytesMut) -> Result<Self, Self::Error> {
         value.freeze().try_into()
     }
@@ -113,6 +123,7 @@ impl TryFrom<BytesMut> for Page {
 impl TryFrom<Bytes> for Page {
     type Error = Culprit<PageSizeErr>;
 
+    #[inline]
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         PageSizeErr::check(value.len())?;
         Ok(Page(value))
@@ -122,6 +133,7 @@ impl TryFrom<Bytes> for Page {
 impl TryFrom<&[u8]> for Page {
     type Error = Culprit<PageSizeErr>;
 
+    #[inline]
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         PageSizeErr::check(value.len())?;
         Ok(Page(Bytes::copy_from_slice(value)))
@@ -129,6 +141,7 @@ impl TryFrom<&[u8]> for Page {
 }
 
 impl Debug for Page {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Page({PAGESIZE})")
     }
