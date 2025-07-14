@@ -99,7 +99,7 @@ Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, 
 - **`Snapshot`**: A frozen point-in-time view of a Volume.
 - **`lsn`**: Documented in the [Volume log](#volume-log) section.
 - **`pageidx`**: A 4 byte page index, representing the index of a page within a Volume. Valid range: `[1, 2^32)`.
-- **`Splinter`**: A compressed bitset, used to keep track of which `pageidxs` appear in a Segment.
+- **`Graft`**: A compressed bitset (based on [Splinter](https://github.com/orbitinghail/splinter-rs)), used to keep track of which `pageidxs` appear in a Segment.
 - **`Segment`**: A compressed sequence of pages, sorted by `pageidx`. Documented in the [Segment Encoding](#segment-encoding) section.
 - **`VolumeRef`**: A `(vid, lsn)` tuple, representing a fixed point in a Volumes history.
 - **`CommitHash`**: Documented in the [Commit hash](#commit-hash) section.
@@ -191,130 +191,96 @@ This flexible layout allows users to isolate tenants from one another by simply 
 
 #### Object storage schemas
 
-All of the files aside from Segments are encoded using Protobuf. Serialized Protobuf is wrapped with a zerocopy `ProtobufEnvelope`:
+All of the files aside from Segments ([Segment Encoding](#segment-encoding)) are encoded using [Bilrost] and prefixed with a GraftFileHeader:
 
 ```rust
-enum ProtobufMessage {
-    GraftRemoteV1Control = 1,
-    GraftRemoteV1Fork = 2,
-    GraftRemoteV1CheckpointSet = 3,
-    GraftRemoteV1Commit = 4,
+const GRAFT_FILE_MAGIC: [u8;4] = [0xB7, 0x77, 0xDD, 0x13]
+
+enum MessageType {
+    VolumeControlV1 = 1,
+    VolumeForkV1 = 2,
+    CheckpointSetV1 = 3,
+    CommitV1 = 4,
 }
 
-struct ProtobufEnvelope {
+struct GraftFileHeader {
     magic: [u8; 4],
-    _padding: [u8; 3],
-    message: ProtobufMessage,
-    data: [u8]
+    message: MessageType,
+    length: u32,
 }
 ```
 
-Segments are compressed sets of pages. Their encoding is documented in the [Segment Encoding](#segment-encoding) section, and their metadata is stored in the `SegmentRef` message.
+**Bilrost messages:**
 
-```proto
-syntax = "proto3";
-package graft.remote.v1;
-
-import "google/protobuf/timestamp.proto";
-
-// A Volume has a top level control file stored at
-// `{prefix}/{vid}/control`
-// Control files are immutable.
-message Control {
-  // The Volume ID stored as a 16 byte GID.
-  bytes vid = 1;
-
-  // The parent reference if this Volume is a fork.
-  optional VolumeRef parent = 2;
-
-  // The creation timestamp of this Volume.
-  google.protobuf.Timestamp created_at = 3;
+```rust
+#[derive(Message)]
+pub struct VolumeRef {
+    #[bilrost(1)]
+    vid: VolumeId,
+    #[bilrost(2)]
+    lsn: LSN,
 }
 
-// When a Volume is forked, a ref is first written to the parent Volume:
-// `{prefix}/{parent-vid}/forks/{fork-vid}`
-// Forks are immutable.
-message Fork {
-  // The VID of the fork.
-  bytes fork_vid = 1;
-
-  // The fork point. Must match the parent field in the Fork's Control file.
-  VolumeRef parent = 2;
+/// Object store path: {prefix}/{vid}/control
+#[derive(Message)]
+pub struct VolumeControl {
+    #[bilrost(1)]
+    vid: VolumeId,
+    #[bilrost(2)]
+    parent: Option<VolumeRef>,
+    #[bilrost(3)]
+    created_at: SystemTime,
 }
 
-// A reference to a Volume at a particular LSN.
-message VolumeRef {
-  // The Volume ID stored as a 16 byte GID.
-  bytes vid = 1;
-
-  // The referenced LSN.
-  uint64 lsn = 2;
+/// Object store path: {prefix}/{parent-vid}/forks/{fork-vid}
+#[derive(Message)]
+pub struct VolumeFork {
+    #[bilrost(1)]
+    vid: VolumeId,
+    #[bilrost(2)]
+    parent: VolumeRef,
 }
 
-// A Volume's CheckpointSet is stored at `{prefix}/{vid}/checkpoints`.
-// CheckpointSets are updated by the checkpointer via compare-and-swap.
-message CheckpointSet {
-  // The Volume ID stored as a 16 byte GID.
-  bytes vid = 1;
-
-  // The list of checkpoint LSNs.
-  repeated uint64 lsns = 2;
+/// Object store path: {prefix}/{vid}/checkpoints
+#[derive(Message)]
+pub struct CheckpointSet {
+    #[bilrost(1)]
+    lsns: SmallVec<[LSN; 2]>,  // sorted in ascending order
 }
 
-// A snapshot of a Volume.
-message Snapshot {
-  // The Volume ID stored as a 16 byte GID.
-  bytes vid = 1;
-
-  // The LSN of the Volume at this Snapshot.
-  uint64 lsn = 2;
-
-  // The Volume's page count at this Snapshot.
-  uint32 page_count = 3;
+/// Object store path: {prefix}/{vid}/log/{lsn}
+#[derive(Message)]
+pub struct Commit {
+    #[bilrost(1)]
+    vid: VolumeId,
+    #[bilrost(2)]
+    lsn: LSN,
+    #[bilrost(3)]
+    page_count: PageCount,
+    #[bilrost(4)]
+    commit_hash: Option<CommitHash>,
+    #[bilrost(5)]
+    segment_idx: Option<SegmentIdx>,
+    #[bilrost(6)]
+    checkpointed_at: Option<SystemTime>,
 }
 
-// Commits are stored at `{prefix}/{vid}/log/{lsn}`.
-// A commit may not include a SegmentRef if only the Volume's page count has
-// changed. This happens when the Volume is extended or truncated without
-// additional writes.
-// Commits are immutable.
-message Commit {
-  // The Volume Snapshot at this Commit.
-  Snapshot snapshot = 1;
-
-  // An optional 256 bit CommitHash of this Commit.
-  // Always present on Remote Volume commits.
-  // May be omitted on Local commits.
-  optional bytes hash = 2;
-
-  // If this Commit contains any pages, `segment_ref` records details on the relevant Segment.
-  optional SegmentRef segment_ref = 3;
-
-  // If this commit is a checkpoint, this timestamp is set and records the time
-  // the commit was made a checkpoint
-  optional google.protobuf.Timestamp checkpoint_ts = 4;
+#[derive(Message)]
+pub struct SegmentIdx {
+    #[bilrost(1)]
+    sid: SegmentId,
+    #[bilrost(2)]
+    graft: Graft,
+    #[bilrost(3)]
+    frames: SmallVec<[SegmentFrameIdx; 2]>,
 }
 
-message SegmentRef {
-  // The 16 byte Segment ID.
-  bytes sid = 1;
-
-  // The set of pageidxs stored in this Segment.
-  // Serialized using Splinter encoding.
-  bytes splinter = 2;
-
-  // An index of frames contained by the Segment.
-  // Empty on Local Segments which have not been encoded and uploaded to object
-  // storage.
-  repeated SegmentFrame frames = 3;
-}
-
-message SegmentFrame {
-  // The length of the compressed frame in bytes.
-  uint32 frame_size = 1;
-
-  // The last pageidx stored in the frame
-  uint32 last_pageidx = 2;
+#[derive(Message)]
+pub struct SegmentFrameIdx {
+    #[bilrost(1)]
+    frame_size: usize,
+    #[bilrost(2)]
+    last_pageidx: PageIdx,
 }
 ```
 
@@ -329,12 +295,7 @@ Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, 
 ```
 handles / {handle_id} -> VolumeHandle
 
-volumes / {vid} /
-  // The Volume's Control, includes its parent reference
-  control -> Control
-
-  // the latest LocalCheckpointSet for this Volume
-  checkpoints -> LocalCheckpointSet
+volumes / {vid} -> VolumeMeta
 
 log / {vid} / {lsn} -> Commit
 
@@ -343,22 +304,11 @@ pages / {sid} / {pageidx} -> Page
 
 #### Local schemas
 
-Keys which are stored in the local keyspace are encoded using `zerocopy` types. `lsn` values are stored using [`CBE64`](#cbe64-encoding), which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
+Keys stored in the local keyspace are encoded using `zerocopy` types and a custom `FjallRepr` trait. `lsn` values are stored using [`CBE64`](#cbe64-encoding), which ensures they naturally sort in descending order. This allows us to use a forward iterator to quickly find the most recent LSN, which is much more efficient in most k/v stores (including [Fjall]).
 
-The `handles` partition is unique in that it is keyed directly by the `VolumeHandle`'s id rather than one of the following zerocopy types.
+The log and pages partition use the following zerocopy types as keys:
 
 ```rust
-enum VolumeProperty {
-    Control = 1,
-    Checkpoints = 2,
-}
-
-/// Key for the `volumes` partition
-struct VolumeKey {
-    vid: VolumeId,
-    property: VolumeProperty,
-}
-
 /// Key for the `log` partition
 struct CommitKey {
     vid: VolumeId,
@@ -368,46 +318,66 @@ struct CommitKey {
 /// Key for the `pages` partition
 struct PageKey {
     sid: SegmentId,
-    pageidx: PageIdx,
+    pageidx: u32,
 }
 ```
 
-Values stored locally are encoded using protobuf, using a combination of the remote storage schema and the following additional message types. No envelope is needed for local values as the upgrade process can migrate local data.
+Values stored locally are encoded using [Bilrost] using the following additional schema messages:
 
-```proto
-syntax = "proto3";
-package graft.local.v1;
-import "graft/remote/v1/index.proto";
+```rust
+#[derive(Message)]
+pub struct VolumeHandle {
+    /// The Handle ID
+    #[bilrost(1)]
+    id: HandleId,
 
-message LocalCheckpointSet {
-  // The etag from the last time we pulled the CheckpointSet, used to only pull
-  // changed CheckpointSets
-  bytes etag = 1;
+    /// Reference to the latest synchronization point for the local Volume.
+    #[bilrost(2)]
+    local: VolumeRef,
 
-  // The list of checkpoint LSNs.
-  repeated uint64 lsns = 2;
+    /// Reference to the latest synchronization point for the remote Volume.
+    #[bilrost(3)]
+    remote: Option<VolumeRef>,
+
+    /// Presence of the `pending_commit` field means that the Push operation is
+    /// in the process of committing to the remote. If no such Push job is
+    /// currently running (i.e. it was interrupted), this field must be used to
+    /// resume or abort the commit process.
+    #[bilrost(4)]
+    pending_commit: Option<PendingCommit>,
 }
 
-message VolumeHandle {
-  // The id of the Volume Handle
-  string id = 1;
+#[derive(Message)]
+pub struct PendingCommit {
+    /// The resulting remote LSN that the push job is attempting to create.
+    #[bilrost(1)]
+    remote_lsn: LSN,
 
-  // References to the local and remote Volumes, along with LSNs representing their latest successful synchronization.
-  graft.remote.v1.VolumeRef local = 2;
-  optional graft.remote.v1.VolumeRef remote = 3;
-
-  // Presence of the pending_commit field means that the Push operation is in the process of committing to the remote. If no such Push job is currently running (i.e. it was interrupted), this field must be used to resume or abort the commit process.
-  optional PendingCommit pending_commit = 4;
+    /// The associated commit hash. This is used to determine whether or not the
+    /// commit has landed in the remote, in the case that we are interrupted
+    /// while attempting to push.
+    #[bilrost(2)]
+    commit_hash: CommitHash,
 }
 
-message PendingCommit {
-  // The resulting remote LSN that the push job is attempting to create
-  uint64 remote_lsn = 1;
+#[derive(Message)]
+pub struct VolumeMeta {
+    /// The Volume's ID
+    #[bilrost(1)]
+    vid: VolumeId,
 
-  // The associated 256 bit blake3 commit hash. This is used to determine
-  // whether or not the commit has landed in the remote, in the case that we are
-  // interrupted while attempting to push.
-  bytes commit_hash = 2;
+    /// The parent reference if this Volume is a fork.
+    #[bilrost(2)]
+    parent: Option<VolumeRef>,
+
+    /// The etag from the last time we pulled the `CheckpointSet`, used to only
+    /// pull changed `CheckpointSets`
+    #[bilrost(3)]
+    etag: Option<Bytes>,
+
+    /// The set of checkpoint LSNs.
+    #[bilrost(4)]
+    checkpoints: CheckpointSet,
 }
 ```
 
@@ -453,20 +423,23 @@ def visibility_path(snapshot):
 
   return path
 
+class Snapshot:
+  vref: VolumeRef
+  path: SearchPath
+
 class VolumeReader:
   def new(snapshot):
     self.snapshot = snapshot
-    self.path = visibility_path(snapshot)
 
   def read_page(self, pageidx):
     if not self.snapshot.page_count.contains(pageidx):
       return None
-    for key, commit in iter_commits(self.path):
+    for key, commit in iter_commits(self.snapshot.path):
       { snapshot, segment_ref } = commit
       if not (
           # handle truncate+extend
           snapshot.page_count.contains(pageidx)
-          and segment_ref.splinter.contains(pageidx)):
+          and segment_ref.graft.contains(pageidx)):
         continue
       page = read(f"pages/{key.sid}/{pageidx}")
       if page:
@@ -498,7 +471,7 @@ def remote_read_page(vid, sid, segment_ref, pageidx):
     f"{PREFIX}/{vid}/segments/{sid}", bytes)
   frame = zstd.decompress(frame)
   for (pi, page) in zip(
-    segment_ref.splinter.iter_range(pages), frame.split(PAGESIZE)
+    segment_ref.graft.iter_range(pages), frame.split(PAGESIZE)
   ):
     write(f"pages/{sid}/{pi}", page)
 
@@ -513,16 +486,16 @@ class VolumeWriter:
     self.reader = VolumeReader::new(snapshot)
     self.page_count = snapshot.page_count
     self.sid = SegmentId::random()
-    self.splinter = Splinter::new()
+    self.graft = Graft::new()
 
   def read(pageidx):
-    if self.splinter.contains(pageidx):
+    if self.graft.contains(pageidx):
       return read(f"pages/{self.sid}/{pageidx}")
     else:
       self.reader.read_page(pageidx)
 
   def write(pageidx, page):
-    self.splinter.insert(pageidx)
+    self.graft.insert(pageidx)
     self.page_count = max(self.page_count, pageidx.pages())
     write(f"pages/{self.sid}/{pageidx}", page)
 
@@ -554,7 +527,7 @@ class VolumeWriter:
         # no hash for commits to a local volume
         segment = SegmentRef {
           sid: self.sid,
-          splinter: self.splinter,
+          graft: self.graft,
           # no frame info for commits to a local volume
         }
       })
@@ -593,7 +566,7 @@ def prepare_commit(handle):
     raise NothingToCommit
 
   # build and push segments from commits
-  (segment_ref, commit_hash) = build_and_push_segments(local.vid, lsn_range, remote.vid)
+  (segment_idx, commit_hash) = build_and_push_segments(local.vid, lsn_range, remote.vid)
 
   commit_lsn = remote_snapshot.lsn.next()
 
@@ -613,14 +586,12 @@ def prepare_commit(handle):
     }
     write(f"handles/{handle_id}", handle)
 
-  return (local_snapshot.lsn, Commit {
-    snapshot: Snapshot {
-      vid: remote.vid,
-      lsn: commit_lsn,
-      page_count: local_snapshot.page_count
-    },
-    hash: commit_hash,
-    segment_ref
+return (local_snapshot.lsn, Commit {
+    vid: remote.vid,
+    lsn: commit_lsn,
+    page_count: local_snapshot.page_count
+    commit_hash,
+    segment_idx
   })
 
 def build_and_push_segments(local_vid, lsn_range, remote_vid):
@@ -628,7 +599,7 @@ def build_and_push_segments(local_vid, lsn_range, remote_vid):
   #
   # IF we expect to be querying the remote volume anytime soon, we can optionally write out segments to our local page store.
 
-  return (segment_ref, commit_hash)
+  return (segment_idx, commit_hash)
 
 def remote_commit(commit):
   path = f"{PREFIX}/{commit.snapshot.vid}/log/{commit.snapshot.lsn}"
@@ -841,3 +812,4 @@ I think the biggest drawback is that there won't be a metastore to perform clien
 [`GID`]: https://graft.rs/docs/internals/gid/
 [blake3]: https://github.com/BLAKE3-team/BLAKE3
 [Splinter]: https://github.com/orbitinghail/splinter-rs
+[Bilrost]: https://github.com/mumbleskates/bilrost

@@ -134,7 +134,7 @@ impl PageKey {
 #[repr(C)]
 struct SerializedPageKey {
     sid: SegmentId,
-    pageidx: CBE32,
+    pageidx: u32,
 }
 
 impl AsRef<[u8]> for SerializedPageKey {
