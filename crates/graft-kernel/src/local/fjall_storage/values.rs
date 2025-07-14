@@ -17,7 +17,7 @@ impl FjallRepr for Page {
 
     #[inline]
     fn into_slice(self) -> fjall::Slice {
-        Bytes::from(self).into()
+        self.into_bytes().into()
     }
 
     #[inline]

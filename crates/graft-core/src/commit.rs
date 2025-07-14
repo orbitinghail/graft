@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::{ops::RangeInclusive, time::SystemTime};
 
 use bilrost::Message;
 use smallvec::SmallVec;
@@ -33,10 +33,10 @@ pub struct Commit {
     #[bilrost(4)]
     commit_hash: Option<CommitHash>,
 
-    /// If this Commit contains any pages, `segment_ref` records details on the
+    /// If this Commit contains any pages, `segment_idx` records details on the
     /// relevant Segment.
     #[bilrost(5)]
-    segment_ref: Option<SegmentRef>,
+    segment_idx: Option<SegmentIdx>,
 
     /// If this commit is a checkpoint, this timestamp is set and records the time
     /// the commit was made a checkpoint
@@ -45,7 +45,7 @@ pub struct Commit {
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
-pub struct SegmentRef {
+pub struct SegmentIdx {
     /// The Segment ID
     #[bilrost(1)]
     sid: SegmentId,
@@ -54,21 +54,29 @@ pub struct SegmentRef {
     #[bilrost(2)]
     graft: Graft,
 
-    /// An index of `SegmentFrames` contained by this Segment.
+    /// An index of `SegmentFrameIdxs` contained by this Segment.
     /// Empty on local Segments which have not been encoded and uploaded to object storage.
     #[bilrost(3)]
-    frames: SmallVec<[SegmentFrame; 2]>,
+    frames: SmallVec<[SegmentFrameIdx; 2]>,
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
-pub struct SegmentFrame {
-    /// The number of Pages contained in this `SegmentFrame`.
+struct SegmentFrameIdx {
+    /// The length of the compressed frame in bytes.
     #[bilrost(1)]
-    page_count: PageCount,
+    frame_size: usize,
 
     /// The last `PageIdx` contained by this `SegmentFrame`.
     #[bilrost(2)]
     last_pageidx: PageIdx,
+}
+
+/// A SegmentFrameRef contains the byte range and corresponding page range for a
+/// particular frame in a segment.
+pub struct SegmentFrameRef {
+    sid: SegmentId,
+    bytes: RangeInclusive<usize>,
+    pages: RangeInclusive<PageIdx>,
 }
 
 impl Commit {
@@ -79,7 +87,7 @@ impl Commit {
             lsn,
             page_count,
             commit_hash: None,
-            segment_ref: None,
+            segment_idx: None,
             checkpointed_at: None,
         }
     }
@@ -88,9 +96,9 @@ impl Commit {
         Self { commit_hash, ..self }
     }
 
-    /// Sets the segment reference for this commit.
-    pub fn with_segment_ref(self, segment_ref: Option<SegmentRef>) -> Self {
-        Self { segment_ref, ..self }
+    /// Sets the segment index for this commit.
+    pub fn with_segment_idx(self, segment_idx: Option<SegmentIdx>) -> Self {
+        Self { segment_idx, ..self }
     }
 
     /// Sets the checkpointed timestamp for this commit.
@@ -118,8 +126,8 @@ impl Commit {
         self.commit_hash.as_ref()
     }
 
-    pub fn segment_ref(&self) -> Option<&SegmentRef> {
-        self.segment_ref.as_ref()
+    pub fn segment_idx(&self) -> Option<&SegmentIdx> {
+        self.segment_idx.as_ref()
     }
 
     pub fn checkpointed_at(&self) -> Option<&SystemTime> {
@@ -128,5 +136,50 @@ impl Commit {
 
     pub fn is_checkpoint(&self) -> bool {
         self.checkpointed_at.is_some()
+    }
+}
+
+impl SegmentIdx {
+    pub fn contains(&self, pageidx: PageIdx) -> bool {
+        self.graft.contains(pageidx.into())
+    }
+
+    pub fn frame_for_pageidx(&self, pageidx: PageIdx) -> Option<SegmentFrameRef> {
+        let mut bytes = 0..=0;
+        let mut pages = PageIdx::FIRST..=PageIdx::FIRST;
+        let mut found = false;
+        for frame in self.frames.iter() {
+            bytes = *bytes.end()..=(*bytes.end() + frame.frame_size);
+            pages = pages.end().saturating_next()..=frame.last_pageidx;
+
+            if frame.last_pageidx >= pageidx {
+                // this frame contains the pageidx
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return None; // no frame found for the pageidx
+        }
+        Some(SegmentFrameRef { sid: self.sid.clone(), bytes, pages })
+    }
+}
+
+impl SegmentFrameRef {
+    pub fn sid(&self) -> &SegmentId {
+        &self.sid
+    }
+
+    pub fn len(&self) -> usize {
+        // The length of the frame in bytes, add 1 becuase it's RangeInclusive
+        self.bytes.end() - self.bytes.start() + 1
+    }
+
+    pub fn bytes(&self) -> &RangeInclusive<usize> {
+        &self.bytes
+    }
+
+    pub fn pages(&self) -> &RangeInclusive<PageIdx> {
+        &self.pages
     }
 }
