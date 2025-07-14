@@ -145,23 +145,19 @@ impl SegmentIdx {
     }
 
     pub fn frame_for_pageidx(&self, pageidx: PageIdx) -> Option<SegmentFrameRef> {
-        let mut bytes = 0..=0;
-        let mut pages = PageIdx::FIRST..=PageIdx::FIRST;
-        let mut found = false;
-        for frame in self.frames.iter() {
-            bytes = *bytes.end()..=(*bytes.end() + frame.frame_size);
-            pages = pages.end().saturating_next()..=frame.last_pageidx;
+        self.frames
+            .iter()
+            .scan((0, PageIdx::FIRST), |(bytes_acc, pages_acc), frame| {
+                let bytes = *bytes_acc..=(*bytes_acc + frame.frame_size - 1);
+                let pages = *pages_acc..=frame.last_pageidx;
 
-            if frame.last_pageidx >= pageidx {
-                // this frame contains the pageidx
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            return None; // no frame found for the pageidx
-        }
-        Some(SegmentFrameRef { sid: self.sid.clone(), bytes, pages })
+                *bytes_acc += frame.frame_size;
+                *pages_acc = frame.last_pageidx.saturating_next();
+
+                Some((bytes, pages))
+            })
+            .find(|(_, pages)| pages.contains(&pageidx))
+            .map(|(bytes, pages)| SegmentFrameRef { sid: self.sid.clone(), bytes, pages })
     }
 }
 
@@ -181,5 +177,90 @@ impl SegmentFrameRef {
 
     pub fn pages(&self) -> &RangeInclusive<PageIdx> {
         &self.pages
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{SegmentId, graft::Graft};
+
+    #[test]
+    fn test_frame_for_pageidx() {
+        let mut frames = SmallVec::new();
+        frames.push(SegmentFrameIdx {
+            frame_size: 100,
+            last_pageidx: PageIdx::new(10),
+        });
+        frames.push(SegmentFrameIdx {
+            frame_size: 200,
+            last_pageidx: PageIdx::new(25),
+        });
+        frames.push(SegmentFrameIdx {
+            frame_size: 150,
+            last_pageidx: PageIdx::new(40),
+        });
+
+        let segment_idx = SegmentIdx {
+            sid: SegmentId::random(),
+            graft: Graft::EMPTY,
+            frames,
+        };
+
+        let test_cases = [
+            (
+                PageIdx::new(5),
+                Some((0..=99, PageIdx::FIRST..=PageIdx::new(10))),
+            ),
+            (
+                PageIdx::new(10),
+                Some((0..=99, PageIdx::FIRST..=PageIdx::new(10))),
+            ),
+            (
+                PageIdx::new(20),
+                Some((100..=299, PageIdx::new(11)..=PageIdx::new(25))),
+            ),
+            (
+                PageIdx::new(35),
+                Some((300..=449, PageIdx::new(26)..=PageIdx::new(40))),
+            ),
+            (PageIdx::new(50), None),
+        ];
+
+        for (pageidx, expected) in test_cases {
+            let result = segment_idx.frame_for_pageidx(pageidx);
+
+            match expected {
+                Some((expected_bytes, expected_pages)) => {
+                    assert!(
+                        result.is_some(),
+                        "Expected frame for PageIdx {}",
+                        pageidx.to_u32()
+                    );
+                    let frame_ref = result.unwrap();
+                    assert_eq!(*frame_ref.bytes(), expected_bytes);
+                    assert_eq!(*frame_ref.pages(), expected_pages);
+                }
+                None => {
+                    assert!(
+                        result.is_none(),
+                        "Expected no frame for PageIdx {}",
+                        pageidx.to_u32()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_frame_for_pageidx_empty_frames() {
+        let segment_idx = SegmentIdx {
+            sid: SegmentId::random(),
+            graft: Graft::EMPTY,
+            frames: SmallVec::new(),
+        };
+
+        let result = segment_idx.frame_for_pageidx(PageIdx::new(1));
+        assert!(result.is_none());
     }
 }
