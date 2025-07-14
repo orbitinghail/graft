@@ -13,8 +13,8 @@ pub struct VolumeMeta {
     #[bilrost(2)]
     parent: Option<VolumeRef>,
 
-    /// The etag from the last time we pulled the `CheckpointSet`, used to only pull
-    /// changed `CheckpointSets`
+    /// The etag from the last time we pulled the `CheckpointSet`, used to only
+    /// pull changed `CheckpointSets`
     #[bilrost(3)]
     etag: Option<Bytes>,
 
