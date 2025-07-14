@@ -318,7 +318,7 @@ struct CommitKey {
 /// Key for the `pages` partition
 struct PageKey {
     sid: SegmentId,
-    pageidx: u32,
+    pageidx: U32<BigEndian>,
 }
 ```
 
