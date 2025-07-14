@@ -1,11 +1,12 @@
-use std::{ops::RangeBounds, path::Path};
+use std::path::Path;
 
 use fjall::PartitionCreateOptions;
 use graft_core::{
-    VolumeId, commit::Commit, handle_id::HandleId, lsn::LSN, page::Page,
+    PageIdx, SegmentId, VolumeId, commit::Commit, handle_id::HandleId, lsn::LSN, page::Page,
     volume_handle::VolumeHandle, volume_meta::VolumeMeta, volume_ref::VolumeRef,
 };
 use lsm_tree::SeqNo;
+use tryiter::TryIteratorExt;
 
 use crate::{
     local::fjall_storage::{
@@ -16,7 +17,7 @@ use crate::{
     snapshot::Snapshot,
 };
 
-use culprit::Result;
+use culprit::{Result, ResultExt};
 
 mod fjall_repr;
 pub mod keys;
@@ -123,12 +124,12 @@ impl FjallStorage {
         while let Some(meta) = volumes.get(vref.vid())? {
             if let Some(checkpoint) = meta.checkpoints().checkpoint_for(vref.lsn()) {
                 // found a checkpoint, we can terminate the path here
-                path.push(meta.vid().clone(), vref.lsn(), checkpoint);
+                path.append(meta.vid().clone(), checkpoint..=vref.lsn());
                 return Ok(path);
             }
 
             // no checkpoint, scan to the beginning and recurse to the parent if possible
-            path.push(meta.vid().clone(), vref.lsn(), LSN::FIRST);
+            path.append(meta.vid().clone(), LSN::FIRST..=vref.lsn());
             if let Some(parent) = meta.parent() {
                 vref = parent.clone();
             } else {
@@ -139,28 +140,43 @@ impl FjallStorage {
         Ok(path)
     }
 
-    /// Returns an iterator over all commits in the given LSN range for the specified volume ID.
-    pub fn commits<R: RangeBounds<LSN>>(
+    pub fn commits(
         &self,
-        vid: &VolumeId,
-        range: R,
-    ) -> impl DoubleEndedIterator<Item = Result<Commit, FjallStorageErr>> {
-        // the input range is in the form `low..high`
-        // but the commits partition orders LSNs in reverse
-        // thus we need to flip the range when passing it down to the underlying
-        // TypedPartition query
-        let range = (
-            range
-                .end_bound()
-                .map(|lsn| CommitKey::new(vid.clone(), *lsn)),
-            range
-                .start_bound()
-                .map(|lsn| CommitKey::new(vid.clone(), *lsn)),
-        );
+        path: &SearchPath,
+    ) -> impl Iterator<Item = Result<Commit, FjallStorageErr>> {
+        let log = self.log.snapshot();
 
-        self.log
+        path.iter().flat_map(move |entry| {
+            // the entry range is in the form `low..high` but the commits
+            // partition orders LSNs in reverse. thus we need to flip the range
+            // when passing it down to the underlying scan.
+            let low = CommitKey::new(entry.vid().clone(), *entry.lsns().start());
+            let high = CommitKey::new(entry.vid().clone(), *entry.lsns().start());
+            let range = high..=low;
+            log.range(range).map_ok(|(_, commit)| Ok(commit))
+        })
+    }
+
+    pub fn read_page(
+        &self,
+        sid: SegmentId,
+        pageidx: PageIdx,
+    ) -> Result<Option<Page>, FjallStorageErr> {
+        self.pages
             .snapshot()
-            .range(range)
-            .map(|result| result.map(|(_, commit)| commit))
+            .get(&PageKey::new(sid, pageidx))
+            .or_into_ctx()
+    }
+
+    #[inline]
+    pub fn write_page(
+        &self,
+        sid: SegmentId,
+        pageidx: PageIdx,
+        page: Page,
+    ) -> Result<(), FjallStorageErr> {
+        self.pages
+            .insert(PageKey::new(sid, pageidx), page)
+            .or_into_ctx()
     }
 }

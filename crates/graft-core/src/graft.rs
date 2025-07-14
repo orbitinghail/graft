@@ -1,7 +1,7 @@
 use bytes::Bytes;
-use splinter_rs::{Splinter, cow::CowSplinter};
+use splinter_rs::{Splinter, SplinterRead, cow::CowSplinter};
 
-use crate::derive_newtype_proxy;
+use crate::{PageIdx, derive_newtype_proxy};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Graft {
@@ -13,8 +13,14 @@ impl Graft {
         splinter: CowSplinter::Owned(Splinter::EMPTY),
     };
 
+    #[inline]
     pub fn new(splinter: CowSplinter<Bytes>) -> Self {
         Self { splinter }
+    }
+
+    #[inline]
+    pub fn contains(&self, pageidx: PageIdx) -> bool {
+        self.splinter.contains(pageidx.to_u32())
     }
 }
 
