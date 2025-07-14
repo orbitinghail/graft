@@ -101,3 +101,7 @@ This architecture enables distributed, versioned SQLite databases with lazy repl
 ## Coding Guidelines
 
 - Refer to @CONTRIBUTING.md for coding style guidelines
+
+## Commit Guidelines
+
+- When committing on behalf of the user just sign off with: `Co-Authored-By: Claude <noreply@anthropic.com>`
