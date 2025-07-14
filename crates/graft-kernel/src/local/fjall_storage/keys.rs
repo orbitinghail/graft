@@ -2,13 +2,10 @@ use bytes::Bytes;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
 use graft_core::{
-    PageIdx, SegmentId, VolumeId,
-    cbe::{CBE32, CBE64},
-    handle_id::HandleId,
-    lsn::LSN,
+    PageIdx, SegmentId, VolumeId, cbe::CBE64, handle_id::HandleId, lsn::LSN,
     zerocopy_ext::TryFromBytesExt,
 };
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
+use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
 
 use crate::{
     local::fjall_storage::fjall_repr::{DecodeErr, FjallRepr},
@@ -134,7 +131,7 @@ impl PageKey {
 #[repr(C)]
 struct SerializedPageKey {
     sid: SegmentId,
-    pageidx: u32,
+    pageidx: U32<BigEndian>,
 }
 
 impl AsRef<[u8]> for SerializedPageKey {
@@ -226,7 +223,7 @@ mod tests {
         test_invalid::<PageKey>(
             SerializedPageKey {
                 sid: SegmentId::random(),
-                pageidx: CBE32::new(0),
+                pageidx: 0.into(),
             }
             .as_bytes(),
         );
@@ -234,16 +231,16 @@ mod tests {
         test_invalid::<PageKey>(b"short");
         test_invalid::<PageKey>(b"");
 
-        // PageKeys must naturally sort in descending order by page index
+        // PageKeys must naturally sort in ascending order by page index
         let sid1: SegmentId = "LkykngWAEj8KaTkYeg5ZBY".parse().unwrap();
         let sid2: SegmentId = "LkykngWBbT1v8zGaRpdbpK".parse().unwrap();
         test_serialized_order(&[
-            PageKey::new(sid1.clone(), PageIdx::new(4)),
-            PageKey::new(sid1.clone(), PageIdx::new(3)),
-            PageKey::new(sid1.clone(), PageIdx::new(2)),
             PageKey::new(sid1.clone(), PageIdx::new(1)),
-            PageKey::new(sid2.clone(), PageIdx::new(2)),
+            PageKey::new(sid1.clone(), PageIdx::new(2)),
+            PageKey::new(sid1.clone(), PageIdx::new(3)),
+            PageKey::new(sid1.clone(), PageIdx::new(4)),
             PageKey::new(sid2.clone(), PageIdx::new(1)),
+            PageKey::new(sid2.clone(), PageIdx::new(2)),
         ]);
     }
 }
