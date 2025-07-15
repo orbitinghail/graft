@@ -135,15 +135,16 @@ The CBE64 encoding allows both local key-value stores and object stores to perfo
 To verify data integrity, we attach a [blake3] hash to each `Commit`.
 
 ```python
-def commit_hash(snapshot, pages):
+def commit_hash(vid, lsn, page_count, pages):
   hasher = blake3::new()
   # unique 4 byte magic number identifying commits
   hasher.write(COMMIT_MAGIC))
-  hasher.write(snapshot.vid)
-  hasher.write(snapshot.lsn)
-  hasher.write(snapshot.page_count)
+  hasher.write(vid)
+  hasher.write(lsn)
+  hasher.write(page_count)
   # pages must be in order by pageidx
-  for page in pages:
+  for (pageidx, page) in pages:
+    hasher.write(pageidx)
     hasher.write(page)
   return hasher.hash()
 ```

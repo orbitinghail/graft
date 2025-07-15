@@ -47,11 +47,17 @@ impl LSN {
     pub const LAST: Self = unsafe { Self::new_unchecked(u64::MAX) };
     pub const ALL: RangeInclusive<Self> = Self::FIRST..=Self::LAST;
 
+    /// Creates a new LSN from a u64 value.
+    /// Panics if value is 0.
     #[inline]
     pub fn new(lsn: u64) -> Self {
         Self(NonZero::new(lsn).expect("LSN must be non-zero"))
     }
 
+    /// Creates a new LSN from a non-zero u64 value.
+    ///
+    /// SAFETY:
+    /// Undefined behavior if value is zero.
     #[inline]
     const unsafe fn new_unchecked(lsn: u64) -> Self {
         unsafe { Self(NonZero::new_unchecked(lsn)) }
@@ -107,6 +113,11 @@ impl LSN {
     /// Parses an LSN from a hexadecimal string.
     pub fn from_hex(s: &str) -> Result<Self, ParseIntError> {
         Ok(Self::new(u64::from_str_radix(s, 16)?))
+    }
+
+    #[inline]
+    pub const fn to_u64(self) -> u64 {
+        self.0.get()
     }
 }
 

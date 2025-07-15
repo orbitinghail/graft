@@ -105,3 +105,15 @@ This architecture enables distributed, versioned SQLite databases with lazy repl
 ## Commit Guidelines
 
 - When committing on behalf of the user just sign off with: `Co-Authored-By: Claude <noreply@anthropic.com>`
+
+## Testing Utilities
+
+### Generating VolumeIds, SegmentIds, or ClientIds
+
+Run `just run tool [vid|sid|cid]` to randomly generate a new VolumeId, SegmentId, or ClientId if you need one in a test.
+
+You can convert the resulting id like so:
+
+```rust
+let vid: VolumeId = "GonvVp514wF3ifTRoo11vY".parse().unwrap()
+```

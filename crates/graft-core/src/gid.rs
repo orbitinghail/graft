@@ -23,6 +23,14 @@ use crate::{
 const GID_SIZE: ByteUnit = ByteUnit::new(16);
 const SHORT_LEN: usize = 12;
 
+// The length of the encoded Gid in base58.
+// To calculate this compute ceil(16 * (log2(256) / log2(58)))
+//
+// Note: we require that Gid's always are their maximum length
+// This is currently guaranteed for well-constructed Gid's due to the
+// prefix byte always occupying the high bits.
+const ENCODED_LEN: usize = 22;
+
 mod prefix;
 mod time;
 
@@ -164,15 +172,8 @@ impl<P: Prefix> FromStr for Gid<P> {
     type Err = GidParseErr;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        // To calculate this compute ceil(16 * (log2(256) / log2(58)))
-        static MAX_ENCODED_LEN: usize = 22;
-
-        // Note: we require that Gid's always are their maximum length
-        // This is currently guaranteed for well-constructed Gid's due to the
-        // prefix byte always occupying the high bits.
-
         // verify the length
-        if value.len() != MAX_ENCODED_LEN {
+        if value.len() != ENCODED_LEN {
             return Err(GidParseErr::InvalidLength);
         }
 

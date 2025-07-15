@@ -21,6 +21,7 @@ pub mod cbe;
 pub mod hash_table;
 pub mod zerocopy_ext;
 
+pub use commit_hash::{CommitHashBuilder, CommitHashParseErr};
 pub use gid::{ClientId, SegmentId, VolumeId};
 pub use page_count::PageCount;
 pub use page_idx::PageIdx;
