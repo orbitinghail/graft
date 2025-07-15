@@ -85,10 +85,10 @@ impl Dbfs {
                     Ok(out)
                 }
                 InodeFormatter::Toml => {
-                    let mut out = String::with_capacity(128);
-                    let ser = toml::Serializer::pretty(&mut out);
+                    let mut buffer = toml::ser::Buffer::new();
+                    let ser = toml::Serializer::pretty(&mut buffer);
                     field::serialize_field(&self.db, field_id, ser)?;
-                    Ok(out.into_bytes())
+                    Ok(buffer.to_string().into_bytes())
                 }
                 InodeFormatter::Yaml => {
                     let mut out = Vec::with_capacity(128);
