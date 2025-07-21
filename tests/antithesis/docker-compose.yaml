@@ -10,6 +10,17 @@ services:
     environment:
       - RUST_BACKTRACE=1
 
+  fjall_test:
+    container_name: fjall_test
+    hostname: fjall_test
+    image: fjall_tester:latest
+    stop_signal: SIGKILL
+    networks:
+      basic-net:
+        ipv4_address: 10.20.20.21
+    environment:
+      - RUST_BACKTRACE=1
+
   metastore:
     container_name: metastore
     hostname: metastore

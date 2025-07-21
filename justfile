@@ -14,6 +14,7 @@ METASTORE_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "metastore:" + GIT_SHA
 PAGESTORE_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "pagestore:" + GIT_SHA
 CONFIG_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "config:" + GIT_SHA
 TEST_WORKLOAD_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "test_workload:" + GIT_SHA
+FJALL_TEST_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "fjall_tester:" + GIT_SHA
 MINIO_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "minio:" + GIT_SHA
 
 default:
@@ -88,6 +89,14 @@ test-workload-image:
         -t {{TEST_WORKLOAD_ANTITHESIS_TAG}} \
         {{BUILD_ARGS}} .
 
+fjall-test-image:
+    docker build \
+        --platform {{DOCKER_PLATFORM}} \
+        --target fjall_tester \
+        -t fjall_tester \
+        -t {{TEST_WORKLOAD_ANTITHESIS_TAG}} \
+        {{BUILD_ARGS}} .
+
 antithesis-config-image:
     docker build \
         --platform {{DOCKER_PLATFORM}} \
@@ -125,5 +134,6 @@ antithesis-run duration='120': antithesis-prep
         --image='{{PAGESTORE_ANTITHESIS_TAG}}' \
         --image='{{TEST_WORKLOAD_ANTITHESIS_TAG}}' \
         --image='{{MINIO_ANTITHESIS_TAG}}' \
+        --image='{{FJALL_TEST_ANTITHESIS_TAG}}' \
         --duration={{duration}} \
         --email='antithesis-results@orbitinghail.dev'
