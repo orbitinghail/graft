@@ -137,6 +137,7 @@ impl WorkloadErr {
                 err.code,
                 rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::SystemIoFailure
             ),
+            WorkloadErr::IoErr(ioerr) => should_retry_io(ioerr.kind()),
             _ => false,
         }
     }

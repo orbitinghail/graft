@@ -193,6 +193,10 @@ impl Ticker {
         self.remaining != 0
     }
 
+    pub fn finish(&mut self) {
+        self.remaining = 0
+    }
+
     pub fn is_done(&self) -> bool {
         self.remaining == 0
     }

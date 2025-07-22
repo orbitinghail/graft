@@ -1,4 +1,5 @@
 use culprit::Culprit;
+use graft_tracing::running_in_antithesis;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -12,8 +13,14 @@ impl Workload for FjallStorageBench {
     fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>> {
         use std::process::Command;
 
-        let duration = env.rng.random_range(30..900);
-        let duration = duration.to_string();
+        // let antithesis control how many/often this workload runs
+        env.ticker.finish();
+
+        let duration = if running_in_antithesis() {
+            env.rng.random_range(5..900).to_string()
+        } else {
+            "5".to_string()
+        };
 
         tracing::info!("Running fjall-storage-bench for {} seconds", duration);
 
@@ -44,10 +51,22 @@ impl Workload for FjallStorageBench {
             };
         }
 
-        let mut handle = cmd.spawn()?;
-        let status = handle.wait()?;
+        let mut handle = match cmd.spawn() {
+            Ok(handle) => handle,
+            Err(err) => {
+                precept::expect_unreachable!("rust-storage-bench failed to start", { "err": err.to_string() });
+                return Ok(());
+            }
+        };
 
-        precept::expect_always!(status.success(), "rust-storage-bench command runs");
+        match handle.wait() {
+            Ok(status) => {
+                precept::expect_always!(status.success(), "rust-storage-bench command runs")
+            }
+            Err(err) => {
+                precept::expect_unreachable!("rust-storage-bench failed to finish", { "err": err.to_string() });
+            }
+        };
 
         Ok(())
     }
