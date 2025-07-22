@@ -115,12 +115,13 @@ minio-image:
 build-images: metastore-image pagestore-image
 
 antithesis-prep: antithesis-config-image
-    just instrumented=1 build-images test-workload-image minio-image
+    just instrumented=1 build-images test-workload-image minio-image fjall-test-image
     docker push {{METASTORE_ANTITHESIS_TAG}}
     docker push {{PAGESTORE_ANTITHESIS_TAG}}
     docker push {{CONFIG_ANTITHESIS_TAG}}
     docker push {{TEST_WORKLOAD_ANTITHESIS_TAG}}
     docker push {{MINIO_ANTITHESIS_TAG}}
+    docker push {{FJALL_TEST_ANTITHESIS_TAG}}
 
 antithesis-run duration='120': antithesis-prep
     antithesis run \
