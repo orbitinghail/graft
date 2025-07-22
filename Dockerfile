@@ -62,14 +62,11 @@ ENTRYPOINT ["sleep", "infinity"]
 
 FROM base AS fjall_tester
 RUN rm -rf /app
-RUN git clone https://github.com/marvin-j97/rust-storage-bench /app
+RUN git clone https://github.com/carlsverre/rust-storage-bench /app
 WORKDIR /app
 
-RUN git checkout v1
-RUN sed -i "s/# fjall_nightly/fjall_nightly/g" Cargo.toml
-RUN sed -i 's/fjall_nightly = \[\]/fjall_nightly = \["dep:fjall_nightly"\]/' Cargo.toml
-
-RUN cargo build --profile dev --no-default-features --features mimalloc,fjall_nightly
+RUN git checkout add_precept
+RUN cargo build --profile dev --no-default-features --features mimalloc,fjall_nightly,antithesis
 RUN mkdir /symbols && ln -s /app/target/debug/rust-storage-bench /symbols/rust-storage-bench
 
 COPY ./tests/antithesis/fjall /opt/antithesis/test/v1/fjall

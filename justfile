@@ -94,7 +94,7 @@ fjall-test-image:
         --platform {{DOCKER_PLATFORM}} \
         --target fjall_tester \
         -t fjall_tester \
-        -t {{TEST_WORKLOAD_ANTITHESIS_TAG}} \
+        -t {{FJALL_TEST_ANTITHESIS_TAG}} \
         {{BUILD_ARGS}} .
 
 antithesis-config-image:
