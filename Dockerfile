@@ -60,15 +60,16 @@ COPY ./tests/antithesis/workloads /opt/antithesis/test
 RUN ["sh", "-c", "mkdir /symbols && ln -s /test_workload /symbols/test_workload"]
 ENTRYPOINT ["sleep", "infinity"]
 
-FROM base AS fjall_tester
+FROM base AS fjall_builder
 RUN rm -rf /app
-RUN git clone https://github.com/carlsverre/rust-storage-bench /app
+RUN git clone --depth=1 https://github.com/marvin-j97/rust-storage-bench /app
 WORKDIR /app
-
-RUN git checkout add_precept
+RUN git fetch --depth=1 origin aa83b7d7dce4f5827c1cb6cfa7119ee0807c9251
+RUN git checkout aa83b7d7dce4f5827c1cb6cfa7119ee0807c9251
 RUN cargo build --profile dev --no-default-features --features mimalloc,fjall_nightly,antithesis
-RUN mkdir /symbols && ln -s /app/target/debug/rust-storage-bench /symbols/rust-storage-bench
 
+FROM runtime AS fjall_tester
+COPY --from=fjall_builder /app/target/debug/rust-storage-bench /rust-storage-bench
 COPY ./tests/antithesis/fjall /opt/antithesis/test/v1/fjall
-
+RUN ["sh", "-c", "mkdir /symbols && ln -s /rust-storage-bench /symbols/rust-storage-bench"]
 ENTRYPOINT ["sleep", "infinity"]
