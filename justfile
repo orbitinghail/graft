@@ -89,14 +89,6 @@ test-workload-image:
         -t {{TEST_WORKLOAD_ANTITHESIS_TAG}} \
         {{BUILD_ARGS}} .
 
-fjall-test-image:
-    docker build \
-        --platform {{DOCKER_PLATFORM}} \
-        --target fjall_tester \
-        -t fjall_tester \
-        -t {{FJALL_TEST_ANTITHESIS_TAG}} \
-        {{BUILD_ARGS}} .
-
 antithesis-config-image:
     docker build \
         --platform {{DOCKER_PLATFORM}} \
@@ -115,13 +107,12 @@ minio-image:
 build-images: metastore-image pagestore-image
 
 antithesis-prep: antithesis-config-image
-    just instrumented=1 build-images test-workload-image minio-image fjall-test-image
+    just instrumented=1 build-images test-workload-image minio-image
     docker push {{METASTORE_ANTITHESIS_TAG}}
     docker push {{PAGESTORE_ANTITHESIS_TAG}}
     docker push {{CONFIG_ANTITHESIS_TAG}}
     docker push {{TEST_WORKLOAD_ANTITHESIS_TAG}}
     docker push {{MINIO_ANTITHESIS_TAG}}
-    docker push {{FJALL_TEST_ANTITHESIS_TAG}}
 
 antithesis-run duration='120': antithesis-prep
     antithesis run \
@@ -135,6 +126,5 @@ antithesis-run duration='120': antithesis-prep
         --image='{{PAGESTORE_ANTITHESIS_TAG}}' \
         --image='{{TEST_WORKLOAD_ANTITHESIS_TAG}}' \
         --image='{{MINIO_ANTITHESIS_TAG}}' \
-        --image='{{FJALL_TEST_ANTITHESIS_TAG}}' \
         --duration={{duration}} \
         --email='antithesis-results@orbitinghail.dev'

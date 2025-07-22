@@ -53,13 +53,6 @@ COPY ./deploy/pagestore/pagestore.toml /pagestore.toml
 RUN ["sh", "-c", "mkdir /symbols && ln -s /pagestore /symbols/pagestore"]
 ENTRYPOINT ["/pagestore"]
 
-FROM runtime AS test_workload
-COPY --from=builder /artifacts/test_workload /test_workload
-COPY ./crates/graft-test/workloads /workloads
-COPY ./tests/antithesis/workloads /opt/antithesis/test
-RUN ["sh", "-c", "mkdir /symbols && ln -s /test_workload /symbols/test_workload"]
-ENTRYPOINT ["sleep", "infinity"]
-
 FROM base AS fjall_builder
 RUN rm -rf /app
 RUN git clone --depth=1 https://github.com/marvin-j97/rust-storage-bench /app
@@ -68,8 +61,11 @@ RUN git fetch --depth=1 origin aa83b7d7dce4f5827c1cb6cfa7119ee0807c9251
 RUN git checkout aa83b7d7dce4f5827c1cb6cfa7119ee0807c9251
 RUN cargo build --profile dev --no-default-features --features mimalloc,fjall_nightly,antithesis
 
-FROM runtime AS fjall_tester
+FROM runtime AS test_workload
+COPY --from=builder /artifacts/test_workload /test_workload
 COPY --from=fjall_builder /app/target/debug/rust-storage-bench /rust-storage-bench
-COPY ./tests/antithesis/fjall /opt/antithesis/test/v1/fjall
-RUN ["sh", "-c", "mkdir /symbols && ln -s /rust-storage-bench /symbols/rust-storage-bench"]
+COPY ./crates/graft-test/workloads /workloads
+COPY ./tests/antithesis/workloads /opt/antithesis/test
+RUN ["sh", "-c", "mkdir /symbols && ln -s /test_workload /symbols/test_workload"]
+RUN ["sh", "-c", "ln -s /rust-storage-bench /symbols/rust-storage-bench"]
 ENTRYPOINT ["sleep", "infinity"]

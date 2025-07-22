@@ -1,4 +1,4 @@
-use crate::{PageHash, Ticker};
+use crate::{PageHash, Ticker, workload::fjall_storage_bench::FjallStorageBench};
 
 use super::{PageTracker, PageTrackerErr};
 use config::ConfigError;
@@ -31,6 +31,7 @@ use thiserror::Error;
 use tracing::field;
 use zerocopy::{CastError, FromBytes, SizeError};
 
+pub mod fjall_storage_bench;
 pub mod simple_reader;
 pub mod simple_writer;
 pub mod sqlite_sanity;
@@ -66,6 +67,12 @@ pub enum WorkloadErr {
 
     #[error(transparent)]
     RusqliteErr(#[from] rusqlite::Error),
+
+    #[error("I/O error: {0}")]
+    IoErr(#[from] std::io::Error),
+
+    #[error("Executed command {cmd} failed. Stderr:\n{stderr}")]
+    Exec { cmd: &'static str, stderr: String },
 }
 
 impl From<StorageErr> for WorkloadErr {
@@ -159,6 +166,7 @@ pub enum WorkloadConfig {
     SimpleWriter,
     SimpleReader,
     SqliteSanity,
+    FjallStorageBench,
 }
 
 impl WorkloadConfig {
