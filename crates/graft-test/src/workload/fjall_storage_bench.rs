@@ -9,12 +9,17 @@ use crate::workload::{Workload, WorkloadEnv, WorkloadErr};
 pub struct FjallStorageBench;
 
 impl Workload for FjallStorageBench {
-    fn run<R: Rng>(&mut self, _env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>> {
+    fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>> {
         use std::process::Command;
 
-        enum Arg {
-            Pos(&'static str),
-            Flg(&'static str, &'static str),
+        let duration = env.rng.random_range(30..900);
+        let duration = duration.to_string();
+
+        tracing::info!("Running fjall-storage-bench for {} seconds", duration);
+
+        enum Arg<'a> {
+            Pos(&'a str),
+            Flg(&'a str, &'a str),
         }
 
         let args = [
@@ -22,8 +27,8 @@ impl Workload for FjallStorageBench {
             Arg::Flg("--compression", "none"),
             Arg::Flg("--backend", "fjall-nightly"),
             Arg::Flg("--data-dir", ".data"),
-            Arg::Flg("--cache-size", "536870912"),
-            Arg::Flg("--seconds", "900"),
+            Arg::Flg("--cache-size", "33554432"),
+            Arg::Flg("--seconds", &duration),
             Arg::Flg("--out", "fjall-nightly-output.jsonl"),
             Arg::Pos("read-write"),
             Arg::Pos("--write-random"),
@@ -39,19 +44,10 @@ impl Workload for FjallStorageBench {
             };
         }
 
-        let output = cmd.output()?;
+        let mut handle = cmd.spawn()?;
+        let status = handle.wait()?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        precept::expect_always!(
-            output.status.success(),
-            "rust-storage-bench command failed",
-            {
-                "stdout": String::from(stdout),
-                "stderr": String::from(stderr),
-            }
-        );
+        precept::expect_always!(status.success(), "rust-storage-bench command runs");
 
         Ok(())
     }
