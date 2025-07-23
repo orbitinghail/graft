@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use culprit::Culprit;
 use graft_tracing::running_in_antithesis;
 use rand::Rng;
@@ -22,6 +24,26 @@ impl Workload for FjallStorageBench {
             "5".to_string()
         };
 
+        let cache_size = if running_in_antithesis() {
+            env.rng.random_range(1..128) * 1024 * 1024
+        } else {
+            32 * 1024 * 1024
+        }
+        .to_string();
+
+        let value_size = if running_in_antithesis() {
+            env.rng.random_range(0..1024)
+        } else {
+            0
+        }
+        .to_string();
+
+        // delete fjall-nightly-output.jsonl if it exists
+        if Path::new("fjall-nightly-output.jsonl").exists() {
+            std::fs::remove_file("fjall-nightly-output.jsonl")
+                .expect("Failed to remove existing fjall-nightly-output.jsonl");
+        }
+
         tracing::info!("Running fjall-storage-bench for {} seconds", duration);
 
         enum Arg<'a> {
@@ -34,12 +56,12 @@ impl Workload for FjallStorageBench {
             Arg::Flg("--compression", "none"),
             Arg::Flg("--backend", "fjall-nightly"),
             Arg::Flg("--data-dir", ".data"),
-            Arg::Flg("--cache-size", "33554432"),
+            Arg::Flg("--cache-size", &cache_size),
             Arg::Flg("--seconds", &duration),
             Arg::Flg("--out", "fjall-nightly-output.jsonl"),
             Arg::Pos("read-write"),
             Arg::Pos("--write-random"),
-            Arg::Flg("--value-size", "0"),
+            Arg::Flg("--value-size", &value_size),
             Arg::Flg("--item-count", "1000"),
         ];
 
