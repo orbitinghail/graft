@@ -2,7 +2,7 @@ use std::path::Path;
 
 use culprit::Culprit;
 use graft_tracing::running_in_antithesis;
-use rand::Rng;
+use rand::{Rng, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};
 
 use crate::workload::{Workload, WorkloadEnv, WorkloadErr};
@@ -19,24 +19,30 @@ impl Workload for FjallStorageBench {
         env.ticker.finish();
 
         let duration = if running_in_antithesis() {
-            env.rng.random_range(5..900).to_string()
+            env.rng.random_range(150..1500).to_string()
         } else {
             "5".to_string()
         };
 
         let cache_size = if running_in_antithesis() {
-            env.rng.random_range(1..128) * 1024 * 1024
+            env.rng.random_range(32..256) * 1024 * 1024
         } else {
             32 * 1024 * 1024
         }
         .to_string();
 
         let value_size = if running_in_antithesis() {
-            env.rng.random_range(0..1024)
+            if env.rng.random_bool(0.5) {
+                env.rng.random_range(0..1024)
+            } else {
+                0
+            }
         } else {
             0
         }
         .to_string();
+
+        let item_count = env.rng.random_range(1000..100000).to_string();
 
         // delete fjall-nightly-output.jsonl if it exists
         if Path::new("fjall-nightly-output.jsonl").exists() {
@@ -51,7 +57,7 @@ impl Workload for FjallStorageBench {
             Flg(&'a str, &'a str),
         }
 
-        let args = [
+        let mut args = vec![
             Arg::Pos("run"),
             Arg::Flg("--compression", "none"),
             Arg::Flg("--backend", "fjall-nightly"),
@@ -59,28 +65,55 @@ impl Workload for FjallStorageBench {
             Arg::Flg("--cache-size", &cache_size),
             Arg::Flg("--seconds", &duration),
             Arg::Flg("--out", "fjall-nightly-output.jsonl"),
-            Arg::Pos("read-write"),
-            Arg::Pos("--write-random"),
-            Arg::Flg("--value-size", &value_size),
-            Arg::Flg("--item-count", "1000"),
         ];
 
+        // pick a random workload
+        match env.rng.random_range(0..3) {
+            0 => args.append(&mut vec![
+                Arg::Pos("read-write"),
+                Arg::Pos("--write-random"),
+                Arg::Flg("--value-size", &value_size),
+                Arg::Flg("--item-count", &item_count),
+            ]),
+            1 => args.append(&mut vec![
+                Arg::Pos("ycsb"),
+                Arg::Flg("--value-size", &value_size),
+                Arg::Flg("--item-count", &item_count),
+                Arg::Flg("--type", &["a", "b", "c"].choose(&mut env.rng).unwrap()),
+            ]),
+            2 => args.append(&mut vec![
+                Arg::Pos("queue"),
+                Arg::Pos("--backpressure"),
+                Arg::Flg("--value-size", &value_size),
+            ]),
+            _ => unreachable!("random_range should only return 0, 1, or 2"),
+        }
+
         let mut cmd = Command::new("/rust-storage-bench");
+        let mut args_str = vec![];
         for arg in &args {
             match arg {
-                Arg::Pos(s) => cmd.arg(s),
-                Arg::Flg(flag, value) => cmd.arg(flag).arg(value),
+                Arg::Pos(s) => {
+                    cmd.arg(s);
+                    args_str.push(s.to_string());
+                }
+                Arg::Flg(flag, value) => {
+                    cmd.arg(flag).arg(value);
+                    args_str.push(format!("{}={}", flag, value));
+                }
             };
         }
+
+        let args_str = args_str.join(" ");
+
+        tracing::info!("Running fjall-storage-bench with args: {args_str}",);
 
         let mut handle = match cmd.spawn() {
             Ok(handle) => handle,
             Err(err) => {
                 precept::expect_unreachable!("rust-storage-bench failed to start", {
                     "err": err.to_string(),
-                    "cache_size": cache_size,
-                    "duration": duration,
-                    "value_size": value_size,
+                    "args": args_str,
                 });
                 return Ok(());
             }
@@ -90,17 +123,13 @@ impl Workload for FjallStorageBench {
             Ok(status) => {
                 precept::expect_always!(status.success(), "rust-storage-bench command runs", {
                     "status": status.code(),
-                    "cache_size": cache_size,
-                    "duration": duration,
-                    "value_size": value_size,
+                    "args": args_str,
                 })
             }
             Err(err) => {
                 precept::expect_unreachable!("rust-storage-bench failed to finish", {
                     "err": err.to_string(),
-                    "cache_size": cache_size,
-                    "duration": duration,
-                    "value_size": value_size,
+                    "args": args_str,
                 });
             }
         };
