@@ -76,17 +76,32 @@ impl Workload for FjallStorageBench {
         let mut handle = match cmd.spawn() {
             Ok(handle) => handle,
             Err(err) => {
-                precept::expect_unreachable!("rust-storage-bench failed to start", { "err": err.to_string() });
+                precept::expect_unreachable!("rust-storage-bench failed to start", {
+                    "err": err.to_string(),
+                    "cache_size": cache_size,
+                    "duration": duration,
+                    "value_size": value_size,
+                });
                 return Ok(());
             }
         };
 
         match handle.wait() {
             Ok(status) => {
-                precept::expect_always!(status.success(), "rust-storage-bench command runs")
+                precept::expect_always!(status.success(), "rust-storage-bench command runs", {
+                    "status": status.code(),
+                    "cache_size": cache_size,
+                    "duration": duration,
+                    "value_size": value_size,
+                })
             }
             Err(err) => {
-                precept::expect_unreachable!("rust-storage-bench failed to finish", { "err": err.to_string() });
+                precept::expect_unreachable!("rust-storage-bench failed to finish", {
+                    "err": err.to_string(),
+                    "cache_size": cache_size,
+                    "duration": duration,
+                    "value_size": value_size,
+                });
             }
         };
 
