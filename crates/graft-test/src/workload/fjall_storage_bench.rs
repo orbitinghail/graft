@@ -68,25 +68,20 @@ impl Workload for FjallStorageBench {
         ];
 
         // pick a random workload
-        match env.rng.random_range(0..3) {
-            0 => args.append(&mut vec![
+        if env.rng.random_bool(0.5) {
+            args.append(&mut vec![
                 Arg::Pos("read-write"),
                 Arg::Pos("--write-random"),
                 Arg::Flg("--value-size", &value_size),
                 Arg::Flg("--item-count", &item_count),
-            ]),
-            1 => args.append(&mut vec![
+            ])
+        } else {
+            args.append(&mut vec![
                 Arg::Pos("ycsb"),
                 Arg::Flg("--value-size", &value_size),
                 Arg::Flg("--item-count", &item_count),
                 Arg::Flg("--type", &["a", "b", "c"].choose(&mut env.rng).unwrap()),
-            ]),
-            2 => args.append(&mut vec![
-                Arg::Pos("queue"),
-                Arg::Pos("--backpressure"),
-                Arg::Flg("--value-size", &value_size),
-            ]),
-            _ => unreachable!("random_range should only return 0, 1, or 2"),
+            ])
         }
 
         let mut cmd = Command::new("/rust-storage-bench");
