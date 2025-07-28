@@ -147,6 +147,10 @@ impl FjallStorage {
         Ok(path)
     }
 
+    pub fn read_commit(&self, vref: &VolumeRef) -> Result<Option<Commit>, FjallStorageErr> {
+        self.log.snapshot().get_owned(CommitKey::from(vref.clone()))
+    }
+
     pub fn commits(
         &self,
         path: &SearchPath,

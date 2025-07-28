@@ -2,7 +2,7 @@ use bytes::Bytes;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
 use graft_core::{
-    PageIdx, SegmentId, VolumeId, cbe::CBE64, handle_id::HandleId, lsn::LSN,
+    PageIdx, SegmentId, VolumeId, cbe::CBE64, handle_id::HandleId, lsn::LSN, volume_ref::VolumeRef,
     zerocopy_ext::TryFromBytesExt,
 };
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
@@ -69,6 +69,14 @@ impl CommitKey {
     }
 }
 
+impl From<VolumeRef> for CommitKey {
+    #[inline]
+    fn from(volume_ref: VolumeRef) -> Self {
+        let (vid, lsn) = volume_ref.into();
+        Self { vid, lsn }
+    }
+}
+
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
 struct SerializedCommitKey {
@@ -89,10 +97,10 @@ impl FjallKeyPrefix for CommitKey {
 
 proxy_to_fjall_repr!(
     encode (CommitKey) using proxy (SerializedCommitKey)
-    into_proxy(&self) {
+    into_proxy(me) {
         SerializedCommitKey {
-            vid: self.vid.clone(),
-            lsn: self.lsn.into(),
+            vid: me.vid,
+            lsn: me.lsn.into(),
         }
     }
     from_proxy(proxy) {
@@ -147,10 +155,10 @@ impl FjallKeyPrefix for PageKey {
 
 proxy_to_fjall_repr!(
     encode (PageKey) using proxy (SerializedPageKey)
-    into_proxy(&self) {
+    into_proxy(me) {
         SerializedPageKey {
-            sid: self.sid.clone(),
-            pageidx: self.pageidx.into(),
+            sid: me.sid,
+            pageidx: me.pageidx.into(),
         }
     }
     from_proxy(proxy) {

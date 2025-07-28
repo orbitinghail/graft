@@ -71,14 +71,21 @@ where
         return Ok(None);
     }
 
+    pub fn get_owned(&self, key: K) -> culprit::Result<Option<V>, FjallStorageErr> {
+        if let Some(slice) = self.snapshot.get(key.into_slice())? {
+            return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
+        }
+        return Ok(None);
+    }
+
     pub fn range<R: RangeBounds<K>>(
         &self,
         range: R,
     ) -> impl DoubleEndedIterator<Item = culprit::Result<(K, V), FjallStorageErr>> + use<R, K, V>
     {
         let r: (Bound<Slice>, Bound<Slice>) = (
-            range.start_bound().map(|b| b.as_slice().as_ref().into()),
-            range.end_bound().map(|b| b.as_slice().as_ref().into()),
+            range.start_bound().map(|b| b.clone().into_slice()),
+            range.end_bound().map(|b| b.clone().into_slice()),
         );
         TypedPartitionIter::<K, V, _> {
             iter: self.snapshot.range(r),

@@ -29,7 +29,7 @@ pub enum DecodeErr {
     PageSizeErr(#[from] PageSizeErr),
 }
 
-pub trait FjallRepr: Sized {
+pub trait FjallRepr: Sized + Clone {
     /// Converts Self into a type that can be cheaply converted into a byte
     /// slice. For ZeroCopy types, this may simply be the raw bytes of Self.
     fn as_slice(&self) -> impl AsRef<[u8]>;
@@ -48,20 +48,29 @@ pub trait FjallRepr: Sized {
 macro_rules! proxy_to_fjall_repr {
     (
         encode ($ty:ty) using proxy ($proxy:ty)
-        into_proxy(&$self:ident) $into_proxy:block
+        into_proxy($me:ident) $into_proxy:block
         from_proxy($iproxy:ident) $from_proxy:block
     ) => {
         impl FjallRepr for $ty {
             #[inline]
-            fn as_slice(&$self) -> impl AsRef<[u8]> {
+            fn as_slice(&self) -> impl AsRef<[u8]> {
+                let $me = self.clone();
                 $into_proxy
             }
 
             #[inline]
-            fn try_from_slice(slice: Slice) -> Result<Self, $crate::local::fjall_storage::fjall_repr::DecodeErr> {
+            fn try_from_slice(
+                slice: Slice,
+            ) -> Result<Self, $crate::local::fjall_storage::fjall_repr::DecodeErr> {
                 let $iproxy: &$proxy =
                     <$proxy>::try_ref_from_unaligned_bytes(&slice).or_into_ctx()?;
                 $from_proxy
+            }
+
+            #[inline]
+            fn into_slice(self) -> Slice {
+                let $me = self;
+                Slice::new($into_proxy.as_ref())
             }
         }
     };

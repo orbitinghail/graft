@@ -13,3 +13,4 @@ pub mod rt {
 pub mod search_path;
 pub mod snapshot;
 pub mod volume_reader;
+pub mod volume_writer;

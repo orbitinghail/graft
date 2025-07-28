@@ -1,4 +1,4 @@
-use graft_core::{PageIdx, page::Page};
+use graft_core::{PageCount, PageIdx, page::Page};
 use tryiter::TryIteratorExt;
 
 use crate::{
@@ -15,6 +15,14 @@ pub struct VolumeReader {
 }
 
 impl VolumeReader {
+    pub fn page_count(&self) -> culprit::Result<PageCount, FjallStorageErr> {
+        let commit = self
+            .storage
+            .read_commit(self.snapshot.vref())?
+            .expect("no commit found for snapshot");
+        Ok(commit.page_count())
+    }
+
     pub fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Option<Page>, FjallStorageErr> {
         let mut commits = self.storage.commits(self.snapshot.search_path());
 

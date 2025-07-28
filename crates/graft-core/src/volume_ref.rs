@@ -27,3 +27,10 @@ impl VolumeRef {
         self.lsn
     }
 }
+
+impl From<VolumeRef> for (VolumeId, LSN) {
+    #[inline]
+    fn from(volume_ref: VolumeRef) -> Self {
+        (volume_ref.vid, volume_ref.lsn)
+    }
+}

@@ -16,3 +16,8 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 - [ ] Volume Reader
 - [ ] Volume Writer
 - [ ] libgraft SQLite
+
+## Notes
+
+- how do we represent empty volumereaders? and/or perhaps we just need to represent a volume writer that's backed by an empty volume?
+- make TypedPartitionSnapshot::prefix type safe
