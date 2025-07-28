@@ -100,7 +100,7 @@ This architecture enables distributed, versioned SQLite databases with lazy repl
 
 ## Coding Guidelines
 
-- Refer to @CONTRIBUTING.md for coding style guidelines
+- Refer to CONTRIBUTING.md for coding style guidelines
 
 ## Commit Guidelines
 
