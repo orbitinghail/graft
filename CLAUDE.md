@@ -46,6 +46,7 @@ When Claude is executing in a `.kosho` worktree (identifiable by `.kosho` in the
 - **Use relative paths or paths within the current worktree**
 
 **Example:**
+
 - ✅ Current worktree: `<repo>/.kosho/feat-branch`
 - ✅ Access files like: `crates/graft-core/src/page.rs` (relative to worktree)
 - ❌ Never access: `<repo>/crates/graft-core/src/page.rs` (repo root)
@@ -122,6 +123,7 @@ This architecture enables distributed, versioned SQLite databases with lazy repl
 ## Commit Guidelines
 
 - When committing on behalf of the user just sign off with: `Co-Authored-By: Claude <noreply@anthropic.com>`
+- Never add `🤖 Generated with [Claude Code](https://claude.ai/code)` to any commit messages.
 
 ## Testing Utilities
 
