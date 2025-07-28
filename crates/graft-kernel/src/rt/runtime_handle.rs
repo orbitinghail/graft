@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 
 use crate::rt::{
-    rpc::RuntimeRpc,
+    rpc::{RpcHandle, RuntimeRpc},
     runtime::{Event, Runtime, RuntimeFatalErr},
 };
 
@@ -22,7 +22,8 @@ pub struct RuntimeHandle {
 
 struct RuntimeHandleInner {
     handle: JoinHandle<Result<(), RuntimeFatalErr>>,
-    tx: Sender<RuntimeRpc>,
+    storage: FjallStorage,
+    rpc: RpcHandle,
 }
 
 impl RuntimeHandle {
@@ -36,11 +37,11 @@ impl RuntimeHandle {
             IntervalStream::new(tokio::time::interval(Duration::from_secs(1))).map(|_| Event::Tick);
         let events = Box::pin(rx.merge(ticks));
 
-        let runtime = Runtime::new(storage, events);
+        let runtime = Runtime::new(storage.clone(), events);
         let handle = handle.spawn(runtime.start());
 
         RuntimeHandle {
-            inner: Arc::new(RuntimeHandleInner { handle, tx }),
+            inner: Arc::new(RuntimeHandleInner { handle, storage, rpc: RpcHandle::new(tx) }),
         }
     }
 }

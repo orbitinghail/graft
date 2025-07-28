@@ -5,7 +5,8 @@ pub mod local {
 pub mod rt {
     pub mod runtime_handle;
 
-    mod rpc;
+    pub(crate) mod rpc;
+
     mod runtime;
 }
 

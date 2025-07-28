@@ -140,6 +140,10 @@ impl Commit {
 }
 
 impl SegmentIdx {
+    pub fn sid(&self) -> &SegmentId {
+        &self.sid
+    }
+
     pub fn contains(&self, pageidx: PageIdx) -> bool {
         self.graft.contains(pageidx.into())
     }

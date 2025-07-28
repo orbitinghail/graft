@@ -2,6 +2,7 @@ use graft_core::volume_ref::VolumeRef;
 
 use crate::search_path::SearchPath;
 
+#[derive(Debug, Clone)]
 pub struct Snapshot {
     vref: VolumeRef,
     path: SearchPath,
@@ -16,7 +17,7 @@ impl Snapshot {
         &self.vref
     }
 
-    pub fn search(&self) -> &SearchPath {
+    pub fn search_path(&self) -> &SearchPath {
         &self.path
     }
 }
