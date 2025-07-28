@@ -30,6 +30,10 @@ tryiter = { workspace = true }
 smallvec = { workspace = true }
 tempfile = { workspace = true }
 tracing = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "time", "parking_lot"] }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }

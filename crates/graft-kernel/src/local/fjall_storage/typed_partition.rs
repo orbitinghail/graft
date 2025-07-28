@@ -9,6 +9,7 @@ use tryiter::TryIteratorExt;
 
 use crate::local::fjall_storage::{FjallStorageErr, fjall_repr::FjallRepr, keys::FjallKeyPrefix};
 
+#[derive(Clone)]
 pub struct TypedPartition<K, V> {
     partition: fjall::Partition,
     _phantom: PhantomData<(K, V)>,

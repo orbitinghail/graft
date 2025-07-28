@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fmt::Debug, path::Path};
 
 use fjall::PartitionCreateOptions;
 use graft_core::{
@@ -39,6 +39,7 @@ pub enum FjallStorageErr {
     IoErr(#[from] std::io::Error),
 }
 
+#[derive(Clone)]
 pub struct FjallStorage {
     keyspace: fjall::Keyspace,
 
@@ -61,6 +62,12 @@ pub struct FjallStorage {
     /// {sid} / {pageidx} -> Page
     /// Keyed by `keys::PageKey`
     pages: TypedPartition<PageKey, Page>,
+}
+
+impl Debug for FjallStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FjallStorage").finish()
+    }
 }
 
 impl FjallStorage {
@@ -151,7 +158,7 @@ impl FjallStorage {
             // partition orders LSNs in reverse. thus we need to flip the range
             // when passing it down to the underlying scan.
             let low = CommitKey::new(entry.vid().clone(), *entry.lsns().start());
-            let high = CommitKey::new(entry.vid().clone(), *entry.lsns().start());
+            let high = CommitKey::new(entry.vid().clone(), *entry.lsns().end());
             let range = high..=low;
             log.range(range).map_ok(|(_, commit)| Ok(commit))
         })
