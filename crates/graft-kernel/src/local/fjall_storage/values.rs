@@ -58,7 +58,7 @@ mod tests {
         checkpoint_set::CheckpointSet,
         handle_id::HandleId,
         lsn::LSN,
-        page::{EMPTY_PAGE, PAGESIZE},
+        page::{Page, PAGESIZE},
         volume_ref::VolumeRef,
     };
 
@@ -71,7 +71,7 @@ mod tests {
     #[graft_test::test]
     fn test_page() {
         test_roundtrip(Page::test_filled(123));
-        test_roundtrip(EMPTY_PAGE);
+        test_roundtrip(Page::EMPTY);
         test_invalid::<Page>(&b"a".repeat(PAGESIZE.as_usize() + 1));
     }
 

@@ -105,7 +105,7 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use graft_core::{
-        page::{EMPTY_PAGE, Page},
+        page::Page,
         pageidx,
     };
 
@@ -138,7 +138,7 @@ mod tests {
         // open a reader and verify that no pages are returned
         let reader = handle.reader().unwrap();
         assert_eq!(reader.snapshot(), None);
-        assert_eq!(reader.read(&mut oracle, pageidx!(1)).unwrap(), EMPTY_PAGE);
+        assert_eq!(reader.read(&mut oracle, pageidx!(1)).unwrap(), Page::EMPTY);
 
         // open a writer and write a page, verify RYOW, then commit
         let mut writer = handle.writer().unwrap();

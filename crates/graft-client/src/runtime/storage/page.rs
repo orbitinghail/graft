@@ -4,7 +4,7 @@ use fjall::Slice;
 use graft_core::{
     PageIdx, VolumeId,
     lsn::LSN,
-    page::{EMPTY_PAGE, Page, PageSizeErr},
+    page::{Page, PageSizeErr},
     zerocopy_ext::TryFromBytesExt,
 };
 use std::fmt::{Debug, Display};
@@ -105,7 +105,7 @@ impl PageValue {
     pub fn try_into_page(self) -> Option<Page> {
         match self {
             PageValue::Pending => None,
-            PageValue::Empty => Some(EMPTY_PAGE),
+            PageValue::Empty => Some(Page::EMPTY),
             PageValue::Available(page) => Some(page),
         }
     }

@@ -13,7 +13,6 @@ pub const PAGESIZE: ByteUnit = ByteUnit::from_kb(4);
 static_assertions::const_assert!(PAGESIZE.is_power_of_two());
 
 static STATIC_EMPTY_PAGE: [u8; PAGESIZE.as_usize()] = [0; PAGESIZE.as_usize()];
-pub const EMPTY_PAGE: Page = Page(Bytes::from_static(&STATIC_EMPTY_PAGE));
 
 #[derive(Debug, Error)]
 #[error("Pages must have size {PAGESIZE}")]
@@ -39,7 +38,7 @@ impl PageSizeErr {
 pub struct Page(Bytes);
 
 impl Page {
-    pub const EMPTY: Page = EMPTY_PAGE;
+    pub const EMPTY: Page = Page(Bytes::from_static(&STATIC_EMPTY_PAGE));
 
     /// Returns true if all of the page's bytes are 0.
     #[inline]

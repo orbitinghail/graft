@@ -5,7 +5,7 @@ use culprit::{Result, ResultExt};
 use graft_core::{
     PageIdx, VolumeId,
     lsn::LSN,
-    page::{EMPTY_PAGE, Page},
+    page::Page,
 };
 use splinter_rs::{Splinter, SplinterWrite};
 use tracing::field;
@@ -87,7 +87,7 @@ impl VolumeRead for VolumeReader {
                 }
                 (_, PageValue::Empty) => {
                     oracle.observe_cache_hit(pageidx);
-                    Ok(EMPTY_PAGE)
+                    Ok(Page::EMPTY)
                 }
                 (_, PageValue::Pending) => {
                     if let Some((remote_lsn, local_lsn)) = snapshot.remote_mapping().splat() {
@@ -102,12 +102,12 @@ impl VolumeRead for VolumeReader {
                         )
                         .or_into_ctx()
                     } else {
-                        Ok(EMPTY_PAGE)
+                        Ok(Page::EMPTY)
                     }
                 }
             }
         } else {
-            Ok(EMPTY_PAGE)
+            Ok(Page::EMPTY)
         }
     }
 
