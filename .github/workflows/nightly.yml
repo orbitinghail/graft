@@ -147,7 +147,7 @@ jobs:
         run: echo "COMMIT_SUMMARY=$(git show-branch)" >> "$GITHUB_OUTPUT"
 
       - name: Run Antithesis Tests
-        uses: antithesishq/antithesis-trigger-action@b7d0c9d1d9316bd4de73a44144c56636ea3a64ba # v0.8
+        uses: antithesishq/antithesis-trigger-action@6c0a27302c0a3cd97d87d40bd6704e673abed4bb # v0.9
         with:
           notebook_name: basic_test
           tenant: orbitinghail
