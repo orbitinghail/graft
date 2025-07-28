@@ -3,9 +3,15 @@ use tryiter::TryIteratorExt;
 
 use crate::{
     local::fjall_storage::{FjallStorage, FjallStorageErr},
-    rt::rpc::{RpcHandle, RuntimeRpc},
+    rt::rpc::RpcHandle,
     snapshot::Snapshot,
 };
+
+/// A type which can read from a Volume
+pub trait VolumeRead {
+    fn page_count(&self) -> culprit::Result<PageCount, FjallStorageErr>;
+    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, FjallStorageErr>;
+}
 
 #[derive(Debug, Clone)]
 pub struct VolumeReader {
@@ -15,15 +21,29 @@ pub struct VolumeReader {
 }
 
 impl VolumeReader {
-    pub fn page_count(&self) -> culprit::Result<PageCount, FjallStorageErr> {
-        let commit = self
-            .storage
-            .read_commit(self.snapshot.vref())?
-            .expect("no commit found for snapshot");
-        Ok(commit.page_count())
+    pub(crate) fn new(storage: FjallStorage, rpc: RpcHandle, snapshot: Snapshot) -> Self {
+        Self { storage, rpc, snapshot }
     }
 
-    pub fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Option<Page>, FjallStorageErr> {
+    pub(crate) fn storage(&self) -> &FjallStorage {
+        &self.storage
+    }
+}
+
+impl VolumeRead for VolumeReader {
+    fn page_count(&self) -> culprit::Result<PageCount, FjallStorageErr> {
+        if let Some(lsn) = self.snapshot.lsn() {
+            let commit = self
+                .storage
+                .read_commit(self.snapshot.vid(), lsn)?
+                .expect("no commit found for snapshot");
+            Ok(commit.page_count())
+        } else {
+            Ok(PageCount::ZERO)
+        }
+    }
+
+    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, FjallStorageErr> {
         let mut commits = self.storage.commits(self.snapshot.search_path());
 
         while let Some(commit) = commits.try_next()? {
@@ -45,7 +65,7 @@ impl VolumeReader {
             }
 
             if let Some(page) = self.storage.read_page(idx.sid().clone(), pageidx)? {
-                return Ok(Some(page));
+                return Ok(page);
             }
 
             // page is not available locally, fall back to loading the page from remote storage.
@@ -56,6 +76,6 @@ impl VolumeReader {
             todo!("load page from remote storage")
         }
 
-        Ok(None)
+        Ok(Page::EMPTY)
     }
 }

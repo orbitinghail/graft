@@ -1,20 +1,25 @@
-use graft_core::volume_ref::VolumeRef;
+use graft_core::{VolumeId, lsn::LSN};
 
 use crate::search_path::SearchPath;
 
 #[derive(Debug, Clone)]
 pub struct Snapshot {
-    vref: VolumeRef,
+    vid: VolumeId,
+    lsn: Option<LSN>,
     path: SearchPath,
 }
 
 impl Snapshot {
-    pub fn new(vref: VolumeRef, path: SearchPath) -> Self {
-        Self { vref, path }
+    pub fn new(vid: VolumeId, lsn: Option<LSN>, path: SearchPath) -> Self {
+        Self { vid, lsn, path }
     }
 
-    pub fn vref(&self) -> &VolumeRef {
-        &self.vref
+    pub fn vid(&self) -> &VolumeId {
+        &self.vid
+    }
+
+    pub fn lsn(&self) -> Option<LSN> {
+        self.lsn.clone()
     }
 
     pub fn search_path(&self) -> &SearchPath {

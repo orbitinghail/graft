@@ -1,8 +1,10 @@
-use culprit::ResultExt;
-use graft_core::{PageCount, SegmentId, graft::Graft, page_count};
-use splinter_rs::Splinter;
+use graft_core::{PageCount, SegmentId, page::Page};
+use splinter_rs::{Splinter, SplinterRead};
 
-use crate::{local::fjall_storage::FjallStorageErr, volume_reader::VolumeReader};
+use crate::{
+    local::fjall_storage::FjallStorageErr,
+    volume_reader::{VolumeRead, VolumeReader},
+};
 
 pub struct VolumeWriter {
     reader: VolumeReader,
@@ -12,13 +14,33 @@ pub struct VolumeWriter {
 }
 
 impl VolumeWriter {
-    pub fn new(reader: VolumeReader) -> culprit::Result<Self, FjallStorageErr> {
+    pub fn from_reader(reader: VolumeReader) -> culprit::Result<Self, FjallStorageErr> {
         let page_count = reader.page_count()?;
         Ok(Self {
-            reader,
+            reader: reader,
             page_count,
             sid: SegmentId::random(),
             graft: Splinter::default(),
         })
+    }
+}
+
+impl VolumeRead for VolumeWriter {
+    fn page_count(&self) -> culprit::Result<PageCount, FjallStorageErr> {
+        Ok(self.page_count)
+    }
+
+    fn read_page(
+        &self,
+        pageidx: graft_core::PageIdx,
+    ) -> culprit::Result<graft_core::page::Page, FjallStorageErr> {
+        if !self.page_count.contains(pageidx) {
+            Ok(Page::EMPTY)
+        } else if self.graft.contains(pageidx.to_u32()) {
+            let page = self.reader.storage().read_page(self.sid.clone(), pageidx)?;
+            Ok(page.unwrap_or(Page::EMPTY))
+        } else {
+            self.reader.read_page(pageidx)
+        }
     }
 }

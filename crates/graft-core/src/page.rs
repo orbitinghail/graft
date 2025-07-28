@@ -39,6 +39,8 @@ impl PageSizeErr {
 pub struct Page(Bytes);
 
 impl Page {
+    pub const EMPTY: Page = EMPTY_PAGE;
+
     /// Returns true if all of the page's bytes are 0.
     #[inline]
     pub fn is_empty(&self) -> bool {

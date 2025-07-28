@@ -96,7 +96,7 @@ impl FjallStorage {
         Ok(Self { keyspace, handles, volumes, log, pages })
     }
 
-    pub fn snapshot(&self, vid: &VolumeId) -> Result<Option<Snapshot>, FjallStorageErr> {
+    pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
         let seqno = self.keyspace.instant();
         let log = self.log.snapshot_at(seqno);
 
@@ -114,9 +114,10 @@ impl FjallStorage {
         // assuming we found a vref, compute the snapshots search path and return a new tracked snapshot
         if let Some(vref) = vref {
             let path = self.search_path(seqno, vref.clone())?;
-            Ok(Some(Snapshot::new(vref, path)))
+            let (vid, lsn) = vref.into();
+            Ok(Snapshot::new(vid, Some(lsn), path))
         } else {
-            Ok(None)
+            Ok(Snapshot::new(vid.clone(), None, SearchPath::EMPTY))
         }
     }
 
@@ -147,8 +148,10 @@ impl FjallStorage {
         Ok(path)
     }
 
-    pub fn read_commit(&self, vref: &VolumeRef) -> Result<Option<Commit>, FjallStorageErr> {
-        self.log.snapshot().get_owned(CommitKey::from(vref.clone()))
+    pub fn read_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>, FjallStorageErr> {
+        self.log
+            .snapshot()
+            .get_owned(CommitKey::new(vid.clone(), lsn))
     }
 
     pub fn commits(
@@ -175,7 +178,7 @@ impl FjallStorage {
     ) -> Result<Option<Page>, FjallStorageErr> {
         self.pages
             .snapshot()
-            .get(&PageKey::new(sid, pageidx))
+            .get_owned(PageKey::new(sid, pageidx))
             .or_into_ctx()
     }
 

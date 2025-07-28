@@ -22,6 +22,8 @@ pub struct PathEntry {
 }
 
 impl SearchPath {
+    pub const EMPTY: SearchPath = SearchPath { path: SmallVec::new_const() };
+
     pub fn append(&mut self, vid: VolumeId, lsns: RangeInclusive<LSN>) {
         assert!(
             lsns.try_len().is_some_and(|l| l > 0),
