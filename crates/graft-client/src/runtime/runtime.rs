@@ -104,10 +104,7 @@ impl Runtime {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{
-        page::Page,
-        pageidx,
-    };
+    use graft_core::{page::Page, pageidx};
 
     use crate::{
         oracle::NoopOracle,

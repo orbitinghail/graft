@@ -2,11 +2,7 @@ use std::{borrow::Cow, collections::HashMap, iter::once, sync::Arc};
 
 use culprit::{Result, ResultExt};
 
-use graft_core::{
-    PageIdx, VolumeId,
-    lsn::LSN,
-    page::Page,
-};
+use graft_core::{PageIdx, VolumeId, lsn::LSN, page::Page};
 use splinter_rs::{Splinter, SplinterWrite};
 use tracing::field;
 

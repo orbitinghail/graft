@@ -58,7 +58,7 @@ mod tests {
         checkpoint_set::CheckpointSet,
         handle_id::HandleId,
         lsn::LSN,
-        page::{Page, PAGESIZE},
+        page::{PAGESIZE, Page},
         volume_ref::VolumeRef,
     };
 
