@@ -16,7 +16,3 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 - [ ] Volume Reader
 - [ ] Volume Writer
 - [ ] libgraft SQLite
-
-## Notes
-
-- make TypedPartitionSnapshot::prefix type safe
