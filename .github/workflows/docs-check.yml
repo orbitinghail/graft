@@ -44,7 +44,7 @@ jobs:
           pnpm build
 
       - name: Check links
-        uses: lycheeverse/lychee-action@5c4ee84814c983aa7164eaee476f014e53ff3963 # v2
+        uses: lycheeverse/lychee-action@82202e5e9c2f4ef1a55a3d02563e1cb6041e5332 # v2
         with:
           workingDirectory: docs
           args: --user-agent 'curl/8.13.0' --no-progress --include-fragments --remap "https://graft.rs file://$PWD/dist" --fallback-extensions html --root-dir $PWD/dist dist
