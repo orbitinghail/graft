@@ -5,7 +5,8 @@ RUN echo "rebuild-deps: 1"
 
 # install deps
 RUN apt-get update && apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential libfuse3-dev && rm -rf /var/lib/apt/lists/*
-RUN cargo install cargo-chef --locked
+RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+RUN cargo binstall -y --version 0.1.71 cargo-chef
 
 # Enable instrumentation when INSTRUMENTED is set:
 #   --build-arg INSTRUMENTED=1
