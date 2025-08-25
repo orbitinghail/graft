@@ -41,6 +41,7 @@ macro_rules! derive_zerocopy_encoding {
             use ::bytes::{BufMut, Buf};
             use ::zerocopy::{TryFromBytes, IntoBytes, Immutable, KnownLayout};
 
+            #[allow(dead_code)]
             #[doc(hidden)]
             trait AssertIsZerocopy: IntoBytes + TryFromBytes + Immutable + KnownLayout {}
             #[doc(hidden)]
