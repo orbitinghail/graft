@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use splinter_rs::{Splinter, SplinterRead, cow::CowSplinter};
+use splinter_rs::{CowSplinter, PartitionRead, Splinter};
 
 use crate::{PageIdx, derive_newtype_proxy};
 
@@ -30,7 +30,7 @@ derive_newtype_proxy!(
     with proxy type (Bytes) and encoding (bilrost::encoding::General)
     with sample value (Graft::new(CowSplinter::from_iter(0u32..10)))
     into_proxy(&self) {
-        self.splinter.serialize_to_bytes()
+        self.splinter.encode_to_bytes()
     }
     from_proxy(&mut self, proxy) {
         *self = Graft {

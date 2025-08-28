@@ -7,7 +7,7 @@ use graft_proto::{
     common::v1::LsnRange,
     metastore::v1::{PullGraftRequest, PullGraftResponse},
 };
-use splinter_rs::{Splinter, ops::Merge};
+use splinter_rs::{Encodable, Merge, Splinter};
 use tryiter::TryIteratorExt;
 
 use crate::api::{
@@ -92,7 +92,7 @@ pub async fn handler(
     Ok(ProtoResponse::new(PullGraftResponse {
         snapshot: Some(snapshot.into_snapshot()),
         range: Some(LsnRange::from_range(lsns)),
-        graft: graft.serialize_to_bytes(),
+        graft: graft.encode_to_bytes(),
     }))
 }
 
@@ -104,7 +104,7 @@ mod tests {
     use axum_test::TestServer;
     use graft_core::{SegmentId, gid::ClientId, lsn::LSN, page_count::PageCount};
     use prost::Message;
-    use splinter_rs::SplinterRead;
+    use splinter_rs::{PartitionRead, SplinterRef};
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
@@ -154,7 +154,7 @@ mod tests {
         objstore.reset_hits().await;
 
         // case 2: catalog is empty, store has 10 commits
-        let graft = Splinter::from_iter([0u32]).serialize_to_bytes();
+        let graft = Splinter::from_iter([0u32]).encode_to_bytes();
         for lsn in 1u64..=9 {
             let meta = CommitMeta::new(
                 vid.clone(),
@@ -187,7 +187,7 @@ mod tests {
                 .map(|r| r.start().unwrap()..=r.end().unwrap().unwrap()),
             Some(lsns)
         );
-        let splinter = Splinter::from_bytes(resp.graft).unwrap();
+        let splinter = SplinterRef::from_bytes(resp.graft).unwrap();
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);
 
@@ -199,7 +199,7 @@ mod tests {
         let req = PullGraftRequest { vid: vid.copy_to_bytes(), range: None };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         let resp = PullGraftResponse::decode(resp.into_bytes()).unwrap();
-        let splinter = Splinter::from_bytes(resp.graft).unwrap();
+        let splinter = SplinterRef::from_bytes(resp.graft).unwrap();
         assert_eq!(splinter.cardinality(), 1);
         assert_eq!(splinter.iter().collect::<Vec<_>>(), vec![0]);
 

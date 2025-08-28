@@ -9,7 +9,7 @@ use graft_proto::{
     pagestore::v1::{WritePagesRequest, WritePagesResponse},
 };
 use hashbrown::HashSet;
-use splinter_rs::SplinterRead;
+use splinter_rs::{Encodable, PartitionRead};
 
 use crate::api::{error::ApiErrCtx, response::ProtoResponse};
 
@@ -59,7 +59,7 @@ pub async fn handler<C>(
         tracing::trace!("write_pages handler received segment {sid} for volume {vid}",);
         let sid = sid.copy_to_bytes();
         received_pages += graft.cardinality();
-        let graft = graft.serialize_to_bytes();
+        let graft = graft.encode_to_bytes();
         segments.push(SegmentInfo { sid, graft });
         events.push(event);
     }

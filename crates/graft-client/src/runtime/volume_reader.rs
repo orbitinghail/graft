@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap, iter::once, sync::Arc};
 use culprit::{Result, ResultExt};
 
 use graft_core::{PageIdx, VolumeId, lsn::LSN, page::Page};
-use splinter_rs::{Splinter, SplinterWrite};
+use splinter_rs::{Encodable, PartitionWrite, Splinter};
 use tracing::field;
 
 use crate::{ClientErr, ClientPair, oracle::Oracle};
@@ -160,7 +160,7 @@ fn fetch_page<O: Oracle>(
     // process client results and update the hashmap
     let response = clients
         .pagestore()
-        .read_pages(vid, remote_lsn, graft.serialize_to_bytes())?;
+        .read_pages(vid, remote_lsn, graft.encode_to_bytes())?;
     for page in response {
         if let Some(entry) = pages.get_mut(&page.pageidx().or_into_ctx()?) {
             entry.1 = page.page().or_into_ctx()?.into();

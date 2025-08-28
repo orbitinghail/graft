@@ -48,10 +48,10 @@ impl VolumeCatalogUpdater {
         lsn: Option<LSN>,
     ) -> Result<Option<CommitMeta>, Culprit<UpdateErr>> {
         // if a specific lsn is requested and we have a snapshot for it, return it
-        if let Some(lsn) = lsn {
-            if let Some(snapshot) = catalog.snapshot(vid.clone(), lsn).or_into_ctx()? {
-                return Ok(Some(snapshot));
-            }
+        if let Some(lsn) = lsn
+            && let Some(snapshot) = catalog.snapshot(vid.clone(), lsn).or_into_ctx()?
+        {
+            return Ok(Some(snapshot));
         }
 
         // otherwise we need to update the catalog

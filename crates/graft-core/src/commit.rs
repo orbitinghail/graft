@@ -71,7 +71,7 @@ struct SegmentFrameIdx {
     last_pageidx: PageIdx,
 }
 
-/// A SegmentFrameRef contains the byte range and corresponding page range for a
+/// A `SegmentFrameRef` contains the byte range and corresponding page range for a
 /// particular frame in a segment.
 pub struct SegmentFrameRef {
     sid: SegmentId,
@@ -145,7 +145,7 @@ impl SegmentIdx {
     }
 
     pub fn contains(&self, pageidx: PageIdx) -> bool {
-        self.graft.contains(pageidx.into())
+        self.graft.contains(pageidx)
     }
 
     pub fn frame_for_pageidx(&self, pageidx: PageIdx) -> Option<SegmentFrameRef> {
