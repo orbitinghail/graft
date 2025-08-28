@@ -69,65 +69,65 @@ pub async fn handler(
             };
 
             // if we have a commit snapshot and the cid matches, return a successful response
-            if let Some(commit_snapshot) = commit_snapshot {
-                if commit_snapshot.cid() == &cid {
-                    if commit_snapshot.page_count() != page_count {
-                        return Err(Culprit::new_with_note(
-                            ApiErrCtx::InvalidIdempotentCommit,
-                            "page count mismatch",
-                        )
-                        .into());
-                    }
-
-                    // check that the segments being committed contain the same
-                    // set of pages as the segments in the catalog
-                    let mut committed_pages = state
-                        .catalog()
-                        .scan_segments(&vid, &(commit_lsn..=commit_lsn))
-                        .try_fold(Splinter::default(), |mut acc, kv| {
-                            kv.map(|(_, g)| {
-                                acc.merge(&g);
-                                acc
-                            })
-                        })
-                        .or_into_ctx()?;
-
-                    for segment in req.segments {
-                        let graft = segment.graft().or_into_ctx()?;
-                        let cut = committed_pages.cut(&graft);
-                        if cut != graft {
-                            return Err(Culprit::new_with_note(
-                                ApiErrCtx::InvalidIdempotentCommit,
-                                "extra page idxs",
-                            )
-                            .into());
-                        }
-                    }
-
-                    if !committed_pages.is_empty() {
-                        return Err(Culprit::new_with_note(
-                            ApiErrCtx::InvalidIdempotentCommit,
-                            "missing page idxs",
-                        )
-                        .into());
-                    }
-
-                    precept::expect_reachable!(
-                        "detected idempotent commit request and reused previous response",
-                        {
-                            "vid": vid,
-                            "cid": cid,
-                            "commit_lsn": commit_lsn,
-                        }
-                    );
-                    tracing::debug!(
-                        "detected idempotent commit request for volume {vid}: reusing commit at lsn {commit_lsn:?}"
-                    );
-
-                    return Ok(ProtoResponse::new(CommitResponse {
-                        snapshot: Some(commit_snapshot.into_snapshot()),
-                    }));
+            if let Some(commit_snapshot) = commit_snapshot
+                && commit_snapshot.cid() == &cid
+            {
+                if commit_snapshot.page_count() != page_count {
+                    return Err(Culprit::new_with_note(
+                        ApiErrCtx::InvalidIdempotentCommit,
+                        "page count mismatch",
+                    )
+                    .into());
                 }
+
+                // check that the segments being committed contain the same
+                // set of pages as the segments in the catalog
+                let mut committed_pages = state
+                    .catalog()
+                    .scan_segments(&vid, &(commit_lsn..=commit_lsn))
+                    .try_fold(Splinter::default(), |mut acc, kv| {
+                        kv.map(|(_, g)| {
+                            acc.merge(&g);
+                            acc
+                        })
+                    })
+                    .or_into_ctx()?;
+
+                for segment in req.segments {
+                    let graft = segment.graft().or_into_ctx()?;
+                    let cut = committed_pages.cut(&graft);
+                    if cut != graft {
+                        return Err(Culprit::new_with_note(
+                            ApiErrCtx::InvalidIdempotentCommit,
+                            "extra page idxs",
+                        )
+                        .into());
+                    }
+                }
+
+                if !committed_pages.is_empty() {
+                    return Err(Culprit::new_with_note(
+                        ApiErrCtx::InvalidIdempotentCommit,
+                        "missing page idxs",
+                    )
+                    .into());
+                }
+
+                precept::expect_reachable!(
+                    "detected idempotent commit request and reused previous response",
+                    {
+                        "vid": vid,
+                        "cid": cid,
+                        "commit_lsn": commit_lsn,
+                    }
+                );
+                tracing::debug!(
+                    "detected idempotent commit request for volume {vid}: reusing commit at lsn {commit_lsn:?}"
+                );
+
+                return Ok(ProtoResponse::new(CommitResponse {
+                    snapshot: Some(commit_snapshot.into_snapshot()),
+                }));
             }
         }
         // otherwise reject this commit

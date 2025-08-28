@@ -49,7 +49,7 @@ pub struct FjallStorage {
     handles: TypedPartition<HandleId, VolumeHandle>,
 
     /// This partition stores metadata about each Volume
-    /// {vid} -> VolumeMeta
+    /// {vid} -> `VolumeMeta`
     /// Keyed by `keys::VolumeKey`
     volumes: TypedPartition<VolumeId, VolumeMeta>,
 

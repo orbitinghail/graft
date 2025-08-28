@@ -31,7 +31,7 @@ pub enum DecodeErr {
 
 pub trait FjallRepr: Sized + Clone {
     /// Converts Self into a type that can be cheaply converted into a byte
-    /// slice. For ZeroCopy types, this may simply be the raw bytes of Self.
+    /// slice. For `ZeroCopy` types, this may simply be the raw bytes of Self.
     fn as_slice(&self) -> impl AsRef<[u8]>;
 
     /// Converts a Fjall Slice into Self.

@@ -1,9 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
-use tokio::{sync::mpsc::Sender, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 use crate::rt::{
-    rpc::{RpcHandle, RuntimeRpc},
+    rpc::RpcHandle,
     runtime::{Event, Runtime, RuntimeFatalErr},
 };
 
@@ -28,11 +28,11 @@ struct RuntimeHandleInner {
 
 impl RuntimeHandle {
     /// Spawn the Graft Runtime into the provided Tokio Runtime.
-    /// Returns a RuntimeHandle which can be used to interact with the Graft Runtime.
+    /// Returns a `RuntimeHandle` which can be used to interact with the Graft Runtime.
     pub fn spawn(handle: &tokio::runtime::Handle, storage: FjallStorage) -> RuntimeHandle {
         let (tx, rx) = mpsc::channel(8);
 
-        let rx = ReceiverStream::new(rx).map(|rpc| Event::Rpc(rpc));
+        let rx = ReceiverStream::new(rx).map(Event::Rpc);
         let ticks =
             IntervalStream::new(tokio::time::interval(Duration::from_secs(1))).map(|_| Event::Tick);
         let events = Box::pin(rx.merge(ticks));

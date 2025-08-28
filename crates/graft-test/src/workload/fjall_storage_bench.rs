@@ -80,7 +80,7 @@ impl Workload for FjallStorageBench {
                 Arg::Pos("ycsb"),
                 Arg::Flg("--value-size", &value_size),
                 Arg::Flg("--item-count", &item_count),
-                Arg::Flg("--type", &["a", "b"].choose(&mut env.rng).unwrap()),
+                Arg::Flg("--type", ["a", "b"].choose(&mut env.rng).unwrap()),
             ])
         }
 
@@ -94,7 +94,7 @@ impl Workload for FjallStorageBench {
                 }
                 Arg::Flg(flag, value) => {
                     cmd.arg(flag).arg(value);
-                    args_str.push(format!("{}={}", flag, value));
+                    args_str.push(format!("{flag}={value}"));
                 }
             };
         }

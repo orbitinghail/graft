@@ -68,14 +68,14 @@ where
         if let Some(slice) = self.snapshot.get(key.as_slice())? {
             return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
         }
-        return Ok(None);
+        Ok(None)
     }
 
     pub fn get_owned(&self, key: K) -> culprit::Result<Option<V>, FjallStorageErr> {
         if let Some(slice) = self.snapshot.get(key.into_slice())? {
             return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
         }
-        return Ok(None);
+        Ok(None)
     }
 
     pub fn range<R: RangeBounds<K>>(

@@ -237,19 +237,19 @@ impl Vfs for GraftVfs {
         tracing::trace!("open: path={path:?}, opts={opts:?}");
         ErrCtx::wrap(move || {
             // we only open a Volume for main database files named after a Volume ID
-            if opts.kind() == OpenKind::MainDb {
-                if let Some(path) = path {
-                    let vid: VolumeId = path.parse()?;
+            if opts.kind() == OpenKind::MainDb
+                && let Some(path) = path
+            {
+                let vid: VolumeId = path.parse()?;
 
-                    // get or create a reserved lock for this Volume
-                    let reserved_lock = self.locks.lock().entry(vid.clone()).or_default().clone();
+                // get or create a reserved lock for this Volume
+                let reserved_lock = self.locks.lock().entry(vid.clone()).or_default().clone();
 
-                    let handle = self
-                        .runtime
-                        .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
-                        .or_into_ctx()?;
-                    return Ok(VolFile::new(handle, opts, reserved_lock).into());
-                }
+                let handle = self
+                    .runtime
+                    .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
+                    .or_into_ctx()?;
+                return Ok(VolFile::new(handle, opts, reserved_lock).into());
             }
 
             // all other files use in-memory storage

@@ -12,10 +12,10 @@ use crate::{
     zerocopy_ext::{self, ZerocopyErr},
 };
 
-/// The size of a CommitHash in bytes.
+/// The size of a `CommitHash` in bytes.
 const COMMIT_HASH_SIZE: usize = 32;
 
-/// The size of the hash portion of the CommitHash in bytes.
+/// The size of the hash portion of the `CommitHash` in bytes.
 const HASH_SIZE: usize = 31;
 
 /// Magic number to initialize commit hash computation
@@ -169,9 +169,7 @@ impl CommitHashBuilder {
         if let Some(last_pageidx) = self.last_pageidx.replace(pageidx) {
             assert!(
                 pageidx > last_pageidx,
-                "Pages must be written in order by pageidx. Last: {}, Current: {}",
-                last_pageidx,
-                pageidx
+                "Pages must be written in order by pageidx. Last: {last_pageidx}, Current: {pageidx}"
             );
         }
 

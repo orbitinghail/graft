@@ -17,7 +17,7 @@ impl VolumeWriter {
     pub fn from_reader(reader: VolumeReader) -> culprit::Result<Self, FjallStorageErr> {
         let page_count = reader.page_count()?;
         Ok(Self {
-            reader: reader,
+            reader,
             page_count,
             sid: SegmentId::random(),
             graft: Splinter::default(),

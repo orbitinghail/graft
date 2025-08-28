@@ -40,29 +40,29 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
     type Error = PragmaErr;
 
     fn try_from(p: &Pragma<'_>) -> Result<Self, Self::Error> {
-        if let Some((prefix, suffix)) = p.name.split_once("_") {
-            if prefix == "graft" {
-                return match suffix {
-                    "status" => Ok(GraftPragma::Status),
-                    "snapshot" => Ok(GraftPragma::Snapshot),
-                    "pages" => Ok(GraftPragma::Pages),
-                    "pull" => Ok(GraftPragma::Pull),
-                    "reset" => Ok(GraftPragma::Reset),
-                    "sync" => {
-                        let arg = p.arg.ok_or(PragmaErr::required_arg(p))?;
-                        let autosync = arg.parse().map_err(|err| {
-                            PragmaErr::Fail(SQLITE_ERROR, Some(format!("{err:?}")))
-                        })?;
-                        Ok(GraftPragma::SetAutosync(autosync))
-                    }
-                    "sync_errors" => Ok(GraftPragma::SyncErrors),
-                    "version" => Ok(GraftPragma::Version),
-                    _ => Err(PragmaErr::Fail(
-                        SQLITE_ERROR,
-                        Some(format!("invalid graft pragma `{}`", p.name)),
-                    )),
-                };
-            }
+        if let Some((prefix, suffix)) = p.name.split_once("_")
+            && prefix == "graft"
+        {
+            return match suffix {
+                "status" => Ok(GraftPragma::Status),
+                "snapshot" => Ok(GraftPragma::Snapshot),
+                "pages" => Ok(GraftPragma::Pages),
+                "pull" => Ok(GraftPragma::Pull),
+                "reset" => Ok(GraftPragma::Reset),
+                "sync" => {
+                    let arg = p.arg.ok_or(PragmaErr::required_arg(p))?;
+                    let autosync = arg
+                        .parse()
+                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(format!("{err:?}"))))?;
+                    Ok(GraftPragma::SetAutosync(autosync))
+                }
+                "sync_errors" => Ok(GraftPragma::SyncErrors),
+                "version" => Ok(GraftPragma::Version),
+                _ => Err(PragmaErr::Fail(
+                    SQLITE_ERROR,
+                    Some(format!("invalid graft pragma `{}`", p.name)),
+                )),
+            };
         }
         Err(PragmaErr::NotFound)
     }

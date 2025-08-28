@@ -170,12 +170,12 @@ impl PushJob {
                 tracing::debug!("metastore commit failed: {:?}", err);
 
                 // if the commit was rejected, notify storage
-                if err.ctx().is_commit_rejected() {
-                    if let Err(reject_err) = storage.rejected_sync_to_remote(&self.vid) {
-                        return Err(err.with_note(format!(
-                            "storage.rejected_sync_to_remote() error: {reject_err}"
-                        )));
-                    }
+                if err.ctx().is_commit_rejected()
+                    && let Err(reject_err) = storage.rejected_sync_to_remote(&self.vid)
+                {
+                    return Err(err.with_note(format!(
+                        "storage.rejected_sync_to_remote() error: {reject_err}"
+                    )));
                 }
                 return Err(err);
             }
