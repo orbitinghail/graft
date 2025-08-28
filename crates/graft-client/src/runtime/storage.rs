@@ -25,7 +25,7 @@ use memtable::Memtable;
 use page::{PageKey, PageValue, PageValueConversionErr};
 use parking_lot::{Mutex, MutexGuard};
 use snapshot::{RemoteMapping, Snapshot};
-use splinter_rs::{DecodeErr, Splinter, SplinterRead, SplinterRef, SplinterWrite};
+use splinter_rs::{DecodeErr, Encodable, PartitionRead, PartitionWrite, Splinter, SplinterRef};
 use tracing::field;
 use tryiter::{TryIterator, TryIteratorExt};
 use volume_state::{
@@ -360,7 +360,7 @@ impl Storage {
 
         // persist the new commit
         let commit_key = CommitKey::new(vid.clone(), commit_lsn);
-        batch.insert(&self.commits, commit_key, graft.serialize_to_bytes());
+        batch.insert(&self.commits, commit_key, graft.encode_to_bytes());
 
         // acquire the commit lock
         let _permit = self.commit_lock.lock();

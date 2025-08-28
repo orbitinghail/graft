@@ -5,7 +5,7 @@ use culprit::ResultExt;
 use futures::{FutureExt, TryStreamExt, stream::FuturesUnordered};
 use graft_core::{VolumeId, lsn::LSN};
 use graft_proto::pagestore::v1::{PageAtIdx, ReadPagesRequest, ReadPagesResponse};
-use splinter_rs::{Splinter, SplinterRead, ops::Cut};
+use splinter_rs::{CowSplinter, Cut, PartitionRead};
 
 use crate::api::error::ApiErrCtx;
 use crate::segment::cache::Cache;
@@ -26,7 +26,7 @@ pub async fn handler<C: Cache>(
 ) -> Result<impl IntoResponse, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsn = LSN::try_from(req.lsn).or_into_ctx()?;
-    let mut graft = Splinter::from_bytes(req.graft).or_into_ctx()?;
+    let mut graft = CowSplinter::from_bytes(req.graft).or_into_ctx()?;
     let num_pages = graft.cardinality();
 
     tracing::info!(?vid, ?lsn, num_pages);
@@ -59,7 +59,7 @@ pub async fn handler<C: Cache>(
     for result in segments {
         let (key, splinter) = result.or_into_ctx()?;
 
-        let cut = graft.cut(&splinter);
+        let cut = graft.to_mut().cut(&splinter);
         if !cut.is_empty() {
             let sid = key.sid().clone();
             loading.push(
@@ -110,7 +110,7 @@ mod tests {
     use graft_proto::common::v1::SegmentInfo;
     use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path};
     use prost::Message;
-    use splinter_rs::SplinterWrite;
+    use splinter_rs::{Encodable, PartitionWrite, Splinter};
     use tokio::sync::mpsc;
 
     use crate::{
@@ -208,11 +208,11 @@ mod tests {
                 vec![
                     SegmentInfo {
                         sid: sid1.copy_to_bytes(),
-                        graft: graft1.serialize_to_bytes(),
+                        graft: graft1.encode_to_bytes(),
                     },
                     SegmentInfo {
                         sid: sid2.copy_to_bytes(),
-                        graft: graft2.serialize_to_bytes(),
+                        graft: graft2.encode_to_bytes(),
                     },
                 ],
             )
@@ -223,7 +223,7 @@ mod tests {
         let req = ReadPagesRequest {
             vid: vid.copy_to_bytes(),
             lsn: lsn.into(),
-            graft: (1u32..=5).collect::<Splinter>().serialize_to_bytes(),
+            graft: (1u32..=5).collect::<Splinter>().encode_to_bytes(),
         };
         let resp = server.post("/").bytes(req.encode_to_vec().into()).await;
         if resp.status_code() != 200 {

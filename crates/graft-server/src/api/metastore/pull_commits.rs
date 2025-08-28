@@ -99,7 +99,7 @@ mod tests {
     use graft_proto::common::v1::LsnRange;
     use object_store::memory::InMemory;
     use prost::Message;
-    use splinter_rs::Splinter;
+    use splinter_rs::{Encodable, Splinter};
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(resp.status_code(), StatusCode::NOT_FOUND);
 
         // case 2: catalog is empty, store has 10 commits
-        let graft = Splinter::from_slice(&[0]).serialize_to_bytes();
+        let graft = Splinter::from_iter([0]).encode_to_bytes();
         for lsn in 1u64..11 {
             let meta = CommitMeta::new(
                 vid.clone(),

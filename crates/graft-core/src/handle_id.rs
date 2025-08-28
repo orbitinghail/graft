@@ -79,7 +79,7 @@ impl TryFrom<Bytes> for HandleId {
     type Error = HandleIdErr;
 
     fn try_from(raw: Bytes) -> Result<Self, Self::Error> {
-        Ok(Self::try_from(ByteString::try_from(raw)?)?)
+        Self::try_from(ByteString::try_from(raw)?)
     }
 }
 

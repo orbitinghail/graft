@@ -1,7 +1,7 @@
 use culprit::{Result, ResultExt};
 use graft_core::{PageIdx, VolumeId, gid::ClientId, lsn::LSN, page::Page};
 use graft_proto::pagestore::v1::PageAtIdx;
-use splinter_rs::SplinterRead;
+use splinter_rs::PartitionRead;
 use tryiter::TryIteratorExt;
 
 use crate::{ClientErr, ClientPair, runtime::storage::Storage};
@@ -170,12 +170,12 @@ impl PushJob {
                 tracing::debug!("metastore commit failed: {:?}", err);
 
                 // if the commit was rejected, notify storage
-                if err.ctx().is_commit_rejected() {
-                    if let Err(reject_err) = storage.rejected_sync_to_remote(&self.vid) {
-                        return Err(err.with_note(format!(
-                            "storage.rejected_sync_to_remote() error: {reject_err}"
-                        )));
-                    }
+                if err.ctx().is_commit_rejected()
+                    && let Err(reject_err) = storage.rejected_sync_to_remote(&self.vid)
+                {
+                    return Err(err.with_note(format!(
+                        "storage.rejected_sync_to_remote() error: {reject_err}"
+                    )));
                 }
                 return Err(err);
             }

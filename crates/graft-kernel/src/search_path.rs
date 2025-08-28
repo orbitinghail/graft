@@ -6,9 +6,9 @@ use graft_core::{
 };
 use smallvec::SmallVec;
 
-/// A SearchPath represents a ordered set of Volumes along with a LSN range for
-/// each Volume. SearchPaths are used to search for the latest commit containing
-/// a page. Volumes appearing earlier in a SearchPath will shadow Volumes
+/// A `SearchPath` represents a ordered set of Volumes along with a LSN range for
+/// each Volume. `SearchPaths` are used to search for the latest commit containing
+/// a page. Volumes appearing earlier in a `SearchPath` will shadow Volumes
 /// appearing later.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SearchPath {

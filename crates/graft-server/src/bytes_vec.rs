@@ -78,10 +78,10 @@ impl Buf for BytesVec {
         }
 
         // fast path if we can pull all the requested bytes from the first buffer
-        if let Some(first) = self.bufs.first_mut() {
-            if first.len() >= len {
-                return first.copy_to_bytes(len);
-            }
+        if let Some(first) = self.bufs.first_mut()
+            && first.len() >= len
+        {
+            return first.copy_to_bytes(len);
         }
 
         let mut ret = BytesMut::with_capacity(len);

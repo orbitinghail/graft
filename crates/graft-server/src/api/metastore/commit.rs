@@ -4,10 +4,7 @@ use axum::extract::State;
 use culprit::{Culprit, ResultExt};
 use graft_core::{VolumeId, gid::ClientId, lsn::LSN, page_count::PageCount};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
-use splinter_rs::{
-    Splinter, SplinterRead,
-    ops::{Cut, Union},
-};
+use splinter_rs::{Cut, Merge, PartitionRead, Splinter};
 
 use crate::{
     api::{
@@ -72,62 +69,65 @@ pub async fn handler(
             };
 
             // if we have a commit snapshot and the cid matches, return a successful response
-            if let Some(commit_snapshot) = commit_snapshot {
-                if commit_snapshot.cid() == &cid {
-                    if commit_snapshot.page_count() != page_count {
-                        return Err(Culprit::new_with_note(
-                            ApiErrCtx::InvalidIdempotentCommit,
-                            "page count mismatch",
-                        )
-                        .into());
-                    }
-
-                    // check that the segments being committed contain the same
-                    // set of pages as the segments in the catalog
-                    let mut committed_pages = state
-                        .catalog()
-                        .scan_segments(&vid, &(commit_lsn..=commit_lsn))
-                        .try_fold(Splinter::default(), |acc, kv| {
-                            kv.map(|(_, g)| acc.union(&g))
-                        })
-                        .or_into_ctx()?;
-
-                    for segment in req.segments {
-                        let graft = segment.graft().or_into_ctx()?;
-                        let cut = committed_pages.cut(&graft);
-                        if cut != graft {
-                            return Err(Culprit::new_with_note(
-                                ApiErrCtx::InvalidIdempotentCommit,
-                                "extra page idxs",
-                            )
-                            .into());
-                        }
-                    }
-
-                    if !committed_pages.is_empty() {
-                        return Err(Culprit::new_with_note(
-                            ApiErrCtx::InvalidIdempotentCommit,
-                            "missing page idxs",
-                        )
-                        .into());
-                    }
-
-                    precept::expect_reachable!(
-                        "detected idempotent commit request and reused previous response",
-                        {
-                            "vid": vid,
-                            "cid": cid,
-                            "commit_lsn": commit_lsn,
-                        }
-                    );
-                    tracing::debug!(
-                        "detected idempotent commit request for volume {vid}: reusing commit at lsn {commit_lsn:?}"
-                    );
-
-                    return Ok(ProtoResponse::new(CommitResponse {
-                        snapshot: Some(commit_snapshot.into_snapshot()),
-                    }));
+            if let Some(commit_snapshot) = commit_snapshot
+                && commit_snapshot.cid() == &cid
+            {
+                if commit_snapshot.page_count() != page_count {
+                    return Err(Culprit::new_with_note(
+                        ApiErrCtx::InvalidIdempotentCommit,
+                        "page count mismatch",
+                    )
+                    .into());
                 }
+
+                // check that the segments being committed contain the same
+                // set of pages as the segments in the catalog
+                let mut committed_pages = state
+                    .catalog()
+                    .scan_segments(&vid, &(commit_lsn..=commit_lsn))
+                    .try_fold(Splinter::default(), |mut acc, kv| {
+                        kv.map(|(_, g)| {
+                            acc.merge(&g);
+                            acc
+                        })
+                    })
+                    .or_into_ctx()?;
+
+                for segment in req.segments {
+                    let graft = segment.graft().or_into_ctx()?;
+                    let cut = committed_pages.cut(&graft);
+                    if cut != graft {
+                        return Err(Culprit::new_with_note(
+                            ApiErrCtx::InvalidIdempotentCommit,
+                            "extra page idxs",
+                        )
+                        .into());
+                    }
+                }
+
+                if !committed_pages.is_empty() {
+                    return Err(Culprit::new_with_note(
+                        ApiErrCtx::InvalidIdempotentCommit,
+                        "missing page idxs",
+                    )
+                    .into());
+                }
+
+                precept::expect_reachable!(
+                    "detected idempotent commit request and reused previous response",
+                    {
+                        "vid": vid,
+                        "cid": cid,
+                        "commit_lsn": commit_lsn,
+                    }
+                );
+                tracing::debug!(
+                    "detected idempotent commit request for volume {vid}: reusing commit at lsn {commit_lsn:?}"
+                );
+
+                return Ok(ProtoResponse::new(CommitResponse {
+                    snapshot: Some(commit_snapshot.into_snapshot()),
+                }));
             }
         }
         // otherwise reject this commit
@@ -190,7 +190,7 @@ mod tests {
     use graft_proto::common::v1::SegmentInfo;
     use object_store::memory::InMemory;
     use prost::Message;
-    use splinter_rs::Splinter;
+    use splinter_rs::{Encodable, Splinter};
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
@@ -219,7 +219,7 @@ mod tests {
 
         let vid = VolumeId::random();
         let cid = ClientId::random();
-        let graft = Splinter::from_iter([1u32]).serialize_to_bytes();
+        let graft = Splinter::from_iter([1]).encode_to_bytes();
 
         // store commit requests to test idempotency later
         let mut commits = vec![];
@@ -286,12 +286,12 @@ mod tests {
             }),
             ("extra offset", {
                 let mut c = commits[5].clone();
-                c.segments[0].graft = Splinter::from_iter([1u32, 2]).serialize_to_bytes();
+                c.segments[0].graft = Splinter::from_iter([1u32, 2]).encode_to_bytes();
                 c
             }),
             ("missing offset", {
                 let mut c = commits[5].clone();
-                c.segments[0].graft = Splinter::from_iter([2u32]).serialize_to_bytes();
+                c.segments[0].graft = Splinter::from_iter([2u32]).encode_to_bytes();
                 c
             }),
             ("extra segment", {

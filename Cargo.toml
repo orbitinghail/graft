@@ -20,7 +20,7 @@ hex = "0.4"
 rusty_paseto = "0.7.2"
 platform-dirs = "0.3.0"
 sqlite-plugin = { version = "0.4.1", default-features = false }
-splinter-rs = "0.3"
+splinter-rs = { version = "0.5.2" }
 precept = "0.1"
 assert_matches = "1.5"
 axum = "0.8"

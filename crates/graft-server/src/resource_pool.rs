@@ -154,12 +154,12 @@ impl<T> ResourcePool<T> {
 
                 // on the first pass, only consider slots that are not recently used
                 // on subsequent passes, consider all slots
-                if attempts > 0 || !recently_used {
-                    if let Ok(guard) = slot.inner.try_write() {
-                        // mark the slot as recently used since we are about to init it
-                        slot.recently_used.store(true, Ordering::Relaxed);
-                        break 'outer (cursor, guard);
-                    }
+                if (attempts > 0 || !recently_used)
+                    && let Ok(guard) = slot.inner.try_write()
+                {
+                    // mark the slot as recently used since we are about to init it
+                    slot.recently_used.store(true, Ordering::Relaxed);
+                    break 'outer (cursor, guard);
                 }
             }
 

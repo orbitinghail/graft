@@ -19,7 +19,7 @@ impl Snapshot {
     }
 
     pub fn lsn(&self) -> Option<LSN> {
-        self.lsn.clone()
+        self.lsn
     }
 
     pub fn search_path(&self) -> &SearchPath {
