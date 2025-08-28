@@ -4,10 +4,7 @@ use axum::extract::State;
 use culprit::{Culprit, ResultExt};
 use graft_core::{VolumeId, gid::ClientId, lsn::LSN, page_count::PageCount};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
-use splinter_rs::{
-    Splinter, SplinterRead,
-    ops::{Cut, Union},
-};
+use splinter_rs::{Cut, Merge, PartitionRead, Splinter};
 
 use crate::{
     api::{
@@ -87,8 +84,11 @@ pub async fn handler(
                     let mut committed_pages = state
                         .catalog()
                         .scan_segments(&vid, &(commit_lsn..=commit_lsn))
-                        .try_fold(Splinter::default(), |acc, kv| {
-                            kv.map(|(_, g)| acc.union(&g))
+                        .try_fold(Splinter::default(), |mut acc, kv| {
+                            kv.map(|(_, g)| {
+                                acc.merge(&g);
+                                acc
+                            })
                         })
                         .or_into_ctx()?;
 
@@ -190,7 +190,7 @@ mod tests {
     use graft_proto::common::v1::SegmentInfo;
     use object_store::memory::InMemory;
     use prost::Message;
-    use splinter_rs::Splinter;
+    use splinter_rs::{Encodable, Splinter};
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
@@ -219,7 +219,7 @@ mod tests {
 
         let vid = VolumeId::random();
         let cid = ClientId::random();
-        let graft = Splinter::from_iter([1u32]).serialize_to_bytes();
+        let graft = Splinter::from_iter([1]).encode_to_bytes();
 
         // store commit requests to test idempotency later
         let mut commits = vec![];
@@ -286,12 +286,12 @@ mod tests {
             }),
             ("extra offset", {
                 let mut c = commits[5].clone();
-                c.segments[0].graft = Splinter::from_iter([1u32, 2]).serialize_to_bytes();
+                c.segments[0].graft = Splinter::from_iter([1u32, 2]).encode_to_bytes();
                 c
             }),
             ("missing offset", {
                 let mut c = commits[5].clone();
-                c.segments[0].graft = Splinter::from_iter([2u32]).serialize_to_bytes();
+                c.segments[0].graft = Splinter::from_iter([2u32]).encode_to_bytes();
                 c
             }),
             ("extra segment", {

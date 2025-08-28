@@ -51,7 +51,7 @@ mod tests {
     use graft_core::{SegmentId, gid::ClientId, page_count::PageCount};
     use object_store::memory::InMemory;
     use prost::Message;
-    use splinter_rs::Splinter;
+    use splinter_rs::{Encodable, Splinter};
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,
@@ -118,7 +118,7 @@ mod tests {
         let mut commit = CommitBuilder::new_with_capacity(meta, 1);
         commit.write_graft(
             SegmentId::random(),
-            Splinter::from_slice(&[0]).serialize_to_bytes(),
+            Splinter::from_iter([0]).encode_to_bytes(),
         );
         store.commit(commit.build()).await.unwrap();
 

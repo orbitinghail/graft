@@ -1,5 +1,5 @@
 use graft_core::{PageCount, SegmentId, page::Page};
-use splinter_rs::{Splinter, SplinterRead};
+use splinter_rs::{PartitionRead, Splinter};
 
 use crate::{
     local::fjall_storage::FjallStorageErr,

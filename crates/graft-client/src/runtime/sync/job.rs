@@ -1,7 +1,7 @@
 use culprit::{Result, ResultExt};
 use graft_core::{PageIdx, VolumeId, gid::ClientId, lsn::LSN, page::Page};
 use graft_proto::pagestore::v1::PageAtIdx;
-use splinter_rs::SplinterRead;
+use splinter_rs::PartitionRead;
 use tryiter::TryIteratorExt;
 
 use crate::{ClientErr, ClientPair, runtime::storage::Storage};
