@@ -24,7 +24,7 @@ splinter-rs = { version = "0.5.2" }
 precept = "0.1"
 assert_matches = "1.5"
 axum = "0.8"
-axum-test = "17.2"
+axum-test = "18.0"
 blake3 = "1.7"
 bs58 = "0.5"
 bytes = "1.10"
