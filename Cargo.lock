@@ -186,12 +186,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "auto-future"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c1e7e457ea78e524f48639f551fd79703ac3f2237f5ecccdf4708f8a75ad373"
-
-[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -253,12 +247,11 @@ dependencies = [
 
 [[package]]
 name = "axum-test"
-version = "18.0.2"
+version = "18.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84a5c86736717a01abbe75c16e46972a9d77abde7852f556d4ec5cad859997a0"
+checksum = "680e88effaafbb28675074f29cda0e984c984bed5eb513085c17caf7de564225"
 dependencies = [
  "anyhow",
- "auto-future",
  "axum",
  "bytes",
  "bytesize",
@@ -316,10 +309,11 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
 name = "bilrost"
-version = "0.1013.0"
+version = "0.1014.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "640b021fedf44f44640771b2c3e5ec53ff0122d89b3fd1448e6880da0ace787b"
+checksum = "b1ec781b82aaa1ead5e8c6ab1cf7b3485f8909e76521f87eb3091a8db5bc00df"
 dependencies = [
+ "autocfg",
  "bilrost-derive",
  "bytes",
  "bytestring",
@@ -329,9 +323,9 @@ dependencies = [
 
 [[package]]
 name = "bilrost-derive"
-version = "0.1013.0"
+version = "0.1014.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9910598cd6a5c5ee053af712bbb3385e96b4eb4adc043b24a69b6c37004ba22"
+checksum = "7f96db92d1373235cede86875c0589f1e053eb36f8e26f2fc131690bf7d03de6"
 dependencies = [
  "eyre",
  "itertools 0.14.0",
@@ -550,9 +544,9 @@ dependencies = [
 
 [[package]]
 name = "circular-buffer"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23bdce1da528cadbac4654b5632bfcd8c6c63e25b1d42cea919a95958790b51d"
+checksum = "14c638459986b83c2b885179bd4ea6a2cbb05697b001501a56adb3a3d230803b"
 
 [[package]]
 name = "clang-sys"
@@ -4626,18 +4620,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.26"
+version = "0.8.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1039dd0d3c310cf05de012d8a39ff557cb0d23087fd44cad61df08fc31907a2f"
+checksum = "0894878a5fa3edfd6da3f88c4805f4c8558e2b996227a3d864f47fe11e38282c"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.26"
+version = "0.8.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ecf5b4cc5364572d7f4c329661bcc82724222973f2cab6f050a4e5c22f75181"
+checksum = "88d2b8d9c68ad2b9e4340d7832716a4d21a22a1154777ad56ea55c51a9cf3831"
 dependencies = [
  "proc-macro2",
  "quote",
