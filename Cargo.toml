@@ -29,7 +29,7 @@ blake3 = "1.7"
 bs58 = "0.5"
 bytes = "1.10"
 bytestring = "1.4"
-bilrost = "0.1013"
+bilrost = "0.1014"
 circular-buffer = "1.1"
 clap = "4.5"
 config = { version = "0.15", features = ["toml"] }

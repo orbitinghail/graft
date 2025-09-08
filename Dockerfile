@@ -33,7 +33,7 @@ COPY . .
 RUN cargo build ${BUILDFLAGS}
 RUN mv ${TARGET_DIR} /artifacts
 
-FROM --platform=$BUILDPLATFORM gcr.io/distroless/cc-debian12:debug@sha256:16656e5bee171d5ad638a8f84f5b75f49c4f7a71508c894419821a88c4c9b1ae AS runtime
+FROM --platform=$BUILDPLATFORM gcr.io/distroless/cc-debian12:debug@sha256:01fb4c3ba57bf2443fbfcc7967a223548f53c8f82a94f211104e735c39f38aae AS runtime
 ARG INSTRUMENTED
 COPY ./tests/antithesis/libvoidstar.so /usr/lib/libvoidstar.so
 COPY ./LICENSE-APACHE /LICENSE-APACHE
