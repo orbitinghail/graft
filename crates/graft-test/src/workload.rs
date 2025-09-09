@@ -1,4 +1,4 @@
-use crate::{PageHash, Ticker, workload::fjall_storage_bench::FjallStorageBench};
+use crate::{PageHash, Ticker};
 
 use super::{PageTracker, PageTrackerErr};
 use config::ConfigError;
@@ -31,7 +31,6 @@ use thiserror::Error;
 use tracing::field;
 use zerocopy::{CastError, FromBytes, SizeError};
 
-pub mod fjall_storage_bench;
 pub mod simple_reader;
 pub mod simple_writer;
 pub mod sqlite_sanity;
@@ -167,7 +166,6 @@ pub enum WorkloadConfig {
     SimpleWriter,
     SimpleReader,
     SqliteSanity,
-    FjallStorageBench,
 }
 
 impl WorkloadConfig {
