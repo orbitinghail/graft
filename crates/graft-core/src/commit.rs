@@ -188,7 +188,6 @@ impl SegmentFrameRef {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{SegmentId, graft::Graft};
 
     #[test]
     fn test_frame_for_pageidx() {

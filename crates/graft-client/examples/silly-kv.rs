@@ -380,8 +380,8 @@ fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
     // find the node immediately before the node to remove (if it exists)
     if let Some(mut prev) = list_find_last(writer, |candidate| candidate < key)? {
         // check if the next node is the one we want to remove
-        if let Some(mut next) = prev.next(writer)? {
-            if next.key() == key {
+        if let Some(mut next) = prev.next(writer)?
+            && next.key() == key {
                 prev.next = next.next;
                 next.next = header.free;
                 header.free = next.idx;
@@ -390,11 +390,10 @@ fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
                 header.save(writer);
                 return Ok(true);
             }
-        }
     } else {
         // check if the head node is the one we want to remove
-        if let Some(mut head) = header.head(writer)? {
-            if head.key() == key {
+        if let Some(mut head) = header.head(writer)?
+            && head.key() == key {
                 header.head = head.next;
                 head.next = header.free;
                 header.free = head.idx;
@@ -402,7 +401,6 @@ fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
                 header.save(writer);
                 return Ok(true);
             }
-        }
     }
     Ok(false)
 }
@@ -465,7 +463,7 @@ fn main() -> Result<()> {
 
     let client = NetClient::new(args.token);
     let metastore_client = MetastoreClient::new(args.metastore, client.clone());
-    let pagestore_client = PagestoreClient::new(args.pagestore, client.clone());
+    let pagestore_client = PagestoreClient::new(args.pagestore, client);
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
     let storage_path = temp_dir().join("silly-kv").join(cid.pretty());

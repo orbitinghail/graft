@@ -13,8 +13,6 @@
 //! this segment, and the index requires that each set of `PageIdxs` corresponding
 //! to a Volume is sorted.
 
-use std::mem::size_of;
-
 use bytes::{Buf, Bytes, BytesMut};
 use graft_core::{
     PageCount, PageIdx, VolumeId,
@@ -225,9 +223,6 @@ impl SegmentIndexBuilder {
 
 #[cfg(test)]
 mod tests {
-
-    use bytes::Buf;
-
     use super::*;
 
     #[graft_test::test]

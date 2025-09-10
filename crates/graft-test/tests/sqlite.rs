@@ -35,7 +35,7 @@ fn test_sync_and_reset() {
 
     // create the second node
     let storage2 = Storage::open_temporary().unwrap();
-    let runtime2 = Runtime::new(ClientId::random(), clients.clone(), storage2);
+    let runtime2 = Runtime::new(ClientId::random(), clients, storage2);
     runtime2
         .start_sync_task(Duration::from_millis(100), 8, true, "sync-2")
         .unwrap();
@@ -192,7 +192,7 @@ fn test_sqlite_query_only_fetches_needed_pages() {
     // create the second node (reader)
     let reader_runtime = Runtime::new(
         ClientId::random(),
-        clients.clone(),
+        clients,
         Storage::open_temporary().unwrap(),
     );
     reader_runtime

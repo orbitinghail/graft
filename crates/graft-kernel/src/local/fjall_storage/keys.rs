@@ -217,9 +217,9 @@ mod tests {
             CommitKey::new(vid1.clone(), LSN::new(4)),
             CommitKey::new(vid1.clone(), LSN::new(3)),
             CommitKey::new(vid1.clone(), LSN::new(2)),
-            CommitKey::new(vid1.clone(), LSN::new(1)),
+            CommitKey::new(vid1, LSN::new(1)),
             CommitKey::new(vid2.clone(), LSN::new(2)),
-            CommitKey::new(vid2.clone(), LSN::new(1)),
+            CommitKey::new(vid2, LSN::new(1)),
         ]);
     }
 
@@ -246,9 +246,9 @@ mod tests {
             PageKey::new(sid1.clone(), PageIdx::new(1)),
             PageKey::new(sid1.clone(), PageIdx::new(2)),
             PageKey::new(sid1.clone(), PageIdx::new(3)),
-            PageKey::new(sid1.clone(), PageIdx::new(4)),
+            PageKey::new(sid1, PageIdx::new(4)),
             PageKey::new(sid2.clone(), PageIdx::new(1)),
-            PageKey::new(sid2.clone(), PageIdx::new(2)),
+            PageKey::new(sid2, PageIdx::new(2)),
         ]);
     }
 }

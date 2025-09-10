@@ -77,7 +77,7 @@ pub async fn handler<C>(
 
 #[cfg(test)]
 mod tests {
-    use std::{future::IntoFuture, time::Duration};
+    use std::time::Duration;
 
     use axum::handler::Handler;
     use axum_test::TestServer;

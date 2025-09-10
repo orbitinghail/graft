@@ -79,7 +79,7 @@ pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
     let mut supervisor = Supervisor::default();
     let metastore = runtime.block_on(run_metastore(net_client.clone(), &mut supervisor));
     let pagestore = runtime.block_on(run_pagestore(
-        net_client.clone(),
+        net_client,
         metastore.clone(),
         &mut supervisor,
     ));

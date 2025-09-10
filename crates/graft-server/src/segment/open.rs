@@ -164,7 +164,7 @@ impl OpenSegment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment::closed::{ClosedSegment, SEGMENT_MAX_PAGES};
+    use crate::segment::closed::ClosedSegment;
     use assert_matches::assert_matches;
     use bytes::Buf;
     use graft_core::pageidx;
@@ -297,7 +297,7 @@ mod tests {
 
         // insert one more page; should fail
         let err = open_segment
-            .insert(vids[0].clone(), PageIdx::LAST, page.clone())
+            .insert(vids[0].clone(), PageIdx::LAST, page)
             .expect_err("expected segment to be full");
         assert_matches!(err.ctx(), SegmentFullErr);
     }

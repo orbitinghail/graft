@@ -246,11 +246,11 @@ impl VfsFile for VolFile {
                     self.state = VolFileState::Shared { reader };
 
                     // release the reserved lock
-                    // SAFETY: we are in the Reserved state, thus we are holding the lock
-                    // SAFETY: we depend on the connection not being passed
                     // between threads while holding the lock
                     // TODO: find a way to assert that this thread actually owns the lock
                     assert!(self.reserved.is_locked(), "reserved lock must be locked");
+                    // SAFETY: we are in the Reserved state, thus we are holding the lock
+                    // SAFETY: we depend on the connection not being passed
                     unsafe { self.reserved.force_unlock() };
                 } else {
                     return Err(Culprit::new_with_note(

@@ -134,14 +134,13 @@ impl VolumeStore {
 mod tests {
     use std::time::SystemTime;
 
-    use graft_core::{ClientId, PageCount, lsn::LSN};
+    use graft_core::{ClientId, PageCount};
 
+    use super::*;
     use crate::{
         testutil::test_object_store::{ObjectStoreOp, TestObjectStore},
         volume::commit::{CommitBuilder, CommitMeta},
     };
-
-    use super::*;
 
     #[graft_test::test]
     async fn test_replay() {

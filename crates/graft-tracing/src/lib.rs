@@ -86,7 +86,7 @@ where
         }
 
         let prefix = if antithesis || testing {
-            Some(process_id.clone())
+            Some(process_id)
         } else {
             None
         };

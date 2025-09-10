@@ -58,6 +58,7 @@ impl PageIdx {
     /// The provided u32 must not be 0.
     #[inline]
     pub const unsafe fn new_unchecked(n: u32) -> Self {
+        // Safety: The provided u32 must not be 0.
         unsafe { Self(NonZero::new_unchecked(n)) }
     }
 
@@ -316,7 +317,7 @@ derive_newtype_proxy!(
 
 #[cfg(test)]
 mod tests {
-    use crate::{PageCount, PageIdx, page_idx::PageIdxRangeExt, pageidx};
+    use crate::{PageCount, PageIdx, page_idx::PageIdxRangeExt};
 
     #[test]
     fn test_page_idx_iter() {

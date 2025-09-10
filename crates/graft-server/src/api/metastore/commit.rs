@@ -190,7 +190,7 @@ mod tests {
     use graft_proto::common::v1::SegmentInfo;
     use object_store::memory::InMemory;
     use prost::Message;
-    use splinter_rs::{Encodable, Splinter};
+    use splinter_rs::Encodable;
 
     use crate::{
         api::extractors::CONTENT_TYPE_PROTOBUF,

@@ -81,7 +81,6 @@ impl<E: Error> From<E> for InitErr {
 }
 
 /// Write an error message to the `SQLite` error message pointer if it is not null.
-/// Safety:
 #[cfg(feature = "dynamic")]
 fn write_err_msg(
     p_api: *mut sqlite_plugin::sqlite3_api_routines,
@@ -89,6 +88,8 @@ fn write_err_msg(
     out: *mut *const std::ffi::c_char,
 ) -> Result<(), SqliteErr> {
     if !out.is_null() {
+        // SAFETY: p_api must be aligned and valid
+        // SAFETY: out is not null
         unsafe {
             let p_api = p_api.as_ref().ok_or(vars::SQLITE_INTERNAL)?;
             let api = sqlite_plugin::vfs::SqliteApi::new_dynamic(p_api)?;
@@ -130,7 +131,7 @@ fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
 
     let client = NetClient::new(config.token);
     let metastore_client = MetastoreClient::new(config.metastore, client.clone());
-    let pagestore_client = PagestoreClient::new(config.pagestore, client.clone());
+    let pagestore_client = PagestoreClient::new(config.pagestore, client);
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
     let storage = Storage::open(config.data_dir).unwrap();
@@ -148,7 +149,7 @@ fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
 
 /// Register the VFS with `SQLite`.
 /// # Safety
-/// This function should only be called by sqlite's extension loading mechanism.
+/// This function must be called by sqlite's extension loading mechanism.
 #[cfg(feature = "dynamic")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sqlite3_graft_init(
@@ -158,7 +159,10 @@ pub unsafe extern "C" fn sqlite3_graft_init(
 ) -> std::os::raw::c_int {
     match init_vfs().and_then(|(opts, vfs)| {
         if let Err(err) =
-            unsafe { sqlite_plugin::vfs::register_dynamic(p_api, c"graft".to_owned(), vfs, opts) }
+            // Safety: `p_api` must be a valid, aligned pointer to a `sqlite3_api_routines` struct
+            unsafe {
+                sqlite_plugin::vfs::register_dynamic(p_api, c"graft".to_owned(), vfs, opts)
+            }
         {
             Err(InitErr(err, "Failed to register Graft VFS".into()))
         } else {

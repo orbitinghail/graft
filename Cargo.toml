@@ -84,6 +84,15 @@ serde_yaml = "0.9"
 
 [workspace.lints.clippy]
 disallowed_methods = "deny"
-uninlined-format-args = "warn"
-doc-markdown = "warn"
-map-unwrap-or = "warn"
+uninlined_format_args = "warn"
+doc_markdown = "warn"
+map_unwrap_or = "warn"
+redundant_clone = "warn"
+undocumented_unsafe_blocks = "warn"
+
+[workspace.lints.rust]
+ambiguous_negative_literals = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unused_lifetimes = "warn"

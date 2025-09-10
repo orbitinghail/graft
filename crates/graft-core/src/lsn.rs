@@ -43,8 +43,14 @@ pub struct LSN(NonZero<u64>);
 static_assertions::assert_eq_size!(Option<LSN>, LSN);
 
 impl LSN {
+    /// The smallest LSN
+    /// SAFETY: provably safe
     pub const FIRST: Self = unsafe { Self::new_unchecked(1) };
+
+    /// The largest LSN
+    /// SAFETY: provably safe
     pub const LAST: Self = unsafe { Self::new_unchecked(u64::MAX) };
+
     pub const ALL: RangeInclusive<Self> = Self::FIRST..=Self::LAST;
 
     /// Creates a new LSN from a u64 value.
@@ -60,6 +66,7 @@ impl LSN {
     /// Undefined behavior if value is zero.
     #[inline]
     const unsafe fn new_unchecked(lsn: u64) -> Self {
+        // SAFETY: Undefined behavior if value is zero.
         unsafe { Self(NonZero::new_unchecked(lsn)) }
     }
 

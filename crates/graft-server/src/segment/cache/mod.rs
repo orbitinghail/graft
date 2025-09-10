@@ -3,7 +3,7 @@
 //!   - Disk space
 //!   - Maximum open file descriptors (maximum mmap'ed segments)
 
-use std::{future::Future, io, ops::Deref};
+use std::{io, ops::Deref};
 
 use bytes::Buf;
 use graft_core::SegmentId;
