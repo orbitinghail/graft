@@ -104,7 +104,7 @@ fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
     let runners = vec![
         WorkloadRunner::run("writer-1", clients.clone(), ticker, WRITER_CONFIG)?,
         WorkloadRunner::run("writer-2", clients.clone(), ticker, WRITER_CONFIG)?,
-        WorkloadRunner::run("reader", clients.clone(), ticker, READER_CONFIG)?,
+        WorkloadRunner::run("reader", clients, ticker, READER_CONFIG)?,
     ];
 
     test_runners(runners)?;
@@ -130,7 +130,7 @@ fn test_sqlite_sanity() -> Result<(), Culprit<WorkloadErr>> {
         )?,
         WorkloadRunner::run(
             "node-2",
-            clients.clone(),
+            clients,
             ticker,
             &sqlite_sanity_config("node-2-vfs"),
         )?,

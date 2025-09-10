@@ -1,8 +1,6 @@
 use std::{
     error::Error,
     fmt::{Debug, Display, Formatter},
-    future::Future,
-    marker::Send,
     panic,
     time::Duration,
 };

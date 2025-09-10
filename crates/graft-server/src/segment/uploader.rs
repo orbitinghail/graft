@@ -179,7 +179,7 @@ mod tests {
     use graft_core::{gid::VolumeId, page::Page, pageidx};
     use object_store::memory::InMemory;
 
-    use crate::segment::{cache::mem::MemCache, closed::ClosedSegment, open::OpenSegment};
+    use crate::segment::{cache::mem::MemCache, closed::ClosedSegment};
 
     use super::*;
 

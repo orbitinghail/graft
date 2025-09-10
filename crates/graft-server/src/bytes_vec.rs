@@ -113,8 +113,6 @@ impl From<Vec<Bytes>> for BytesVec {
 
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
-
     use super::*;
 
     #[graft_test::test]
@@ -123,7 +121,7 @@ mod tests {
         let bytes = Bytes::from_static(b"hello");
         bytes_vec.bufs.push(bytes.clone());
         bytes_vec.bufs.push(bytes.clone());
-        bytes_vec.bufs.push(bytes.clone());
+        bytes_vec.bufs.push(bytes);
 
         assert_eq!(bytes_vec.remaining(), 15);
         assert_eq!(bytes_vec.chunk(), b"hello");

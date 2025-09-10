@@ -1,4 +1,4 @@
-use std::{result::Result, sync::Arc};
+use std::sync::Arc;
 
 use measured::MetricGroup;
 

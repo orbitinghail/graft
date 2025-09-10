@@ -162,7 +162,7 @@ impl CommitHashBuilder {
 
     /// Writes a page to the hash computation.
     ///
-    /// # Safety
+    /// # Panics
     /// This method will panic if pages are written out of order by pageidx
     pub fn write_page(&mut self, pageidx: PageIdx, page: &Page) {
         // Ensure pages are written in order
@@ -239,7 +239,7 @@ mod tests {
             },
             TestCase {
                 name: "multiple_pages",
-                vid: vid.clone(),
+                vid,
                 lsn: LSN::new(123),
                 page_count: PageCount::new(2),
                 pages: vec![
@@ -314,13 +314,12 @@ mod tests {
         ];
 
         for case in invalid_cases {
-            match case.parse::<CommitHash>() {
-                Ok(hash) => panic!(
+            if let Ok(hash) = case.parse::<CommitHash>() {
+                panic!(
                     "Expected error for case: `{}`, but parsed successfully: {}",
                     case,
                     hash.pretty()
-                ),
-                Err(_) => (),
+                )
             }
         }
     }

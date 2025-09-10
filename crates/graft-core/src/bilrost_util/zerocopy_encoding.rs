@@ -41,9 +41,10 @@ macro_rules! derive_zerocopy_encoding {
             use ::bytes::{BufMut, Buf};
             use ::zerocopy::{TryFromBytes, IntoBytes, Immutable, KnownLayout};
 
-            #[allow(dead_code)]
+            #[allow(dead_code, reason="type assertion improves macro errors")]
             #[doc(hidden)]
             trait AssertIsZerocopy: IntoBytes + TryFromBytes + Immutable + KnownLayout {}
+
             #[doc(hidden)]
             impl$(<$($impl_generics)*>)? AssertIsZerocopy for $ty {}
 

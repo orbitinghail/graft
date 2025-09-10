@@ -81,7 +81,7 @@ pub mod testutil {
     use super::*;
     use std::fmt::Debug;
 
-    /// Tests that a FjallRepr value can be encoded to a slice and then decoded back to the original value.
+    /// Tests that a `FjallRepr` value can be encoded to a slice and then decoded back to the original value.
     #[track_caller]
     pub fn test_roundtrip<T>(value: T)
     where
@@ -92,7 +92,7 @@ pub mod testutil {
         assert_eq!(value, decoded, "Roundtrip failed");
     }
 
-    /// Tests that a FjallRepr value correctly fails to decode invalid data.
+    /// Tests that a `FjallRepr` value correctly fails to decode invalid data.
     #[track_caller]
     pub fn test_invalid<T: FjallRepr>(slice: &[u8]) {
         assert!(
@@ -101,7 +101,7 @@ pub mod testutil {
         );
     }
 
-    /// Tests that a FjallRepr value decodes empty data into it's default repr.
+    /// Tests that a `FjallRepr` value decodes empty data into it's default repr.
     #[track_caller]
     pub fn test_empty_default<T: FjallRepr + Default + Debug + PartialEq>() {
         assert_eq!(
@@ -111,7 +111,7 @@ pub mod testutil {
         );
     }
 
-    /// Tests that a FjallRepr type serializes to the expected ordering.
+    /// Tests that a `FjallRepr` type serializes to the expected ordering.
     #[track_caller]
     pub fn test_serialized_order<T>(values: &[T])
     where
@@ -127,7 +127,7 @@ pub mod testutil {
         // the values array
         for (i, slice) in slices.into_iter().enumerate() {
             let decoded = T::try_from_slice(slice).expect("Failed to decode");
-            assert_eq!(decoded, values[i], "Order mismatch at index {}", i);
+            assert_eq!(decoded, values[i], "Order mismatch at index {i}");
         }
     }
 }

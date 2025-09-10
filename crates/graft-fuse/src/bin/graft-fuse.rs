@@ -37,11 +37,11 @@ fn main() {
 
     let client = NetClient::new(None);
     let metastore_client = MetastoreClient::new(metastore_url, client.clone());
-    let pagestore_client = PagestoreClient::new(pagestore_url, client.clone());
+    let pagestore_client = PagestoreClient::new(pagestore_url, client);
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
     let storage = Storage::open_temporary().unwrap();
-    let runtime = Runtime::new(cid, clients.clone(), storage);
+    let runtime = Runtime::new(cid, clients, storage);
 
     runtime
         .start_sync_task(Duration::from_secs(1), 8, false, "graft-sync")
@@ -49,7 +49,7 @@ fn main() {
 
     register_static(
         c"graft".to_owned(),
-        GraftVfs::new(runtime.clone()),
+        GraftVfs::new(runtime),
         RegisterOpts { make_default: false },
     )
     .expect("failed to register sqlite vfs");

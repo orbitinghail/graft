@@ -223,7 +223,7 @@ impl SegmentWriterTask {
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{VolumeId, page::Page, pageidx};
+    use graft_core::pageidx;
     use splinter_rs::PartitionRead;
 
     use super::*;
