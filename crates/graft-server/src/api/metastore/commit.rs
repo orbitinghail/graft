@@ -4,7 +4,7 @@ use axum::extract::State;
 use culprit::{Culprit, ResultExt};
 use graft_core::{VolumeId, gid::ClientId, lsn::LSN, page_count::PageCount};
 use graft_proto::metastore::v1::{CommitRequest, CommitResponse};
-use splinter_rs::{Cut, Merge, PartitionRead, Splinter};
+use splinter_rs::{Cut, PartitionRead, Splinter};
 
 use crate::{
     api::{
@@ -87,7 +87,7 @@ pub async fn handler(
                     .scan_segments(&vid, &(commit_lsn..=commit_lsn))
                     .try_fold(Splinter::default(), |mut acc, kv| {
                         kv.map(|(_, g)| {
-                            acc.merge(&g);
+                            acc |= g;
                             acc
                         })
                     })

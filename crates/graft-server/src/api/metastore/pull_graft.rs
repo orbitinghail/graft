@@ -7,7 +7,7 @@ use graft_proto::{
     common::v1::LsnRange,
     metastore::v1::{PullGraftRequest, PullGraftResponse},
 };
-use splinter_rs::{Encodable, Merge, Splinter};
+use splinter_rs::{Encodable, Splinter};
 use tryiter::TryIteratorExt;
 
 use crate::api::{
@@ -86,7 +86,7 @@ pub async fn handler(
     let mut iter = state.catalog.scan_segments(&vid, &lsns);
     let mut graft = Splinter::default();
     while let Some((_, segment_graft)) = iter.try_next().or_into_ctx()? {
-        graft.merge(&segment_graft);
+        graft |= segment_graft;
     }
 
     Ok(ProtoResponse::new(PullGraftResponse {
