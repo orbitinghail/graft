@@ -90,8 +90,7 @@ fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
     let client = NetClient::new(None);
     let metastore_client =
         MetastoreClient::new("http://metastore:3001".parse().unwrap(), client.clone());
-    let pagestore_client =
-        PagestoreClient::new("http://pagestore:3000".parse().unwrap(), client);
+    let pagestore_client = PagestoreClient::new("http://pagestore:3000".parse().unwrap(), client);
     let clients = ClientPair::new(metastore_client, pagestore_client);
 
     let storage_path = temp_dir().join("storage").join(cid.pretty());

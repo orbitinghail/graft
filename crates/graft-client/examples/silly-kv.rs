@@ -381,26 +381,28 @@ fn list_remove(writer: &mut VolumeWriter, key: &str) -> Result<bool> {
     if let Some(mut prev) = list_find_last(writer, |candidate| candidate < key)? {
         // check if the next node is the one we want to remove
         if let Some(mut next) = prev.next(writer)?
-            && next.key() == key {
-                prev.next = next.next;
-                next.next = header.free;
-                header.free = next.idx;
-                next.save(writer);
-                prev.save(writer);
-                header.save(writer);
-                return Ok(true);
-            }
+            && next.key() == key
+        {
+            prev.next = next.next;
+            next.next = header.free;
+            header.free = next.idx;
+            next.save(writer);
+            prev.save(writer);
+            header.save(writer);
+            return Ok(true);
+        }
     } else {
         // check if the head node is the one we want to remove
         if let Some(mut head) = header.head(writer)?
-            && head.key() == key {
-                header.head = head.next;
-                head.next = header.free;
-                header.free = head.idx;
-                head.save(writer);
-                header.save(writer);
-                return Ok(true);
-            }
+            && head.key() == key
+        {
+            header.head = head.next;
+            head.next = header.free;
+            header.free = head.idx;
+            head.save(writer);
+            header.save(writer);
+            return Ok(true);
+        }
     }
     Ok(false)
 }
