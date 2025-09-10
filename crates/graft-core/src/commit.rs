@@ -170,8 +170,9 @@ impl SegmentFrameRef {
         &self.sid
     }
 
-    pub fn len(&self) -> usize {
-        // The length of the frame in bytes, add 1 because it's RangeInclusive
+    /// The size of the frame in bytes
+    pub fn size(&self) -> usize {
+        // add 1 because it's RangeInclusive
         self.bytes.end() - self.bytes.start() + 1
     }
 

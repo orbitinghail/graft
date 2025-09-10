@@ -8,8 +8,8 @@ use bytes::Bytes;
 use foldhash::HashMap;
 use futures::stream::BoxStream;
 use object_store::{
-    GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore, PutMultipartOpts,
-    PutOptions, PutPayload, PutResult, Result, memory::InMemory, path::Path,
+    GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+    PutMultipartOptions, PutOptions, PutPayload, PutResult, Result, memory::InMemory, path::Path,
 };
 use tokio::sync::Mutex;
 
@@ -88,7 +88,7 @@ impl ObjectStore for TestObjectStore {
     async fn put_multipart_opts(
         &self,
         location: &Path,
-        opts: PutMultipartOpts,
+        opts: PutMultipartOptions,
     ) -> Result<Box<dyn MultipartUpload>> {
         self.hit(ObjectStoreOp::Put).await;
         self.inner.put_multipart_opts(location, opts).await
