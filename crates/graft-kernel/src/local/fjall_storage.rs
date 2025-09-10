@@ -114,10 +114,10 @@ impl FjallStorage {
         // assuming we found a vref, compute the snapshots search path and return a new tracked snapshot
         if let Some(vref) = vref {
             let path = self.search_path(seqno, vref.clone())?;
-            let (vid, lsn) = vref.into();
-            Ok(Snapshot::new(vid, Some(lsn), path))
+            let (vid, _) = vref.into();
+            Ok(Snapshot::new(vid, path))
         } else {
-            Ok(Snapshot::new(vid.clone(), None, SearchPath::EMPTY))
+            Ok(Snapshot::new(vid.clone(), SearchPath::EMPTY))
         }
     }
 

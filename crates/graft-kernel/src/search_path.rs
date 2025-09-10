@@ -32,6 +32,12 @@ impl SearchPath {
         self.path.push(PathEntry { vid, lsns });
     }
 
+    pub fn first(&self) -> Option<(&VolumeId, LSN)> {
+        self.path
+            .first()
+            .map(|entry| (&entry.vid, *entry.lsns.start()))
+    }
+
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &PathEntry> {
         self.path.iter()
     }

@@ -5,13 +5,12 @@ use crate::search_path::SearchPath;
 #[derive(Debug, Clone)]
 pub struct Snapshot {
     vid: VolumeId,
-    lsn: Option<LSN>,
     path: SearchPath,
 }
 
 impl Snapshot {
-    pub fn new(vid: VolumeId, lsn: Option<LSN>, path: SearchPath) -> Self {
-        Self { vid, lsn, path }
+    pub fn new(vid: VolumeId, path: SearchPath) -> Self {
+        Self { vid, path }
     }
 
     pub fn vid(&self) -> &VolumeId {
@@ -19,7 +18,7 @@ impl Snapshot {
     }
 
     pub fn lsn(&self) -> Option<LSN> {
-        self.lsn
+        self.path.first().map(|(_, lsn)| lsn)
     }
 
     pub fn search_path(&self) -> &SearchPath {

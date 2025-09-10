@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use graft_core::{PageCount, PageIdx, page::Page};
 use tryiter::TryIteratorExt;
 
@@ -15,13 +17,13 @@ pub trait VolumeRead {
 
 #[derive(Debug, Clone)]
 pub struct VolumeReader {
-    storage: FjallStorage,
+    storage: Arc<FjallStorage>,
     rpc: RpcHandle,
     snapshot: Snapshot,
 }
 
 impl VolumeReader {
-    pub(crate) fn new(storage: FjallStorage, rpc: RpcHandle, snapshot: Snapshot) -> Self {
+    pub(crate) fn new(storage: Arc<FjallStorage>, rpc: RpcHandle, snapshot: Snapshot) -> Self {
         Self { storage, rpc, snapshot }
     }
 
