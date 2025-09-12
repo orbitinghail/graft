@@ -30,6 +30,10 @@ impl VolumeReader {
     pub(crate) fn storage(&self) -> &FjallStorage {
         &self.storage
     }
+
+    pub(crate) fn unpack(self) -> (Arc<FjallStorage>, RpcHandle, Snapshot) {
+        (self.storage, self.rpc, self.snapshot)
+    }
 }
 
 impl VolumeRead for VolumeReader {

@@ -1,11 +1,11 @@
-use std::{pin::Pin, time::Duration};
+use std::{pin::Pin, sync::Arc, time::Duration};
 
 use futures::{Stream, StreamExt};
 use tokio::time::sleep;
 
 use crate::{
     local::fjall_storage::{FjallStorage, FjallStorageErr},
-    rt::rpc::RuntimeRpc,
+    rt::rpc::Rpc,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -19,17 +19,17 @@ enum RuntimeErr {
 }
 
 pub enum Event {
-    Rpc(RuntimeRpc),
+    Rpc(Rpc),
     Tick,
 }
 
 pub struct Runtime<S> {
-    storage: FjallStorage,
+    storage: Arc<FjallStorage>,
     events: Pin<Box<S>>,
 }
 
 impl<S: Stream<Item = Event>> Runtime<S> {
-    pub fn new(storage: FjallStorage, events: Pin<Box<S>>) -> Self {
+    pub fn new(storage: Arc<FjallStorage>, events: Pin<Box<S>>) -> Self {
         Runtime { storage, events }
     }
 
@@ -43,7 +43,7 @@ impl<S: Stream<Item = Event>> Runtime<S> {
                 Err(err) => {
                     tracing::error!("sync task error: {:?}", err);
                     // we want to explore system states that include runtime errors
-                    precept::expect_reachable!("graft-kernel Runtime error", { "error": err.to_string() });
+                    precept::expect_reachable!("graft-kernel runtime error", { "error": err.to_string() });
                     sleep(Duration::from_millis(100)).await
                 }
             }

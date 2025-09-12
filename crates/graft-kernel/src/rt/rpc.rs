@@ -1,15 +1,15 @@
 use tokio::sync::mpsc::Sender;
 
 #[derive(Debug)]
-pub enum RuntimeRpc {}
+pub enum Rpc {}
 
 #[derive(Clone, Debug)]
 pub struct RpcHandle {
-    tx: Sender<RuntimeRpc>,
+    tx: Sender<Rpc>,
 }
 
 impl RpcHandle {
-    pub fn new(tx: Sender<RuntimeRpc>) -> Self {
+    pub fn new(tx: Sender<Rpc>) -> Self {
         Self { tx }
     }
 }

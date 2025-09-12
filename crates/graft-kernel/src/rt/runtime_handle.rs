@@ -22,14 +22,14 @@ pub struct RuntimeHandle {
 
 struct RuntimeHandleInner {
     handle: JoinHandle<Result<(), RuntimeFatalErr>>,
-    storage: FjallStorage,
+    storage: Arc<FjallStorage>,
     rpc: RpcHandle,
 }
 
 impl RuntimeHandle {
     /// Spawn the Graft Runtime into the provided Tokio Runtime.
     /// Returns a `RuntimeHandle` which can be used to interact with the Graft Runtime.
-    pub fn spawn(handle: &tokio::runtime::Handle, storage: FjallStorage) -> RuntimeHandle {
+    pub fn spawn(handle: &tokio::runtime::Handle, storage: Arc<FjallStorage>) -> RuntimeHandle {
         let (tx, rx) = mpsc::channel(8);
 
         let rx = ReceiverStream::new(rx).map(Event::Rpc);

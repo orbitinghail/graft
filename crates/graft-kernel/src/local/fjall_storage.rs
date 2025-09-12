@@ -1,11 +1,12 @@
-use std::{fmt::Debug, path::Path};
+use std::{fmt::Debug, ops::RangeInclusive, path::Path};
 
 use fjall::PartitionCreateOptions;
 use graft_core::{
-    PageIdx, SegmentId, VolumeId, commit::Commit, handle_id::HandleId, lsn::LSN, page::Page,
-    volume_handle::VolumeHandle, volume_meta::VolumeMeta, volume_ref::VolumeRef,
+    PageCount, PageIdx, SegmentId, VolumeId, commit::Commit, handle_id::HandleId, lsn::LSN,
+    page::Page, volume_handle::VolumeHandle, volume_meta::VolumeMeta, volume_ref::VolumeRef,
 };
 use lsm_tree::SeqNo;
+use splinter_rs::Splinter;
 use tryiter::TryIteratorExt;
 
 use crate::{
@@ -182,7 +183,6 @@ impl FjallStorage {
             .or_into_ctx()
     }
 
-    #[inline]
     pub fn write_page(
         &self,
         sid: SegmentId,
@@ -192,5 +192,36 @@ impl FjallStorage {
         self.pages
             .insert(PageKey::new(sid, pageidx), page)
             .or_into_ctx()
+    }
+
+    pub fn remove_page_range(
+        &self,
+        sid: &SegmentId,
+        pages: RangeInclusive<PageIdx>,
+    ) -> Result<(), FjallStorageErr> {
+        // PageKeys are stored in descending order
+        let keyrange =
+            PageKey::new(sid.clone(), *pages.end())..=PageKey::new(sid.clone(), *pages.start());
+        let mut batch = self.keyspace.batch();
+        let mut iter = self.pages.snapshot().range(keyrange);
+        while let Some((key, _)) = iter.try_next()? {
+            self.pages.batch_remove(&mut batch, key);
+        }
+        batch.commit()?;
+        Ok(())
+    }
+
+    /// Attempt to execute a local commit on the volume pointed to by Snapshot.
+    /// The resulting commit will claim the next LSN after the Snapshot.
+    /// The `sid` must be a Segment containing all of the pages in this commit,
+    /// which must match the provided `graft`.
+    pub fn commit(
+        &self,
+        snapshot: Snapshot,
+        page_count: PageCount,
+        sid: SegmentId,
+        graft: Splinter,
+    ) -> Result<(), FjallStorageErr> {
+        todo!()
     }
 }

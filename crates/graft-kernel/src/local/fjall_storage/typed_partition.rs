@@ -4,7 +4,7 @@ use std::{
 };
 
 use culprit::ResultExt;
-use fjall::{Keyspace, KvPair, PartitionCreateOptions, Slice};
+use fjall::{Batch, Keyspace, KvPair, PartitionCreateOptions, Slice};
 use tryiter::TryIteratorExt;
 
 use crate::local::fjall_storage::{FjallStorageErr, fjall_repr::FjallRepr, keys::FjallKeyPrefix};
@@ -35,6 +35,22 @@ where
     pub fn insert(&self, key: K, val: V) -> culprit::Result<(), FjallStorageErr> {
         self.partition.insert(key.into_slice(), val.into_slice())?;
         Ok(())
+    }
+
+    #[inline]
+    pub fn batch_insert(&self, batch: &mut Batch, key: K, val: V) {
+        batch.insert(&self.partition, key.into_slice(), val.into_slice())
+    }
+
+    #[inline]
+    pub fn remove(&self, key: K) -> culprit::Result<(), FjallStorageErr> {
+        self.partition.remove(key.into_slice())?;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn batch_remove(&self, batch: &mut Batch, key: K) {
+        batch.remove(&self.partition, key.into_slice())
     }
 
     #[inline]
