@@ -1,5 +1,6 @@
 pub mod local {
     pub mod fjall_storage;
+    pub mod staged_segment;
 }
 
 pub mod rt {

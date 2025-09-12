@@ -6,13 +6,15 @@ use graft_core::{
     page::Page, volume_handle::VolumeHandle, volume_meta::VolumeMeta, volume_ref::VolumeRef,
 };
 use lsm_tree::SeqNo;
-use splinter_rs::Splinter;
 use tryiter::TryIteratorExt;
 
 use crate::{
-    local::fjall_storage::{
-        keys::{CommitKey, PageKey},
-        typed_partition::TypedPartition,
+    local::{
+        fjall_storage::{
+            keys::{CommitKey, PageKey},
+            typed_partition::{FjallBatchExt, TypedPartition},
+        },
+        staged_segment::StagedSegment,
     },
     search_path::SearchPath,
     snapshot::Snapshot,
@@ -194,6 +196,10 @@ impl FjallStorage {
             .or_into_ctx()
     }
 
+    pub fn remove_page(&self, sid: SegmentId, pageidx: PageIdx) -> Result<(), FjallStorageErr> {
+        self.pages.remove(PageKey::new(sid, pageidx)).or_into_ctx()
+    }
+
     pub fn remove_page_range(
         &self,
         sid: &SegmentId,
@@ -205,7 +211,17 @@ impl FjallStorage {
         let mut batch = self.keyspace.batch();
         let mut iter = self.pages.snapshot().range(keyrange);
         while let Some((key, _)) = iter.try_next()? {
-            self.pages.batch_remove(&mut batch, key);
+            batch.remove_typed(&self.pages, key);
+        }
+        batch.commit()?;
+        Ok(())
+    }
+
+    pub fn remove_segment(&self, sid: &SegmentId) -> Result<(), FjallStorageErr> {
+        let mut batch = self.keyspace.batch();
+        let mut iter = self.pages.snapshot().prefix(sid);
+        while let Some((key, _)) = iter.try_next()? {
+            batch.remove_typed(&self.pages, key);
         }
         batch.commit()?;
         Ok(())
@@ -219,9 +235,13 @@ impl FjallStorage {
         &self,
         snapshot: Snapshot,
         page_count: PageCount,
-        sid: SegmentId,
-        graft: Splinter,
+        segment: StagedSegment,
     ) -> Result<(), FjallStorageErr> {
+        let commit_lsn = snapshot
+            .lsn()
+            .unwrap_or_default()
+            .next()
+            .expect("LSN overflow");
         todo!()
     }
 }

@@ -1,9 +1,8 @@
 use culprit::Result;
-use graft_core::{PageCount, PageIdx, SegmentId, page::Page};
-use splinter_rs::{PartitionRead, PartitionWrite, Splinter};
+use graft_core::{PageCount, PageIdx, page::Page};
 
 use crate::{
-    local::fjall_storage::FjallStorageErr,
+    local::{fjall_storage::FjallStorageErr, staged_segment::StagedSegment},
     volume_reader::{VolumeRead, VolumeReader},
 };
 
@@ -17,18 +16,17 @@ pub trait VolumeWrite {
 pub struct VolumeWriter {
     reader: VolumeReader,
     page_count: PageCount,
-    sid: SegmentId,
-    graft: Splinter,
+    segment: StagedSegment,
 }
 
 impl VolumeWriter {
     pub fn from_reader(reader: VolumeReader) -> Result<Self, FjallStorageErr> {
         let page_count = reader.page_count()?;
+        let storage = reader.storage().clone();
         Ok(Self {
             reader,
             page_count,
-            sid: SegmentId::random(),
-            graft: Splinter::default(),
+            segment: StagedSegment::new(storage),
         })
     }
 }
@@ -38,15 +36,11 @@ impl VolumeRead for VolumeWriter {
         Ok(self.page_count)
     }
 
-    fn read_page(
-        &self,
-        pageidx: graft_core::PageIdx,
-    ) -> Result<graft_core::page::Page, FjallStorageErr> {
+    fn read_page(&self, pageidx: PageIdx) -> Result<Page, FjallStorageErr> {
         if !self.page_count.contains(pageidx) {
             Ok(Page::EMPTY)
-        } else if self.graft.contains(pageidx.to_u32()) {
-            let page = self.reader.storage().read_page(self.sid.clone(), pageidx)?;
-            Ok(page.unwrap_or(Page::EMPTY))
+        } else if let Some(page) = self.segment.read_page(pageidx)? {
+            Ok(page)
         } else {
             self.reader.read_page(pageidx)
         }
@@ -55,36 +49,17 @@ impl VolumeRead for VolumeWriter {
 
 impl VolumeWrite for VolumeWriter {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), FjallStorageErr> {
-        self.graft.insert(pageidx.to_u32());
         self.page_count = self.page_count.max(pageidx.pages());
-        self.reader
-            .storage()
-            .write_page(self.sid.clone(), pageidx, page)
+        self.segment.write_page(pageidx, page)
     }
 
     fn truncate(&mut self, page_count: PageCount) -> Result<(), FjallStorageErr> {
         self.page_count = page_count;
-        let start = page_count
-            .last_index()
-            .unwrap_or_default()
-            .saturating_next();
-
-        // remove all pages from the graft which are no longer valid
-        todo!("self.graft.remove_range");
-
-        // remove all pages from the writer segment which are no longer valid
-        self.reader
-            .storage()
-            .remove_page_range(&self.sid, start..=PageIdx::LAST)?;
+        self.segment.truncate(page_count)
     }
 
     fn commit(self) -> Result<(), FjallStorageErr> {
-        let (storage, rpc, snapshot) = self.reader.unpack();
-        let commit_lsn = snapshot
-            .lsn()
-            .unwrap_or_default()
-            .next()
-            .expect("LSN overflow");
-        todo!()
+        let (storage, _, snapshot) = self.reader.unpack();
+        storage.commit(snapshot, self.page_count, self.segment)
     }
 }

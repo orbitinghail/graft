@@ -27,7 +27,7 @@ impl VolumeReader {
         Self { storage, rpc, snapshot }
     }
 
-    pub(crate) fn storage(&self) -> &FjallStorage {
+    pub(crate) fn storage(&self) -> &Arc<FjallStorage> {
         &self.storage
     }
 
