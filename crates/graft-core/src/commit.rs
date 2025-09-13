@@ -140,6 +140,10 @@ impl Commit {
 }
 
 impl SegmentIdx {
+    pub fn new(sid: SegmentId, graft: Graft) -> Self {
+        SegmentIdx { sid, graft, frames: SmallVec::new() }
+    }
+
     pub fn sid(&self) -> &SegmentId {
         &self.sid
     }

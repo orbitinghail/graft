@@ -1,11 +1,18 @@
-use std::{fmt::Debug, ops::RangeInclusive, path::Path};
+use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
 use fjall::PartitionCreateOptions;
 use graft_core::{
-    PageCount, PageIdx, SegmentId, VolumeId, commit::Commit, handle_id::HandleId, lsn::LSN,
-    page::Page, volume_handle::VolumeHandle, volume_meta::VolumeMeta, volume_ref::VolumeRef,
+    PageCount, PageIdx, SegmentId, VolumeId,
+    commit::{Commit, SegmentIdx},
+    handle_id::HandleId,
+    lsn::LSN,
+    page::Page,
+    volume_handle::VolumeHandle,
+    volume_meta::VolumeMeta,
+    volume_ref::VolumeRef,
 };
 use lsm_tree::SeqNo;
+use parking_lot::Mutex;
 use tryiter::TryIteratorExt;
 
 use crate::{
@@ -20,7 +27,7 @@ use crate::{
     snapshot::Snapshot,
 };
 
-use culprit::{Result, ResultExt};
+use culprit::{Culprit, Result, ResultExt};
 
 mod fjall_repr;
 pub mod keys;
@@ -40,6 +47,9 @@ pub enum FjallStorageErr {
 
     #[error("I/O Error: {0}")]
     IoErr(#[from] std::io::Error),
+
+    #[error("Concurrent write to Volume {0} detected")]
+    ConcurrentWrite(VolumeId),
 }
 
 #[derive(Clone)]
@@ -65,6 +75,13 @@ pub struct FjallStorage {
     /// {sid} / {pageidx} -> Page
     /// Keyed by `keys::PageKey`
     pages: TypedPartition<PageKey, Page>,
+
+    /// Must be held while performing read+write transactions.
+    /// Read-only and write-only transactions don't need to hold the lock as
+    /// long as they are safe:
+    /// To make read-only txns safe, use the same snapshot for all reads
+    /// To make write-only txns safe, they must be monotonic
+    lock: Arc<Mutex<()>>,
 }
 
 impl Debug for FjallStorage {
@@ -96,7 +113,14 @@ impl FjallStorage {
             PartitionCreateOptions::default().with_kv_separation(Default::default()),
         )?;
 
-        Ok(Self { keyspace, handles, volumes, log, pages })
+        Ok(Self {
+            keyspace,
+            handles,
+            volumes,
+            log,
+            pages,
+            lock: Default::default(),
+        })
     }
 
     pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
@@ -242,6 +266,30 @@ impl FjallStorage {
             .unwrap_or_default()
             .next()
             .expect("LSN overflow");
-        todo!()
+
+        let _permit = self.lock.lock();
+
+        let latest_snapshot = self.snapshot(snapshot.vid())?;
+        if snapshot.lsn() != latest_snapshot.lsn() {
+            return Err(Culprit::from_err(FjallStorageErr::ConcurrentWrite(
+                snapshot.vid().clone(),
+            )));
+        }
+
+        // HELLO CARL!
+        // API irregularities:
+        // 1. some operations should optionally support running within an existing fjall snapshot
+        // 2. we are not really using locks correctly
+        //
+        // Idea:
+        // 1. categorize operations into read, write, or read+write
+        // 2. ideally read+write ops can only be executed while holding the lock
+        // 3. ideally ops are abstracted over snapshots in some way
+
+        let commit = Commit::new(snapshot.vid().clone(), commit_lsn, page_count)
+            .with_segment_idx(Some(segment.into()));
+
+        self.log
+            .insert(CommitKey::new(snapshot.vid().clone(), commit_lsn), commit)
     }
 }

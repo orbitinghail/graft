@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use bytes::Bytes;
 use splinter_rs::{CowSplinter, PartitionRead, Splinter};
 
@@ -21,6 +23,12 @@ impl Graft {
     #[inline]
     pub fn contains(&self, pageidx: PageIdx) -> bool {
         self.splinter.contains(pageidx.to_u32())
+    }
+}
+
+impl From<Splinter> for Graft {
+    fn from(value: Splinter) -> Self {
+        Graft { splinter: CowSplinter::from(value) }
     }
 }
 

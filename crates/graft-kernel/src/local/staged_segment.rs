@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use culprit::Result;
-use graft_core::{PageCount, PageIdx, SegmentId, page::Page};
+use graft_core::{PageCount, PageIdx, SegmentId, commit::SegmentIdx, page::Page};
 use splinter_rs::{PartitionRead, PartitionWrite, Splinter};
 
 use crate::local::fjall_storage::{FjallStorage, FjallStorageErr};
@@ -49,8 +49,14 @@ impl StagedSegment {
     }
 }
 
-impl Drop for StagedSegment {
-    fn drop(&mut self) {
-        todo!("figure out how to gc a uncommitted staged segment")
+// impl Drop for StagedSegment {
+//     fn drop(&mut self) {
+//         todo!("figure out how to gc a uncommitted staged segment")
+//     }
+// }
+
+impl Into<SegmentIdx> for StagedSegment {
+    fn into(self) -> SegmentIdx {
+        SegmentIdx::new(self.sid, self.graft.into())
     }
 }
