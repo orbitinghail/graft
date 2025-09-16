@@ -77,7 +77,7 @@ ureq = { version = "3.0", default-features = false, features = [
 ] }
 url = "2.5"
 zerocopy = { version = "0.8", features = ["derive"] }
-fuser = "0.15.1"
+fuser = "0.16.0"
 libc = "0.2"
 quick_cache = "0.6"
 serde_yaml = "0.9"
