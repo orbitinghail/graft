@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM rust:1.89-bookworm@sha256:e090f7b4adf86191313dba91260351d7f5e15cac0fe34f26706a805c0cb9641f AS base
+FROM --platform=$BUILDPLATFORM rust:1.90-bookworm@sha256:56f6c5a4f83da09dcb118a2c2a6b6d284463a6dd9d2b948316743b4148a10c88 AS base
 
 # increment to force rebuild of all layers
 RUN echo "rebuild-deps: 1"
