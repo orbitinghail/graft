@@ -70,6 +70,7 @@ where
     K: FjallRepr,
     V: FjallRepr,
 {
+    /// Retrieve the value corresponding to the key
     pub fn get(&self, key: &K) -> culprit::Result<Option<V>, FjallStorageErr> {
         if let Some(slice) = self.snapshot.get(key.as_slice())? {
             return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
@@ -77,6 +78,7 @@ where
         Ok(None)
     }
 
+    /// An optimized version of get when key is owned
     pub fn get_owned(&self, key: K) -> culprit::Result<Option<V>, FjallStorageErr> {
         if let Some(slice) = self.snapshot.get(key.into_slice())? {
             return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));

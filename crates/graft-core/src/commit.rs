@@ -1,4 +1,7 @@
-use std::{ops::RangeInclusive, time::SystemTime};
+use std::{
+    ops::{Deref, DerefMut, RangeInclusive},
+    time::SystemTime,
+};
 
 use bilrost::Message;
 use smallvec::SmallVec;
@@ -42,41 +45,6 @@ pub struct Commit {
     /// the commit was made a checkpoint
     #[bilrost(6)]
     checkpointed_at: Option<SystemTime>,
-}
-
-#[derive(Debug, Clone, Message, PartialEq, Eq)]
-pub struct SegmentIdx {
-    /// The Segment ID
-    #[bilrost(1)]
-    sid: SegmentId,
-
-    /// The Graft of `PageIdxs` contained by this Segment.
-    #[bilrost(2)]
-    graft: Graft,
-
-    /// An index of `SegmentFrameIdxs` contained by this Segment.
-    /// Empty on local Segments which have not been encoded and uploaded to object storage.
-    #[bilrost(3)]
-    frames: SmallVec<[SegmentFrameIdx; 2]>,
-}
-
-#[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
-struct SegmentFrameIdx {
-    /// The length of the compressed frame in bytes.
-    #[bilrost(1)]
-    frame_size: usize,
-
-    /// The last `PageIdx` contained by this `SegmentFrame`.
-    #[bilrost(2)]
-    last_pageidx: PageIdx,
-}
-
-/// A `SegmentFrameRef` contains the byte range and corresponding page range for a
-/// particular frame in a segment.
-pub struct SegmentFrameRef {
-    sid: SegmentId,
-    bytes: RangeInclusive<usize>,
-    pages: RangeInclusive<PageIdx>,
 }
 
 impl Commit {
@@ -139,6 +107,36 @@ impl Commit {
     }
 }
 
+#[derive(Debug, Clone, Message, PartialEq, Eq)]
+pub struct SegmentIdx {
+    /// The Segment ID
+    #[bilrost(1)]
+    sid: SegmentId,
+
+    /// The Graft of `PageIdxs` contained by this Segment.
+    #[bilrost(2)]
+    graft: Graft,
+
+    /// An index of `SegmentFrameIdxs` contained by this Segment.
+    /// Empty on local Segments which have not been encoded and uploaded to object storage.
+    #[bilrost(3)]
+    frames: SmallVec<[SegmentFrameIdx; 2]>,
+}
+
+impl Deref for SegmentIdx {
+    type Target = Graft;
+
+    fn deref(&self) -> &Self::Target {
+        &self.graft
+    }
+}
+
+impl DerefMut for SegmentIdx {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.graft
+    }
+}
+
 impl SegmentIdx {
     pub fn new(sid: SegmentId, graft: Graft) -> Self {
         SegmentIdx { sid, graft, frames: SmallVec::new() }
@@ -146,10 +144,6 @@ impl SegmentIdx {
 
     pub fn sid(&self) -> &SegmentId {
         &self.sid
-    }
-
-    pub fn contains(&self, pageidx: PageIdx) -> bool {
-        self.graft.contains(pageidx)
     }
 
     pub fn frame_for_pageidx(&self, pageidx: PageIdx) -> Option<SegmentFrameRef> {
@@ -167,6 +161,25 @@ impl SegmentIdx {
             .find(|(_, pages)| pages.contains(&pageidx))
             .map(|(bytes, pages)| SegmentFrameRef { sid: self.sid.clone(), bytes, pages })
     }
+}
+
+#[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
+struct SegmentFrameIdx {
+    /// The length of the compressed frame in bytes.
+    #[bilrost(1)]
+    frame_size: usize,
+
+    /// The last `PageIdx` contained by this `SegmentFrame`.
+    #[bilrost(2)]
+    last_pageidx: PageIdx,
+}
+
+/// A `SegmentFrameRef` contains the byte range and corresponding page range for a
+/// particular frame in a segment.
+pub struct SegmentFrameRef {
+    sid: SegmentId,
+    bytes: RangeInclusive<usize>,
+    pages: RangeInclusive<PageIdx>,
 }
 
 impl SegmentFrameRef {

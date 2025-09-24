@@ -1,30 +1,27 @@
 use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
-use fjall::PartitionCreateOptions;
+use fjall::{Instant, PartitionCreateOptions};
 use graft_core::{
     PageCount, PageIdx, SegmentId, VolumeId,
+    checkpoint_set::CheckpointSet,
     commit::{Commit, SegmentIdx},
-    handle_id::HandleId,
     lsn::LSN,
     page::Page,
-    volume_handle::VolumeHandle,
     volume_meta::VolumeMeta,
     volume_ref::VolumeRef,
 };
-use lsm_tree::SeqNo;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use tryiter::TryIteratorExt;
 
 use crate::{
-    local::{
-        fjall_storage::{
-            keys::{CommitKey, PageKey},
-            typed_partition::{FjallBatchExt, TypedPartition},
-        },
-        staged_segment::StagedSegment,
+    local::fjall_storage::{
+        keys::{CommitKey, PageKey},
+        typed_partition::{FjallBatchExt, TypedPartition, TypedPartitionSnapshot},
     },
+    named_volume::NamedVolumeState,
     search_path::SearchPath,
     snapshot::Snapshot,
+    volume_name::VolumeName,
 };
 
 use culprit::{Culprit, Result, ResultExt};
@@ -56,24 +53,20 @@ pub enum FjallStorageErr {
 pub struct FjallStorage {
     keyspace: fjall::Keyspace,
 
-    /// This partition maps `VolumeHandle` IDs to `VolumeHandles`
-    /// {`HandleId`} -> `VolumeHandle`
-    /// Keyed by `keys::HandleKey`
-    handles: TypedPartition<HandleId, VolumeHandle>,
+    /// This partition stores state regarding each NamedVolume
+    /// {`VolumeName`} -> `NamedVolumeState`
+    named: TypedPartition<VolumeName, NamedVolumeState>,
 
     /// This partition stores metadata about each Volume
     /// {vid} -> `VolumeMeta`
-    /// Keyed by `keys::VolumeKey`
     volumes: TypedPartition<VolumeId, VolumeMeta>,
 
     /// This partition stores commits
     /// {vid} / {lsn} -> Commit
-    /// Keyed by `keys::CommitKey`
     log: TypedPartition<CommitKey, Commit>,
 
     /// This partition stores Pages
     /// {sid} / {pageidx} -> Page
-    /// Keyed by `keys::PageKey`
     pages: TypedPartition<PageKey, Page>,
 
     /// Must be held while performing read+write transactions.
@@ -104,7 +97,7 @@ impl FjallStorage {
 
     fn open_config(config: fjall::Config) -> Result<Self, FjallStorageErr> {
         let keyspace = config.open()?;
-        let handles = TypedPartition::open(&keyspace, "handles", Default::default())?;
+        let named = TypedPartition::open(&keyspace, "named", Default::default())?;
         let volumes = TypedPartition::open(&keyspace, "volumes", Default::default())?;
         let log = TypedPartition::open(&keyspace, "log", Default::default())?;
         let pages = TypedPartition::open(
@@ -115,7 +108,7 @@ impl FjallStorage {
 
         Ok(Self {
             keyspace,
-            handles,
+            named,
             volumes,
             log,
             pages,
@@ -123,90 +116,15 @@ impl FjallStorage {
         })
     }
 
-    pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
-        let seqno = self.keyspace.instant();
-        let log = self.log.snapshot_at(seqno);
-
-        // compute the Snapshot's VolumeRef
-        let vref = if let Some(commit) = log.first(vid)? {
-            Some(commit.vref())
-        } else {
-            // no commit found in volume, search starting at the volume's parent
-            self.volumes
-                .snapshot_at(seqno)
-                .get(vid)?
-                .and_then(|meta| meta.parent().cloned())
-        };
-
-        // assuming we found a vref, compute the snapshots search path and return a new tracked snapshot
-        if let Some(vref) = vref {
-            let path = self.search_path(seqno, vref.clone())?;
-            let (vid, _) = vref.into();
-            Ok(Snapshot::new(vid, path))
-        } else {
-            Ok(Snapshot::new(vid.clone(), SearchPath::EMPTY))
-        }
+    pub(crate) fn read(&self) -> ReadGuard<'_> {
+        ReadGuard::open(self)
     }
 
-    fn search_path(
-        &self,
-        seqno: SeqNo,
-        mut vref: VolumeRef,
-    ) -> Result<SearchPath, FjallStorageErr> {
-        let volumes = self.volumes.snapshot_at(seqno);
-        let mut path = SearchPath::default();
-
-        while let Some(meta) = volumes.get(vref.vid())? {
-            if let Some(checkpoint) = meta.checkpoints().checkpoint_for(vref.lsn()) {
-                // found a checkpoint, we can terminate the path here
-                path.append(meta.vid().clone(), checkpoint..=vref.lsn());
-                return Ok(path);
-            }
-
-            // no checkpoint, scan to the beginning and recurse to the parent if possible
-            path.append(meta.vid().clone(), LSN::FIRST..=vref.lsn());
-            if let Some(parent) = meta.parent() {
-                vref = parent.clone();
-            } else {
-                break; // no parent, we reached the root
-            }
-        }
-
-        Ok(path)
-    }
-
-    pub fn read_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>, FjallStorageErr> {
-        self.log
-            .snapshot()
-            .get_owned(CommitKey::new(vid.clone(), lsn))
-    }
-
-    pub fn commits(
-        &self,
-        path: &SearchPath,
-    ) -> impl Iterator<Item = Result<Commit, FjallStorageErr>> {
-        let log = self.log.snapshot();
-
-        path.iter().flat_map(move |entry| {
-            // the entry range is in the form `low..high` but the commits
-            // partition orders LSNs in reverse. thus we need to flip the range
-            // when passing it down to the underlying scan.
-            let low = CommitKey::new(entry.vid().clone(), *entry.lsns().start());
-            let high = CommitKey::new(entry.vid().clone(), *entry.lsns().end());
-            let range = high..=low;
-            log.range(range).map_ok(|(_, commit)| Ok(commit))
-        })
-    }
-
-    pub fn read_page(
-        &self,
-        sid: SegmentId,
-        pageidx: PageIdx,
-    ) -> Result<Option<Page>, FjallStorageErr> {
-        self.pages
-            .snapshot()
-            .get_owned(PageKey::new(sid, pageidx))
-            .or_into_ctx()
+    /// Open a read + write txn on storage.
+    /// The returned object holds a lock, any subsequent calls to ReadWriteGuard
+    /// will block.
+    fn read_write(&self) -> ReadWriteGuard<'_> {
+        ReadWriteGuard::open(self)
     }
 
     pub fn write_page(
@@ -241,16 +159,6 @@ impl FjallStorage {
         Ok(())
     }
 
-    pub fn remove_segment(&self, sid: &SegmentId) -> Result<(), FjallStorageErr> {
-        let mut batch = self.keyspace.batch();
-        let mut iter = self.pages.snapshot().prefix(sid);
-        while let Some((key, _)) = iter.try_next()? {
-            batch.remove_typed(&self.pages, key);
-        }
-        batch.commit()?;
-        Ok(())
-    }
-
     /// Attempt to execute a local commit on the volume pointed to by Snapshot.
     /// The resulting commit will claim the next LSN after the Snapshot.
     /// The `sid` must be a Segment containing all of the pages in this commit,
@@ -259,7 +167,187 @@ impl FjallStorage {
         &self,
         snapshot: Snapshot,
         page_count: PageCount,
-        segment: StagedSegment,
+        segment: SegmentIdx,
+    ) -> Result<(), FjallStorageErr> {
+        self.read_write().commit(snapshot, page_count, segment)
+    }
+
+    pub fn open_named_volume(&self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
+        self.read_write().open_named_volume(name)
+    }
+}
+
+pub struct ReadGuard<'a> {
+    storage: &'a FjallStorage,
+    seqno: Instant,
+}
+
+impl Drop for ReadGuard<'_> {
+    fn drop(&mut self) {
+        self.storage.keyspace.snapshot_tracker.close(self.seqno);
+    }
+}
+
+impl<'a> ReadGuard<'a> {
+    fn open(storage: &'a FjallStorage) -> ReadGuard<'a> {
+        let seqno = storage.keyspace.instant();
+        // IMPORTANT: Increment snapshot count in tracker
+        storage.keyspace.snapshot_tracker.open(seqno);
+        Self { storage, seqno }
+    }
+
+    fn named(&self) -> TypedPartitionSnapshot<VolumeName, NamedVolumeState> {
+        self.storage.named.snapshot_at(self.seqno)
+    }
+
+    fn volumes(&self) -> TypedPartitionSnapshot<VolumeId, VolumeMeta> {
+        self.storage.volumes.snapshot_at(self.seqno)
+    }
+
+    fn log(&self) -> TypedPartitionSnapshot<CommitKey, Commit> {
+        self.storage.log.snapshot_at(self.seqno)
+    }
+
+    fn pages(&self) -> TypedPartitionSnapshot<PageKey, Page> {
+        self.storage.pages.snapshot_at(self.seqno)
+    }
+
+    pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
+        // compute the Snapshot's VolumeRef
+        let vref = if let Some(commit) = self.log().first(vid)? {
+            Some(commit.vref())
+        } else {
+            // no commit found in volume, search starting at the volume's parent
+            self.volumes()
+                .get(vid)?
+                .and_then(|meta| meta.parent().cloned())
+        };
+
+        // assuming we found a vref, compute the snapshots search path and return a new tracked snapshot
+        if let Some(vref) = vref {
+            let path = self.search_path(vref.clone())?;
+            let (vid, _) = vref.into();
+            Ok(Snapshot::new(vid, path))
+        } else {
+            Ok(Snapshot::new(vid.clone(), SearchPath::EMPTY))
+        }
+    }
+
+    fn search_path(&self, mut vref: VolumeRef) -> Result<SearchPath, FjallStorageErr> {
+        let volumes = self.volumes();
+        let mut path = SearchPath::default();
+
+        while let Some(meta) = volumes.get(vref.vid())? {
+            if let Some(checkpoint) = meta.checkpoints().checkpoint_for(vref.lsn()) {
+                // found a checkpoint, we can terminate the path here
+                path.append(meta.vid().clone(), checkpoint..=vref.lsn());
+                return Ok(path);
+            }
+
+            // no checkpoint, scan to the beginning and recurse to the parent if possible
+            path.append(meta.vid().clone(), LSN::FIRST..=vref.lsn());
+            if let Some(parent) = meta.parent() {
+                vref = parent.clone();
+            } else {
+                break; // no parent, we reached the root
+            }
+        }
+
+        Ok(path)
+    }
+
+    fn get_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>, FjallStorageErr> {
+        self.log().get_owned(CommitKey::new(vid.clone(), lsn))
+    }
+
+    pub fn commits(
+        &self,
+        path: &SearchPath,
+    ) -> impl Iterator<Item = Result<Commit, FjallStorageErr>> {
+        let log = self.log();
+
+        path.iter().flat_map(move |entry| {
+            // the entry range is in the form `low..high` but the commits
+            // partition orders LSNs in reverse. thus we need to flip the range
+            // when passing it down to the underlying scan.
+            let low = CommitKey::new(entry.vid().clone(), *entry.lsns().start());
+            let high = CommitKey::new(entry.vid().clone(), *entry.lsns().end());
+            let range = high..=low;
+            log.range(range).map_ok(|(_, commit)| Ok(commit))
+        })
+    }
+
+    pub fn search_page(
+        &self,
+        snapshot: &Snapshot,
+        pageidx: PageIdx,
+    ) -> Result<Option<Commit>, FjallStorageErr> {
+        let mut commits = self.commits(snapshot.search_path());
+
+        while let Some(commit) = commits.try_next()? {
+            if !commit.page_count().contains(pageidx) {
+                // the volume is smaller than the requested page idx.
+                // this also handles the case that a volume is truncated and
+                // then subsequently extended at a later time.
+                break;
+            }
+
+            let Some(idx) = commit.segment_idx() else {
+                // this commit contains no pages
+                continue;
+            };
+
+            if !idx.contains(pageidx) {
+                // this commit does not contain the requested pageidx
+                continue;
+            }
+
+            return Ok(Some(commit));
+        }
+        Ok(None)
+    }
+
+    pub fn read_page(
+        &self,
+        sid: SegmentId,
+        pageidx: PageIdx,
+    ) -> Result<Option<Page>, FjallStorageErr> {
+        self.pages()
+            .get_owned(PageKey::new(sid, pageidx))
+            .or_into_ctx()
+    }
+
+    pub fn page_count(&self, snapshot: &Snapshot) -> Result<PageCount, FjallStorageErr> {
+        if let Some(lsn) = snapshot.lsn() {
+            let commit = self
+                .get_commit(snapshot.vid(), lsn)?
+                .expect("no commit found for snapshot");
+            Ok(commit.page_count())
+        } else {
+            Ok(PageCount::ZERO)
+        }
+    }
+}
+
+pub struct ReadWriteGuard<'a> {
+    _permit: MutexGuard<'a, ()>,
+    read: ReadGuard<'a>,
+}
+
+impl<'a> ReadWriteGuard<'a> {
+    fn open(storage: &'a FjallStorage) -> Self {
+        // TODO: consider adding a lock timeout for deadlock detection
+        let _permit = storage.lock.lock();
+        // IMPORTANT: take the read snapshot after taking the lock
+        let read = storage.read();
+        Self { _permit, read }
+    }
+
+    pub fn commit(
+        &self,
+        snapshot: Snapshot,
+        page_count: PageCount,
+        segment: SegmentIdx,
     ) -> Result<(), FjallStorageErr> {
         let commit_lsn = snapshot
             .lsn()
@@ -267,29 +355,40 @@ impl FjallStorage {
             .next()
             .expect("LSN overflow");
 
-        let _permit = self.lock.lock();
-
-        let latest_snapshot = self.snapshot(snapshot.vid())?;
+        let latest_snapshot = self.read.snapshot(snapshot.vid())?;
         if snapshot.lsn() != latest_snapshot.lsn() {
             return Err(Culprit::from_err(FjallStorageErr::ConcurrentWrite(
                 snapshot.vid().clone(),
             )));
         }
 
-        // HELLO CARL!
-        // API irregularities:
-        // 1. some operations should optionally support running within an existing fjall snapshot
-        // 2. we are not really using locks correctly
-        //
-        // Idea:
-        // 1. categorize operations into read, write, or read+write
-        // 2. ideally read+write ops can only be executed while holding the lock
-        // 3. ideally ops are abstracted over snapshots in some way
-
         let commit = Commit::new(snapshot.vid().clone(), commit_lsn, page_count)
-            .with_segment_idx(Some(segment.into()));
+            .with_segment_idx(Some(segment));
 
-        self.log
+        self.read
+            .storage
+            .log
             .insert(CommitKey::new(snapshot.vid().clone(), commit_lsn), commit)
+    }
+
+    pub fn open_named_volume(&self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
+        if let Some(state) = self.read.named().get(&name)? {
+            Ok(state)
+        } else {
+            let mut batch = self.read.storage.keyspace.batch();
+
+            // create a new local volume
+            let vid = VolumeId::random();
+            let local = VolumeMeta::new(vid.clone(), None, None, CheckpointSet::EMPTY);
+            batch.insert_typed(&self.read.storage.volumes, vid.clone(), local);
+
+            // put it in a named volume
+            let volume = NamedVolumeState::new(name.clone(), local, None, None);
+            batch.insert_typed(&self.read.storage.named, name, volume);
+
+            batch.commit()?;
+
+            Ok(volume)
+        }
     }
 }

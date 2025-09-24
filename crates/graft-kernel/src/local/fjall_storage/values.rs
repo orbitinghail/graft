@@ -1,11 +1,9 @@
 use bilrost::{Message, OwnedMessage};
 use bytes::Bytes;
 use culprit::ResultExt;
-use graft_core::{
-    commit::Commit, page::Page, volume_handle::VolumeHandle, volume_meta::VolumeMeta,
-};
+use graft_core::{commit::Commit, page::Page, volume_meta::VolumeMeta};
 
-use crate::local::fjall_storage::fjall_repr::FjallRepr;
+use crate::{local::fjall_storage::fjall_repr::FjallRepr, named_volume::NamedVolumeState};
 
 use super::fjall_repr::DecodeErr;
 
@@ -49,20 +47,21 @@ macro_rules! impl_fjallrepr_for_bilrost {
     };
 }
 
-impl_fjallrepr_for_bilrost!(VolumeHandle, VolumeMeta, Commit);
+impl_fjallrepr_for_bilrost!(NamedVolumeState, VolumeMeta, Commit);
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use graft_core::{
-        PageCount, VolumeId, checkpoint_set::CheckpointSet, handle_id::HandleId, lsn::LSN,
-        page::PAGESIZE, volume_ref::VolumeRef,
+        PageCount, VolumeId, checkpoint_set::CheckpointSet, lsn::LSN, page::PAGESIZE,
+        volume_ref::VolumeRef,
     };
 
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_empty_default, test_invalid, test_roundtrip,
     };
+    use crate::volume_name::VolumeName;
 
     #[graft_test::test]
     fn test_page() {
@@ -73,14 +72,14 @@ mod tests {
 
     #[graft_test::test]
     fn test_volume_handle() {
-        test_roundtrip(VolumeHandle::new(
-            HandleId::new("test-handle").unwrap(),
+        test_roundtrip(NamedVolumeState::new(
+            VolumeName::new("test-handle").unwrap(),
             VolumeRef::new(VolumeId::random(), LSN::new(123)),
             None,
             None,
         ));
-        test_empty_default::<VolumeHandle>();
-        test_invalid::<VolumeHandle>(&b"abc".repeat(123));
+        test_empty_default::<NamedVolumeState>();
+        test_invalid::<NamedVolumeState>(&b"abc".repeat(123));
     }
 
     #[graft_test::test]

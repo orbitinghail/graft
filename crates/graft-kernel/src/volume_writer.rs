@@ -1,9 +1,9 @@
 use culprit::Result;
-use graft_core::{PageCount, PageIdx, page::Page};
+use graft_core::{PageCount, PageIdx, commit::SegmentIdx, page::Page};
 
 use crate::{
-    local::{fjall_storage::FjallStorageErr, staged_segment::StagedSegment},
-    volume_reader::{VolumeRead, VolumeReader},
+    local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
+    volume_reader::VolumeRead,
 };
 
 /// A type which can write to a Volume
@@ -14,20 +14,16 @@ pub trait VolumeWrite {
 }
 
 pub struct VolumeWriter {
-    reader: VolumeReader,
+    runtime: RuntimeHandle,
+    snapshot: Snapshot,
     page_count: PageCount,
-    segment: StagedSegment,
+    segment: SegmentIdx,
 }
 
 impl VolumeWriter {
-    pub fn from_reader(reader: VolumeReader) -> Result<Self, FjallStorageErr> {
-        let page_count = reader.page_count()?;
-        let storage = reader.storage().clone();
-        Ok(Self {
-            reader,
-            page_count,
-            segment: StagedSegment::new(storage),
-        })
+    pub(crate) fn new(runtime: RuntimeHandle, snapshot: Snapshot, page_count: PageCount) -> Self {
+        let segment = runtime.create_staged_segment();
+        Self { runtime, snapshot, page_count, segment }
     }
 }
 
@@ -39,10 +35,15 @@ impl VolumeRead for VolumeWriter {
     fn read_page(&self, pageidx: PageIdx) -> Result<Page, FjallStorageErr> {
         if !self.page_count.contains(pageidx) {
             Ok(Page::EMPTY)
-        } else if let Some(page) = self.segment.read_page(pageidx)? {
-            Ok(page)
+        } else if self.segment.contains(pageidx) {
+            self.runtime
+                .storage()
+                .read()
+                .read_page(self.segment.sid().clone(), pageidx)
+                .transpose()
+                .expect("BUG: Staged segment out of sync with storage")
         } else {
-            self.reader.read_page(pageidx)
+            self.runtime.read_page(&self.snapshot, pageidx)
         }
     }
 }
@@ -50,16 +51,27 @@ impl VolumeRead for VolumeWriter {
 impl VolumeWrite for VolumeWriter {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), FjallStorageErr> {
         self.page_count = self.page_count.max(pageidx.pages());
-        self.segment.write_page(pageidx, page)
+        self.segment.insert(pageidx);
+        self.runtime
+            .storage()
+            .write_page(self.segment.sid().clone(), pageidx, page)
     }
 
     fn truncate(&mut self, page_count: PageCount) -> Result<(), FjallStorageErr> {
+        let start = page_count
+            .last_index()
+            .unwrap_or_default()
+            .saturating_next();
         self.page_count = page_count;
-        self.segment.truncate(page_count)
+        self.segment.remove_page_range(start..=PageIdx::LAST);
+        self.runtime
+            .storage()
+            .remove_page_range(self.segment.sid(), start..=PageIdx::LAST)
     }
 
     fn commit(self) -> Result<(), FjallStorageErr> {
-        let (storage, _, snapshot) = self.reader.unpack();
-        storage.commit(snapshot, self.page_count, self.segment)
+        self.runtime
+            .storage()
+            .commit(self.snapshot, self.page_count, self.segment)
     }
 }

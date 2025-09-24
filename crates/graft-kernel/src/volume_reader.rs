@@ -1,12 +1,9 @@
-use std::sync::Arc;
-
+use culprit::Culprit;
 use graft_core::{PageCount, PageIdx, page::Page};
-use tryiter::TryIteratorExt;
 
 use crate::{
-    local::fjall_storage::{FjallStorage, FjallStorageErr},
-    rt::rpc::RpcHandle,
-    snapshot::Snapshot,
+    local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
+    volume_writer::VolumeWriter,
 };
 
 /// A type which can read from a Volume
@@ -17,71 +14,31 @@ pub trait VolumeRead {
 
 #[derive(Debug, Clone)]
 pub struct VolumeReader {
-    storage: Arc<FjallStorage>,
-    rpc: RpcHandle,
+    runtime: RuntimeHandle,
     snapshot: Snapshot,
 }
 
 impl VolumeReader {
-    pub(crate) fn new(storage: Arc<FjallStorage>, rpc: RpcHandle, snapshot: Snapshot) -> Self {
-        Self { storage, rpc, snapshot }
+    pub(crate) fn new(runtime: RuntimeHandle, snapshot: Snapshot) -> Self {
+        Self { runtime, snapshot }
     }
+}
 
-    pub(crate) fn storage(&self) -> &Arc<FjallStorage> {
-        &self.storage
-    }
+impl TryFrom<VolumeReader> for VolumeWriter {
+    type Error = Culprit<FjallStorageErr>;
 
-    pub(crate) fn unpack(self) -> (Arc<FjallStorage>, RpcHandle, Snapshot) {
-        (self.storage, self.rpc, self.snapshot)
+    fn try_from(reader: VolumeReader) -> Result<Self, Self::Error> {
+        let page_count = reader.page_count()?;
+        Ok(Self::new(reader.runtime, reader.snapshot, page_count))
     }
 }
 
 impl VolumeRead for VolumeReader {
     fn page_count(&self) -> culprit::Result<PageCount, FjallStorageErr> {
-        if let Some(lsn) = self.snapshot.lsn() {
-            let commit = self
-                .storage
-                .read_commit(self.snapshot.vid(), lsn)?
-                .expect("no commit found for snapshot");
-            Ok(commit.page_count())
-        } else {
-            Ok(PageCount::ZERO)
-        }
+        self.runtime.storage().read().page_count(&self.snapshot)
     }
 
     fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, FjallStorageErr> {
-        let mut commits = self.storage.commits(self.snapshot.search_path());
-
-        while let Some(commit) = commits.try_next()? {
-            if !commit.page_count().contains(pageidx) {
-                // the volume is smaller than the requested page idx.
-                // this also handles the case that a volume is truncated and
-                // then subsequently extended at a later time.
-                break;
-            }
-
-            let Some(idx) = commit.segment_idx() else {
-                // this commit contains no pages
-                continue;
-            };
-
-            if !idx.contains(pageidx) {
-                // this commit does not contain the requested pageidx
-                continue;
-            }
-
-            if let Some(page) = self.storage.read_page(idx.sid().clone(), pageidx)? {
-                return Ok(page);
-            }
-
-            // page is not available locally, fall back to loading the page from remote storage.
-            // let frame = idx
-            //     .frame_for_pageidx(pageidx)
-            //     .expect("commit claims to contain pageidx but no frame found");
-
-            todo!("load page from remote storage")
-        }
-
-        Ok(Page::EMPTY)
+        self.runtime.read_page(&self.snapshot, pageidx)
     }
 }
