@@ -1,5 +1,7 @@
+use std::ops::RangeBounds;
+
 use bytes::Bytes;
-use splinter_rs::{CowSplinter, PartitionRead, Splinter};
+use splinter_rs::{CowSplinter, PartitionRead, PartitionWrite, Splinter};
 
 use crate::{PageIdx, derive_newtype_proxy};
 
@@ -19,8 +21,27 @@ impl Graft {
     }
 
     #[inline]
+    pub fn insert(&mut self, pageidx: PageIdx) -> bool {
+        self.splinter.insert(pageidx.to_u32())
+    }
+
+    #[inline]
     pub fn contains(&self, pageidx: PageIdx) -> bool {
         self.splinter.contains(pageidx.to_u32())
+    }
+
+    pub fn remove_page_range<R: RangeBounds<PageIdx>>(&mut self, pages: R) {
+        let r = (
+            pages.start_bound().map(|start| start.to_u32()),
+            pages.end_bound().map(|end| end.to_u32()),
+        );
+        self.splinter.remove_range(r);
+    }
+}
+
+impl From<Splinter> for Graft {
+    fn from(value: Splinter) -> Self {
+        Graft { splinter: CowSplinter::from(value) }
     }
 }
 

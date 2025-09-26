@@ -1,5 +1,3 @@
-pub struct NewTypeProxyTag;
-
 #[macro_export]
 macro_rules! derive_newtype_proxy {
     (
@@ -11,7 +9,7 @@ macro_rules! derive_newtype_proxy {
         from_proxy(&mut $self2:ident, $proxy:ident) $from_proxy:block
     ) => {
         const _: () = {
-            use $crate::bilrost_util::newtype_proxy::NewTypeProxyTag;
+            use $crate::NewTypeProxyTag;
             use ::bilrost::encoding::{ Proxiable, ForOverwrite, EmptyState };
             use ::bilrost::DecodeErrorKind;
 

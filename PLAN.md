@@ -7,12 +7,11 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 - [x] graft-kernel scaffolding
 - [x] protobuf local + remote schemas
 - [x] optimized message type: GID
-- [ ] local storage
+- [x] local storage
 - [ ] remote storage
 - [ ] async kernel
-  - ideally agnostic to async runtime
 - [x] Splinter iter_range
-- [ ] Volume Handle
-- [ ] Volume Reader
-- [ ] Volume Writer
+- [x] Named Volume
+- [x] Volume Reader
+- [x] Volume Writer
 - [ ] libgraft SQLite

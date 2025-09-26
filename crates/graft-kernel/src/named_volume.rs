@@ -1,12 +1,17 @@
 use bilrost::Message;
+use culprit::Culprit;
 
-use crate::{commit_hash::CommitHash, handle_id::HandleId, lsn::LSN, volume_ref::VolumeRef};
+use crate::{
+    local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle,
+    volume_name::VolumeName, volume_reader::VolumeReader, volume_writer::VolumeWriter,
+};
+use graft_core::{commit_hash::CommitHash, lsn::LSN, volume_ref::VolumeRef};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
-pub struct VolumeHandle {
-    /// The Handle ID
+pub struct NamedVolumeState {
+    /// The Volume name
     #[bilrost(1)]
-    id: HandleId,
+    name: VolumeName,
 
     /// Reference to the latest synchronization point for the local Volume.
     #[bilrost(2)]
@@ -37,18 +42,14 @@ pub struct PendingCommit {
     commit_hash: CommitHash,
 }
 
-impl VolumeHandle {
+impl NamedVolumeState {
     pub fn new(
-        id: HandleId,
+        name: VolumeName,
         local: VolumeRef,
         remote: Option<VolumeRef>,
         pending_commit: Option<PendingCommit>,
     ) -> Self {
-        Self { id, local, remote, pending_commit }
-    }
-
-    pub fn id(&self) -> &HandleId {
-        &self.id
+        Self { name, local, remote, pending_commit }
     }
 
     pub fn local(&self) -> &VolumeRef {
@@ -61,5 +62,39 @@ impl VolumeHandle {
 
     pub fn pending_commit(&self) -> Option<&PendingCommit> {
         self.pending_commit.as_ref()
+    }
+}
+
+pub struct NamedVolume {
+    runtime: RuntimeHandle,
+    name: VolumeName,
+}
+
+impl NamedVolume {
+    pub(crate) fn new(runtime: RuntimeHandle, name: VolumeName) -> Self {
+        Self { runtime, name }
+    }
+
+    pub fn reader(&self) -> Result<VolumeReader, Culprit<FjallStorageErr>> {
+        let snapshot = self
+            .runtime
+            .storage()
+            .read()
+            .named_local_snapshot(&self.name)?
+            .expect("BUG: NamedVolume missing local snapshot");
+        Ok(VolumeReader::new(self.runtime.clone(), snapshot))
+    }
+
+    pub fn writer(&self) -> Result<VolumeWriter, Culprit<FjallStorageErr>> {
+        let read = self.runtime.storage().read();
+        let snapshot = read
+            .named_local_snapshot(&self.name)?
+            .expect("BUG: NamedVolume missing local snapshot");
+        let page_count = read.page_count(&snapshot)?;
+        Ok(VolumeWriter::new(
+            self.runtime.clone(),
+            snapshot,
+            page_count,
+        ))
     }
 }

@@ -15,6 +15,8 @@ pub struct CheckpointSet {
 }
 
 impl CheckpointSet {
+    pub const EMPTY: CheckpointSet = CheckpointSet { lsns: SmallVec::new_const() };
+
     /// Returns the largest LSN which is <= the provided lsn in the set
     pub fn checkpoint_for(&self, target: LSN) -> Option<LSN> {
         // self.lsns is sorted ascending, so search for the lsn in reverse

@@ -1,8 +1,8 @@
+use crate::volume_name::VolumeNameErr;
 use culprit::Result;
 use fjall::Slice;
 use graft_core::{
-    handle_id::HandleIdErr, lsn::InvalidLSN, page::PageSizeErr, page_idx::ConvertToPageIdxErr,
-    zerocopy_ext::ZerocopyErr,
+    lsn::InvalidLSN, page::PageSizeErr, page_idx::ConvertToPageIdxErr, zerocopy_ext::ZerocopyErr,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -17,7 +17,7 @@ pub enum DecodeErr {
     InvalidPageIdx(#[from] ConvertToPageIdxErr),
 
     #[error("Invalid handle ID: {0}")]
-    InvalidHandleId(#[from] HandleIdErr),
+    InvalidHandleId(#[from] VolumeNameErr),
 
     #[error("Invalid VolumeID: {0}")]
     GidParseErr(#[from] graft_core::gid::GidParseErr),

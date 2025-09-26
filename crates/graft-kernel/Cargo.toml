@@ -22,6 +22,7 @@ culprit = { workspace = true }
 fjall = { workspace = true }
 lsm-tree = { workspace = true }
 zerocopy = { workspace = true }
+bytestring = { workspace = true }
 thiserror = { workspace = true }
 bytes = { workspace = true }
 bilrost = { workspace = true }

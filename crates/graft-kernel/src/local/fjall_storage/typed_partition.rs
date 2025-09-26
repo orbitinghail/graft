@@ -4,7 +4,7 @@ use std::{
 };
 
 use culprit::ResultExt;
-use fjall::{Keyspace, KvPair, PartitionCreateOptions, Slice};
+use fjall::{Batch, Keyspace, KvPair, PartitionCreateOptions, Slice};
 use tryiter::TryIteratorExt;
 
 use crate::local::fjall_storage::{FjallStorageErr, fjall_repr::FjallRepr, keys::FjallKeyPrefix};
@@ -38,6 +38,12 @@ where
     }
 
     #[inline]
+    pub fn remove(&self, key: K) -> culprit::Result<(), FjallStorageErr> {
+        self.partition.remove(key.into_slice())?;
+        Ok(())
+    }
+
+    #[inline]
     pub fn snapshot(&self) -> TypedPartitionSnapshot<K, V> {
         TypedPartitionSnapshot {
             snapshot: self.partition.snapshot(),
@@ -64,6 +70,7 @@ where
     K: FjallRepr,
     V: FjallRepr,
 {
+    /// Retrieve the value corresponding to the key
     pub fn get(&self, key: &K) -> culprit::Result<Option<V>, FjallStorageErr> {
         if let Some(slice) = self.snapshot.get(key.as_slice())? {
             return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
@@ -71,6 +78,7 @@ where
         Ok(None)
     }
 
+    /// An optimized version of get when key is owned
     pub fn get_owned(&self, key: K) -> culprit::Result<Option<V>, FjallStorageErr> {
         if let Some(slice) = self.snapshot.get(key.into_slice())? {
             return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
@@ -93,10 +101,10 @@ where
         }
     }
 
-    pub fn prefix<P>(
+    pub fn prefix<'a, P>(
         &self,
-        prefix: &P,
-    ) -> impl DoubleEndedIterator<Item = culprit::Result<(K, V), FjallStorageErr>>
+        prefix: &'a P,
+    ) -> impl DoubleEndedIterator<Item = culprit::Result<(K, V), FjallStorageErr>> + use<'a, P, K, V>
     where
         K: FjallKeyPrefix<Prefix = P>,
         P: AsRef<[u8]>,
@@ -177,5 +185,39 @@ where
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.try_next_back().transpose()
+    }
+}
+
+pub trait FjallBatchExt {
+    fn insert_typed<K: FjallRepr, V: FjallRepr>(
+        &mut self,
+        partition: &TypedPartition<K, V>,
+        key: K,
+        val: V,
+    );
+
+    fn remove_typed<K: FjallRepr, V: FjallRepr>(
+        &mut self,
+        partition: &TypedPartition<K, V>,
+        key: K,
+    );
+}
+
+impl FjallBatchExt for Batch {
+    fn insert_typed<K: FjallRepr, V: FjallRepr>(
+        &mut self,
+        partition: &TypedPartition<K, V>,
+        key: K,
+        val: V,
+    ) {
+        self.insert(&partition.partition, key.into_slice(), val.into_slice())
+    }
+
+    fn remove_typed<K: FjallRepr, V: FjallRepr>(
+        &mut self,
+        partition: &TypedPartition<K, V>,
+        key: K,
+    ) {
+        self.remove(&partition.partition, key.into_slice())
     }
 }

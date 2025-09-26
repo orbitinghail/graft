@@ -256,6 +256,8 @@ derive_zerocopy_encoding!(
 #[cfg(test)]
 mod tests {
 
+    use std::time::UNIX_EPOCH;
+
     use assert_matches::assert_matches;
     use bilrost::{Message, OwnedMessage};
     use rand::random;
@@ -279,6 +281,13 @@ mod tests {
             println!("{pretty} {short}");
             assert!(pretty.contains(&short), "pretty: {pretty}, short: {short}");
         }
+    }
+
+    #[graft_test::test]
+    fn test_ts() {
+        let vid = VolumeId::random();
+        let ts = vid.ts.as_time();
+        assert!(ts.duration_since(UNIX_EPOCH).unwrap().as_millis() > 0)
     }
 
     #[graft_test::test]

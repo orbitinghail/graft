@@ -2,7 +2,7 @@ use bytes::Bytes;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
 use graft_core::{
-    PageIdx, SegmentId, VolumeId, cbe::CBE64, handle_id::HandleId, lsn::LSN, volume_ref::VolumeRef,
+    PageIdx, SegmentId, VolumeId, cbe::CBE64, lsn::LSN, volume_ref::VolumeRef,
     zerocopy_ext::TryFromBytesExt,
 };
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
@@ -10,13 +10,14 @@ use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, 
 use crate::{
     local::fjall_storage::fjall_repr::{DecodeErr, FjallRepr},
     proxy_to_fjall_repr,
+    volume_name::VolumeName,
 };
 
 pub trait FjallKeyPrefix {
     type Prefix: AsRef<[u8]>;
 }
 
-impl FjallRepr for HandleId {
+impl FjallRepr for VolumeName {
     #[inline]
     fn as_slice(&self) -> impl AsRef<[u8]> {
         self.as_bytes()
@@ -24,7 +25,7 @@ impl FjallRepr for HandleId {
 
     #[inline]
     fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-        HandleId::try_from(Bytes::from(slice)).or_into_ctx()
+        VolumeName::try_from(Bytes::from(slice)).or_into_ctx()
     }
 
     #[inline]
@@ -178,11 +179,11 @@ mod tests {
     use super::*;
 
     #[graft_test::test]
-    fn test_handle_id() {
-        test_roundtrip(HandleId::new("test-handle").unwrap());
-        test_invalid::<HandleId>(b"bad id");
-        test_invalid::<HandleId>(b"");
-        test_invalid::<HandleId>(&b"a".repeat(graft_core::handle_id::MAX_HANDLE_ID_LEN + 1));
+    fn test_volume_name() {
+        test_roundtrip(VolumeName::new("test-volume").unwrap());
+        test_invalid::<VolumeName>(b"bad id");
+        test_invalid::<VolumeName>(b"");
+        test_invalid::<VolumeName>(&b"a".repeat(crate::volume_name::MAX_VOLUME_NAME_LEN + 1));
     }
 
     #[graft_test::test]

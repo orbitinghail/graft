@@ -1,7 +1,6 @@
 pub mod commit_hash;
 pub mod gid;
 pub mod graft;
-pub mod handle_id;
 pub mod lsn;
 pub mod page;
 pub mod page_count;
@@ -11,7 +10,6 @@ pub mod checkpoint_set;
 pub mod commit;
 pub mod volume_control;
 pub mod volume_fork;
-pub mod volume_handle;
 pub mod volume_meta;
 pub mod volume_ref;
 
@@ -28,3 +26,7 @@ pub use page_idx::PageIdx;
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
+
+// Export NewTypeProxyTag so we can use derive_newtype_proxy in graft-kernel
+#[doc(hidden)]
+pub struct NewTypeProxyTag;

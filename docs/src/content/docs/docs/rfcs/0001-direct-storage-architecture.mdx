@@ -79,7 +79,8 @@ Graft Proxy exposes a simple API to consumers, enabling two key performance feat
 
 1. Graft Proxy caches reads from object storage.
 2. Virtual overlay of commits and segments
-  - rather than passing straight through to object store, the proxy is able to coalesce multiple commits into one larger commit for clients to efficiently fast forward and only download interesting portions of segments.
+
+- rather than passing straight through to object store, the proxy is able to coalesce multiple commits into one larger commit for clients to efficiently fast forward and only download interesting portions of segments.
 
 Eventually Graft Proxy will enhance Graft with these features:
 
@@ -93,7 +94,7 @@ Detailed technical breakdown. Cover APIs, algorithms, data structures, formats, 
 
 ### Glossary
 
-- **`Volume Handle`**: A reference to a local-remote Volume pair. Also responsible for tracking synchronization between a local and remote Volume. Documented more in the [Volume Handle](#volume-handle) section.
+- **`Named Volume`**: A named reference to a local-remote Volume pair. Also responsible for tracking synchronization between a local and remote Volume. Documented more in the [Named Volume](#named-volume) section.
 - **`vid`**: A 16 byte Volume ID using [`GID`] encoding.
 - **`sid`**: A 16 byte Segment ID using [`GID`] encoding.
 - **`Snapshot`**: A frozen point-in-time view of a Volume.
@@ -151,15 +152,15 @@ def commit_hash(vid, lsn, page_count, pages):
 
 Note that the Commit's snapshot is passed in. This ensures the Hash's uniqueness incorporates the Volume ID, LSN, and page count.
 
-### Volume Handle
+### Named Volume
 
-Rather than forcing users to reference Volumes by ID, Graft exposes Volume Handles. Volume Handles are pointers to a local and remote Volume. Volume Handles only exist on a single client, and are not shared between clients or pushed to a remote.
+Rather than forcing users to reference Volumes by ID, Graft exposes Named Volumes. Named Volumes are pointers to a local and remote Volume. Named Volumes only exist on a single client, and are not shared between clients or pushed to a remote.
 
-Each Volume Handle has a id given to it at creation time. The id must match the regex `^[-_a-zA-Z0-9]{0,128}$` (alphanumeric + underscore + dash, max len 128 chars) and be unique on the client.
+Each Named Volume has a id given to it at creation time. The id must match the regex `^[-_a-zA-Z0-9]{0,128}$` (alphanumeric + underscore + dash, max len 128 chars) and be unique on the client.
 
-A Volume Handle always has a local-only Volume associated with it. This Volume is used for all local reads and writes.
+A Named Volume always has a local-only Volume associated with it. This Volume is used for all local reads and writes.
 
-A Volume Handle may be linked to a remote Volume. In this case, the local and remote Volumes will be kept in sync by the sync subsystem.
+A Named Volume may be linked to a remote Volume. In this case, the local and remote Volumes will be kept in sync by the sync subsystem.
 
 ### Segment Encoding
 
@@ -294,7 +295,7 @@ This section documents how clients store data.
 Local storage uses [Fjall], a partitioned k/v store. In the following keyspace, the top level keys are independent partitions. The remainder of the keys and the values are encoded using types in the following section.
 
 ```
-handles / {handle_id} -> VolumeHandle
+named / {VolumeName} -> NamedVolume
 
 volumes / {vid} -> VolumeMeta
 
@@ -327,10 +328,10 @@ Values stored locally are encoded using [Bilrost] using the following additional
 
 ```rust
 #[derive(Message)]
-pub struct VolumeHandle {
-    /// The Handle ID
+pub struct NamedVolume {
+    /// The name of this NamedVolume
     #[bilrost(1)]
-    id: HandleId,
+    name: VolumeName,
 
     /// Reference to the latest synchronization point for the local Volume.
     #[bilrost(2)]
@@ -391,20 +392,23 @@ This section details the various key algorithms powering Graft's new direct stor
 Similar to the existing Graft architecture, we will start with one coarse `storage_lock` which must be held when we are doing any read-modify-update transaction on storage.
 
 **Lock rules:**
+
 - never hold the lock while performing IO other than storage operations
 - hold the lock for the smallest time possible
 
 **When to hold the lock:**
-- Modifying the Volume Handle
+
+- Modifying the Named Volume
 - Committing to a Volume
 
 **When not to hold the lock:**
+
 - When the operation is idempotent, for example when we are writing to the pages partition or updating a Volume's checkpoint set
 - When performing read operations; use a Fjall instant instead
 
 #### Volume Reader
 
-Reading from a Volume requires creating a `VolumeReader` from a `VolumeHandle` at either the latest or a specific snapshot.
+Reading from a Volume requires creating a `VolumeReader` from a `NamedVolume` at either the latest or a specific snapshot.
 
 ```python
 def visibility_path(snapshot):
@@ -425,7 +429,7 @@ def visibility_path(snapshot):
   return path
 
 class Snapshot:
-  vref: VolumeRef
+  vid: VolumeId
   path: SearchPath
 
 class VolumeReader:
@@ -537,14 +541,14 @@ class VolumeWriter:
 #### Push Volume
 
 ```python
-def push_volume(handle_id):
-  handle = read(f"handles/{handle_id}")
+def push_volume(name):
+  handle = read(f"named/{name}")
   (local_lsn, commit) = prepare_commit(handle)
   match remote_commit(commit):
     Ok() => push_success(handle, commit, local_lsn)
     Err() => push_failure(handle, commit)
 
-def prepare_commit(handle):
+def prepare_commit(handle: NamedVolume):
   # trigger recovery
   if handle.pending_commit:
     raise InterruptedPush
@@ -574,7 +578,7 @@ def prepare_commit(handle):
   # write out the pending commit
   with storage_lock:
     # abort the push if the handle changed since we started the push process
-    if handle != read(f"handles/{handle_id}"):
+    if handle != read(f"named/{handle.name}"):
       raise Retry
 
     # abort the push if the remote snapshot changed since we started the push process
@@ -585,7 +589,7 @@ def prepare_commit(handle):
       remote_lsn = commit_lsn,
       commit_hash
     }
-    write(f"handles/{handle_id}", handle)
+    write(f"named/{handle.name}", handle)
 
 return (local_snapshot.lsn, Commit {
     vid: remote.vid,
@@ -606,14 +610,15 @@ def remote_commit(commit):
   path = f"{PREFIX}/{commit.snapshot.vid}/log/{commit.snapshot.lsn}"
   object_store.write_if_not_exists(path, commit)
 
-def push_success(handle, commit, local_lsn):
+def push_success(handle: NamedVolume, commit, local_lsn):
   {vid, lsn} = commit.snapshot
 
   batch = storage.batch()
 
   batch.write(f"log/{vid}/{lsn}", commit)
 
-  new_handle = VolumeHandle {
+  new_handle = NamedVolume {
+    ...handle,
     pending_commit = None,
     local = VolumeRef {
       vid: handle.local.vid,
@@ -623,26 +628,25 @@ def push_success(handle, commit, local_lsn):
       vid: handle.remote.vid,
       lsn
     },
-    ...handle
   }
-  batch.write(f"handles/{handle.id}", new_handle)
+  batch.write(f"named/{handle.name}", new_handle)
 
   with storage_lock:
     # fail if handle has changed
-    assert(handle == read(f"handles/{handle_id}"))
+    assert(handle == read(f"named/{handle.name}"))
 
     # fail if the remote lsn already exists
     assert(not read(f"log/{vid}/{lsn}"))
 
     batch.commit()
 
-def push_failure(handle, commit):
+def push_failure(handle: NamedVolume, commit):
   # push failed, clear pending commit
   with storage_lock:
     # panic if handle has changed
-    assert(handle == read(f"handles/{handle_id}"))
+    assert(handle == read(f"named/{handle.name}"))
     handle.pending_commit = None
-    write(f"handles/{handle.id}", handle)
+    write(f"named/{handle.name}", handle)
 ```
 
 #### Pull & Fetch Volume
@@ -725,8 +729,8 @@ In this new architecture we split up pulling the remote volume and syncing it in
 
 ```python
 
-def sync_remote_to_local(handle_id):
-  handle = read(f"handles/{handle_id}")
+def sync_remote_to_local(name):
+  handle = read(f"named/{name}")
 
   # we can safely sync the latest remote snapshot into the local volume if the local volume has no outstanding local changes.
 
@@ -763,7 +767,7 @@ def prepare_commits(local_snapshot, remote_vid, lsn_range):
 
 #### Reset volume
 
-It's possible to reset the local volume for a Volume Handle by creating a new Local Volume and potentially copying over unsynced local commits. GC will be able to clean up the orphaned local volume once all snapshots have closed.
+It's possible to reset the local volume for a Named Volume by creating a new Local Volume and potentially copying over unsynced local commits. GC will be able to clean up the orphaned local volume once all snapshots have closed.
 
 We should automatically reset local volumes when their log hits some configurable point and they've synced with the remote recently.
 
@@ -773,13 +777,13 @@ We can also use a reset to throw away local changes.
 
 #### Local garbage collection
 
-To perform GC locally, we will need to keep track of all open Snapshots and Handles. For now GC will focus on eliminating inaccessible data:
+To perform GC locally, we will need to keep track of all open Snapshots and NamedVolume's. For now GC will focus on eliminating inaccessible data:
 
 - unreferenced Volumes
 - unreferenced Segments
   - taking care not to eliminate in-progress writes
 
-An interesting aspect of GC is whether or not it will delete portions of a Volume's commit log which are no longer accessible. For remote volumes, since we can always redownload a log, we just need to ensure that only unreferenced portions of the log are removed - i.e. not directly visible in the visibility_path computation from any snapshot or handle. For local volumes, we will just wait until they are Reset and then cleanup the orphaned local volume id.
+An interesting aspect of GC is whether or not it will delete portions of a Volume's commit log which are no longer accessible. For remote volumes, since we can always redownload a log, we just need to ensure that only unreferenced portions of the log are removed - i.e. not directly visible in the visibility_path computation from any snapshot or named volume. For local volumes, we will just wait until they are Reset and then cleanup the orphaned local volume id.
 
 #### Checkpointing
 
@@ -799,7 +803,7 @@ This RFC depends on the following new [Splinter] features:
 
 - `iter_range(keys: Range<u32>) -> impl Iterator<Item=u32>`
   - returns an iterator over keys contained by the range which are present in
-  the Splinter.
+    the Splinter.
 
 All new methods should be implemented on both Splinter and SplinterRef.
 

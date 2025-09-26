@@ -10,7 +10,9 @@ pub mod rt {
     mod runtime;
 }
 
+pub mod named_volume;
 pub mod search_path;
 pub mod snapshot;
+pub mod volume_name;
 pub mod volume_reader;
 pub mod volume_writer;
