@@ -5,7 +5,7 @@ use crate::{
     local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle,
     volume_name::VolumeName, volume_reader::VolumeReader, volume_writer::VolumeWriter,
 };
-use graft_core::{VolumeId, commit_hash::CommitHash, lsn::LSN, volume_ref::VolumeRef};
+use graft_core::{commit_hash::CommitHash, lsn::LSN, volume_ref::VolumeRef};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct NamedVolumeState {
@@ -51,6 +51,18 @@ impl NamedVolumeState {
     ) -> Self {
         Self { name, local, remote, pending_commit }
     }
+
+    pub fn local(&self) -> &VolumeRef {
+        &self.local
+    }
+
+    pub fn remote(&self) -> Option<&VolumeRef> {
+        self.remote.as_ref()
+    }
+
+    pub fn pending_commit(&self) -> Option<&PendingCommit> {
+        self.pending_commit.as_ref()
+    }
 }
 
 pub struct NamedVolume {
@@ -63,14 +75,21 @@ impl NamedVolume {
         Self { runtime, name }
     }
 
-    pub fn volume_reader(&self, vid: &VolumeId) -> Result<VolumeReader, Culprit<FjallStorageErr>> {
-        let snapshot = self.runtime.storage().read().snapshot(vid)?;
+    pub fn reader(&self) -> Result<VolumeReader, Culprit<FjallStorageErr>> {
+        let snapshot = self
+            .runtime
+            .storage()
+            .read()
+            .named_local_snapshot(&self.name)?
+            .expect("BUG: NamedVolume missing local snapshot");
         Ok(VolumeReader::new(self.runtime.clone(), snapshot))
     }
 
-    pub fn volume_writer(&self, vid: &VolumeId) -> Result<VolumeWriter, Culprit<FjallStorageErr>> {
+    pub fn writer(&self) -> Result<VolumeWriter, Culprit<FjallStorageErr>> {
         let read = self.runtime.storage().read();
-        let snapshot = read.snapshot(vid)?;
+        let snapshot = read
+            .named_local_snapshot(&self.name)?
+            .expect("BUG: NamedVolume missing local snapshot");
         let page_count = read.page_count(&snapshot)?;
         Ok(VolumeWriter::new(
             self.runtime.clone(),

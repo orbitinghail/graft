@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use culprit::Culprit;
-use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentIdx, graft::Graft, page::Page};
+use graft_core::{PageIdx, SegmentId, commit::SegmentIdx, graft::Graft, page::Page};
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -13,8 +13,6 @@ use crate::{
     },
     snapshot::Snapshot,
     volume_name::VolumeName,
-    volume_reader::VolumeReader,
-    volume_writer::VolumeWriter,
 };
 
 use tokio::sync::mpsc;
@@ -56,7 +54,7 @@ impl RuntimeHandle {
         }
     }
 
-    pub fn open(&self, name: VolumeName) -> Result<NamedVolume, Culprit<FjallStorageErr>> {
+    pub fn open_volume(&self, name: VolumeName) -> Result<NamedVolume, Culprit<FjallStorageErr>> {
         // make sure the named volume exists
         self.storage().open_named_volume(name.clone())?;
         Ok(NamedVolume::new(self.clone(), name))
@@ -102,11 +100,11 @@ impl RuntimeHandle {
 mod tests {
     use std::sync::Arc;
 
-    use graft_core::{PageIdx, VolumeId, page::Page};
+    use graft_core::{PageIdx, page::Page};
 
     use crate::{
         local::fjall_storage::FjallStorage, rt::runtime_handle::RuntimeHandle,
-        volume_reader::VolumeRead, volume_writer::VolumeWrite,
+        volume_name::VolumeName, volume_reader::VolumeRead, volume_writer::VolumeWrite,
     };
 
     #[graft_test::test]
@@ -115,10 +113,10 @@ mod tests {
         let tokio_rt = tokio::runtime::Handle::current();
         let runtime = RuntimeHandle::spawn(&tokio_rt, storage);
 
-        let vid = VolumeId::random();
+        let volume = runtime.open_volume(VolumeName::DEFAULT).unwrap();
 
         // sanity check volume writer semantics
-        let mut writer = runtime.volume_writer(&vid).unwrap();
+        let mut writer = volume.writer().unwrap();
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::new(i as u32);
             let page = Page::test_filled(i);
@@ -128,7 +126,7 @@ mod tests {
         writer.commit().unwrap();
 
         // sanity check volume reader semantics
-        let reader = runtime.volume_reader(&vid).unwrap();
+        let reader = volume.reader().unwrap();
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::new(i as u32);
             let page = Page::test_filled(i);

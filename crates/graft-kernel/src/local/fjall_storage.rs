@@ -212,6 +212,19 @@ impl<'a> ReadGuard<'a> {
         self.storage.pages.snapshot_at(self.seqno)
     }
 
+    /// Retrieve the latest `Snapshot` corresponding to the local Volume for the
+    /// `NamedVolume` named `name`
+    pub fn named_local_snapshot(
+        &self,
+        name: &VolumeName,
+    ) -> Result<Option<Snapshot>, FjallStorageErr> {
+        if let Some(handle) = self.named().get(name)? {
+            Ok(Some(self.snapshot(handle.local().vid())?))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
         // compute the Snapshot's VolumeRef
         let vref = if let Some(commit) = self.log().first(vid)? {
@@ -382,9 +395,19 @@ impl<'a> ReadWriteGuard<'a> {
             let local = VolumeMeta::new(vid.clone(), None, None, CheckpointSet::EMPTY);
             batch.insert_typed(&self.read.storage.volumes, vid.clone(), local);
 
+            // write an empty initial commit
+            let commit = Commit::new(vid.clone(), LSN::FIRST, PageCount::ZERO);
+            batch.insert_typed(
+                &self.read.storage.log,
+                CommitKey::new(vid.clone(), LSN::FIRST),
+                commit,
+            );
+
+            let localref = VolumeRef::new(vid, LSN::FIRST);
+
             // put it in a named volume
-            let volume = NamedVolumeState::new(name.clone(), local, None, None);
-            batch.insert_typed(&self.read.storage.named, name, volume);
+            let volume = NamedVolumeState::new(name.clone(), localref, None, None);
+            batch.insert_typed(&self.read.storage.named, name, volume.clone());
 
             batch.commit()?;
 
