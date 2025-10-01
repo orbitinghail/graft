@@ -82,7 +82,11 @@ impl NamedVolume {
             .read()
             .named_local_snapshot(&self.name)?
             .expect("BUG: NamedVolume missing local snapshot");
-        Ok(VolumeReader::new(self.runtime.clone(), snapshot))
+        Ok(VolumeReader::new(
+            self.name.clone(),
+            self.runtime.clone(),
+            snapshot,
+        ))
     }
 
     pub fn writer(&self) -> Result<VolumeWriter, Culprit<FjallStorageErr>> {
@@ -92,6 +96,7 @@ impl NamedVolume {
             .expect("BUG: NamedVolume missing local snapshot");
         let page_count = read.page_count(&snapshot)?;
         Ok(VolumeWriter::new(
+            self.name.clone(),
             self.runtime.clone(),
             snapshot,
             page_count,

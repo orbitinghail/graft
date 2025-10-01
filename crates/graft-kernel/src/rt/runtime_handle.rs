@@ -41,10 +41,16 @@ impl RuntimeHandle {
     pub fn spawn(handle: &tokio::runtime::Handle, storage: Arc<FjallStorage>) -> RuntimeHandle {
         let (tx, rx) = mpsc::channel(8);
 
+        // Make sure we have a runtime context while setting up streams
+        let _tokio_guard = handle.enter();
+
         let rx = ReceiverStream::new(rx).map(Event::Rpc);
         let ticks =
             IntervalStream::new(tokio::time::interval(Duration::from_secs(1))).map(|_| Event::Tick);
-        let events = Box::pin(rx.merge(ticks));
+        let commits = storage
+            .subscribe_commits()
+            .map(|changes| Event::Commits(changes));
+        let events = Box::pin(rx.merge(ticks).merge(commits));
 
         let runtime = Runtime::new(storage.clone(), events);
         let handle = handle.spawn(runtime.start());
@@ -108,10 +114,13 @@ mod tests {
     };
 
     #[graft_test::test]
-    async fn runtime_sanity() {
+    fn runtime_sanity() {
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let tokio_rt = tokio::runtime::Handle::current();
-        let runtime = RuntimeHandle::spawn(&tokio_rt, storage);
+        let tokio_rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), storage);
 
         let volume = runtime.open_volume(VolumeName::DEFAULT).unwrap();
 

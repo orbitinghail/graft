@@ -19,6 +19,8 @@ splinter-rs = { workspace = true }
 precept = { workspace = true, features = ["antithesis"] }
 culprit = { workspace = true }
 
+event-listener = { workspace = true }
+async-stream = { workspace = true }
 fjall = { workspace = true }
 lsm-tree = { workspace = true }
 zerocopy = { workspace = true }

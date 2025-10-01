@@ -3,7 +3,7 @@ use graft_core::{PageCount, PageIdx, commit::SegmentIdx, page::Page};
 
 use crate::{
     local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
-    volume_reader::VolumeRead,
+    volume_name::VolumeName, volume_reader::VolumeRead,
 };
 
 /// A type which can write to a Volume
@@ -14,6 +14,7 @@ pub trait VolumeWrite {
 }
 
 pub struct VolumeWriter {
+    name: VolumeName,
     runtime: RuntimeHandle,
     snapshot: Snapshot,
     page_count: PageCount,
@@ -21,9 +22,20 @@ pub struct VolumeWriter {
 }
 
 impl VolumeWriter {
-    pub(crate) fn new(runtime: RuntimeHandle, snapshot: Snapshot, page_count: PageCount) -> Self {
+    pub(crate) fn new(
+        name: VolumeName,
+        runtime: RuntimeHandle,
+        snapshot: Snapshot,
+        page_count: PageCount,
+    ) -> Self {
         let segment = runtime.create_staged_segment();
-        Self { runtime, snapshot, page_count, segment }
+        Self {
+            name,
+            runtime,
+            snapshot,
+            page_count,
+            segment,
+        }
     }
 }
 
@@ -72,6 +84,6 @@ impl VolumeWrite for VolumeWriter {
     fn commit(self) -> Result<(), FjallStorageErr> {
         self.runtime
             .storage()
-            .commit(self.snapshot, self.page_count, self.segment)
+            .commit(self.name, self.snapshot, self.page_count, self.segment)
     }
 }

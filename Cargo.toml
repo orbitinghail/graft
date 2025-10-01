@@ -16,6 +16,7 @@ codegen-units = 1
 
 [workspace.dependencies]
 async-trait = "0.1.88"
+async-stream = "0.3"
 hex = "0.4"
 rusty_paseto = "0.7.2"
 platform-dirs = "0.3.0"

@@ -3,7 +3,7 @@ use graft_core::{PageCount, PageIdx, page::Page};
 
 use crate::{
     local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
-    volume_writer::VolumeWriter,
+    volume_name::VolumeName, volume_writer::VolumeWriter,
 };
 
 /// A type which can read from a Volume
@@ -14,13 +14,14 @@ pub trait VolumeRead {
 
 #[derive(Debug, Clone)]
 pub struct VolumeReader {
+    name: VolumeName,
     runtime: RuntimeHandle,
     snapshot: Snapshot,
 }
 
 impl VolumeReader {
-    pub(crate) fn new(runtime: RuntimeHandle, snapshot: Snapshot) -> Self {
-        Self { runtime, snapshot }
+    pub(crate) fn new(name: VolumeName, runtime: RuntimeHandle, snapshot: Snapshot) -> Self {
+        Self { name, runtime, snapshot }
     }
 }
 
@@ -29,7 +30,12 @@ impl TryFrom<VolumeReader> for VolumeWriter {
 
     fn try_from(reader: VolumeReader) -> Result<Self, Self::Error> {
         let page_count = reader.page_count()?;
-        Ok(Self::new(reader.runtime, reader.snapshot, page_count))
+        Ok(Self::new(
+            reader.name,
+            reader.runtime,
+            reader.snapshot,
+            page_count,
+        ))
     }
 }
 

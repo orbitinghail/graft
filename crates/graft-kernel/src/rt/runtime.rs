@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{collections::HashSet, pin::Pin, sync::Arc, time::Duration};
 
 use futures::{Stream, StreamExt};
 use tokio::time::sleep;
@@ -6,6 +6,7 @@ use tokio::time::sleep;
 use crate::{
     local::fjall_storage::{FjallStorage, FjallStorageErr},
     rt::rpc::Rpc,
+    volume_name::VolumeName,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -21,6 +22,7 @@ enum RuntimeErr {
 pub enum Event {
     Rpc(Rpc),
     Tick,
+    Commits(HashSet<VolumeName>),
 }
 
 pub struct Runtime<S> {
@@ -58,6 +60,9 @@ impl<S: Stream<Item = Event>> Runtime<S> {
                 }
                 Event::Tick => {
                     todo!("handle tick")
+                }
+                Event::Commits(commits) => {
+                    todo!("handle commits")
                 }
             }
         }

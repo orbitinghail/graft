@@ -1,6 +1,7 @@
-use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
+use std::{collections::HashSet, fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
 use fjall::{Instant, PartitionCreateOptions};
+use futures::Stream;
 use graft_core::{
     PageCount, PageIdx, SegmentId, VolumeId,
     checkpoint_set::CheckpointSet,
@@ -14,6 +15,7 @@ use parking_lot::{Mutex, MutexGuard};
 use tryiter::TryIteratorExt;
 
 use crate::{
+    changeset::ChangeSet,
     local::fjall_storage::{
         keys::{CommitKey, PageKey},
         typed_partition::{FjallBatchExt, TypedPartition, TypedPartitionSnapshot},
@@ -49,7 +51,6 @@ pub enum FjallStorageErr {
     ConcurrentWrite(VolumeId),
 }
 
-#[derive(Clone)]
 pub struct FjallStorage {
     keyspace: fjall::Keyspace,
 
@@ -75,6 +76,10 @@ pub struct FjallStorage {
     /// To make read-only txns safe, use the same snapshot for all reads
     /// To make write-only txns safe, they must be monotonic
     lock: Arc<Mutex<()>>,
+
+    /// The commits changeset is notified whenever a NamedVolume's local Volume
+    /// receives a commit.
+    commits: ChangeSet<VolumeName>,
 }
 
 impl Debug for FjallStorage {
@@ -113,6 +118,7 @@ impl FjallStorage {
             log,
             pages,
             lock: Default::default(),
+            commits: Default::default(),
         })
     }
 
@@ -165,15 +171,24 @@ impl FjallStorage {
     /// which must match the provided `graft`.
     pub fn commit(
         &self,
+        name: VolumeName,
         snapshot: Snapshot,
         page_count: PageCount,
         segment: SegmentIdx,
     ) -> Result<(), FjallStorageErr> {
-        self.read_write().commit(snapshot, page_count, segment)
+        self.read_write()
+            .commit(&name, snapshot, page_count, segment)?;
+        // notify downstream subscribers
+        self.commits.mark_changed(&name);
+        Ok(())
     }
 
     pub fn open_named_volume(&self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
         self.read_write().open_named_volume(name)
+    }
+
+    pub fn subscribe_commits(&self) -> impl Stream<Item = HashSet<VolumeName>> + use<> {
+        self.commits.subscribe_all()
     }
 }
 
@@ -184,6 +199,7 @@ pub struct ReadGuard<'a> {
 
 impl Drop for ReadGuard<'_> {
     fn drop(&mut self) {
+        // IMPORTANT: Decrement snapshot count
         self.storage.keyspace.snapshot_tracker.close(self.seqno);
     }
 }
@@ -191,7 +207,7 @@ impl Drop for ReadGuard<'_> {
 impl<'a> ReadGuard<'a> {
     fn open(storage: &'a FjallStorage) -> ReadGuard<'a> {
         let seqno = storage.keyspace.instant();
-        // IMPORTANT: Increment snapshot count in tracker
+        // IMPORTANT: Increment snapshot count
         storage.keyspace.snapshot_tracker.open(seqno);
         Self { storage, seqno }
     }
@@ -358,6 +374,7 @@ impl<'a> ReadWriteGuard<'a> {
 
     pub fn commit(
         &self,
+        name: &VolumeName,
         snapshot: Snapshot,
         page_count: PageCount,
         segment: SegmentIdx,
@@ -368,8 +385,16 @@ impl<'a> ReadWriteGuard<'a> {
             .next()
             .expect("LSN overflow");
 
-        let latest_snapshot = self.read.snapshot(snapshot.vid())?;
-        if snapshot.lsn() != latest_snapshot.lsn() {
+        let latest_snapshot = self
+            .read
+            .named_local_snapshot(name)?
+            .expect("BUG: named volume is missing");
+
+        // 1. We check the LSN rather than the whole path, as checkpoints may
+        // cause the path to change without changing the logical representation of the snapshot.
+        // 2. We check that the VolumeId is the same to handle the rare case of
+        // a NamedVolume's local volume changing.
+        if snapshot.lsn() != latest_snapshot.lsn() || snapshot.vid() != latest_snapshot.vid() {
             return Err(Culprit::from_err(FjallStorageErr::ConcurrentWrite(
                 snapshot.vid().clone(),
             )));
