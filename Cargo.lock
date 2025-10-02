@@ -1485,6 +1485,7 @@ dependencies = [
  "graft-test",
  "graft-tracing",
  "lsm-tree",
+ "object_store",
  "parking_lot",
  "precept",
  "rand",
@@ -1498,6 +1499,7 @@ dependencies = [
  "tracing",
  "tryiter",
  "zerocopy",
+ "zstd",
 ]
 
 [[package]]
