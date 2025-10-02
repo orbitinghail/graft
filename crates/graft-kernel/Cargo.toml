@@ -28,6 +28,7 @@ bytestring = { workspace = true }
 thiserror = { workspace = true }
 bytes = { workspace = true }
 bilrost = { workspace = true }
+object_store = { workspace = true }
 static_assertions = { workspace = true }
 tryiter = { workspace = true }
 smallvec = { workspace = true }
@@ -37,6 +38,7 @@ parking_lot = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt", "time", "parking_lot"] }
 tokio-stream = { workspace = true }
 futures = { workspace = true }
+zstd = { workspace = true }
 
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }

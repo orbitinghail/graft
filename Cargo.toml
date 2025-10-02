@@ -82,6 +82,7 @@ fuser = "0.16.0"
 libc = "0.2"
 quick_cache = "0.6"
 serde_yaml = "0.9"
+zstd = "0.13"
 
 [workspace.lints.clippy]
 disallowed_methods = "deny"
