@@ -18,7 +18,7 @@ codegen-units = 1
 async-trait = "0.1.88"
 async-stream = "0.3"
 hex = "0.4"
-rusty_paseto = "0.7.2"
+rusty_paseto = "0.8.0"
 platform-dirs = "0.3.0"
 sqlite-plugin = { version = "0.4.1", default-features = false }
 splinter-rs = "0.7.0"
