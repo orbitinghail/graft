@@ -3,12 +3,14 @@ title: Comparison
 description: Comparison between Graft and similar storage engines
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside } from "@astrojs/starlight/components";
 
 Graft builds on ideas pioneered by many other projects, while adding its own unique contributions to the space. Here is a brief overview of the SQLite replication landscape and how Graft compares.
 
 <Aside type="caution">
-  The information in this section has been gathered from documentation and blog posts, and might not be perfectly accurate. Please [let me know][email] if I've misrepresented or misunderstood a project.
+  The information in this section has been gathered from documentation and blog
+  posts, and might not be perfectly accurate. Please [let me know][email] if
+  I've misrepresented or misunderstood a project.
 </Aside>
 
 #### mvSQLite
@@ -49,9 +51,9 @@ _How Graft compares_: Graft replicates data directly to the edge, embedding it w
 
 _How Graft compares_: Graft distinguishes itself with partial replication and support for arbitrary, schema-agnostic data structures. Graft's backend service operates directly at the page level and outsources the entire transactional lifecycle to clients.
 
-#### rqlite & dqlite
+#### rqlite
 
-The key idea behind [rqlite] and [dqlite] is to distribute SQLite across multiple servers. This is achieved through [Raft] based consensus and routing SQLite operations through a network protocol to the current Raft leader.
+The key idea behind [rqlite] is to distribute SQLite across multiple servers. This is achieved through [Raft] based consensus and routing SQLite operations through a network protocol to the current Raft leader.
 
 _How Graft compares:_ These projects are focused on increasing SQLite's durability and availability through consensus and traditional replication. They are designed to keep a set of stateful nodes that maintain connectivity to one another in sync. Graft fundamentally differs by being a stateless system built on top of object storage, designed to replicate data to and from the edge.
 
@@ -67,7 +69,6 @@ _How Graft compares_: Graft behaves more like a multi-writer distributed databas
 [mvSQLite]: https://github.com/losfair/mvsqlite
 [mvSQLite-conflict]: https://github.com/losfair/mvsqlite/wiki/Atomic-commit#commit-modes
 [Raft]: https://en.wikipedia.org/wiki/Raft_(algorithm)
-[dqlite]: https://dqlite.io/
 [libSQL]: https://github.com/tursodatabase/libsql
 [Splinter]: https://github.com/orbitinghail/splinter-rs
 [Litestream]: https://litestream.io/
