@@ -52,6 +52,10 @@ impl NamedVolumeState {
         Self { name, local, remote, pending_commit }
     }
 
+    pub fn name(&self) -> &VolumeName {
+        &self.name
+    }
+
     pub fn local(&self) -> &VolumeRef {
         &self.local
     }

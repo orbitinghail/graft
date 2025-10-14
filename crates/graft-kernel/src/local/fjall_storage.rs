@@ -228,6 +228,10 @@ impl<'a> ReadGuard<'a> {
         self.storage.pages.snapshot_at(self.seqno)
     }
 
+    pub fn named_volumes(&self) -> impl Iterator<Item = Result<NamedVolumeState, FjallStorageErr>> {
+        self.named().range(..).map_ok(|(_, v)| Ok(v))
+    }
+
     /// Retrieve the latest `Snapshot` corresponding to the local Volume for the
     /// `NamedVolume` named `name`
     pub fn named_local_snapshot(
@@ -372,6 +376,37 @@ impl<'a> ReadWriteGuard<'a> {
         Self { _permit, read }
     }
 
+    pub fn open_named_volume(&self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
+        if let Some(state) = self.read.named().get(&name)? {
+            Ok(state)
+        } else {
+            let mut batch = self.read.storage.keyspace.batch();
+
+            // create a new local volume
+            let vid = VolumeId::random();
+            let local = VolumeMeta::new(vid.clone(), None, None, CheckpointSet::EMPTY);
+            batch.insert_typed(&self.read.storage.volumes, vid.clone(), local);
+
+            // write an empty initial commit
+            let commit = Commit::new(vid.clone(), LSN::FIRST, PageCount::ZERO);
+            batch.insert_typed(
+                &self.read.storage.log,
+                CommitKey::new(vid.clone(), LSN::FIRST),
+                commit,
+            );
+
+            let localref = VolumeRef::new(vid, LSN::FIRST);
+
+            // put it in a named volume
+            let volume = NamedVolumeState::new(name.clone(), localref, None, None);
+            batch.insert_typed(&self.read.storage.named, name, volume.clone());
+
+            batch.commit()?;
+
+            Ok(volume)
+        }
+    }
+
     pub fn commit(
         &self,
         name: &VolumeName,
@@ -407,36 +442,5 @@ impl<'a> ReadWriteGuard<'a> {
             .storage
             .log
             .insert(CommitKey::new(snapshot.vid().clone(), commit_lsn), commit)
-    }
-
-    pub fn open_named_volume(&self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
-        if let Some(state) = self.read.named().get(&name)? {
-            Ok(state)
-        } else {
-            let mut batch = self.read.storage.keyspace.batch();
-
-            // create a new local volume
-            let vid = VolumeId::random();
-            let local = VolumeMeta::new(vid.clone(), None, None, CheckpointSet::EMPTY);
-            batch.insert_typed(&self.read.storage.volumes, vid.clone(), local);
-
-            // write an empty initial commit
-            let commit = Commit::new(vid.clone(), LSN::FIRST, PageCount::ZERO);
-            batch.insert_typed(
-                &self.read.storage.log,
-                CommitKey::new(vid.clone(), LSN::FIRST),
-                commit,
-            );
-
-            let localref = VolumeRef::new(vid, LSN::FIRST);
-
-            // put it in a named volume
-            let volume = NamedVolumeState::new(name.clone(), localref, None, None);
-            batch.insert_typed(&self.read.storage.named, name, volume.clone());
-
-            batch.commit()?;
-
-            Ok(volume)
-        }
     }
 }

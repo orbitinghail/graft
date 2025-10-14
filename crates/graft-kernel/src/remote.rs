@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use culprit::Culprit;
 use graft_core::lsn::LSN;
@@ -28,6 +28,12 @@ pub enum RemoteConfig {
     },
 }
 
+impl RemoteConfig {
+    pub fn build(self) -> Result<Remote, Culprit<RemoteErr>> {
+        Remote::with_config(self)
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum RemoteErr {
     #[error("Object store error: {0}")]
@@ -38,14 +44,14 @@ pub enum RemoteErr {
 }
 
 pub struct Remote {
-    store: Arc<dyn ObjectStore>,
+    store: Box<dyn ObjectStore>,
 }
 
 impl Remote {
-    pub fn new(config: RemoteConfig) -> Result<Self, Culprit<RemoteErr>> {
-        let store: Arc<dyn ObjectStore> = match config {
-            RemoteConfig::Memory => Arc::new(InMemory::new()),
-            RemoteConfig::Fs { root } => Arc::new(LocalFileSystem::new_with_prefix(root)?),
+    pub fn with_config(config: RemoteConfig) -> Result<Self, Culprit<RemoteErr>> {
+        let store: Box<dyn ObjectStore> = match config {
+            RemoteConfig::Memory => Box::new(InMemory::new()),
+            RemoteConfig::Fs { root } => Box::new(LocalFileSystem::new_with_prefix(root)?),
             RemoteConfig::S3Compatible { bucket, prefix } => {
                 let store = object_store::aws::AmazonS3Builder::from_env()
                     .with_allow_http(true)
@@ -54,9 +60,9 @@ impl Remote {
                     .build()?;
                 if let Some(prefix) = prefix {
                     let prefix = Path::parse(prefix)?;
-                    Arc::new(PrefixStore::new(store, prefix))
+                    Box::new(PrefixStore::new(store, prefix))
                 } else {
-                    Arc::new(store)
+                    Box::new(store)
                 }
             }
         };
@@ -64,16 +70,28 @@ impl Remote {
         Ok(Self { store: store })
     }
 
-    pub fn fetch_segment_frame(&self) {}
+    pub async fn fetch_segment_frame(&self) {
+        todo!()
+    }
 
-    pub fn fetch_control(&self) {}
+    pub async fn fetch_control(&self) {
+        todo!()
+    }
 
-    pub fn fetch_checkpoints(&self, etag: &[u8]) {}
+    pub async fn fetch_checkpoints(&self, _etag: &[u8]) {
+        todo!()
+    }
 
     // lsn range may be unbounded
-    pub fn fetch_commits(&self, lsns: (LSN, Option<LSN>)) {}
+    pub async fn fetch_commits(&self, _lsns: (LSN, Option<LSN>)) {
+        todo!()
+    }
 
-    pub fn write_segment(&self) {}
+    pub async fn write_segment(&self) {
+        todo!()
+    }
 
-    pub fn write_commit(&self) {}
+    pub async fn write_commit(&self) {
+        todo!()
+    }
 }

@@ -7,9 +7,11 @@ use tokio::task::JoinHandle;
 use crate::{
     local::fjall_storage::FjallStorageErr,
     named_volume::NamedVolume,
+    remote::Remote,
     rt::{
+        err::RuntimeFatalErr,
         rpc::RpcHandle,
-        runtime::{Event, Runtime, RuntimeFatalErr},
+        runtime::{Event, Runtime},
     },
     snapshot::Snapshot,
     volume_name::VolumeName,
@@ -38,7 +40,11 @@ struct RuntimeHandleInner {
 impl RuntimeHandle {
     /// Spawn the Graft Runtime into the provided Tokio Runtime.
     /// Returns a `RuntimeHandle` which can be used to interact with the Graft Runtime.
-    pub fn spawn(handle: &tokio::runtime::Handle, storage: Arc<FjallStorage>) -> RuntimeHandle {
+    pub fn spawn(
+        handle: &tokio::runtime::Handle,
+        remote: Remote,
+        storage: Arc<FjallStorage>,
+    ) -> RuntimeHandle {
         let (tx, rx) = mpsc::channel(8);
 
         // Make sure we have a runtime context while setting up streams
@@ -52,7 +58,7 @@ impl RuntimeHandle {
             .map(|changes| Event::Commits(changes));
         let events = Box::pin(rx.merge(ticks).merge(commits));
 
-        let runtime = Runtime::new(storage.clone(), events);
+        let runtime = Runtime::new(remote, storage.clone(), events);
         let handle = handle.spawn(runtime.start());
 
         RuntimeHandle {
@@ -109,18 +115,20 @@ mod tests {
     use graft_core::{PageIdx, page::Page};
 
     use crate::{
-        local::fjall_storage::FjallStorage, rt::runtime_handle::RuntimeHandle,
-        volume_name::VolumeName, volume_reader::VolumeRead, volume_writer::VolumeWrite,
+        local::fjall_storage::FjallStorage, remote::RemoteConfig,
+        rt::runtime_handle::RuntimeHandle, volume_name::VolumeName, volume_reader::VolumeRead,
+        volume_writer::VolumeWrite,
     };
 
     #[graft_test::test]
     fn runtime_sanity() {
+        let remote = RemoteConfig::Memory.build().unwrap();
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
         let tokio_rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
-        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), storage);
+        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote, storage);
 
         let volume = runtime.open_volume(VolumeName::DEFAULT).unwrap();
 
