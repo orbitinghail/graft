@@ -7,6 +7,8 @@ pub mod rt {
 
     pub(crate) mod rpc;
 
+    mod err;
+    mod job;
     mod runtime;
 }
 
