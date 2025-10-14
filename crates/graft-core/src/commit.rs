@@ -120,7 +120,7 @@ pub struct SegmentIdx {
     /// An index of `SegmentFrameIdxs` contained by this Segment.
     /// Empty on local Segments which have not been encoded and uploaded to object storage.
     #[bilrost(3)]
-    frames: SmallVec<[SegmentFrameIdx; 2]>,
+    frames: SmallVec<[SegmentFrameIdx; 1]>,
 }
 
 impl Deref for SegmentIdx {
@@ -164,7 +164,7 @@ impl SegmentIdx {
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
-struct SegmentFrameIdx {
+pub struct SegmentFrameIdx {
     /// The length of the compressed frame in bytes.
     #[bilrost(1)]
     frame_size: usize,
@@ -172,6 +172,20 @@ struct SegmentFrameIdx {
     /// The last `PageIdx` contained by this `SegmentFrame`.
     #[bilrost(2)]
     last_pageidx: PageIdx,
+}
+
+impl SegmentFrameIdx {
+    pub fn new(frame_size: usize, last_pageidx: PageIdx) -> Self {
+        Self { frame_size, last_pageidx }
+    }
+
+    pub fn frame_size(&self) -> usize {
+        self.frame_size
+    }
+
+    pub fn last_pageidx(&self) -> PageIdx {
+        self.last_pageidx
+    }
 }
 
 /// A `SegmentFrameRef` contains the byte range and corresponding page range for a

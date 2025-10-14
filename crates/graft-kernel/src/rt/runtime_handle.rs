@@ -45,8 +45,8 @@ impl RuntimeHandle {
         let _tokio_guard = handle.enter();
 
         let rx = ReceiverStream::new(rx).map(Event::Rpc);
-        let ticks =
-            IntervalStream::new(tokio::time::interval(Duration::from_secs(1))).map(|_| Event::Tick);
+        let ticks = IntervalStream::new(tokio::time::interval(Duration::from_secs(1)))
+            .map(|i| Event::Tick(i));
         let commits = storage
             .subscribe_commits()
             .map(|changes| Event::Commits(changes));
