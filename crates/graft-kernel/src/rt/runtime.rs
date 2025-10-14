@@ -1,7 +1,7 @@
 use std::{collections::HashSet, pin::Pin, sync::Arc, time::Duration};
 
 use futures::{Stream, StreamExt};
-use tokio::time::sleep;
+use tokio::time::{Instant, sleep};
 
 use crate::{
     local::fjall_storage::{FjallStorage, FjallStorageErr},
@@ -21,7 +21,7 @@ enum RuntimeErr {
 
 pub enum Event {
     Rpc(Rpc),
-    Tick,
+    Tick(Instant),
     Commits(HashSet<VolumeName>),
 }
 
@@ -58,7 +58,7 @@ impl<S: Stream<Item = Event>> Runtime<S> {
                 Event::Rpc(rpc) => {
                     todo!("handle rpc")
                 }
-                Event::Tick => {
+                Event::Tick(instant) => {
                     todo!("handle tick")
                 }
                 Event::Commits(commits) => {
