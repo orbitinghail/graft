@@ -7,71 +7,75 @@ use crate::{
     volume_name::VolumeName,
 };
 
+mod pull_volume;
+mod remote_commit;
+mod sync_remote_to_local;
+
 pub enum Job {
     /// Pulls commits and metadata from a remote.
-    PullVolume {
-        /// The Volume to fetch.
-        vid: VolumeId,
-
-        /// An optional maximum LSN to fetch.
-        max_lsn: Option<LSN>,
-    },
+    PullVolume(pull_volume::Opts),
 
     /// Commits a Named Volume's local changes into its remote.
-    RemoteCommit { name: VolumeName },
+    RemoteCommit(remote_commit::Opts),
 
     /// Fast-forwards the local volume to include any remote commits. Fails if
     /// the local volume has unpushed commits, unless `force` is specified.
-    SyncRemoteToLocal {
-        /// Name of the volume to sync.
-        name: VolumeName,
-
-        /// If true, discards any unpushed local commits before syncing.
-        force: bool,
-    },
+    SyncRemoteToLocal(sync_remote_to_local::Opts),
 }
 
 impl Job {
-    /// Inspects all named volumes to compute a list of outstanding jobs
+    pub fn pull_volume(vid: VolumeId, max_lsn: Option<LSN>) -> Self {
+        Job::PullVolume(pull_volume::Opts { vid, max_lsn })
+    }
+
+    pub fn remote_commit(name: VolumeName) -> Self {
+        Job::RemoteCommit(remote_commit::Opts { name })
+    }
+
+    pub fn sync_remote_to_local(name: VolumeName, force: bool) -> Self {
+        Job::SyncRemoteToLocal(sync_remote_to_local::Opts { name, force })
+    }
+
+    /// Inspects all named volumes to compute a list of outstanding jobs.
     pub fn collect(storage: &FjallStorage) -> Result<Vec<Self>, Culprit<RuntimeErr>> {
         let mut jobs = vec![];
         let reader = storage.read();
         let mut volumes = reader.named_volumes();
         while let Some(volume) = volumes.try_next().or_into_ctx()? {
             if volume.pending_commit().is_some() {
-                jobs.push(Job::RemoteCommit { name: volume.name().clone() })
-            } else {
+                jobs.push(Self::remote_commit(volume.name().clone()));
+            } else if let Some(remote_ref) = volume.remote() {
                 let local_ref = volume.local();
                 let local_snapshot = reader.snapshot(local_ref.vid()).or_into_ctx()?;
                 let local_changes = local_snapshot.lsn() != Some(local_ref.lsn());
 
-                let remote_ref = volume.remote();
-                let remote_changes = if let Some(remote_ref) = remote_ref {
-                    let remote_snapshot = reader.snapshot(remote_ref.vid()).or_into_ctx()?;
-                    remote_snapshot.lsn() != Some(remote_ref.lsn())
-                } else {
-                    false
-                };
+                let remote_snapshot = reader.snapshot(remote_ref.vid()).or_into_ctx()?;
+                let remote_changes = remote_snapshot.lsn() != Some(remote_ref.lsn());
 
                 if remote_changes && local_changes {
                     todo!("user needs to intervene")
                 } else if remote_changes {
-                    todo!("SyncRemoteToLocal")
+                    jobs.push(Self::sync_remote_to_local(volume.name().clone(), false))
                 } else if local_changes {
-                    todo!("RemoteCommit")
+                    jobs.push(Self::remote_commit(volume.name().clone()));
                 } else {
-                    todo!("PullVolume + SyncRemoteToLocal")
+                    jobs.push(Self::pull_volume(remote_ref.vid().clone(), None));
                 }
             }
         }
         Ok(jobs)
     }
 
+    /// Run this job, potentially returning a job to run next
     pub async fn run(
         self,
         storage: &FjallStorage,
         remote: &Remote,
-    ) -> culprit::Result<(), RuntimeErr> {
-        todo!()
+    ) -> culprit::Result<Option<Job>, RuntimeErr> {
+        match self {
+            Job::PullVolume(opts) => pull_volume::run(storage, remote, opts).await,
+            Job::RemoteCommit(opts) => remote_commit::run(storage, remote, opts).await,
+            Job::SyncRemoteToLocal(opts) => sync_remote_to_local::run(storage, remote, opts).await,
+        }
     }
 }
