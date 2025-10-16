@@ -193,8 +193,6 @@ jobs:
           for file in distx/npm/*; do
             npm publish --access public "$file"
           done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish Ruby Packages
         run: |
