@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
-use culprit::Culprit;
-use graft_core::lsn::LSN;
+use graft_core::{
+    VolumeId, checkpoint_set::CheckpointSet, etag::ETag, volume_control::VolumeControl,
+};
 use object_store::{
     ObjectStore, aws::S3ConditionalPut, local::LocalFileSystem, memory::InMemory, path::Path,
     prefix::PrefixStore,
@@ -9,6 +10,17 @@ use object_store::{
 use thiserror::Error;
 
 pub mod segment;
+
+#[derive(Error, Debug)]
+pub enum RemoteErr {
+    #[error("Object store error: {0}")]
+    ObjectStore(#[from] object_store::Error),
+
+    #[error("Invalid path: {0}")]
+    Path(#[from] object_store::path::Error),
+}
+
+pub type Result<T> = culprit::Result<T, RemoteErr>;
 
 #[derive(Debug, Default)]
 pub enum RemoteConfig {
@@ -29,18 +41,9 @@ pub enum RemoteConfig {
 }
 
 impl RemoteConfig {
-    pub fn build(self) -> Result<Remote, Culprit<RemoteErr>> {
+    pub fn build(self) -> Result<Remote> {
         Remote::with_config(self)
     }
-}
-
-#[derive(Error, Debug)]
-pub enum RemoteErr {
-    #[error("Object store error: {0}")]
-    ObjectStore(#[from] object_store::Error),
-
-    #[error("Invalid path: {0}")]
-    Path(#[from] object_store::path::Error),
 }
 
 pub struct Remote {
@@ -48,7 +51,7 @@ pub struct Remote {
 }
 
 impl Remote {
-    pub fn with_config(config: RemoteConfig) -> Result<Self, Culprit<RemoteErr>> {
+    pub fn with_config(config: RemoteConfig) -> Result<Self> {
         let store: Box<dyn ObjectStore> = match config {
             RemoteConfig::Memory => Box::new(InMemory::new()),
             RemoteConfig::Fs { root } => Box::new(LocalFileSystem::new_with_prefix(root)?),
@@ -70,28 +73,15 @@ impl Remote {
         Ok(Self { store: store })
     }
 
-    pub async fn fetch_segment_frame(&self) {
+    pub async fn fetch_control(&self, vid: &VolumeId) -> Result<VolumeControl> {
         todo!()
     }
 
-    pub async fn fetch_control(&self) {
-        todo!()
-    }
-
-    pub async fn fetch_checkpoints(&self, _etag: &[u8]) {
-        todo!()
-    }
-
-    // lsn range may be unbounded
-    pub async fn fetch_commits(&self, _lsns: (LSN, Option<LSN>)) {
-        todo!()
-    }
-
-    pub async fn write_segment(&self) {
-        todo!()
-    }
-
-    pub async fn write_commit(&self) {
+    pub async fn fetch_checkpoints(
+        &self,
+        vid: &VolumeId,
+        etag: Option<&ETag>,
+    ) -> Result<Option<(ETag, CheckpointSet)>> {
         todo!()
     }
 }

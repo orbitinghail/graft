@@ -250,6 +250,8 @@ pub trait LSNRangeExt {
 }
 
 impl<T: RangeBounds<LSN>> LSNRangeExt for T {
+    /// Returns the length of this LSN range.
+    /// Returns None if start > end
     fn try_len(&self) -> Option<usize> {
         let start = self.try_start()?;
         let end = self.try_end_exclusive()?;

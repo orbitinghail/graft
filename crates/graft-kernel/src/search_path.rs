@@ -17,8 +17,8 @@ pub struct SearchPath {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathEntry {
-    vid: VolumeId,
-    lsns: RangeInclusive<LSN>,
+    pub vid: VolumeId,
+    pub lsns: RangeInclusive<LSN>,
 }
 
 impl SearchPath {
@@ -26,7 +26,7 @@ impl SearchPath {
 
     pub fn append(&mut self, vid: VolumeId, lsns: RangeInclusive<LSN>) {
         assert!(
-            lsns.try_len().is_some_and(|l| l > 0),
+            lsns.try_len().is_some(),
             "LSN range must be in the form low..=high"
         );
         self.path.push(PathEntry { vid, lsns });
@@ -40,6 +40,14 @@ impl SearchPath {
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &PathEntry> {
         self.path.iter()
+    }
+}
+
+impl IntoIterator for SearchPath {
+    type Item = PathEntry;
+    type IntoIter = smallvec::IntoIter<[PathEntry; 1]>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.path.into_iter()
     }
 }
 

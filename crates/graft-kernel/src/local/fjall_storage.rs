@@ -6,8 +6,10 @@ use graft_core::{
     PageCount, PageIdx, SegmentId, VolumeId,
     checkpoint_set::CheckpointSet,
     commit::{Commit, SegmentIdx},
+    etag::ETag,
     lsn::LSN,
     page::Page,
+    volume_control::VolumeControl,
     volume_meta::VolumeMeta,
     volume_ref::VolumeRef,
 };
@@ -49,6 +51,9 @@ pub enum FjallStorageErr {
 
     #[error("Concurrent write to Volume {0} detected")]
     ConcurrentWrite(VolumeId),
+
+    #[error("Unknown Volume {0}")]
+    UnknownVolume(VolumeId),
 }
 
 pub struct FjallStorage {
@@ -122,6 +127,10 @@ impl FjallStorage {
         })
     }
 
+    pub fn subscribe_commits(&self) -> impl Stream<Item = HashSet<VolumeName>> + use<> {
+        self.commits.subscribe_all()
+    }
+
     pub(crate) fn read(&self) -> ReadGuard<'_> {
         ReadGuard::open(self)
     }
@@ -187,8 +196,26 @@ impl FjallStorage {
         self.read_write().open_named_volume(name)
     }
 
-    pub fn subscribe_commits(&self) -> impl Stream<Item = HashSet<VolumeName>> + use<> {
-        self.commits.subscribe_all()
+    pub fn register_volume(
+        &self,
+        control: VolumeControl,
+        checkpoints: Option<(ETag, CheckpointSet)>,
+    ) -> Result<VolumeMeta, FjallStorageErr> {
+        let meta = VolumeMeta::new(
+            control.vid().clone(),
+            control.parent().cloned(),
+            checkpoints,
+        );
+        self.volumes.insert(control.vid().clone(), meta.clone())?;
+        Ok(meta)
+    }
+
+    pub fn update_checkpoints(
+        &self,
+        vid: VolumeId,
+        checkpoints: (ETag, CheckpointSet),
+    ) -> Result<VolumeMeta, FjallStorageErr> {
+        self.read_write().update_checkpoints(vid, checkpoints)
     }
 }
 
@@ -245,9 +272,25 @@ impl<'a> ReadGuard<'a> {
         }
     }
 
+    pub fn volume_meta(&self, vid: &VolumeId) -> Result<Option<VolumeMeta>, FjallStorageErr> {
+        self.volumes().get(vid)
+    }
+
+    /// Load a Volume's latest snapshot
     pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
-        // compute the Snapshot's VolumeRef
-        let vref = if let Some(commit) = self.log().first(vid)? {
+        self.snapshot_at(vid, None)
+    }
+
+    /// Load the most recent Snapshot for a Volume as of the provided `max_lsn`.
+    /// If `max_lsn` is None, loads the most recent Snapshot available.
+    pub fn snapshot_at(
+        &self,
+        vid: &VolumeId,
+        max_lsn: Option<LSN>,
+    ) -> Result<Snapshot, FjallStorageErr> {
+        // compute the Snapshot's VolumeRef at the search LSN (or latest)
+        let search_range = CommitKey::new(vid.clone(), max_lsn.unwrap_or(LSN::LAST))..;
+        let vref = if let Some((_, commit)) = self.log().range(search_range).try_next()? {
             Some(commit.vref())
         } else {
             // no commit found in volume, search starting at the volume's parent
@@ -271,7 +314,7 @@ impl<'a> ReadGuard<'a> {
         let mut path = SearchPath::default();
 
         while let Some(meta) = volumes.get(vref.vid())? {
-            if let Some(checkpoint) = meta.checkpoints().checkpoint_for(vref.lsn()) {
+            if let Some(checkpoint) = meta.checkpoint_for(vref.lsn()) {
                 // found a checkpoint, we can terminate the path here
                 path.append(meta.vid().clone(), checkpoint..=vref.lsn());
                 return Ok(path);
@@ -376,21 +419,25 @@ impl<'a> ReadWriteGuard<'a> {
         Self { _permit, read }
     }
 
+    fn storage(&self) -> &'a FjallStorage {
+        self.read.storage
+    }
+
     pub fn open_named_volume(&self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
         if let Some(state) = self.read.named().get(&name)? {
             Ok(state)
         } else {
-            let mut batch = self.read.storage.keyspace.batch();
+            let mut batch = self.storage().keyspace.batch();
 
             // create a new local volume
             let vid = VolumeId::random();
-            let local = VolumeMeta::new(vid.clone(), None, None, CheckpointSet::EMPTY);
-            batch.insert_typed(&self.read.storage.volumes, vid.clone(), local);
+            let local = VolumeMeta::new(vid.clone(), None, None);
+            batch.insert_typed(&self.storage().volumes, vid.clone(), local);
 
             // write an empty initial commit
             let commit = Commit::new(vid.clone(), LSN::FIRST, PageCount::ZERO);
             batch.insert_typed(
-                &self.read.storage.log,
+                &self.storage().log,
                 CommitKey::new(vid.clone(), LSN::FIRST),
                 commit,
             );
@@ -399,7 +446,7 @@ impl<'a> ReadWriteGuard<'a> {
 
             // put it in a named volume
             let volume = NamedVolumeState::new(name.clone(), localref, None, None);
-            batch.insert_typed(&self.read.storage.named, name, volume.clone());
+            batch.insert_typed(&self.storage().named, name, volume.clone());
 
             batch.commit()?;
 
@@ -442,5 +489,19 @@ impl<'a> ReadWriteGuard<'a> {
             .storage
             .log
             .insert(CommitKey::new(snapshot.vid().clone(), commit_lsn), commit)
+    }
+
+    pub fn update_checkpoints(
+        &self,
+        vid: VolumeId,
+        checkpoints: (ETag, CheckpointSet),
+    ) -> Result<VolumeMeta, FjallStorageErr> {
+        let meta = self
+            .read
+            .volume_meta(&vid)?
+            .ok_or_else(|| FjallStorageErr::UnknownVolume(vid.clone()))?
+            .with_checkpoints(Some(checkpoints));
+        self.storage().volumes.insert(vid, meta.clone())?;
+        Ok(meta)
     }
 }

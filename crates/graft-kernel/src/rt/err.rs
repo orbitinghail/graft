@@ -1,4 +1,4 @@
-use crate::local::fjall_storage::FjallStorageErr;
+use crate::{local::fjall_storage::FjallStorageErr, remote::RemoteErr};
 
 #[derive(Debug, thiserror::Error)]
 #[error("fatal runtime error")]
@@ -10,5 +10,5 @@ pub enum RuntimeErr {
     Storage(#[from] FjallStorageErr),
 
     #[error(transparent)]
-    Remote(#[from] object_store::Error),
+    Remote(#[from] RemoteErr),
 }
