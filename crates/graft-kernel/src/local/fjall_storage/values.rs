@@ -53,6 +53,7 @@ impl_fjallrepr_for_bilrost!(NamedVolumeState, VolumeMeta, Commit);
 mod tests {
     use super::*;
 
+    use graft_core::etag::ETag;
     use graft_core::{
         PageCount, VolumeId, checkpoint_set::CheckpointSet, lsn::LSN, page::PAGESIZE,
         volume_ref::VolumeRef,
@@ -87,8 +88,10 @@ mod tests {
         test_roundtrip(VolumeMeta::new(
             VolumeId::random(),
             Some(VolumeRef::new(VolumeId::random(), LSN::new(123))),
-            Some(Bytes::from_static(b"asdf")),
-            CheckpointSet::from([LSN::new(123)].as_ref()),
+            Some((
+                ETag::from_static("asdf"),
+                CheckpointSet::from([LSN::new(123)].as_ref()),
+            )),
         ));
         test_empty_default::<VolumeMeta>();
         test_invalid::<VolumeMeta>(&b"abc".repeat(123));
