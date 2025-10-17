@@ -1489,6 +1489,7 @@ dependencies = [
  "parking_lot",
  "precept",
  "rand",
+ "range-set-blaze",
  "smallvec",
  "splinter-rs",
  "static_assertions",
@@ -3489,9 +3490,9 @@ dependencies = [
 
 [[package]]
 name = "splinter-rs"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82ed2ee3693dd923238f0d1a57e70bc4a87ff950da1e484ed9111c2d884ac6cb"
+checksum = "19d2e9f5ece5a6969c7049345a931a267092f79aa91cf319a24855f780f5bb8b"
 dependencies = [
  "assert_matches",
  "bitvec",
