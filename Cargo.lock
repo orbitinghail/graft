@@ -1459,6 +1459,7 @@ dependencies = [
  "parking_lot",
  "precept",
  "rand",
+ "range-set-blaze",
  "smallvec",
  "splinter-rs",
  "static_assertions",
