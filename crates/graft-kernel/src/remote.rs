@@ -1,15 +1,24 @@
-use std::path::PathBuf;
+use std::{future, path::PathBuf};
 
+use futures::{
+    Stream, StreamExt, TryStreamExt,
+    stream::{self, FuturesOrdered},
+};
 use graft_core::{
-    VolumeId, checkpoint_set::CheckpointSet, etag::ETag, volume_control::VolumeControl,
+    VolumeId, checkpoint_set::CheckpointSet, commit::Commit, etag::ETag, graft::Graft, lsn::LSN,
+    volume_control::VolumeControl,
 };
 use object_store::{
     ObjectStore, aws::S3ConditionalPut, local::LocalFileSystem, memory::InMemory, path::Path,
     prefix::PrefixStore,
 };
+use range_set_blaze::RangeSetBlaze;
+use splinter_rs::{PartitionRead, Splinter};
 use thiserror::Error;
 
 pub mod segment;
+
+const FETCH_COMMITS_CONCURRENCY: usize = 5;
 
 #[derive(Error, Debug)]
 pub enum RemoteErr {
@@ -83,5 +92,24 @@ impl Remote {
         etag: Option<&ETag>,
     ) -> Result<Option<(ETag, CheckpointSet)>> {
         todo!()
+    }
+
+    pub async fn fetch_commits(
+        vid: VolumeId,
+        // lsns: RangeSetBlaze<LSN>,
+    ) -> impl Stream<Item = Result<Commit>> {
+        // convert the set into a stream of chunks, such that the first chunk
+        // only contains the first LSN, and the remaining chunks have a maximum
+        // size of REPLAY_CONCURRENCY
+        // let mut iter = lsns.iter();
+        // let first_chunk: Vec<LSN> = match iter.next() {
+        //     Some(lsn) => vec![lsn],
+        //     None => vec![],
+        // };
+        // let chunks = stream::once(future::ready(first_chunk))
+        //     .chain(stream::iter(iter).chunks(FETCH_COMMITS_CONCURRENCY));
+
+        todo!();
+        stream::empty()
     }
 }

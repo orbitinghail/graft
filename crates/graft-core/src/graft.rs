@@ -37,6 +37,10 @@ impl Graft {
         );
         self.splinter.remove_range(r);
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = PageIdx> {
+        self.splinter.iter().map(|v| PageIdx::new(v))
+    }
 }
 
 impl From<Splinter> for Graft {

@@ -1459,6 +1459,7 @@ dependencies = [
  "parking_lot",
  "precept",
  "rand",
+ "range-set-blaze 0.4.1",
  "smallvec",
  "splinter-rs",
  "static_assertions",
@@ -2880,6 +2881,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "range-set-blaze"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "953906b1d974976f882aea72a511bd37c5f633ef17839fd3bf2bd2d18cc101be"
+dependencies = [
+ "gen_ops",
+ "itertools 0.14.0",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3439,7 +3452,7 @@ dependencies = [
  "either",
  "itertools 0.14.0",
  "num",
- "range-set-blaze",
+ "range-set-blaze 0.3.0",
  "static_assertions",
  "thiserror 2.0.17",
  "u24",
@@ -3925,7 +3938,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59010043ec6096d22c45b26b4e6162c26c593e74ff6ffe51ba18af2ad0d08e42"
 dependencies = [
  "num",
- "range-set-blaze",
+ "range-set-blaze 0.3.0",
  "static_assertions",
  "zerocopy",
 ]
