@@ -52,9 +52,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
 
-      - uses: taiki-e/install-action@5b5de1b4da26ad411330c0454bdd72929bfcbeb2 # v2
-        with:
-          tool: cargo-nextest
+      - name: Install Nextest
+        run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /usr/local/bin
 
       - name: Build
         run: cargo build
