@@ -31,6 +31,7 @@ bilrost = { workspace = true }
 object_store = { workspace = true }
 static_assertions = { workspace = true }
 tryiter = { workspace = true }
+itertools = { workspace = true }
 smallvec = { workspace = true }
 tempfile = { workspace = true }
 tracing = { workspace = true }

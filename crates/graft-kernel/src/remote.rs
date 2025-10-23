@@ -5,14 +5,18 @@ use futures::{
     stream::{self, FuturesOrdered},
 };
 use graft_core::{
-    VolumeId, checkpoint_set::CheckpointSet, commit::Commit, etag::ETag, graft::Graft, lsn::LSN,
+    VolumeId,
+    checkpoint_set::CheckpointSet,
+    commit::Commit,
+    etag::ETag,
+    graft::Graft,
+    lsn::{LSN, LSNSet},
     volume_control::VolumeControl,
 };
 use object_store::{
     ObjectStore, aws::S3ConditionalPut, local::LocalFileSystem, memory::InMemory, path::Path,
     prefix::PrefixStore,
 };
-use range_set_blaze::RangeSetBlaze;
 use splinter_rs::{PartitionRead, Splinter};
 use thiserror::Error;
 
@@ -95,8 +99,9 @@ impl Remote {
     }
 
     pub async fn fetch_commits(
-        vid: VolumeId,
-        // lsns: RangeSetBlaze<LSN>,
+        &self,
+        vid: &VolumeId,
+        lsns: LSNSet,
     ) -> impl Stream<Item = Result<Commit>> {
         // convert the set into a stream of chunks, such that the first chunk
         // only contains the first LSN, and the remaining chunks have a maximum
