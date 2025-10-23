@@ -7,7 +7,7 @@ use graft_core::{
     checkpoint_set::CheckpointSet,
     commit::{Commit, SegmentIdx},
     etag::ETag,
-    lsn::LSN,
+    lsn::{LSN, LSNSet},
     page::Page,
     volume_control::VolumeControl,
     volume_meta::VolumeMeta,
@@ -351,6 +351,14 @@ impl<'a> ReadGuard<'a> {
             let range = high..=low;
             log.range(range).map_ok(|(_, commit)| Ok(commit))
         })
+    }
+
+    /// Returns the set of all LSNs we have for a particular volume.
+    pub fn lsns(&self, vid: &VolumeId) -> Result<LSNSet, FjallStorageErr> {
+        self.log()
+            .prefix(vid)
+            .map_ok(|(key, _)| Ok(key.lsn()))
+            .collect()
     }
 
     pub fn search_page(

@@ -18,4 +18,5 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 
 ---
 
-Working on pull_volume. See TODOs for details.
+Might make sense to take a crack at Remote, before getting back to kernel jobs
+(i.e. pull_volume).

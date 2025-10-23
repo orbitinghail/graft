@@ -65,8 +65,8 @@ impl CommitKey {
     }
 
     #[inline]
-    pub fn lsn(&self) -> &LSN {
-        &self.lsn
+    pub fn lsn(&self) -> LSN {
+        self.lsn
     }
 }
 

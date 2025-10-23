@@ -1,6 +1,9 @@
 use culprit::{Result, ResultExt};
 use graft_core::{
-    VolumeId, checkpoint_set::CheckpointSet, etag::ETag, lsn::LSN, volume_ref::VolumeRef,
+    VolumeId,
+    checkpoint_set::CheckpointSet,
+    lsn::{LSN, LSNSet, LSNSetExt},
+    volume_ref::VolumeRef,
 };
 
 use crate::{
@@ -36,11 +39,11 @@ pub async fn run(
     let search = fetch_search_path(storage, remote, opts.vid.clone(), max_lsn).await?;
 
     for PathEntry { vid, lsns } in search {
-        // first create a LSNSet type that wraps RangeSetBlaze<LSN>
+        let all_lsns = storage.read().lsns(&vid).or_into_ctx()?;
+        let lsns = LSNSet::from_range(lsns) - all_lsns;
+        let commits = remote.fetch_commits(&vid, lsns).await;
 
-        // convert lsns into a LSNSet, then remove any commits we already have
-        //  -> create indexes on FjallStorage to track commits we have
-        // then call remote.fetch_commits(vid, set)
+        // TODO: process new commits
     }
 
     todo!()
