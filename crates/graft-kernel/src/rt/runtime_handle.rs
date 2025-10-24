@@ -135,7 +135,7 @@ mod tests {
         // sanity check volume writer semantics
         let mut writer = volume.writer().unwrap();
         for i in [1u8, 2, 5, 9] {
-            let pageidx = PageIdx::new(i as u32);
+            let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i);
             writer.write_page(pageidx, page.clone()).unwrap();
             assert_eq!(writer.read_page(pageidx).unwrap(), page);
@@ -145,7 +145,7 @@ mod tests {
         // sanity check volume reader semantics
         let reader = volume.reader().unwrap();
         for i in [1u8, 2, 5, 9] {
-            let pageidx = PageIdx::new(i as u32);
+            let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i);
             assert_eq!(
                 reader.read_page(pageidx).unwrap().into_bytes(),

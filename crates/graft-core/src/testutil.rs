@@ -53,7 +53,7 @@ impl UniformSampler for PageIdxSampler {
     }
 
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Self::X {
-        PageIdx::new(self.0.sample(rng))
+        PageIdx::must_new(self.0.sample(rng))
     }
 }
 
@@ -62,9 +62,9 @@ impl SampleUniform for PageIdx {
 }
 
 impl PageIdx {
-    /// new is only defined for tests, regular code should use `try_new` and handle errors
+    /// testonly_new is only defined for tests, regular code should use `try_new` and handle errors
     #[inline]
-    pub const fn new(n: u32) -> Self {
+    pub const fn must_new(n: u32) -> Self {
         Self::try_new(n).expect("page index must be non-zero")
     }
 }

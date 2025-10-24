@@ -218,6 +218,8 @@ impl SegmentFrameRef {
 
 #[cfg(test)]
 mod tests {
+    use crate::pageidx;
+
     use super::*;
 
     #[test]
@@ -225,15 +227,15 @@ mod tests {
         let mut frames = SmallVec::new();
         frames.push(SegmentFrameIdx {
             frame_size: 100,
-            last_pageidx: PageIdx::new(10),
+            last_pageidx: pageidx!(10),
         });
         frames.push(SegmentFrameIdx {
             frame_size: 200,
-            last_pageidx: PageIdx::new(25),
+            last_pageidx: pageidx!(25),
         });
         frames.push(SegmentFrameIdx {
             frame_size: 150,
-            last_pageidx: PageIdx::new(40),
+            last_pageidx: pageidx!(40),
         });
 
         let segment_idx = SegmentIdx {
@@ -243,23 +245,11 @@ mod tests {
         };
 
         let test_cases = [
-            (
-                PageIdx::new(5),
-                Some((0..=99, PageIdx::FIRST..=PageIdx::new(10))),
-            ),
-            (
-                PageIdx::new(10),
-                Some((0..=99, PageIdx::FIRST..=PageIdx::new(10))),
-            ),
-            (
-                PageIdx::new(20),
-                Some((100..=299, PageIdx::new(11)..=PageIdx::new(25))),
-            ),
-            (
-                PageIdx::new(35),
-                Some((300..=449, PageIdx::new(26)..=PageIdx::new(40))),
-            ),
-            (PageIdx::new(50), None),
+            (pageidx!(5), Some((0..=99, PageIdx::FIRST..=pageidx!(10)))),
+            (pageidx!(10), Some((0..=99, PageIdx::FIRST..=pageidx!(10)))),
+            (pageidx!(20), Some((100..=299, pageidx!(11)..=pageidx!(25)))),
+            (pageidx!(35), Some((300..=449, pageidx!(26)..=pageidx!(40)))),
+            (pageidx!(50), None),
         ];
 
         for (pageidx, expected) in test_cases {
@@ -295,7 +285,7 @@ mod tests {
             frames: SmallVec::new(),
         };
 
-        let result = segment_idx.frame_for_pageidx(PageIdx::new(1));
+        let result = segment_idx.frame_for_pageidx(pageidx!(1));
         assert!(result.is_none());
     }
 }

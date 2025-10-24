@@ -250,7 +250,7 @@ mod tests {
         fn run_test(state: &mut State, case: Case) {
             let mut misses = 0;
             for pageidx in case.reads {
-                let pageidx = PageIdx::new(pageidx);
+                let pageidx = PageIdx::must_new(pageidx);
                 if state.cache.contains(&pageidx) {
                     state.oracle.observe_cache_hit(pageidx);
                 } else {

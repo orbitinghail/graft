@@ -29,13 +29,12 @@ impl<S, D: TryFromBytes> From<ValidityError<S, D>> for InvalidLSN {
 /// validation. For literal values, it ensures they don't exceed `u64::MAX`.
 #[macro_export]
 macro_rules! lsn {
-    (1) => {
-        $crate::lsn::LSN::FIRST
-    };
     ($v:expr) => {{
-        static_assertions::const_assert!($v > 0 && $v <= u64::MAX);
-        // SAFETY: $v is checked at compile time to be > 0
-        unsafe { $crate::lsn::LSN::new_unchecked($v) }
+        // force $v to be u64
+        const V: u64 = $v;
+        static_assertions::const_assert!(V > 0 && V <= u64::MAX);
+        // SAFETY: V is checked at compile time to be > 0
+        unsafe { $crate::lsn::LSN::new_unchecked(V) }
     }};
 }
 
