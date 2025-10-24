@@ -51,11 +51,9 @@ impl RuntimeHandle {
         let _tokio_guard = handle.enter();
 
         let rx = ReceiverStream::new(rx).map(Event::Rpc);
-        let ticks = IntervalStream::new(tokio::time::interval(Duration::from_secs(1)))
-            .map(Event::Tick);
-        let commits = storage
-            .subscribe_commits()
-            .map(Event::Commits);
+        let ticks =
+            IntervalStream::new(tokio::time::interval(Duration::from_secs(1))).map(Event::Tick);
+        let commits = storage.subscribe_commits().map(Event::Commits);
         let events = Box::pin(rx.merge(ticks).merge(commits));
 
         let runtime = Runtime::new(remote, storage.clone(), events);
