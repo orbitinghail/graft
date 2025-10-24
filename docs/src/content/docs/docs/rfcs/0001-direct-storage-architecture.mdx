@@ -127,7 +127,7 @@ Because `0` is never a valid LSN, it's available as a sentinel value.
 `CBE64` stands for Ones-**C**ompliment **B**ig **E**ndian.
 
 - **Binary form** — 8-byte array. Bytewise comparison yields descending numeric order. Used for space-efficient storage, such as in embedded key-value stores like [Fjall].
-- **Hex form** — 16-character, zero-padded, uppercase hexadecimal string. Lexicographically sorts in the same order as the binary form. Used where human readability is preferred, such as object store keys.
+- **Hex form** — 16-character, zero-padded, lowercase hexadecimal string. Lexicographically sorts in the same order as the binary form. Used where human readability is preferred, such as object store keys.
 
 The CBE64 encoding allows both local key-value stores and object stores to perform forward iteration over keys to process log records in descending LSN order, without additional index structures.
 

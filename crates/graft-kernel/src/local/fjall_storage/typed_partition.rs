@@ -114,18 +114,6 @@ where
             _phantom: PhantomData,
         }
     }
-
-    pub fn first<P>(&self, prefix: &P) -> culprit::Result<Option<V>, FjallStorageErr>
-    where
-        K: FjallKeyPrefix<Prefix = P>,
-        P: AsRef<[u8]>,
-    {
-        if let Some((_, v)) = self.prefix(prefix).try_next()? {
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
-    }
 }
 
 pub struct TypedPartitionIter<K, V, I> {
@@ -173,6 +161,11 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.try_next().transpose()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
     }
 }
 

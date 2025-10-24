@@ -1408,6 +1408,7 @@ dependencies = [
  "graft-test",
  "hashbrown 0.16.0",
  "rand",
+ "range-set-blaze",
  "serde",
  "smallvec",
  "splinter-rs",
@@ -1454,10 +1455,13 @@ dependencies = [
  "graft-core",
  "graft-test",
  "graft-tracing",
+ "itertools 0.14.0",
  "lsm-tree",
+ "object_store",
  "parking_lot",
  "precept",
  "rand",
+ "range-set-blaze",
  "smallvec",
  "splinter-rs",
  "static_assertions",
@@ -1468,6 +1472,7 @@ dependencies = [
  "tracing",
  "tryiter",
  "zerocopy",
+ "zstd",
 ]
 
 [[package]]
@@ -1966,7 +1971,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
 ]
 
 [[package]]

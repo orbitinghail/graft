@@ -6,7 +6,7 @@ pub mod page;
 pub mod page_count;
 pub mod page_idx;
 
-pub mod checkpoint_set;
+pub mod checkpoints;
 pub mod commit;
 pub mod volume_control;
 pub mod volume_fork;
@@ -17,6 +17,7 @@ pub mod bilrost_util;
 pub mod byte_unit;
 pub mod cbe;
 pub mod hash_table;
+pub mod merge_runs;
 pub mod zerocopy_ext;
 
 pub use commit_hash::{CommitHashBuilder, CommitHashParseErr};

@@ -69,11 +69,13 @@ impl PageCount {
     }
 
     #[inline]
+    #[must_use]
     pub const fn saturating_incr(self) -> Self {
         Self(self.0.saturating_add(1))
     }
 
     #[inline]
+    #[must_use]
     pub const fn saturating_decr(self) -> Self {
         Self(self.0.saturating_sub(1))
     }
