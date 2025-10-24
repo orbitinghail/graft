@@ -2,10 +2,11 @@ use culprit::{Result, ResultExt};
 use graft_core::{
     VolumeId,
     checkpoints::{CachedCheckpoints, Checkpoints},
-    lsn::{LSN, LSNSet, LSNSetExt},
+    lsn::{LSN, LSNRangeExt, LSNSet, LSNSetExt},
     merge_runs::MergeRuns,
     volume_ref::VolumeRef,
 };
+use itertools::{EitherOrBoth, Itertools};
 use range_set_blaze::SortedDisjoint;
 use tokio_stream::StreamExt;
 
@@ -44,7 +45,7 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
         // TODO: Switch to RangeOnce once it lands
         // https://github.com/CarlKCarlK/range-set-blaze/pull/21
         let lsns = LSNSet::from_range(lsns).into_ranges() - all_lsns.ranges();
-        let mut commits = remote.fetch_sorted_commits(&vid, lsns);
+        let mut commits = remote.fetch_sorted_commits(&vid, lsns.map(|r| r.iter()).flatten());
         while let Some(commit) = commits.try_next().await.or_into_ctx()? {
             batch.write_commit(commit);
         }
@@ -139,9 +140,16 @@ async fn refresh_checkpoint_commits(
     prev_checkpoints: &Checkpoints,
     checkpoints: &Checkpoints,
 ) -> Result<(), RuntimeErr> {
-    let prev = MergeRuns::new(prev_checkpoints.iter().copied());
-    let next = MergeRuns::new(checkpoints.iter().copied());
-    let added = next.difference(prev); // next - prev
+    // Checkpoints are sorted, thus we can merge join the two lists of LSNs to
+    // figure out which ones were added.
+    let added: Vec<LSN> = prev_checkpoints
+        .iter()
+        .merge_join_by(checkpoints.iter(), Ord::cmp)
+        .filter_map(|join| match join {
+            EitherOrBoth::Right(v) => Some(*v),
+            _ => None,
+        })
+        .collect();
 
     let mut commits = remote.fetch_sorted_commits(vid, added);
     let mut batch = storage.batch();

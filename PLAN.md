@@ -15,8 +15,3 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 - [x] Volume Reader
 - [x] Volume Writer
 - [ ] libgraft SQLite
-
----
-
-Might make sense to take a crack at Remote, before getting back to kernel jobs
-(i.e. pull_volume).
