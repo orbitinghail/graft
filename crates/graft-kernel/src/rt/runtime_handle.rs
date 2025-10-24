@@ -52,10 +52,10 @@ impl RuntimeHandle {
 
         let rx = ReceiverStream::new(rx).map(Event::Rpc);
         let ticks = IntervalStream::new(tokio::time::interval(Duration::from_secs(1)))
-            .map(|i| Event::Tick(i));
+            .map(Event::Tick);
         let commits = storage
             .subscribe_commits()
-            .map(|changes| Event::Commits(changes));
+            .map(Event::Commits);
         let events = Box::pin(rx.merge(ticks).merge(commits));
 
         let runtime = Runtime::new(remote, storage.clone(), events);

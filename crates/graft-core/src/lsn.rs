@@ -38,7 +38,7 @@ macro_rules! lsn {
     }};
 }
 
-/// Creates a `LSN` run at compile time from a literal RangeInclusive
+/// Creates a `LSN` run at compile time from a literal `RangeInclusive`
 ///
 /// Example:
 ///
@@ -159,8 +159,8 @@ impl LSN {
     }
 
     /// Wrapping addition for LSN values.
-    /// Since LSN values are in range [1, u64::MAX], wrapping occurs at u64::MAX.
-    /// For example: LSN(u64::MAX).wrapping_add(1) == LSN(1)
+    /// Since LSN values are in range [1, `u64::MAX`], wrapping occurs at `u64::MAX`.
+    /// For example: `LSN(u64::MAX).wrapping_add(1)` == LSN(1)
     #[inline]
     fn wrapping_add(self, rhs: u64) -> Self {
         // Use u128 for intermediate calculation to handle overflow correctly
@@ -172,8 +172,8 @@ impl LSN {
     }
 
     /// Wrapping subtraction for LSN values.
-    /// Since LSN values are in range [1, u64::MAX], wrapping occurs at the boundaries.
-    /// For example: LSN(1).wrapping_sub(1) == LSN(u64::MAX)
+    /// Since LSN values are in range [1, `u64::MAX`], wrapping occurs at the boundaries.
+    /// For example: `LSN(1).wrapping_sub(1)` == `LSN(u64::MAX)`
     #[inline]
     fn wrapping_sub(self, rhs: u64) -> Self {
         // Use i128 for intermediate calculation to handle underflow correctly
@@ -362,13 +362,13 @@ impl range_set_blaze::Integer for LSN {
     }
 
     fn inclusive_end_from_start(self, b: Self::SafeLen) -> Self {
-        debug_assert!(b > 0 && b <= u64::MAX - 1, "b must be in range 1..=max_len");
+        debug_assert!(b > 0 && b < u64::MAX, "b must be in range 1..=max_len");
         // If b is in range, two’s-complement wrap-around yields the correct inclusive end even if the add overflows
         self.wrapping_add(b - 1)
     }
 
     fn start_from_inclusive_end(self, b: Self::SafeLen) -> Self {
-        debug_assert!(b > 0 && b <= u64::MAX - 1, "b must be in range 1..=max_len");
+        debug_assert!(b > 0 && b < u64::MAX, "b must be in range 1..=max_len");
         // If b is in range, two’s-complement wrap-around yields the correct inclusive end even if the add overflows
         self.wrapping_sub(b - 1)
     }

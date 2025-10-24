@@ -2,9 +2,9 @@ use std::{iter::FusedIterator, ops::RangeInclusive};
 
 use range_set_blaze::{Integer, SortedDisjoint, SortedStarts};
 
-/// MergeRuns produces a sequence of RangeInclusive runs from a *sorted &
-/// deduped* iterator of values, by merging sequential items into RangeInclusive
-/// values.
+/// `MergeRuns` produces a sequence of `RangeInclusive` runs from a *sorted &
+/// deduped* iterator of values, by merging sequential items into
+/// `RangeInclusive` values.
 ///
 /// It's optimized to be used as a `RangeSetBlaze::SortedDisjoint` iterator,
 /// allowing set operations to be run in linear time over the runs. Thus the

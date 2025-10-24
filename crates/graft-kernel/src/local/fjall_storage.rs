@@ -58,7 +58,7 @@ pub enum FjallStorageErr {
 pub struct FjallStorage {
     keyspace: fjall::Keyspace,
 
-    /// This partition stores state regarding each NamedVolume
+    /// This partition stores state regarding each `NamedVolume`
     /// {`VolumeName`} -> `NamedVolumeState`
     named: TypedPartition<VolumeName, NamedVolumeState>,
 
@@ -81,7 +81,7 @@ pub struct FjallStorage {
     /// To make write-only txns safe, they must be monotonic
     lock: Arc<Mutex<()>>,
 
-    /// The commits changeset is notified whenever a NamedVolume's local Volume
+    /// The commits changeset is notified whenever a `NamedVolume`'s local Volume
     /// receives a commit.
     commits: ChangeSet<VolumeName>,
 }
@@ -139,7 +139,7 @@ impl FjallStorage {
     }
 
     /// Open a read + write txn on storage.
-    /// The returned object holds a lock, any subsequent calls to ReadWriteGuard
+    /// The returned object holds a lock, any subsequent calls to `ReadWriteGuard`
     /// will block.
     fn read_write(&self) -> ReadWriteGuard<'_> {
         ReadWriteGuard::open(self)

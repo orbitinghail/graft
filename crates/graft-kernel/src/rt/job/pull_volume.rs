@@ -3,11 +3,9 @@ use graft_core::{
     VolumeId,
     checkpoints::{CachedCheckpoints, Checkpoints},
     lsn::{LSN, LSNRangeExt, LSNSet, LSNSetExt},
-    merge_runs::MergeRuns,
     volume_ref::VolumeRef,
 };
 use itertools::{EitherOrBoth, Itertools};
-use range_set_blaze::SortedDisjoint;
 use tokio_stream::StreamExt;
 
 use crate::{
@@ -45,7 +43,7 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
         // TODO: Switch to RangeOnce once it lands
         // https://github.com/CarlKCarlK/range-set-blaze/pull/21
         let lsns = LSNSet::from_range(lsns).into_ranges() - all_lsns.ranges();
-        let mut commits = remote.fetch_sorted_commits(&vid, lsns.map(|r| r.iter()).flatten());
+        let mut commits = remote.fetch_sorted_commits(&vid, lsns.flat_map(|r| r.iter()));
         while let Some(commit) = commits.try_next().await.or_into_ctx()? {
             batch.write_commit(commit);
         }

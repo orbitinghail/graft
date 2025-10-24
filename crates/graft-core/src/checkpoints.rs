@@ -39,7 +39,7 @@ impl From<&[LSN]> for Checkpoints {
     }
 }
 
-/// CachedCheckpoints stores Checkpoints alongside an optional cache etag to
+/// `CachedCheckpoints` stores Checkpoints alongside an optional cache etag to
 /// manage consistency.
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct CachedCheckpoints {

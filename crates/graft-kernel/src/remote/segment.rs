@@ -44,6 +44,13 @@ pub struct SegmentBuilder {
     chunk: Vec<u8>,
 }
 
+impl Default for SegmentBuilder {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SegmentBuilder {
     pub fn new() -> Self {
         let mut cctx = CCtx::create();
