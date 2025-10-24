@@ -379,7 +379,7 @@ derive_newtype_proxy!(
     newtype (LSN)
     with empty value (LSN::FIRST)
     with proxy type (u64) and encoding (::bilrost::encoding::Varint)
-    with sample value (LSN::new(12345))
+    with sample value (lsn!(12345))
     into_proxy (&self) {
         self.0.get()
     }
@@ -478,6 +478,8 @@ impl LSNSetExt for LSNSet {}
 
 #[cfg(test)]
 mod tests {
+    use crate::lsn;
+
     use super::*;
 
     #[test]
@@ -490,26 +492,26 @@ mod tests {
     fn test_lsn_wrapping_add() {
         // Test wrapping at the boundary
         assert_eq!(LSN::LAST.wrapping_add(1), LSN::FIRST);
-        assert_eq!(LSN::LAST.wrapping_add(2), LSN::new(2));
+        assert_eq!(LSN::LAST.wrapping_add(2), lsn!(2));
 
         // Test normal addition
-        assert_eq!(LSN::new(5).wrapping_add(3), LSN::new(8));
+        assert_eq!(lsn!(5).wrapping_add(3), lsn!(8));
 
         // Test large addition that wraps: (u64::MAX - 5) + 10 = u64::MAX + 5 wraps to 5
-        assert_eq!(LSN::new(u64::MAX - 5).wrapping_add(10), LSN::new(5));
+        assert_eq!(lsn!(u64::MAX - 5).wrapping_add(10), lsn!(5));
     }
 
     #[test]
     fn test_lsn_wrapping_sub() {
         // Test wrapping at the boundary
         assert_eq!(LSN::FIRST.wrapping_sub(1), LSN::LAST);
-        assert_eq!(LSN::new(2).wrapping_sub(2), LSN::LAST);
+        assert_eq!(lsn!(2).wrapping_sub(2), LSN::LAST);
 
         // Test normal subtraction
-        assert_eq!(LSN::new(8).wrapping_sub(3), LSN::new(5));
+        assert_eq!(lsn!(8).wrapping_sub(3), lsn!(5));
 
         // Test large subtraction that wraps: 5 - 10 wraps to u64::MAX - 5
-        assert_eq!(LSN::new(5).wrapping_sub(10), LSN::new(u64::MAX - 5));
+        assert_eq!(lsn!(5).wrapping_sub(10), lsn!(u64::MAX - 5));
     }
 
     #[test]
@@ -521,14 +523,14 @@ mod tests {
         for i in 1024..=2048 {
             assert!(set.insert(LSN::new(i)));
         }
-        assert!(set.ranges_insert(LSN::new(128)..=LSN::new(256)));
+        assert!(set.ranges_insert(lsn!(128)..=lsn!(256)));
 
         assert_eq!(
             set.ranges().collect::<Vec<_>>(),
             vec![
-                LSN::new(1)..=LSN::new(10),
-                LSN::new(128)..=LSN::new(256),
-                LSN::new(1024)..=LSN::new(2048)
+                lsn!(1)..=lsn!(10),
+                lsn!(128)..=lsn!(256),
+                lsn!(1024)..=lsn!(2048)
             ]
         );
     }

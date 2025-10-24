@@ -1,6 +1,11 @@
 use bilrost::Message;
 
-use crate::{VolumeId, checkpoint_set::CheckpointSet, etag::ETag, lsn::LSN, volume_ref::VolumeRef};
+use crate::{
+    VolumeId,
+    checkpoints::{CachedCheckpoints, Checkpoints},
+    lsn::LSN,
+    volume_ref::VolumeRef,
+};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct VolumeMeta {
@@ -14,15 +19,11 @@ pub struct VolumeMeta {
 
     /// The set of checkpoint LSNs.
     #[bilrost(3)]
-    checkpoints: Option<(ETag, CheckpointSet)>,
+    checkpoints: CachedCheckpoints,
 }
 
 impl VolumeMeta {
-    pub fn new(
-        vid: VolumeId,
-        parent: Option<VolumeRef>,
-        checkpoints: Option<(ETag, CheckpointSet)>,
-    ) -> Self {
+    pub fn new(vid: VolumeId, parent: Option<VolumeRef>, checkpoints: CachedCheckpoints) -> Self {
         Self { vid, parent, checkpoints }
     }
 
@@ -34,16 +35,24 @@ impl VolumeMeta {
         self.parent.as_ref()
     }
 
-    pub fn checkpoints(&self) -> Option<&(ETag, CheckpointSet)> {
-        self.checkpoints.as_ref()
+    pub fn checkpoints_etag(&self) -> Option<&str> {
+        self.checkpoints.etag()
+    }
+
+    pub fn cached_checkpoints(&self) -> &CachedCheckpoints {
+        &self.checkpoints
+    }
+
+    pub fn checkpoints(&self) -> &Checkpoints {
+        self.checkpoints.checkpoints()
     }
 
     pub fn checkpoint_for(&self, lsn: LSN) -> Option<LSN> {
-        self.checkpoints().and_then(|(_, c)| c.checkpoint_for(lsn))
+        self.checkpoints.checkpoint_for(lsn)
     }
 
     #[must_use]
-    pub fn with_checkpoints(self, checkpoints: Option<(ETag, CheckpointSet)>) -> Self {
+    pub fn with_checkpoints(self, checkpoints: CachedCheckpoints) -> Self {
         Self { checkpoints, ..self }
     }
 }

@@ -1,10 +1,11 @@
 use culprit::{Result, ResultExt};
 use graft_core::{
     VolumeId,
-    checkpoint_set::CheckpointSet,
+    checkpoints::{CachedCheckpoints, Checkpoints},
     lsn::{LSN, LSNSet, LSNSetExt},
     volume_ref::VolumeRef,
 };
+use tokio_stream::StreamExt;
 
 use crate::{
     local::fjall_storage::FjallStorage,
@@ -38,12 +39,16 @@ pub async fn run(
     // fetch the search path
     let search = fetch_search_path(storage, remote, opts.vid.clone(), max_lsn).await?;
 
+    // fetch any missing commits
     for PathEntry { vid, lsns } in search {
         let all_lsns = storage.read().lsns(&vid).or_into_ctx()?;
         let lsns = LSNSet::from_range(lsns) - all_lsns;
-        let commits = remote.fetch_commits(&vid, lsns).await;
-
-        // TODO: process new commits
+        let mut commits = remote.fetch_sorted_commits(&vid, lsns).await;
+        let mut batch = storage.batch();
+        while let Some(commit) = commits.try_next().await.or_into_ctx()? {
+            batch.write_commit(commit);
+        }
+        batch.commit().or_into_ctx()?;
     }
 
     todo!()
@@ -64,45 +69,47 @@ async fn fetch_search_path(
     let mut path = SearchPath::EMPTY;
 
     while let Some(vref) = cursor.take() {
-        let meta = if let Some(meta) = storage.read().volume_meta(vref.vid()).or_into_ctx()? {
-            // we know about this volume, refresh its checkpoints
-            let (etag, prev_checkpoints) = match meta.checkpoints() {
-                Some((a, b)) => (Some(a), Some(b)),
-                None => (None, None),
-            };
-            let checkpoints = remote
-                .fetch_checkpoints(vref.vid(), etag)
-                .await
-                .or_into_ctx()?;
-            if let Some(checkpoints) = checkpoints {
+        let known_meta = storage.read().volume_meta(vref.vid()).or_into_ctx()?;
+        let (known_etag, known_checkpoints) = match &known_meta {
+            Some(meta) => (
+                meta.checkpoints_etag().map(|e| e.to_string()),
+                meta.checkpoints(),
+            ),
+            None => (None, &Checkpoints::EMPTY),
+        };
+
+        let remote_checkpoints = match remote.fetch_checkpoints(vref.vid(), known_etag).await {
+            Ok(cached) => {
                 refresh_checkpoint_commits(
                     storage,
                     remote,
-                    prev_checkpoints,
-                    checkpoints.1.clone(),
+                    known_checkpoints,
+                    cached.checkpoints(),
                 )
                 .await
                 .or_into_ctx()?;
-                storage
-                    .update_checkpoints(vref.vid().clone(), checkpoints)
-                    .or_into_ctx()?
-            } else {
-                meta
+                cached
             }
+
+            Err(err) if err.ctx().is_not_modified() => known_meta
+                .as_ref()
+                .map_or(CachedCheckpoints::EMPTY, |meta| {
+                    meta.cached_checkpoints().clone()
+                }),
+            Err(err) if err.ctx().is_not_found() => CachedCheckpoints::EMPTY,
+            Err(err) => Err(err).or_into_ctx()?,
+        };
+
+        let meta = if known_meta.is_some() {
+            // we know about this volume, just update its checkpoints
+            storage
+                .update_checkpoints(vref.vid().clone(), remote_checkpoints)
+                .or_into_ctx()?
         } else {
             // we don't know about this volume, pull it
             let control = remote.fetch_control(vref.vid()).await.or_into_ctx()?;
-            let checkpoints = remote
-                .fetch_checkpoints(vref.vid(), None)
-                .await
-                .or_into_ctx()?;
-            if let Some((_, checkpoints)) = checkpoints.as_ref() {
-                refresh_checkpoint_commits(storage, remote, None, checkpoints.clone())
-                    .await
-                    .or_into_ctx()?;
-            }
             storage
-                .register_volume(control, checkpoints)
+                .register_volume(control, remote_checkpoints)
                 .or_into_ctx()?
         };
 
@@ -127,8 +134,8 @@ async fn fetch_search_path(
 async fn refresh_checkpoint_commits(
     storage: &FjallStorage,
     remote: &Remote,
-    prev_checkpoints: Option<&CheckpointSet>,
-    checkpoints: CheckpointSet,
+    prev_checkpoints: &Checkpoints,
+    checkpoints: &Checkpoints,
 ) -> Result<(), RuntimeErr> {
     // checkpoints are never modified, so figure out which checkpoints were
     // added and re-fetch them from the remote

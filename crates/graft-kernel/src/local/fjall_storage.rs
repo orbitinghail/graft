@@ -1,12 +1,11 @@
 use std::{collections::HashSet, fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
-use fjall::{Instant, PartitionCreateOptions};
+use fjall::{Batch, Instant, PartitionCreateOptions};
 use futures::Stream;
 use graft_core::{
     PageCount, PageIdx, SegmentId, VolumeId,
-    checkpoint_set::CheckpointSet,
+    checkpoints::CachedCheckpoints,
     commit::{Commit, SegmentIdx},
-    etag::ETag,
     lsn::{LSN, LSNSet},
     page::Page,
     volume_control::VolumeControl,
@@ -135,6 +134,10 @@ impl FjallStorage {
         ReadGuard::open(self)
     }
 
+    pub(crate) fn batch(&self) -> WriteBatch<'_> {
+        WriteBatch::open(self)
+    }
+
     /// Open a read + write txn on storage.
     /// The returned object holds a lock, any subsequent calls to ReadWriteGuard
     /// will block.
@@ -199,7 +202,7 @@ impl FjallStorage {
     pub fn register_volume(
         &self,
         control: VolumeControl,
-        checkpoints: Option<(ETag, CheckpointSet)>,
+        checkpoints: CachedCheckpoints,
     ) -> Result<VolumeMeta, FjallStorageErr> {
         let meta = VolumeMeta::new(
             control.vid().clone(),
@@ -213,7 +216,7 @@ impl FjallStorage {
     pub fn update_checkpoints(
         &self,
         vid: VolumeId,
-        checkpoints: (ETag, CheckpointSet),
+        checkpoints: CachedCheckpoints,
     ) -> Result<VolumeMeta, FjallStorageErr> {
         self.read_write().update_checkpoints(vid, checkpoints)
     }
@@ -355,6 +358,9 @@ impl<'a> ReadGuard<'a> {
 
     /// Returns the set of all LSNs we have for a particular volume.
     pub fn lsns(&self, vid: &VolumeId) -> Result<LSNSet, FjallStorageErr> {
+        // TODO: This set usually only changes when we commit, and rarely has
+        // gaps. Thus, it's an ideal candidate for caching in memory which will
+        // improve pull_volume performance for volumes with large logs.
         self.log()
             .prefix(vid)
             .map_ok(|(key, _)| Ok(key.lsn()))
@@ -413,6 +419,27 @@ impl<'a> ReadGuard<'a> {
     }
 }
 
+pub struct WriteBatch<'a> {
+    storage: &'a FjallStorage,
+    batch: Batch,
+}
+
+impl<'a> WriteBatch<'a> {
+    fn open(storage: &'a FjallStorage) -> Self {
+        Self { storage, batch: storage.keyspace.batch() }
+    }
+
+    /// Writes a commit directly to storage.
+    pub fn write_commit(&mut self, commit: Commit) {
+        let key = CommitKey::new(commit.vid().clone(), commit.lsn());
+        self.batch.insert_typed(&self.storage.log, key, commit);
+    }
+
+    pub fn commit(self) -> Result<(), FjallStorageErr> {
+        self.batch.commit().or_into_ctx()
+    }
+}
+
 pub struct ReadWriteGuard<'a> {
     _permit: MutexGuard<'a, ()>,
     read: ReadGuard<'a>,
@@ -431,7 +458,7 @@ impl<'a> ReadWriteGuard<'a> {
         self.read.storage
     }
 
-    pub fn open_named_volume(&self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
+    pub fn open_named_volume(self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
         if let Some(state) = self.read.named().get(&name)? {
             Ok(state)
         } else {
@@ -439,7 +466,7 @@ impl<'a> ReadWriteGuard<'a> {
 
             // create a new local volume
             let vid = VolumeId::random();
-            let local = VolumeMeta::new(vid.clone(), None, None);
+            let local = VolumeMeta::new(vid.clone(), None, CachedCheckpoints::EMPTY);
             batch.insert_typed(&self.storage().volumes, vid.clone(), local);
 
             // write an empty initial commit
@@ -463,7 +490,7 @@ impl<'a> ReadWriteGuard<'a> {
     }
 
     pub fn commit(
-        &self,
+        self,
         name: &VolumeName,
         snapshot: Snapshot,
         page_count: PageCount,
@@ -500,15 +527,15 @@ impl<'a> ReadWriteGuard<'a> {
     }
 
     pub fn update_checkpoints(
-        &self,
+        self,
         vid: VolumeId,
-        checkpoints: (ETag, CheckpointSet),
+        checkpoints: CachedCheckpoints,
     ) -> Result<VolumeMeta, FjallStorageErr> {
         let meta = self
             .read
             .volume_meta(&vid)?
             .ok_or_else(|| FjallStorageErr::UnknownVolume(vid.clone()))?
-            .with_checkpoints(Some(checkpoints));
+            .with_checkpoints(checkpoints);
         self.storage().volumes.insert(vid, meta.clone())?;
         Ok(meta)
     }
