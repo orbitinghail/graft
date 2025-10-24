@@ -19,6 +19,6 @@ pub async fn run(
     storage: &FjallStorage,
     remote: &Remote,
     opts: Opts,
-) -> culprit::Result<Option<Job>, RuntimeErr> {
+) -> culprit::Result<(), RuntimeErr> {
     todo!()
 }

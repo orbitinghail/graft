@@ -17,6 +17,7 @@ pub mod bilrost_util;
 pub mod byte_unit;
 pub mod cbe;
 pub mod hash_table;
+pub mod merge_runs;
 pub mod zerocopy_ext;
 
 pub use commit_hash::{CommitHashBuilder, CommitHashParseErr};
