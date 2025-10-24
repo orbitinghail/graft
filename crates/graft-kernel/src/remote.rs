@@ -34,7 +34,7 @@ enum RemotePath<'a> {
     /// TODO: Implement Forks!
     // Fork(&'a VolumeId),
 
-    /// CheckpointSets are stored at `/{vid}/checkpoints`
+    /// `CheckpointSets` are stored at `/{vid}/checkpoints`
     CheckpointSet,
 
     /// Commits are stored at `/{vid}/log/{CBE64 hex LSN}`
@@ -136,7 +136,7 @@ impl Remote {
             }
         };
 
-        Ok(Self { store: store })
+        Ok(Self { store })
     }
 
     pub async fn fetch_control(&self, vid: &VolumeId) -> Result<VolumeControl> {
@@ -154,8 +154,10 @@ impl Remote {
         etag: Option<String>,
     ) -> Result<CachedCheckpoints> {
         let path = RemotePath::CheckpointSet.build(vid);
-        let mut opts = GetOptions::default();
-        opts.if_none_match = etag;
+        let opts = GetOptions {
+            if_none_match: etag,
+            ..GetOptions::default()
+        };
 
         let result = self.store.get_opts(&path, opts).await?;
         let etag = result.meta.e_tag.clone();
@@ -165,7 +167,7 @@ impl Remote {
     }
 
     /// Fetches commits by LSN in the same order as the input iterator.
-    /// Stops fetching commits as soon as we receive a NotFound error from the
+    /// Stops fetching commits as soon as we receive a `NotFound` error from the
     /// remote, thus even if `lsns` contains every LSN we will stop loading
     /// commits as soon as we reach the end of the log.
     pub fn fetch_sorted_commits<I: IntoIterator<Item = LSN>>(
