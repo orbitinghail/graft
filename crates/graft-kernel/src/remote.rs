@@ -1,22 +1,23 @@
-use std::path::PathBuf;
+use std::{future, path::PathBuf};
 
 use bilrost::OwnedMessage;
+use culprit::ResultExt;
 use futures::{
-    Stream,
-    stream::{self},
+    Stream, StreamExt, TryStreamExt,
+    stream::{self, FuturesOrdered},
 };
 use graft_core::{
     SegmentId, VolumeId,
+    cbe::CBE64,
     checkpoints::{CachedCheckpoints, Checkpoints},
     commit::Commit,
-    lsn::{LSN, LSNSet},
+    lsn::LSN,
     volume_control::VolumeControl,
 };
 use object_store::{
     GetOptions, ObjectStore, aws::S3ConditionalPut, local::LocalFileSystem, memory::InMemory,
     path::Path, prefix::PrefixStore,
 };
-use range_set_blaze::SortedDisjoint;
 use thiserror::Error;
 
 pub mod segment;
@@ -24,10 +25,22 @@ pub mod segment;
 const FETCH_COMMITS_CONCURRENCY: usize = 5;
 
 enum RemotePath<'a> {
+    /// Control files are stored at `/{vid}/control`
     Control,
-    Fork(&'a VolumeId),
+
+    /// Forks are stored at `/{vid}/forks/{fork_vid}`
+    /// Forks point from the parent to the child.
+    ///
+    /// TODO: Implement Forks!
+    // Fork(&'a VolumeId),
+
+    /// CheckpointSets are stored at `/{vid}/checkpoints`
     CheckpointSet,
-    Log(LSN),
+
+    /// Commits are stored at `/{vid}/log/{CBE64 hex LSN}`
+    Commit(LSN),
+
+    /// Segments are stored at `/{vid}/segments/{sid}`
     Segment(&'a SegmentId),
 }
 
@@ -36,10 +49,11 @@ impl RemotePath<'_> {
         let vid = vid.pretty();
         match self {
             Self::Control => Path::from_iter([&vid, "control"]),
-            Self::Fork(fork) => Path::from_iter([&vid, "forks", &fork.pretty()]),
+            // TODO: Implement Forks!
+            // Self::Fork(fork) => Path::from_iter([&vid, "forks", &fork.pretty()]),
             Self::CheckpointSet => Path::from_iter([&vid, "checkpoints"]),
-            Self::Log(lsn) => Path::from_iter([&vid, "log", &lsn.to_string()]),
-            Self::Segment(sid) => Path::from_iter([&vid, "segments", &sid.to_string()]),
+            Self::Commit(lsn) => Path::from_iter([&vid, "log", &CBE64::from(lsn).to_string()]),
+            Self::Segment(sid) => Path::from_iter([&vid, "segments", &sid.pretty()]),
         }
     }
 }
@@ -150,11 +164,11 @@ impl Remote {
         Ok(CachedCheckpoints::new(Checkpoints::decode(bytes)?, etag))
     }
 
-    /// Fetches commits sorted in ascending order by LSN.
+    /// Fetches commits by LSN in the same order as the input iterator.
     /// Stops fetching commits as soon as we receive a NotFound error from the
-    /// remote, thus even if `lsns` is full we will stop loading commits as soon
-    /// as we reach the end of the log.
-    pub fn fetch_sorted_commits<I: SortedDisjoint<LSN>>(
+    /// remote, thus even if `lsns` contains every LSN we will stop loading
+    /// commits as soon as we reach the end of the log.
+    pub fn fetch_sorted_commits<I: IntoIterator<Item = LSN>>(
         &self,
         vid: &VolumeId,
         lsns: I,
@@ -162,15 +176,30 @@ impl Remote {
         // convert the set into a stream of chunks, such that the first chunk
         // only contains the first LSN, and the remaining chunks have a maximum
         // size of REPLAY_CONCURRENCY
-        // let mut iter = lsns.iter();
-        // let first_chunk: Vec<LSN> = match iter.next() {
-        //     Some(lsn) => vec![lsn],
-        //     None => vec![],
-        // };
-        // let chunks = stream::once(future::ready(first_chunk))
-        //     .chain(stream::iter(iter).chunks(FETCH_COMMITS_CONCURRENCY));
+        let mut lsns = lsns.into_iter();
+        let first_chunk: Vec<LSN> = match lsns.next() {
+            Some(lsn) => vec![lsn],
+            None => vec![],
+        };
+        stream::once(future::ready(first_chunk))
+            .chain(stream::iter(lsns).chunks(FETCH_COMMITS_CONCURRENCY))
+            .flat_map(|chunk| {
+                chunk
+                    .into_iter()
+                    .map(|lsn| self.get_commit(vid, lsn))
+                    .collect::<FuturesOrdered<_>>()
+            })
+            .try_take_while(|result| future::ready(Ok(result.is_some())))
+            .map_ok(|result| result.unwrap())
+    }
 
-        todo!();
-        stream::empty()
+    /// Fetches a single commit, returning None if the commit is not found.
+    pub async fn get_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>> {
+        let path = RemotePath::Commit(lsn).build(vid);
+        match self.store.get(&path).await {
+            Ok(res) => Commit::decode(res.bytes().await?).or_into_ctx().map(Some),
+            Err(object_store::Error::NotFound { .. }) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
     }
 }
