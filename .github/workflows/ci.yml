@@ -55,11 +55,17 @@ jobs:
       - name: Install Nextest
         run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /usr/local/bin
 
+      - name: Cargo fmt
+        run: cargo fmt --check
+
       - name: Build
         run: cargo build
 
       - name: Test
         run: cargo nextest run
+
+      - name: Cargo doctests
+        run: cargo test --doc
 
       - name: SQLite Tests
         run: just run sqlite test
@@ -73,9 +79,3 @@ jobs:
         uses: auguwu/clippy-action@94a9ff2f6920180b89e5c03d121d0af04a9d3e03 # 1.4.0
         with:
           token: ${{secrets.GITHUB_TOKEN}}
-
-      - name: Cargo fmt
-        run: cargo fmt --check
-
-      - name: Cargo doctests
-        run: cargo test --doc

@@ -38,19 +38,6 @@ macro_rules! lsn {
     }};
 }
 
-/// Creates a `LSN` run at compile time from a literal `RangeInclusive`
-///
-/// Example:
-///
-/// ```rust
-/// lsn_run!(5..=10)
-/// ```
-///
-#[macro_export]
-macro_rules! lsn_run {
-    ($left:literal ..= $right:literal) => {{ lsn!($left)..=lsn!($right) }};
-}
-
 #[derive(
     Debug,
     Clone,
