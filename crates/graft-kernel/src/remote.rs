@@ -16,6 +16,7 @@ use object_store::{
     GetOptions, ObjectStore, aws::S3ConditionalPut, local::LocalFileSystem, memory::InMemory,
     path::Path, prefix::PrefixStore,
 };
+use range_set_blaze::SortedDisjoint;
 use thiserror::Error;
 
 pub mod segment;
@@ -153,10 +154,10 @@ impl Remote {
     /// Stops fetching commits as soon as we receive a NotFound error from the
     /// remote, thus even if `lsns` is full we will stop loading commits as soon
     /// as we reach the end of the log.
-    pub async fn fetch_sorted_commits(
+    pub fn fetch_sorted_commits<I: SortedDisjoint<LSN>>(
         &self,
         vid: &VolumeId,
-        lsns: LSNSet,
+        lsns: I,
     ) -> impl Stream<Item = Result<Commit>> {
         // convert the set into a stream of chunks, such that the first chunk
         // only contains the first LSN, and the remaining chunks have a maximum

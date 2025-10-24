@@ -55,25 +55,16 @@ impl<S: Stream<Item = Event>> Runtime<S> {
                 }
                 Event::Tick(_instant) => {
                     for job in Job::collect(&self.storage)? {
-                        self.run_job(job).await?;
+                        job.run(&self.storage, &self.remote).await?
                     }
                 }
                 Event::Commits(commits) => {
                     let jobs = commits.into_iter().map(Job::remote_commit);
                     for job in jobs {
-                        self.run_job(job).await?;
+                        job.run(&self.storage, &self.remote).await?
                     }
                 }
             }
-        }
-        Ok(())
-    }
-
-    /// Run a job along with any subsequent jobs it potentially returns
-    async fn run_job(&mut self, job: Job) -> culprit::Result<(), RuntimeErr> {
-        let mut next_job = Some(job);
-        while let Some(job) = next_job {
-            next_job = job.run(&self.storage, &self.remote).await?;
         }
         Ok(())
     }

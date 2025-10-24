@@ -60,6 +60,7 @@ impl Job {
                     jobs.push(Self::remote_commit(volume.name().clone()));
                 } else {
                     jobs.push(Self::pull_volume(remote_ref.vid().clone(), None));
+                    jobs.push(Self::sync_remote_to_local(volume.name().clone(), false))
                 }
             }
         }
@@ -71,7 +72,7 @@ impl Job {
         self,
         storage: &FjallStorage,
         remote: &Remote,
-    ) -> culprit::Result<Option<Job>, RuntimeErr> {
+    ) -> culprit::Result<(), RuntimeErr> {
         match self {
             Job::PullVolume(opts) => pull_volume::run(storage, remote, opts).await,
             Job::RemoteCommit(opts) => remote_commit::run(storage, remote, opts).await,

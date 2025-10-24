@@ -3,14 +3,16 @@ use graft_core::{
     VolumeId,
     checkpoints::{CachedCheckpoints, Checkpoints},
     lsn::{LSN, LSNSet, LSNSetExt},
+    merge_runs::MergeRuns,
     volume_ref::VolumeRef,
 };
+use range_set_blaze::SortedDisjoint;
 use tokio_stream::StreamExt;
 
 use crate::{
     local::fjall_storage::FjallStorage,
     remote::Remote,
-    rt::{err::RuntimeErr, job::Job},
+    rt::err::RuntimeErr,
     search_path::{PathEntry, SearchPath},
 };
 
@@ -23,11 +25,7 @@ pub struct Opts {
     pub max_lsn: Option<LSN>,
 }
 
-pub async fn run(
-    storage: &FjallStorage,
-    remote: &Remote,
-    opts: Opts,
-) -> Result<Option<Job>, RuntimeErr> {
+pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), RuntimeErr> {
     let snapshot = storage
         .read()
         .snapshot_at(&opts.vid, opts.max_lsn)
@@ -40,18 +38,20 @@ pub async fn run(
     let search = fetch_search_path(storage, remote, opts.vid.clone(), max_lsn).await?;
 
     // fetch any missing commits
+    let mut batch = storage.batch();
     for PathEntry { vid, lsns } in search {
         let all_lsns = storage.read().lsns(&vid).or_into_ctx()?;
-        let lsns = LSNSet::from_range(lsns) - all_lsns;
-        let mut commits = remote.fetch_sorted_commits(&vid, lsns).await;
-        let mut batch = storage.batch();
+        // TODO: Switch to RangeOnce once it lands
+        // https://github.com/CarlKCarlK/range-set-blaze/pull/21
+        let lsns = LSNSet::from_range(lsns).into_ranges() - all_lsns.ranges();
+        let mut commits = remote.fetch_sorted_commits(&vid, lsns);
         while let Some(commit) = commits.try_next().await.or_into_ctx()? {
             batch.write_commit(commit);
         }
-        batch.commit().or_into_ctx()?;
     }
 
-    todo!()
+    batch.commit().or_into_ctx()?;
+    Ok(())
 }
 
 /// Load missing control files and changed checkpoint files while iterating the
@@ -83,6 +83,7 @@ async fn fetch_search_path(
                 refresh_checkpoint_commits(
                     storage,
                     remote,
+                    vref.vid(),
                     known_checkpoints,
                     cached.checkpoints(),
                 )
@@ -134,10 +135,19 @@ async fn fetch_search_path(
 async fn refresh_checkpoint_commits(
     storage: &FjallStorage,
     remote: &Remote,
+    vid: &VolumeId,
     prev_checkpoints: &Checkpoints,
     checkpoints: &Checkpoints,
 ) -> Result<(), RuntimeErr> {
-    // checkpoints are never modified, so figure out which checkpoints were
-    // added and re-fetch them from the remote
-    todo!()
+    let prev = MergeRuns::new(prev_checkpoints.iter().copied());
+    let next = MergeRuns::new(checkpoints.iter().copied());
+    let added = next.difference(prev); // next - prev
+
+    let mut commits = remote.fetch_sorted_commits(vid, added);
+    let mut batch = storage.batch();
+    while let Some(commit) = commits.try_next().await.or_into_ctx()? {
+        batch.write_commit(commit);
+    }
+    batch.commit().or_into_ctx()?;
+    Ok(())
 }
