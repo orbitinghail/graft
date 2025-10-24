@@ -191,7 +191,7 @@ mod tests {
     use std::panic;
 
     use super::*;
-    use crate::pageidx;
+    use crate::{lsn, pageidx};
     use bilrost::{Message, OwnedMessage};
 
     #[graft_test::test]
@@ -224,7 +224,7 @@ mod tests {
             TestCase {
                 name: "empty_volume",
                 vid: vid.clone(),
-                lsn: LSN::new(1),
+                lsn: lsn!(1),
                 page_count: PageCount::ZERO,
                 pages: vec![],
                 expected_hash: "5Y7HQDXjtXGVidxGKKMsNKsR4neyfE6koFbzzxMNkkaR",
@@ -232,7 +232,7 @@ mod tests {
             TestCase {
                 name: "single_page",
                 vid: vid.clone(),
-                lsn: LSN::new(42),
+                lsn: lsn!(42),
                 page_count: PageCount::new(1),
                 pages: vec![(pageidx!(1), Page::test_filled(0xAA))],
                 expected_hash: "5YMM6MxCBpxRRLFGVdRUDftL6CfwmQi8HQ6kWuRsecBJ",
@@ -240,7 +240,7 @@ mod tests {
             TestCase {
                 name: "multiple_pages",
                 vid,
-                lsn: LSN::new(123),
+                lsn: lsn!(123),
                 page_count: PageCount::new(2),
                 pages: vec![
                     (pageidx!(1), Page::test_filled(0x11)),

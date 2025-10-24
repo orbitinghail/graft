@@ -6,9 +6,8 @@ pub mod page;
 pub mod page_count;
 pub mod page_idx;
 
-pub mod checkpoint_set;
+pub mod checkpoints;
 pub mod commit;
-pub mod etag;
 pub mod volume_control;
 pub mod volume_fork;
 pub mod volume_meta;

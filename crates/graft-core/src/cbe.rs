@@ -1,7 +1,7 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 macro_rules! define_cbe {
-    ($name:ident, $native:ident, $bytes:expr) => {
+    ($name:ident, $native:ident, $bytes:literal, $hex:literal) => {
         /// A ones-complement big-endian encoded unsigned integer, stored in a
         /// fixed-size byte array. This value is unaligned and suitable for use within
         /// zerocopy datastructures. It's purpose is to encode unsigned numbers in a
@@ -77,15 +77,19 @@ macro_rules! define_cbe {
 
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                self.get().fmt(f)
+                write!(
+                    f,
+                    concat!("{:0>", $hex, "x}"),
+                    $native::from_be_bytes(self.0)
+                )
             }
         }
     };
 }
 
-define_cbe!(CBE32, u32, 4);
+define_cbe!(CBE32, u32, 4, 8);
 
-define_cbe!(CBE64, u64, 8);
+define_cbe!(CBE64, u64, 8, 16);
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -94,17 +98,18 @@ pub(crate) mod tests {
     #[test]
     fn test_cbe64() {
         let tests = [
-            (0, CBE64::ZERO),
-            (u64::MAX, CBE64::MAX_VALUE),
-            (1, CBE64::new(1)),
-            (1256, CBE64::new(1256)),
+            (0, CBE64::ZERO, "ffffffffffffffff"),
+            (u64::MAX, CBE64::MAX_VALUE, "0000000000000000"),
+            (1, CBE64::new(1), "fffffffffffffffe"),
+            (1256, CBE64::new(1256), "fffffffffffffb17"),
         ];
 
-        for (value, expected) in tests {
+        for (value, expected, expected_hex) in tests {
             let cbe = CBE64::new(value);
             assert_eq!(cbe, expected);
             assert_eq!(cbe.get(), value);
             assert_eq!(CBE64::from(value), expected);
+            assert_eq!(cbe.to_string(), expected_hex);
         }
     }
 
@@ -128,22 +133,33 @@ pub(crate) mod tests {
         actual.sort(); // should result in descending order
 
         assert_eq!(actual, expected);
+
+        // convert expected into hex, reverse, then sort and verify descending order
+        let expected_hex = expected
+            .iter()
+            .map(|cbe| cbe.to_string())
+            .collect::<Vec<_>>();
+        let mut actual_hex = expected_hex.clone();
+        actual_hex.reverse();
+        actual_hex.sort();
+        assert_eq!(actual_hex, expected_hex);
     }
 
     #[test]
     fn test_cbe32() {
         let tests = [
-            (0, CBE32::ZERO),
-            (u32::MAX, CBE32::MAX_VALUE),
-            (1, CBE32::new(1)),
-            (1256, CBE32::new(1256)),
+            (0, CBE32::ZERO, "ffffffff"),
+            (u32::MAX, CBE32::MAX_VALUE, "00000000"),
+            (1, CBE32::new(1), "fffffffe"),
+            (1256, CBE32::new(1256), "fffffb17"),
         ];
 
-        for (value, expected) in tests {
+        for (value, expected, expected_hex) in tests {
             let cbe = CBE32::new(value);
             assert_eq!(cbe, expected);
             assert_eq!(cbe.get(), value);
             assert_eq!(CBE32::from(value), expected);
+            assert_eq!(cbe.to_string(), expected_hex);
         }
     }
 
@@ -165,5 +181,15 @@ pub(crate) mod tests {
         actual.sort(); // should result in descending order
 
         assert_eq!(actual, expected);
+
+        // convert expected into hex, reverse, then sort and verify descending order
+        let expected_hex = expected
+            .iter()
+            .map(|cbe| cbe.to_string())
+            .collect::<Vec<_>>();
+        let mut actual_hex = expected_hex.clone();
+        actual_hex.reverse();
+        actual_hex.sort();
+        assert_eq!(actual_hex, expected_hex);
     }
 }

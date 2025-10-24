@@ -1,28 +1,47 @@
-use std::{future, path::PathBuf};
+use std::path::PathBuf;
 
+use bilrost::OwnedMessage;
 use futures::{
-    Stream, StreamExt, TryStreamExt,
-    stream::{self, FuturesOrdered},
+    Stream,
+    stream::{self},
 };
 use graft_core::{
-    VolumeId,
-    checkpoint_set::CheckpointSet,
+    SegmentId, VolumeId,
+    checkpoints::{CachedCheckpoints, Checkpoints},
     commit::Commit,
-    etag::ETag,
-    graft::Graft,
     lsn::{LSN, LSNSet},
     volume_control::VolumeControl,
 };
 use object_store::{
-    ObjectStore, aws::S3ConditionalPut, local::LocalFileSystem, memory::InMemory, path::Path,
-    prefix::PrefixStore,
+    GetOptions, ObjectStore, aws::S3ConditionalPut, local::LocalFileSystem, memory::InMemory,
+    path::Path, prefix::PrefixStore,
 };
-use splinter_rs::{PartitionRead, Splinter};
 use thiserror::Error;
 
 pub mod segment;
 
 const FETCH_COMMITS_CONCURRENCY: usize = 5;
+
+enum RemotePath<'a> {
+    Control,
+    Fork(&'a VolumeId),
+    CheckpointSet,
+    Log(LSN),
+    Segment(&'a SegmentId),
+}
+
+impl RemotePath<'_> {
+    fn build(self, vid: &VolumeId) -> object_store::path::Path {
+        let vid = vid.pretty();
+        match self {
+            Self::Control => Path::from_iter([&vid, "control"]),
+            Self::Fork(fork) => Path::from_iter([&vid, "forks", &fork.pretty()]),
+            Self::CheckpointSet => Path::from_iter([&vid, "checkpoints"]),
+            Self::Log(lsn) => Path::from_iter([&vid, "log", &lsn.to_string()]),
+            Self::Segment(sid) => Path::from_iter([&vid, "segments", &sid.to_string()]),
+        }
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum RemoteErr {
@@ -31,6 +50,25 @@ pub enum RemoteErr {
 
     #[error("Invalid path: {0}")]
     Path(#[from] object_store::path::Error),
+
+    #[error("Failed to decode file: {0}")]
+    Decode(#[from] bilrost::DecodeError),
+}
+
+impl RemoteErr {
+    pub fn is_not_found(&self) -> bool {
+        matches!(
+            self,
+            Self::ObjectStore(object_store::Error::NotFound { .. })
+        )
+    }
+
+    pub fn is_not_modified(&self) -> bool {
+        matches!(
+            self,
+            Self::ObjectStore(object_store::Error::NotModified { .. })
+        )
+    }
 }
 
 pub type Result<T> = culprit::Result<T, RemoteErr>;
@@ -87,18 +125,35 @@ impl Remote {
     }
 
     pub async fn fetch_control(&self, vid: &VolumeId) -> Result<VolumeControl> {
-        todo!()
+        let path = RemotePath::Control.build(vid);
+        let result = self.store.get(&path).await?;
+        let bytes = result.bytes().await?;
+        Ok(VolumeControl::decode(bytes)?)
     }
 
+    /// Fetches checkpoints for the specified volume. If `etag` is not `None`
+    /// then this method will return a not modified error.
     pub async fn fetch_checkpoints(
         &self,
         vid: &VolumeId,
-        etag: Option<&ETag>,
-    ) -> Result<Option<(ETag, CheckpointSet)>> {
-        todo!()
+        etag: Option<String>,
+    ) -> Result<CachedCheckpoints> {
+        let path = RemotePath::CheckpointSet.build(vid);
+        let mut opts = GetOptions::default();
+        opts.if_none_match = etag;
+
+        let result = self.store.get_opts(&path, opts).await?;
+        let etag = result.meta.e_tag.clone();
+        let bytes = result.bytes().await?;
+
+        Ok(CachedCheckpoints::new(Checkpoints::decode(bytes)?, etag))
     }
 
-    pub async fn fetch_commits(
+    /// Fetches commits sorted in ascending order by LSN.
+    /// Stops fetching commits as soon as we receive a NotFound error from the
+    /// remote, thus even if `lsns` is full we will stop loading commits as soon
+    /// as we reach the end of the log.
+    pub async fn fetch_sorted_commits(
         &self,
         vid: &VolumeId,
         lsns: LSNSet,

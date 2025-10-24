@@ -172,6 +172,8 @@ proxy_to_fjall_repr!(
 
 #[cfg(test)]
 mod tests {
+    use graft_core::lsn;
+
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_invalid, test_roundtrip, test_serialized_order,
     };
@@ -197,7 +199,7 @@ mod tests {
 
     #[graft_test::test]
     fn test_commit_key() {
-        test_roundtrip(CommitKey::new(VolumeId::random(), LSN::new(123)));
+        test_roundtrip(CommitKey::new(VolumeId::random(), lsn!(123)));
 
         // zero LSN is invalid
         test_invalid::<CommitKey>(
@@ -215,12 +217,12 @@ mod tests {
         let vid1: VolumeId = "GonvRDHqjHwNsCpPBET3Ly".parse().unwrap();
         let vid2: VolumeId = "GonvRDHruDyBB6s6RmuiSZ".parse().unwrap();
         test_serialized_order(&[
-            CommitKey::new(vid1.clone(), LSN::new(4)),
-            CommitKey::new(vid1.clone(), LSN::new(3)),
-            CommitKey::new(vid1.clone(), LSN::new(2)),
-            CommitKey::new(vid1, LSN::new(1)),
-            CommitKey::new(vid2.clone(), LSN::new(2)),
-            CommitKey::new(vid2, LSN::new(1)),
+            CommitKey::new(vid1.clone(), lsn!(4)),
+            CommitKey::new(vid1.clone(), lsn!(3)),
+            CommitKey::new(vid1.clone(), lsn!(2)),
+            CommitKey::new(vid1, lsn!(1)),
+            CommitKey::new(vid2.clone(), lsn!(2)),
+            CommitKey::new(vid2, lsn!(1)),
         ]);
     }
 

@@ -13,6 +13,7 @@ Graft enables distributed, versioned SQLite databases with lazy replication and 
 The codebase has two parallel development tracks:
 
 **New Architecture (graft-kernel crate):**
+
 - Direct object storage access, eliminates metastore and pagestore
 - Local Fjall storage with partitioned keyspaces (handles, volumes, log, pages)
 - Direct object storage interface with Control/CheckpointSet/Commit/Segment files
@@ -20,6 +21,7 @@ The codebase has two parallel development tracks:
 - CBE64 encoding for LSN ordering
 
 **Legacy Architecture (being phased out):**
+
 - `graft-client`, `graft-server`, metastore/pagestore services
 - Traditional client-server with separate metastore and pagestore
 - Maintained for compatibility but being phased out
@@ -27,6 +29,7 @@ The codebase has two parallel development tracks:
 ### Key Components
 
 **Core Abstractions:**
+
 - **Volume**: Logical database container with unique VID identifier
 - **Page**: Fundamental 4KB storage unit, immutable once written
 - **Commit**: Versioned snapshot of volume state with LSN ordering
@@ -34,6 +37,7 @@ The codebase has two parallel development tracks:
 - **LSN (Log Sequence Number)**: Monotonic version numbers for ordering
 
 **Storage Hierarchy:**
+
 ```
 SQLite Database (VFS layer)
 ├── Graft Volume (logical container)
@@ -47,6 +51,7 @@ SQLite Database (VFS layer)
 Graft is low-level systems software. When suggesting code, prioritize:
 
 ### Safety
+
 - Use simple, explicit control structures. Avoid recursion
 - Keep functions under 70 lines
 - Use fixed-size types (e.g. `u32`, `i64`)
@@ -55,12 +60,14 @@ Graft is low-level systems software. When suggesting code, prioritize:
 - Treat warnings as errors
 
 ### Performance
+
 - Design for performance from the start
 - Batch I/O or expensive operations
 - Prioritize optimizing: network > disk > memory > CPU
 - Write predictable, branch-friendly code
 
 ### Clarity
+
 - Use clear, descriptive variable names
 - Avoid abbreviations and single-letter variables
 - Use specific types like `ByteUnit` and `Duration` instead of bare types
@@ -69,6 +76,7 @@ Graft is low-level systems software. When suggesting code, prioritize:
 - Write idiomatic Rust code
 
 ### Error Handling
+
 - Use `Result<T, E>` for recoverable errors
 - Use assertions for invariants
 - Prefer explicit error handling over panics
@@ -77,14 +85,16 @@ Graft is low-level systems software. When suggesting code, prioritize:
 ## Common Patterns
 
 ### ID Types and Parsing
+
 ```rust
 // Use proper ID types instead of strings
 let vid: VolumeId = "GonvVp514wF3ifTRoo11vY".parse().unwrap();
 let cid = ClientId::random();
-let lsn = LSN::new(42);
+let lsn = lsn!(42);
 ```
 
 ### Error Handling with Culprit
+
 ```rust
 use culprit::Culprit;
 
@@ -96,6 +106,7 @@ fn example() -> Result<(), ApiErr> {
 ```
 
 ### Tracing and Logging
+
 ```rust
 #[tracing::instrument(skip(state, req))]
 pub async fn handler(/* ... */) -> Result</* ... */, ApiErr> {
@@ -107,6 +118,7 @@ pub async fn handler(/* ... */) -> Result</* ... */, ApiErr> {
 ## Common Commands
 
 ### Building and Testing
+
 ```bash
 # Run all tests
 just test
@@ -123,6 +135,7 @@ cargo build --package graft-sqlite-extension
 ```
 
 ### Code Quality
+
 ```bash
 cargo check
 cargo fmt
@@ -130,6 +143,7 @@ cargo clippy
 ```
 
 ### Development Tools
+
 ```bash
 # Generate test IDs
 just run tool vid  # VolumeId
@@ -152,11 +166,13 @@ crates/
 ## Testing Patterns
 
 ### Unit Tests
+
 - Use `#[cfg(test)]` modules
 - Test both success and error cases
 - Use descriptive test names that explain what is being tested
 
 ### Integration Tests
+
 - Place in `tests/` directory or crate-specific test files
 - Test end-to-end workflows
 - Use realistic test data and scenarios
@@ -164,6 +180,7 @@ crates/
 ## Worktree Isolation
 
 When working in `.kosho` worktrees:
+
 - Only read/write files within the current worktree
 - Use relative paths within the worktree
 - Never access files in the top-level repository root
@@ -179,6 +196,7 @@ When working in `.kosho` worktrees:
 ## Dependencies
 
 Key external crates used:
+
 - `fjall`: LSM-tree storage engine
 - `tokio`: Async runtime
 - `tracing`: Structured logging
