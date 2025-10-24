@@ -158,6 +158,8 @@ impl SegmentBuilder {
 
 #[cfg(test)]
 mod test {
+    use graft_core::pageidx;
+
     use super::*;
 
     #[test]
@@ -174,7 +176,7 @@ mod test {
 
         // Push 1.5 frames worth of pages
         for i in 1..=96 {
-            segment.write(PageIdx::new(i), Page::test_filled(i as u8));
+            segment.write(PageIdx::must_new(i), Page::test_filled(i as u8));
         }
 
         // Finish the segment
@@ -182,8 +184,8 @@ mod test {
 
         // Check the frames and chunks
         assert_eq!(frames.len(), 2);
-        assert_eq!(frames[0].last_pageidx(), PageIdx::new(64));
-        assert_eq!(frames[1].last_pageidx(), PageIdx::new(96));
+        assert_eq!(frames[0].last_pageidx(), pageidx!(64));
+        assert_eq!(frames[1].last_pageidx(), pageidx!(96));
         assert_eq!(chunks.len(), 1);
         assert_eq!(
             chunks[0].len(),

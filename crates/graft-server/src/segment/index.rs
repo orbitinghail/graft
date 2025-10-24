@@ -235,7 +235,7 @@ mod tests {
         // insert 100 page indexes for each vid
         for vid in &vids {
             for i in 1..=100 {
-                builder.insert(vid, PageIdx::new(i));
+                builder.insert(vid, PageIdx::must_new(i));
             }
         }
 
@@ -254,7 +254,7 @@ mod tests {
         // lookup all the offsets
         for (volume_offset, vid) in vids.iter().enumerate() {
             for i in 0..100 {
-                let pageidx = PageIdx::new(i + 1);
+                let pageidx = PageIdx::must_new(i + 1);
                 let local_offset = index.lookup(vid, pageidx).expect("page not found");
                 assert_eq!(local_offset, (volume_offset * 100) + i as usize);
             }

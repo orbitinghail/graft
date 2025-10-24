@@ -172,7 +172,7 @@ proxy_to_fjall_repr!(
 
 #[cfg(test)]
 mod tests {
-    use graft_core::lsn;
+    use graft_core::{lsn, pageidx};
 
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_invalid, test_roundtrip, test_serialized_order,
@@ -228,7 +228,7 @@ mod tests {
 
     #[graft_test::test]
     fn test_page_key() {
-        test_roundtrip(PageKey::new(SegmentId::random(), PageIdx::new(42)));
+        test_roundtrip(PageKey::new(SegmentId::random(), pageidx!(42)));
 
         // zero page index is invalid
         test_invalid::<PageKey>(
@@ -246,12 +246,12 @@ mod tests {
         let sid1: SegmentId = "LkykngWAEj8KaTkYeg5ZBY".parse().unwrap();
         let sid2: SegmentId = "LkykngWBbT1v8zGaRpdbpK".parse().unwrap();
         test_serialized_order(&[
-            PageKey::new(sid1.clone(), PageIdx::new(1)),
-            PageKey::new(sid1.clone(), PageIdx::new(2)),
-            PageKey::new(sid1.clone(), PageIdx::new(3)),
-            PageKey::new(sid1, PageIdx::new(4)),
-            PageKey::new(sid2.clone(), PageIdx::new(1)),
-            PageKey::new(sid2, PageIdx::new(2)),
+            PageKey::new(sid1.clone(), pageidx!(1)),
+            PageKey::new(sid1.clone(), pageidx!(2)),
+            PageKey::new(sid1.clone(), pageidx!(3)),
+            PageKey::new(sid1, pageidx!(4)),
+            PageKey::new(sid2.clone(), pageidx!(1)),
+            PageKey::new(sid2, pageidx!(2)),
         ]);
     }
 }

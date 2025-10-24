@@ -17,6 +17,10 @@ impl Graft {
 
     #[inline]
     pub fn new(splinter: CowSplinter<Bytes>) -> Self {
+        assert!(
+            !splinter.contains(0),
+            "Invalid Graft: Splinter contains PageIdx 0"
+        );
         Self { splinter }
     }
 
@@ -39,7 +43,11 @@ impl Graft {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = PageIdx> {
-        self.splinter.iter().map(|v| PageIdx::new(v))
+        self.splinter.iter().map(|v| {
+            // SAFETY: The Graft type verifies that `0` is not contained by the
+            // Splinter at creation time.
+            unsafe { PageIdx::new_unchecked(v) }
+        })
     }
 }
 
@@ -53,15 +61,15 @@ derive_newtype_proxy!(
     newtype (Graft)
     with empty value (Graft::EMPTY)
     with proxy type (Bytes) and encoding (bilrost::encoding::General)
-    with sample value (Graft::new(CowSplinter::from_iter(0u32..10)))
+    with sample value (Graft::new(CowSplinter::from_iter(1u32..10)))
     into_proxy(&self) {
         self.splinter.encode_to_bytes()
     }
     from_proxy(&mut self, proxy) {
-        *self = Graft {
-            splinter: CowSplinter::from_bytes(proxy)
-                .map_err(|_| bilrost::DecodeErrorKind::InvalidValue)?,
-        };
+        *self = Graft::new(
+            CowSplinter::from_bytes(proxy)
+                .map_err(|_| bilrost::DecodeErrorKind::InvalidValue)?
+        );
         Ok(())
     }
 );
