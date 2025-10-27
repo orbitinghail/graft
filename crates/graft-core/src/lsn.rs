@@ -5,7 +5,7 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
-use range_set_blaze::{CheckSortedDisjoint, RangeSetBlaze};
+use range_set_blaze::RangeSetBlaze;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
@@ -452,15 +452,6 @@ impl Iterator for LSNRangeIter {
 
 /// A set of LSNs, optimized to store LSNs in runs.
 pub type LSNSet = RangeSetBlaze<LSN>;
-
-pub trait LSNSetExt {
-    fn from_range(lsns: RangeInclusive<LSN>) -> RangeSetBlaze<LSN> {
-        // TODO: replace this with RangeSetBlaze::from once this lands
-        // https://github.com/CarlKCarlK/range-set-blaze/pull/21
-        RangeSetBlaze::from_sorted_disjoint(CheckSortedDisjoint::new([lsns]))
-    }
-}
-impl LSNSetExt for LSNSet {}
 
 #[cfg(test)]
 mod tests {

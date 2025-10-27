@@ -2,10 +2,11 @@ use culprit::{Result, ResultExt};
 use graft_core::{
     VolumeId,
     checkpoints::{CachedCheckpoints, Checkpoints},
-    lsn::{LSN, LSNRangeExt, LSNSet, LSNSetExt},
+    lsn::{LSN, LSNRangeExt},
     volume_ref::VolumeRef,
 };
 use itertools::{EitherOrBoth, Itertools};
+use range_set_blaze::RangeOnce;
 use tokio_stream::StreamExt;
 
 use crate::{
@@ -40,9 +41,7 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
     let mut batch = storage.batch();
     for PathEntry { vid, lsns } in search {
         let all_lsns = storage.read().lsns(&vid).or_into_ctx()?;
-        // TODO: Switch to RangeOnce once it lands
-        // https://github.com/CarlKCarlK/range-set-blaze/pull/21
-        let lsns = LSNSet::from_range(lsns).into_ranges() - all_lsns.ranges();
+        let lsns = RangeOnce::new(lsns) - all_lsns.ranges();
         let mut commits = remote.fetch_sorted_commits(&vid, lsns.flat_map(|r| r.iter()));
         while let Some(commit) = commits.try_next().await.or_into_ctx()? {
             batch.write_commit(commit);

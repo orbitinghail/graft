@@ -9,6 +9,7 @@ use crate::{
 
 mod pull_volume;
 mod remote_commit;
+mod resume_pending_commit;
 mod sync_remote_to_local;
 
 pub enum Job {
@@ -17,6 +18,9 @@ pub enum Job {
 
     /// Commits a Named Volume's local changes into its remote.
     RemoteCommit(remote_commit::Opts),
+
+    /// Commits a Named Volume's local changes into its remote.
+    ResumePendingCommit(resume_pending_commit::Opts),
 
     /// Fast-forwards the local volume to include any remote commits. Fails if
     /// the local volume has unpushed commits, unless `force` is specified.
@@ -32,6 +36,10 @@ impl Job {
         Job::RemoteCommit(remote_commit::Opts { name })
     }
 
+    pub fn resume_pending_commit(name: VolumeName) -> Self {
+        Job::ResumePendingCommit(resume_pending_commit::Opts { name })
+    }
+
     pub fn sync_remote_to_local(name: VolumeName, force: bool) -> Self {
         Job::SyncRemoteToLocal(sync_remote_to_local::Opts { name, force })
     }
@@ -43,7 +51,7 @@ impl Job {
         let mut volumes = reader.named_volumes();
         while let Some(volume) = volumes.try_next().or_into_ctx()? {
             if volume.pending_commit().is_some() {
-                jobs.push(Self::remote_commit(volume.name().clone()));
+                jobs.push(Self::resume_pending_commit(volume.name().clone()));
             } else if let Some(remote_ref) = volume.remote() {
                 let local_ref = volume.local();
                 let local_snapshot = reader.snapshot(local_ref.vid()).or_into_ctx()?;
@@ -76,6 +84,9 @@ impl Job {
         match self {
             Job::PullVolume(opts) => pull_volume::run(storage, remote, opts).await,
             Job::RemoteCommit(opts) => remote_commit::run(storage, remote, opts).await,
+            Job::ResumePendingCommit(opts) => {
+                resume_pending_commit::run(storage, remote, opts).await
+            }
             Job::SyncRemoteToLocal(opts) => sync_remote_to_local::run(storage, remote, opts).await,
         }
     }
