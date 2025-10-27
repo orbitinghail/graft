@@ -1,12 +1,9 @@
-use std::{fmt::Debug, ops::RangeBounds};
+use std::{fmt::Debug, ops::RangeInclusive};
 
 use culprit::{Culprit, ResultExt};
 use futures::TryStreamExt;
 use graft_client::MetastoreClient;
-use graft_core::{
-    VolumeId,
-    lsn::{LSN, LSNRangeExt},
-};
+use graft_core::{VolumeId, lsn::LSN};
 use tokio::task::spawn_blocking;
 use tracing::{Instrument, Level, field};
 
@@ -118,22 +115,22 @@ impl VolumeCatalogUpdater {
 
         // we only need to reply commits that happened after the last snapshot
         let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or(LSN::FIRST);
-        let lsns = start_lsn..;
+        let lsns = start_lsn..=LSN::LAST;
 
         // update the catalog from the store
         self.replay_commits_from_store(store, catalog, permit, vid, &lsns)
             .await
     }
 
-    pub async fn update_catalog_from_store_in_range<R: RangeBounds<LSN> + Debug>(
+    pub async fn update_catalog_from_store_in_range(
         &self,
         store: &VolumeStore,
         catalog: &VolumeCatalog,
         vid: &VolumeId,
-        lsns: &R,
+        lsns: &RangeInclusive<LSN>,
     ) -> Result<(), Culprit<UpdateErr>> {
         // we can return early if the catalog already contains the requested LSNs
-        if catalog.contains_range(vid, lsns).or_into_ctx()? {
+        if catalog.contains_range(vid, &lsns).or_into_ctx()? {
             tracing::trace!(?lsns, ?vid, "catalog is already up-to-date");
             return Ok(());
         }
@@ -142,7 +139,7 @@ impl VolumeCatalogUpdater {
         let permit = self.limiter.acquire(vid).await;
 
         // check the catalog again in case another task has concurrently retrieved the requested lsns
-        if catalog.contains_range(vid, lsns).or_into_ctx()? {
+        if catalog.contains_range(vid, &lsns).or_into_ctx()? {
             tracing::debug!(
                 ?lsns,
                 ?vid,
@@ -157,30 +154,30 @@ impl VolumeCatalogUpdater {
     }
 
     #[tracing::instrument(level = Level::DEBUG, skip_all, fields(vid, lsns, latest_lsn))]
-    async fn replay_commits_from_store<R: RangeBounds<LSN> + Debug>(
+    async fn replay_commits_from_store(
         &self,
         store: &VolumeStore,
         catalog: &VolumeCatalog,
         _permit: Permit<'_>,
         vid: &VolumeId,
-        lsns: &R,
+        lsns: &RangeInclusive<LSN>,
     ) -> Result<(), Culprit<UpdateErr>> {
-        let mut commits = store.replay_ordered(vid, lsns);
+        let mut commits = store.replay_ordered(vid, &lsns);
 
-        let mut latest_lsn = lsns.try_start();
+        let mut latest_lsn = *lsns.start();
         if let Some(commit) = commits.try_next().await.or_into_ctx()? {
             // only create a batch if we have commits to replay
             let mut batch = catalog.batch_insert();
-            latest_lsn = latest_lsn.max(Some(commit.meta().lsn()));
+            latest_lsn = latest_lsn.max(commit.meta().lsn());
             batch.insert_commit(&commit).or_into_ctx()?;
             while let Some(commit) = commits.try_next().await.or_into_ctx()? {
-                latest_lsn = latest_lsn.max(Some(commit.meta().lsn()));
+                latest_lsn = latest_lsn.max(commit.meta().lsn());
                 batch.insert_commit(&commit).or_into_ctx()?;
             }
             batch.commit().or_into_ctx()?;
         }
 
-        tracing::Span::current().record("latest_lsn", latest_lsn.map(u64::from));
+        tracing::Span::current().record("latest_lsn", u64::from(latest_lsn));
 
         Ok(())
     }

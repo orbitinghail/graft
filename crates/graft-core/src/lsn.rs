@@ -1,6 +1,7 @@
 use core::ops::RangeInclusive;
 use std::{
     fmt::Display,
+    iter::FusedIterator,
     num::{NonZero, ParseIntError},
     ops::{Bound, RangeBounds},
 };
@@ -123,7 +124,7 @@ impl LSN {
     /// Returns the difference between this LSN and another LSN.
     /// If the other LSN is greater than this LSN, None is returned.
     #[inline]
-    pub fn since(&self, other: &Self) -> Option<u64> {
+    pub fn since(&self, other: Self) -> Option<u64> {
         let me = self.0.get();
         let other = other.0.get();
         if me >= other { Some(me - other) } else { None }
@@ -337,7 +338,10 @@ impl range_set_blaze::Integer for LSN {
     }
 
     fn safe_len(range: &RangeInclusive<Self>) -> Self::SafeLen {
-        range.end().since(range.start()).unwrap_or(0) + 1
+        match range.end().since(*range.start()) {
+            None => 0,
+            Some(delta) => delta + 1,
+        }
     }
 
     fn f64_to_safe_len_lossy(f: f64) -> Self::SafeLen {
@@ -376,59 +380,55 @@ derive_newtype_proxy!(
 );
 
 pub trait LSNRangeExt {
-    fn try_len(&self) -> Option<usize>;
-    fn try_start(&self) -> Option<LSN>;
-    fn try_start_exclusive(&self) -> Option<LSN>;
-    fn try_end(&self) -> Option<LSN>;
-    fn try_end_exclusive(&self) -> Option<LSN>;
+    fn is_empty(&self) -> bool;
+    fn len(&self) -> u64;
+    fn as_inclusive(&self) -> RangeInclusive<LSN>;
     fn iter(&self) -> LSNRangeIter;
 }
 
+fn as_inclusive_raw<T: RangeBounds<LSN>>(range: &T) -> (LSN, LSN) {
+    const EMPTY_RANGE: (LSN, LSN) = (LSN::LAST, LSN::FIRST);
+    let start = match range.start_bound() {
+        Bound::Included(&start) => start,
+        Bound::Excluded(&prev) => match prev.next() {
+            Some(start) => start,
+            None => return EMPTY_RANGE,
+        },
+        Bound::Unbounded => LSN::FIRST,
+    };
+    let end = match range.end_bound() {
+        Bound::Included(&end) => end,
+        Bound::Excluded(&next) => match next.prev() {
+            Some(end) => end,
+            None => return EMPTY_RANGE,
+        },
+        Bound::Unbounded => LSN::LAST,
+    };
+    (start, end)
+}
+
 impl<T: RangeBounds<LSN>> LSNRangeExt for T {
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Returns the length of this LSN range.
-    /// Returns None if start > end
-    fn try_len(&self) -> Option<usize> {
-        let start = self.try_start()?;
-        let end = self.try_end_exclusive()?;
-        end.since(&start).map(|len| len as usize)
-    }
-
-    fn try_start(&self) -> Option<LSN> {
-        match self.start_bound() {
-            Bound::Included(lsn) => Some(*lsn),
-            Bound::Excluded(lsn) => Some(lsn.saturating_next()),
-            Bound::Unbounded => None,
+    fn len(&self) -> u64 {
+        let (start, end) = as_inclusive_raw(self);
+        match end.since(start) {
+            Some(diff) => diff + 1,
+            None => 0,
         }
     }
 
-    fn try_start_exclusive(&self) -> Option<LSN> {
-        match self.start_bound() {
-            Bound::Included(lsn) => lsn.prev(),
-            Bound::Excluded(lsn) => Some(*lsn),
-            Bound::Unbounded => None,
-        }
-    }
-
-    fn try_end(&self) -> Option<LSN> {
-        match self.end_bound() {
-            Bound::Included(lsn) => Some(*lsn),
-            Bound::Excluded(lsn) => Some(lsn.saturating_prev()),
-            Bound::Unbounded => None,
-        }
-    }
-
-    fn try_end_exclusive(&self) -> Option<LSN> {
-        match self.end_bound() {
-            Bound::Included(lsn) => lsn.next(),
-            Bound::Excluded(lsn) => Some(*lsn),
-            Bound::Unbounded => None,
-        }
+    fn as_inclusive(&self) -> RangeInclusive<LSN> {
+        let (start, end) = as_inclusive_raw(self);
+        start..=end
     }
 
     fn iter(&self) -> LSNRangeIter {
-        let start = self.try_start().unwrap_or(LSN::FIRST).into();
-        let end = self.try_end().unwrap_or(LSN::LAST).into();
-        LSNRangeIter { range: start..=end }
+        let (start, end) = as_inclusive_raw(self);
+        LSNRangeIter { range: start.into()..=end.into() }
     }
 }
 
@@ -443,12 +443,27 @@ impl Iterator for LSNRangeIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.range.next().map(|n| {
-            // SAFETY: we know n is non-zero because next is monotonically
-            // increasing
+            // SAFETY: LSNRangeExt::iter ensures that start is never == 0
+            unsafe { LSN::new_unchecked(n) }
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.range.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for LSNRangeIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.range.next_back().map(|n| {
+            // SAFETY: LSNRangeExt::iter ensures that start is never == 0
             unsafe { LSN::new_unchecked(n) }
         })
     }
 }
+
+impl ExactSizeIterator for LSNRangeIter {}
+impl FusedIterator for LSNRangeIter {}
 
 /// A set of LSNs, optimized to store LSNs in runs.
 pub type LSNSet = RangeSetBlaze<LSN>;
@@ -502,6 +517,9 @@ mod tests {
         }
         assert!(set.ranges_insert(lsn!(128)..=lsn!(256)));
 
+        // inserting an empty range should not actually insert anything
+        assert!(!set.ranges_insert(lsn!(700)..=lsn!(699)));
+
         assert_eq!(
             set.ranges().collect::<Vec<_>>(),
             vec![
@@ -510,5 +528,85 @@ mod tests {
                 lsn!(1024)..=lsn!(2048)
             ]
         );
+    }
+
+    #[test]
+    fn test_lsn_range_ext() {
+        use Bound::*;
+
+        #[derive(Debug)]
+        struct Case {
+            range: (Bound<LSN>, Bound<LSN>),
+            len: u64,
+            as_inclusive: RangeInclusive<LSN>,
+        }
+
+        let cases = [
+            Case {
+                range: (Unbounded, Unbounded),
+                len: u64::MAX,
+                as_inclusive: LSN::FIRST..=LSN::LAST,
+            },
+            Case {
+                range: (Unbounded, Included(LSN::FIRST)),
+                len: 1,
+                as_inclusive: LSN::FIRST..=LSN::FIRST,
+            },
+            Case {
+                range: (Unbounded, Excluded(LSN::FIRST)),
+                len: 0,
+                as_inclusive: LSN::LAST..=LSN::FIRST,
+            },
+            Case {
+                range: (Included(LSN::LAST), Unbounded),
+                len: 1,
+                as_inclusive: LSN::LAST..=LSN::LAST,
+            },
+            Case {
+                range: (Excluded(LSN::LAST), Unbounded),
+                len: 0,
+                as_inclusive: LSN::LAST..=LSN::FIRST,
+            },
+            Case {
+                range: (Excluded(LSN::FIRST), Excluded(LSN::FIRST)),
+                len: 0,
+                as_inclusive: LSN::LAST..=LSN::FIRST,
+            },
+            Case {
+                range: (Excluded(LSN::FIRST), Excluded(lsn!(2))),
+                len: 0,
+                as_inclusive: lsn!(2)..=LSN::FIRST,
+            },
+            Case {
+                range: (Excluded(LSN::FIRST), Included(lsn!(2))),
+                len: 1,
+                as_inclusive: lsn!(2)..=lsn!(2),
+            },
+            Case {
+                range: (Excluded(LSN::FIRST), Included(lsn!(3))),
+                len: 2,
+                as_inclusive: lsn!(2)..=lsn!(3),
+            },
+            Case {
+                range: (Included(LSN::FIRST), Excluded(lsn!(2))),
+                len: 1,
+                as_inclusive: lsn!(1)..=lsn!(1),
+            },
+        ];
+
+        for (i, case) in cases.into_iter().enumerate() {
+            println!("Case {}: {:?}", i, case);
+            assert_eq!(case.range.len(), case.len, "len");
+            let is_empty = LSNRangeExt::is_empty(&case.range);
+            assert_eq!(is_empty, case.len == 0, "is_empty");
+            assert_eq!(case.range.as_inclusive(), case.as_inclusive, "as_inclusive");
+            let mut iter = case.range.iter().peekable();
+            if is_empty {
+                assert_eq!(iter.next(), None, "iter is empty")
+            } else {
+                assert_eq!(iter.peek(), Some(case.as_inclusive.start()), "iter start");
+                assert_eq!(iter.next_back(), Some(*case.as_inclusive.end()), "iter end");
+            }
+        }
     }
 }

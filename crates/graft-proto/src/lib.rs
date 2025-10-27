@@ -1,7 +1,12 @@
 // pull in the generated types
 include!("mod.rs");
 
-use std::{error::Error, fmt::Display, ops::RangeBounds, time::SystemTime};
+use std::{
+    error::Error,
+    fmt::Display,
+    ops::{Bound, RangeBounds},
+    time::SystemTime,
+};
 
 use bytes::Bytes;
 use common::v1::{Commit, GraftErr, LsnRange, SegmentInfo};
@@ -100,9 +105,15 @@ impl Snapshot {
 
 impl LsnRange {
     pub fn from_range<T: RangeBounds<LSN>>(range: T) -> Self {
-        let inclusive_start = range.try_start().unwrap_or(LSN::FIRST).into();
-        let inclusive_end = range.try_end().map(|lsn| lsn.into());
-        Self { inclusive_start, inclusive_end }
+        let inclusive = range.as_inclusive();
+        Self {
+            inclusive_start: (*inclusive.start()).into(),
+            inclusive_end: if range.end_bound() == Bound::Unbounded {
+                None
+            } else {
+                Some((*inclusive.end()).into())
+            },
+        }
     }
 
     pub fn start(&self) -> Result<LSN, Culprit<InvalidLSN>> {
@@ -110,10 +121,10 @@ impl LsnRange {
     }
 
     pub fn end(&self) -> Result<Option<LSN>, Culprit<InvalidLSN>> {
-        match self.inclusive_end {
-            Some(end) => LSN::try_from(end).or_into_ctx().map(Some),
-            None => Ok(None),
-        }
+        Ok(match self.inclusive_end {
+            Some(end) => Some(LSN::try_from(end).or_into_ctx()?),
+            None => None,
+        })
     }
 }
 

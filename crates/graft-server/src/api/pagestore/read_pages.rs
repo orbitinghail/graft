@@ -55,7 +55,8 @@ pub async fn handler<C: Cache>(
 
     let mut loading = FuturesUnordered::new();
 
-    let segments = state.catalog().scan_segments(&vid, &(checkpoint..=lsn));
+    let lsns = checkpoint..=lsn;
+    let segments = state.catalog().scan_segments(&vid, &lsns);
     for result in segments {
         let (key, splinter) = result.or_into_ctx()?;
 
@@ -103,6 +104,7 @@ mod tests {
     use graft_core::{
         PageIdx,
         gid::{ClientId, SegmentId},
+        lsn,
         page::Page,
         page_count::PageCount,
         pageidx,
@@ -134,6 +136,7 @@ mod tests {
     }
 
     #[graft_test::test]
+    #[tokio::test]
     async fn test_read_pages_sanity() {
         let store = Arc::new(InMemory::default());
         let cache = Arc::new(MemCache::default());
@@ -161,7 +164,7 @@ mod tests {
             .unwrap();
 
         // setup test data
-        let lsn: LSN = LSN::new(2);
+        let lsn: LSN = lsn!(2);
         let vid = VolumeId::random();
         let cid = ClientId::random();
 

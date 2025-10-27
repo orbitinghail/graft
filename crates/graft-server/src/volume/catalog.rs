@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     io,
-    ops::RangeBounds,
+    ops::{Bound, RangeInclusive},
     path::{Path, PathBuf},
 };
 
@@ -147,15 +147,15 @@ impl VolumeCatalog {
         Ok(self.volumes.contains_key(CommitKey::new(vid, lsn))?)
     }
 
-    pub fn contains_range<R: RangeBounds<LSN>>(
+    pub fn contains_range(
         &self,
         vid: &VolumeId,
-        lsns: &R,
+        lsns: &RangeInclusive<LSN>,
     ) -> Result<bool, Culprit<VolumeCatalogErr>> {
         let range = CommitKey::range(vid, lsns);
 
         // verify that lsns in the range are contiguous
-        let mut cursor = range.start.lsn();
+        let mut cursor = range.start().lsn();
         let mut empty = true;
 
         for kv in self.volumes.snapshot().range(range) {
@@ -208,23 +208,32 @@ impl VolumeCatalog {
 
     /// scan the catalog for segments in the specified Volume. Segments are
     /// scanned in reverse order by LSN.
-    pub fn scan_segments<R: RangeBounds<LSN>>(
+    pub fn scan_segments(
         &self,
         vid: &VolumeId,
-        lsns: &R,
-    ) -> impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>), Culprit<VolumeCatalogErr>>> + use<R>
+        lsns: &RangeInclusive<LSN>,
+    ) -> impl Iterator<Item = Result<(SegmentKey, SplinterRef<Bytes>), Culprit<VolumeCatalogErr>>>
     {
-        let range = CommitKey::range(vid, lsns);
+        // we are doing a prefix scan of the segments partition
+        // thus we need to scan from the first commit key
+        let start = Bound::Included(CommitKey::new(vid.clone(), *lsns.start()));
+        // to the NEXT commit key after the end commit key or the end of the partition
+        let end = match lsns.end().next() {
+            Some(end) => Bound::Included(CommitKey::new(vid.clone(), end)),
+            None => Bound::Unbounded,
+        };
+
+        let range = (start, end);
         let scan = self.segments.snapshot().range(range).rev();
         SegmentsIter { scan }
     }
 
     /// scan the catalog for commits in the specified Volume in order by lsn
     #[allow(clippy::type_complexity)]
-    pub fn scan_volume<R: RangeBounds<LSN>>(
+    pub fn scan_volume(
         &self,
         vid: &VolumeId,
-        lsns: &R,
+        lsns: &RangeInclusive<LSN>,
     ) -> impl Iterator<
         Item = Result<
             (

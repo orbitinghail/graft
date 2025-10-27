@@ -262,6 +262,13 @@ impl<'a> ReadGuard<'a> {
         self.named().range(..).map_ok(|(_, v)| Ok(v))
     }
 
+    pub fn named_volume(
+        &self,
+        name: &VolumeName,
+    ) -> Result<Option<NamedVolumeState>, FjallStorageErr> {
+        self.named().get(name)
+    }
+
     /// Retrieve the latest `Snapshot` corresponding to the local Volume for the
     /// `NamedVolume` named `name`
     pub fn named_local_snapshot(

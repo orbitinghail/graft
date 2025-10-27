@@ -25,10 +25,7 @@ impl SearchPath {
     pub const EMPTY: SearchPath = SearchPath { path: SmallVec::new_const() };
 
     pub fn append(&mut self, vid: VolumeId, lsns: RangeInclusive<LSN>) {
-        assert!(
-            lsns.try_len().is_some(),
-            "LSN range must be in the form low..=high"
-        );
+        assert!(!lsns.is_empty(), "LSN range must not be empty");
         self.path.push(PathEntry { vid, lsns });
     }
 

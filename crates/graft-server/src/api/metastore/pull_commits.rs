@@ -67,7 +67,7 @@ pub async fn handler(
         .or_into_ctx()?;
 
     let mut result = PullCommitsResponse {
-        commits: Vec::with_capacity(lsns.try_len().unwrap_or_default()),
+        commits: Vec::with_capacity(lsns.len() as usize),
     };
 
     let mut scan = state.catalog.scan_volume(&vid, &lsns);

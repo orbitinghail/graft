@@ -1,8 +1,10 @@
+use std::fmt::Display;
+
 use bilrost::Message;
 use culprit::Culprit;
 
 use crate::{
-    local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle,
+    local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
     volume_name::VolumeName, volume_reader::VolumeReader, volume_writer::VolumeWriter,
 };
 use graft_core::{commit_hash::CommitHash, lsn::LSN, volume_ref::VolumeRef};
@@ -67,6 +69,62 @@ impl NamedVolumeState {
     pub fn pending_commit(&self) -> Option<&PendingCommit> {
         self.pending_commit.as_ref()
     }
+
+    /// Given the latest local and remote snapshot, format a human readable
+    /// concise description of the status of this named volume.
+    ///
+    /// This function can return the following strings:
+    ///  - `123` -> no remote, no changes, base LSN is 123
+    ///  - `123+5` -> no remote, 5 local changes, base LSN is 123
+    ///  - `123/456` -> remote base 456, no changes, base LSN is 123
+    ///  - `123+5/456` -> remote base 456, 5 local changes, base LSN is 123
+    ///  - `123/456+5` -> remote base 456, 5 remote changes, base LSN is 123
+    ///  - `123+3/456+5` -> DIVERGED: remote base 456, 3 local changes, 5 remote
+    ///    changes, base LSN is 123
+    pub fn sync_status(&self, latest_local: &Snapshot, latest_remote: Option<&Snapshot>) -> String {
+        // local invariants:
+        // as self.local is always set, and resets are atomic, local_snapshot
+        // must align and be equal or later to self.local
+        assert_eq!(
+            self.local.vid(),
+            latest_local.vid(),
+            "BUG: local snapshot out of sync"
+        );
+        let latest_local_lsn = latest_local.lsn().expect("BUG: local snapshot out of sync");
+        assert!(
+            latest_local_lsn >= self.local.lsn(),
+            "BUG: monotonicity violation"
+        );
+        let local_status = AheadStatus::new(latest_local_lsn, self.local.lsn());
+
+        // remote invariants:
+        // if self.remote is set, then the same local invariants apply between
+        // self.remote and latest_remote
+        let remote_status = if let Some(remote) = self.remote() {
+            let latest_remote = latest_remote.expect("BUG: remote snapshot out of sync");
+            assert_eq!(
+                remote.vid(),
+                latest_remote.vid(),
+                "BUG: remote snapshot out of sync"
+            );
+            let latest_remote_lsn = latest_remote
+                .lsn()
+                .expect("BUG: remote snapshot out of sync");
+            assert!(
+                latest_remote_lsn >= remote.lsn(),
+                "BUG: monotonicity violation"
+            );
+            Some(AheadStatus::new(latest_remote_lsn, remote.lsn()))
+        } else {
+            None
+        };
+
+        if let Some(remote_status) = remote_status {
+            format!("{}/{}", local_status, remote_status)
+        } else {
+            local_status.to_string()
+        }
+    }
 }
 
 pub struct NamedVolume {
@@ -105,5 +163,33 @@ impl NamedVolume {
             snapshot,
             page_count,
         ))
+    }
+}
+
+struct AheadStatus {
+    head: LSN,
+    base: LSN,
+}
+
+impl AheadStatus {
+    fn new(head: LSN, base: LSN) -> Self {
+        Self { head, base }
+    }
+
+    fn ahead(&self) -> u64 {
+        self.head
+            .since(self.base)
+            .expect("BUG: monotonicity violation")
+    }
+}
+
+impl Display for AheadStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ahead = self.ahead();
+        if ahead > 0 {
+            write!(f, "{}+{}", self.base, ahead)
+        } else {
+            write!(f, "{}", self.base)
+        }
     }
 }
