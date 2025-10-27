@@ -42,7 +42,7 @@ struct CommitState {
     /// the latest remote snapshot
     remote: Option<Snapshot>,
 
-    /// the VolumeRef of the resulting commit should this process be successful
+    /// the `VolumeRef` of the resulting commit should this process be successful
     commit_ref: VolumeRef,
 }
 
@@ -100,6 +100,6 @@ async fn prepare_commit(
         local: latest_local,
         local_lsns,
         remote: latest_remote,
-        commit_ref: commit_ref,
+        commit_ref,
     })
 }

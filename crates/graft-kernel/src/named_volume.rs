@@ -120,7 +120,7 @@ impl NamedVolumeState {
         };
 
         if let Some(remote_status) = remote_status {
-            format!("{}/{}", local_status, remote_status)
+            format!("{local_status}/{remote_status}")
         } else {
             local_status.to_string()
         }

@@ -1,5 +1,3 @@
-use graft_core::VolumeId;
-
 use crate::{local::fjall_storage::FjallStorageErr, remote::RemoteErr, volume_name::VolumeName};
 
 #[derive(Debug, thiserror::Error)]

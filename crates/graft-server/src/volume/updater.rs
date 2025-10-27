@@ -130,7 +130,7 @@ impl VolumeCatalogUpdater {
         lsns: &RangeInclusive<LSN>,
     ) -> Result<(), Culprit<UpdateErr>> {
         // we can return early if the catalog already contains the requested LSNs
-        if catalog.contains_range(vid, &lsns).or_into_ctx()? {
+        if catalog.contains_range(vid, lsns).or_into_ctx()? {
             tracing::trace!(?lsns, ?vid, "catalog is already up-to-date");
             return Ok(());
         }
@@ -139,7 +139,7 @@ impl VolumeCatalogUpdater {
         let permit = self.limiter.acquire(vid).await;
 
         // check the catalog again in case another task has concurrently retrieved the requested lsns
-        if catalog.contains_range(vid, &lsns).or_into_ctx()? {
+        if catalog.contains_range(vid, lsns).or_into_ctx()? {
             tracing::debug!(
                 ?lsns,
                 ?vid,
@@ -162,7 +162,7 @@ impl VolumeCatalogUpdater {
         vid: &VolumeId,
         lsns: &RangeInclusive<LSN>,
     ) -> Result<(), Culprit<UpdateErr>> {
-        let mut commits = store.replay_ordered(vid, &lsns);
+        let mut commits = store.replay_ordered(vid, lsns);
 
         let mut latest_lsn = *lsns.start();
         if let Some(commit) = commits.try_next().await.or_into_ctx()? {
