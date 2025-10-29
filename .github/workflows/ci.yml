@@ -67,6 +67,15 @@ jobs:
       - name: Cargo doctests
         run: cargo test --doc
 
+      - name: Filesystem
+        run: ls target
+
+      - name: Cache SQLite
+        uses: actions/cache@v4
+        with:
+          path: target/sqlite-*/sqlite3
+          key: ${{ runner.os }}-sqlite3-${{ hashFiles('tasks/sqlite/*') }}
+
       - name: SQLite Tests
         run: just run sqlite test
 
