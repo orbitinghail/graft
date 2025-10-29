@@ -81,9 +81,10 @@ jobs:
       contents: read
     steps:
       - name: system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential fuse3 libfuse3-dev
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: clang libclang-dev llvm mold libncurses-dev build-essential fuse3 libfuse3-dev libreadline-dev
+          version: 1.0
 
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
@@ -228,9 +229,10 @@ jobs:
     steps:
       - name: system dependencies
         if: startsWith(matrix.platform.runs-on, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mold libclang-dev clang gcc-aarch64-linux-gnu
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: mold libclang-dev clang gcc-aarch64-linux-gnu
+          version: 1.0
 
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
@@ -320,9 +322,10 @@ jobs:
           persist-credentials: false
 
       - name: system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y tree
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: tree
+          version: 1.0
 
       - name: Install just
         uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
