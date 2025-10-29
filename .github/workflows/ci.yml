@@ -68,7 +68,9 @@ jobs:
         run: cargo test --doc
 
       - name: Filesystem
-        run: ls target
+        run: |
+          pwd
+          ls -l target/sqlite-3430000
 
       - name: Cache SQLite
         uses: actions/cache@v4
