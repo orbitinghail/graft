@@ -384,6 +384,7 @@ pub trait LSNRangeExt {
     fn len(&self) -> u64;
     fn as_inclusive(&self) -> RangeInclusive<LSN>;
     fn iter(&self) -> LSNRangeIter;
+    fn to_string(&self) -> String;
 }
 
 fn as_inclusive_raw<T: RangeBounds<LSN>>(range: &T) -> (LSN, LSN) {
@@ -429,6 +430,17 @@ impl<T: RangeBounds<LSN>> LSNRangeExt for T {
     fn iter(&self) -> LSNRangeIter {
         let (start, end) = as_inclusive_raw(self);
         LSNRangeIter { range: start.into()..=end.into() }
+    }
+
+    fn to_string(&self) -> String {
+        let (start, end) = as_inclusive_raw(self);
+        if end == LSN::LAST {
+            format!("{}..", start)
+        } else if start == LSN::FIRST {
+            format!("..={}", end)
+        } else {
+            format!("{}..={}", start, end)
+        }
     }
 }
 

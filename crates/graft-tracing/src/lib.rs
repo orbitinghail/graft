@@ -62,10 +62,10 @@ where
         let testing = consumer == TracingConsumer::Test;
         let color = !antithesis && !std::env::var("NO_COLOR").is_ok_and(|s| !s.is_empty());
 
-        let default_level = if consumer == TracingConsumer::Tool {
-            LevelFilter::WARN
-        } else {
-            LevelFilter::INFO
+        let default_level = match consumer {
+            TracingConsumer::Test => LevelFilter::INFO,
+            TracingConsumer::Server => LevelFilter::INFO,
+            TracingConsumer::Tool => LevelFilter::WARN,
         };
 
         let mut filter = EnvFilter::builder()
@@ -78,6 +78,7 @@ where
         if antithesis || testing {
             span_events = FmtSpan::NEW | FmtSpan::CLOSE;
             filter = filter
+                .add_directive("graft_kernel=debug".parse().unwrap())
                 .add_directive("graft_client=trace".parse().unwrap())
                 .add_directive("graft_core=trace".parse().unwrap())
                 .add_directive("graft_server=trace".parse().unwrap())
@@ -101,7 +102,7 @@ where
 
         tracing_subscriber::fmt()
             .with_env_filter(filter)
-            .with_thread_names(true)
+            .with_thread_names(antithesis || consumer == TracingConsumer::Server)
             .with_span_events(span_events)
             .with_ansi(color)
             .with_timer(TimeAndPrefix::new(prefix, time))

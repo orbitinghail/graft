@@ -60,6 +60,14 @@ impl Commit {
         }
     }
 
+    pub fn with_vid(self, vid: VolumeId) -> Self {
+        Self { vid, ..self }
+    }
+
+    pub fn with_lsn(self, lsn: LSN) -> Self {
+        Self { lsn, ..self }
+    }
+
     pub fn with_commit_hash(self, commit_hash: Option<CommitHash>) -> Self {
         Self { commit_hash, ..self }
     }

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use culprit::{Result, ResultExt};
 use graft_core::{
     VolumeId,
@@ -25,14 +27,22 @@ pub struct Opts {
     pub max_lsn: Option<LSN>,
 }
 
-pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), RuntimeErr> {
-    let snapshot = storage
-        .read()
-        .snapshot_at(&opts.vid, opts.max_lsn)
-        .or_into_ctx()?;
+impl Debug for Opts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = f.debug_struct("PullVolume");
+        out.field("vid", &self.vid);
+        if let Some(max_lsn) = self.max_lsn {
+            out.field("max_lsn", &max_lsn.to_string());
+            out.finish()
+        } else {
+            out.finish_non_exhaustive()
+        }
+    }
+}
 
+pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), RuntimeErr> {
     // calculate the maximum commit LSN to retrieve
-    let max_lsn = snapshot.lsn().or(opts.max_lsn).unwrap_or(LSN::LAST);
+    let max_lsn = opts.max_lsn.unwrap_or(LSN::LAST);
 
     // fetch the search path
     let search = fetch_search_path(storage, remote, opts.vid.clone(), max_lsn).await?;
@@ -40,9 +50,11 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
     // fetch any missing commits
     let mut batch = storage.batch();
     for PathEntry { vid, lsns } in search {
+        tracing::debug!(vid = ?opts.vid, lsns = %lsns.to_string(), "pulling volume commits");
+
         let all_lsns = storage.read().lsns(&vid).or_into_ctx()?;
         let lsns = RangeOnce::new(lsns) - all_lsns.ranges();
-        let mut commits = remote.stream_sorted_commits(&vid, lsns.flat_map(|r| r.iter()));
+        let mut commits = remote.stream_commits_ordered(&vid, lsns.flat_map(|r| r.iter()));
         while let Some(commit) = commits.try_next().await.or_into_ctx()? {
             batch.write_commit(commit);
         }
@@ -148,7 +160,7 @@ async fn refresh_checkpoint_commits(
         })
         .collect();
 
-    let mut commits = remote.stream_sorted_commits(vid, added);
+    let mut commits = remote.stream_commits_ordered(vid, added);
     let mut batch = storage.batch();
     while let Some(commit) = commits.try_next().await.or_into_ctx()? {
         batch.write_commit(commit);

@@ -120,6 +120,7 @@ impl RemoteConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct Remote {
     store: Box<dyn ObjectStore>,
 }
@@ -147,6 +148,7 @@ impl Remote {
         Ok(Self { store })
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_control(&self, vid: &VolumeId) -> Result<VolumeControl> {
         let path = RemotePath::Control.build(vid);
         let result = self.store.get(&path).await?;
@@ -156,6 +158,7 @@ impl Remote {
 
     /// Atomically write a volume control to the remote, returning
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
+    #[tracing::instrument(level = "debug", skip(self, control), fields(parent = ?control.parent()))]
     pub async fn put_control(&self, vid: &VolumeId, control: VolumeControl) -> Result<()> {
         let path = RemotePath::Control.build(vid);
         let payload = PutPayload::from_bytes(control.encode_to_bytes());
@@ -174,6 +177,7 @@ impl Remote {
 
     /// Fetches checkpoints for the specified volume. If `etag` is not `None`
     /// then this method will return a not modified error.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_checkpoints(
         &self,
         vid: &VolumeId,
@@ -196,7 +200,7 @@ impl Remote {
     /// Stops fetching commits as soon as we receive a `NotFound` error from the
     /// remote, thus even if `lsns` contains every LSN we will stop loading
     /// commits as soon as we reach the end of the log.
-    pub fn stream_sorted_commits<I: IntoIterator<Item = LSN>>(
+    pub fn stream_commits_ordered<I: IntoIterator<Item = LSN>>(
         &self,
         vid: &VolumeId,
         lsns: I,
@@ -222,6 +226,7 @@ impl Remote {
     }
 
     /// Fetches a single commit, returning None if the commit is not found.
+    #[tracing::instrument(level = "trace", skip(self, lsn), fields(lsn = %lsn))]
     pub async fn get_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>> {
         let path = RemotePath::Commit(lsn).build(vid);
         match self.store.get(&path).await {
@@ -233,6 +238,7 @@ impl Remote {
 
     /// Atomically write a commit to the remote, returning
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
+    #[tracing::instrument(level = "debug", skip(self, commit), fields(lsn = %commit.lsn()))]
     pub async fn put_commit(&self, vid: &VolumeId, commit: Commit) -> Result<()> {
         let path = RemotePath::Commit(commit.lsn()).build(vid);
         let payload = PutPayload::from_bytes(commit.encode_to_bytes());
@@ -252,6 +258,7 @@ impl Remote {
     }
 
     /// Uploads a segment to this Remote
+    #[tracing::instrument(level = "debug", skip(self, chunks))]
     pub async fn put_segment<I: IntoIterator<Item = Bytes>>(
         &self,
         vid: &VolumeId,
@@ -261,5 +268,72 @@ impl Remote {
         let path = RemotePath::Segment(sid).build(vid);
         self.store.put(&path, PutPayload::from_iter(chunks)).await?;
         Ok(())
+    }
+
+    /// TESTONLY: list contents of this remote in a tree-like format
+    #[cfg(test)]
+    pub async fn testonly_print_tree(&self) {
+        use itertools::Itertools;
+        use std::collections::BTreeMap;
+        use text_trees::{
+            AnchorPosition, FormatCharacters, TreeFormatting, TreeNode, TreeOrientation,
+        };
+
+        let paths = self.store.list(None).map_ok(|obj| {
+            obj.location
+                .parts()
+                .map(|p| p.as_ref().to_string())
+                .collect_vec()
+        });
+        let paths: Vec<_> = paths.try_collect().await.unwrap();
+
+        #[derive(Default)]
+        struct TreeBuilder {
+            children: BTreeMap<String, TreeBuilder>,
+        }
+
+        impl TreeBuilder {
+            fn insert(&mut self, parts: &[String]) {
+                if parts.is_empty() {
+                    return;
+                }
+
+                let first = &parts[0];
+                let rest = &parts[1..];
+
+                self.children.entry(first.clone()).or_default().insert(rest);
+            }
+
+            fn to_tree_node(self, name: String) -> TreeNode<String> {
+                if self.children.is_empty() {
+                    // This is a leaf node
+                    TreeNode::new(name)
+                } else {
+                    // This is a directory node
+                    let child_nodes = self
+                        .children
+                        .into_iter()
+                        .map(|(name, builder)| builder.to_tree_node(name));
+                    TreeNode::with_child_nodes(name, child_nodes)
+                }
+            }
+        }
+
+        let mut root = TreeBuilder::default();
+        for path in paths {
+            root.insert(&path);
+        }
+
+        print!(
+            "{}",
+            root.to_tree_node(self.store.to_string())
+                .to_string_with_format(&TreeFormatting {
+                    prefix_str: None,
+                    orientation: TreeOrientation::TopDown,
+                    anchor: AnchorPosition::Left,
+                    chars: FormatCharacters::box_chars(),
+                })
+                .unwrap()
+        )
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::{
     local::fjall_storage::FjallStorage, remote::Remote, rt::err::RuntimeErr,
     volume_name::VolumeName,
@@ -8,6 +10,14 @@ use crate::{
 /// operation is in progress.
 pub struct Opts {
     pub name: VolumeName,
+}
+
+impl Debug for Opts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecoverPendingCommit")
+            .field("name", &self.name.to_string())
+            .finish()
+    }
 }
 
 pub async fn run(

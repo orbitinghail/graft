@@ -1466,6 +1466,7 @@ dependencies = [
  "splinter-rs",
  "static_assertions",
  "tempfile",
+ "text_trees",
  "thiserror 2.0.17",
  "tokio",
  "tokio-stream",
@@ -3549,6 +3550,12 @@ dependencies = [
  "rustix",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "text_trees"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "419ea7ab2f07ffc59c5e9424bcb73677933940f8bdadbe21649c1584dc06d0cf"
 
 [[package]]
 name = "thin-vec"

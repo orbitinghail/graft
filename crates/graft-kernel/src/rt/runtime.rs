@@ -21,13 +21,13 @@ pub enum Event {
 }
 
 pub struct Runtime<S> {
-    remote: Remote,
+    remote: Arc<Remote>,
     storage: Arc<FjallStorage>,
     events: Pin<Box<S>>,
 }
 
 impl<S: Stream<Item = Event>> Runtime<S> {
-    pub fn new(remote: Remote, storage: Arc<FjallStorage>, events: Pin<Box<S>>) -> Self {
+    pub fn new(remote: Arc<Remote>, storage: Arc<FjallStorage>, events: Pin<Box<S>>) -> Self {
         Runtime { remote, storage, events }
     }
 
@@ -39,7 +39,7 @@ impl<S: Stream<Item = Event>> Runtime<S> {
                     return Ok(());
                 }
                 Err(err) => {
-                    tracing::error!("sync task error: {:?}", err);
+                    tracing::error!("runtime error: {:?}", err);
                     // we want to explore system states that include runtime errors
                     precept::expect_reachable!("graft-kernel runtime error", { "error": err.to_string() });
                 }

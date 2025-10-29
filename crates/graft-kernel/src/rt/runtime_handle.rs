@@ -41,14 +41,14 @@ impl RuntimeHandle {
     /// Spawn the Graft Runtime into the provided Tokio Runtime.
     /// Returns a `RuntimeHandle` which can be used to interact with the Graft Runtime.
     pub fn spawn(
-        handle: &tokio::runtime::Handle,
-        remote: Remote,
+        tokio_rt: &tokio::runtime::Handle,
+        remote: Arc<Remote>,
         storage: Arc<FjallStorage>,
     ) -> RuntimeHandle {
         let (tx, rx) = mpsc::channel(8);
 
         // Make sure we have a runtime context while setting up streams
-        let _tokio_guard = handle.enter();
+        let _tokio_guard = tokio_rt.enter();
 
         let rx = ReceiverStream::new(rx).map(Event::Rpc);
         let ticks =
@@ -57,7 +57,7 @@ impl RuntimeHandle {
         let events = Box::pin(rx.merge(ticks).merge(commits));
 
         let runtime = Runtime::new(remote, storage.clone(), events);
-        let handle = handle.spawn(runtime.start());
+        let handle = tokio_rt.spawn(runtime.start());
 
         RuntimeHandle {
             inner: Arc::new(RuntimeHandleInner { handle, storage, rpc: RpcHandle::new(tx) }),
@@ -121,13 +121,14 @@ mod tests {
 
     #[graft_test::test]
     fn runtime_sanity() {
-        let remote = RemoteConfig::Memory.build().unwrap();
+        let remote = Arc::new(RemoteConfig::Memory.build().unwrap());
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let tokio_rt = tokio::runtime::Builder::new_multi_thread()
+        let tokio_rt = tokio::runtime::Builder::new_current_thread()
+            .start_paused(true)
             .enable_all()
             .build()
             .unwrap();
-        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote, storage);
+        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
 
         let volume = runtime.open_volume(VolumeName::DEFAULT).unwrap();
 
@@ -153,6 +154,11 @@ mod tests {
         }
 
         // sanity check remote commit
-        tokio_rt.block_on(async { sleep(Duration::from_secs(1)).await });
+        tokio_rt.block_on(async {
+            // this sleep lets tokio advance time, allowing the runtime to flush all it's jobs
+            sleep(Duration::from_secs(5)).await;
+            remote.testonly_print_tree().await;
+        });
+        assert_eq!(volume.status().unwrap(), "1 1", "named volume status");
     }
 }

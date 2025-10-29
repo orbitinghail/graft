@@ -5,37 +5,10 @@ use culprit::Culprit;
 
 use crate::{
     local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
-    volume_name::VolumeName, volume_reader::VolumeReader, volume_writer::VolumeWriter,
+    sync_point::SyncPoint, volume_name::VolumeName, volume_reader::VolumeReader,
+    volume_writer::VolumeWriter,
 };
-use graft_core::{VolumeId, commit_hash::CommitHash, lsn::LSN, volume_ref::VolumeRef};
-
-/// A `SyncPoint` is a pair of commits which represent the same logical Volume
-/// state. The commits are tracked via two `VolumeRefs`, one for the local
-/// volume, and one for the remote.
-#[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
-pub struct SyncPoint {
-    /// The local Volume reference
-    #[bilrost(1)]
-    local: VolumeRef,
-
-    /// The remote Volume reference
-    #[bilrost(2)]
-    remote: VolumeRef,
-}
-
-impl SyncPoint {
-    pub fn new(local: VolumeRef, remote: VolumeRef) -> Self {
-        Self { local, remote }
-    }
-
-    pub fn local(&self) -> &VolumeRef {
-        &self.local
-    }
-
-    pub fn remote(&self) -> &VolumeRef {
-        &self.remote
-    }
-}
+use graft_core::{VolumeId, commit_hash::CommitHash, lsn::LSN};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct PendingCommit {
@@ -133,18 +106,18 @@ impl NamedVolumeState {
             let latest_local_lsn = latest_local
                 .lsn()
                 .expect("BUG: local snapshot behind sync point");
-            let local_status = AheadStatus::new(latest_local_lsn, sync.local.lsn());
+            let local_status = AheadStatus::new(latest_local_lsn, sync.local().lsn());
 
             let latest_remote = latest_remote.expect("BUG: remote snapshot missing");
             assert_eq!(
-                sync.remote.vid(),
+                sync.remote().vid(),
                 latest_remote.vid(),
                 "BUG: remote snapshot out of sync"
             );
             let latest_remote_lsn = latest_remote
                 .lsn()
                 .expect("BUG: remote snapshot behind sync point");
-            let remote_status = AheadStatus::new(latest_remote_lsn, sync.remote.lsn());
+            let remote_status = AheadStatus::new(latest_remote_lsn, sync.remote().lsn());
 
             format!("{local_status} {remote_status}")
         } else {
@@ -163,6 +136,19 @@ pub struct NamedVolume {
 impl NamedVolume {
     pub(crate) fn new(runtime: RuntimeHandle, name: VolumeName) -> Self {
         Self { runtime, name }
+    }
+
+    pub fn status(&self) -> Result<String, Culprit<FjallStorageErr>> {
+        let reader = self.runtime.storage().read();
+        let state = reader
+            .named_volume(&self.name)?
+            .expect("BUG: NamedVolume missing state");
+        let latest_local = reader.snapshot(&state.local)?;
+        let latest_remote = state
+            .sync()
+            .map(|s| reader.snapshot(s.remote().vid()))
+            .transpose()?;
+        Ok(state.sync_status(&latest_local, latest_remote.as_ref()))
     }
 
     pub fn reader(&self) -> Result<VolumeReader, Culprit<FjallStorageErr>> {

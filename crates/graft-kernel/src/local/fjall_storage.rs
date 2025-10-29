@@ -22,9 +22,10 @@ use crate::{
         keys::{CommitKey, PageKey},
         typed_partition::{FjallBatchExt, TypedPartition, TypedPartitionSnapshot},
     },
-    named_volume::{NamedVolumeState, PendingCommit, SyncPoint},
+    named_volume::{NamedVolumeState, PendingCommit},
     search_path::SearchPath,
     snapshot::Snapshot,
+    sync_point::SyncPoint,
     volume_name::VolumeName,
 };
 
@@ -60,6 +61,9 @@ pub enum FjallStorageErr {
 
     #[error("A pre-commit check failed while preparing a remote commit: {0}")]
     PrepareRemoteCommitCheck(&'static str),
+
+    #[error("A precondition failed while batch committing")]
+    PreconditionFailed,
 }
 
 pub struct FjallStorage {
@@ -101,13 +105,11 @@ impl Debug for FjallStorage {
 
 impl FjallStorage {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, FjallStorageErr> {
-        tracing::debug!("opening Fjall storage at {}", path.as_ref().display());
         Self::open_config(fjall::Config::new(path))
     }
 
     pub fn open_temporary() -> Result<Self, FjallStorageErr> {
         let path = tempfile::tempdir()?.keep();
-        tracing::debug!("opening temporary Fjall storage at {}", path.display());
         Self::open_config(fjall::Config::new(path).temporary(true))
     }
 
@@ -261,6 +263,16 @@ impl FjallStorage {
     /// the named volume.
     pub fn remote_commit_rejected(&self, handle: &NamedVolumeState) -> Result<(), FjallStorageErr> {
         self.read_write().remote_commit_rejected(handle)
+    }
+
+    /// Commit a batch with a precondition check.
+    pub fn batch_commit_precondition<F: FnOnce(ReadGuard) -> Result<bool, FjallStorageErr>>(
+        &self,
+        batch: WriteBatch,
+        precondition: F,
+    ) -> Result<(), FjallStorageErr> {
+        self.read_write()
+            .batch_commit_precondition(batch, precondition)
     }
 }
 
@@ -547,6 +559,8 @@ impl<'a> ReadWriteGuard<'a> {
 
             batch.commit()?;
 
+            tracing::debug!(name = %volume.name(), "created named volume");
+
             Ok(volume)
         }
     }
@@ -558,28 +572,28 @@ impl<'a> ReadWriteGuard<'a> {
         page_count: PageCount,
         segment: SegmentIdx,
     ) -> Result<(), FjallStorageErr> {
-        let commit_lsn = snapshot
-            .lsn()
-            .map(|lsn| lsn.next().expect("LSN overflow"))
-            .unwrap_or_default();
-
         let latest_snapshot = self
             .read
             .named_local_snapshot(name)?
             .expect("BUG: named volume is missing");
 
-        // 1. We check the LSN rather than the whole path, as checkpoints may
-        // cause the path to change without changing the logical representation of the snapshot.
-        // 2. We check that the VolumeId is the same to handle the rare case of
-        // a NamedVolume's local volume changing.
-        if snapshot.lsn() != latest_snapshot.lsn() || snapshot.vid() != latest_snapshot.vid() {
+        // Verify that the commit was constructed using the latest snapshot for
+        // the volume.
+        if snapshot != latest_snapshot {
             return Err(Culprit::from_err(FjallStorageErr::ConcurrentWrite(
                 snapshot.vid().clone(),
             )));
         }
 
+        let commit_lsn = latest_snapshot
+            .lsn()
+            .map(|lsn| lsn.next().expect("LSN overflow"))
+            .unwrap_or_default();
+
         let commit = Commit::new(snapshot.vid().clone(), commit_lsn, page_count)
             .with_segment_idx(Some(segment));
+
+        tracing::debug!(vid = ?snapshot.vid(), lsn = %commit_lsn, "local commit");
 
         self.read
             .storage
@@ -691,5 +705,17 @@ impl<'a> ReadWriteGuard<'a> {
             handle.name().clone(),
             latest_handle.with_pending_commit(None),
         )
+    }
+
+    pub fn batch_commit_precondition<F: FnOnce(ReadGuard) -> Result<bool, FjallStorageErr>>(
+        self,
+        batch: WriteBatch,
+        precondition: F,
+    ) -> Result<(), FjallStorageErr> {
+        if precondition(self.read)? {
+            batch.commit()
+        } else {
+            Err(FjallStorageErr::PreconditionFailed.into())
+        }
     }
 }

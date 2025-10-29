@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use culprit::{Culprit, ResultExt};
 use graft_core::{VolumeId, lsn::LSN};
 use tryiter::TryIteratorExt;
@@ -27,6 +29,17 @@ pub enum Job {
     SyncRemoteToLocal(sync_remote_to_local::Opts),
 }
 
+impl Debug for Job {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PullVolume(opts) => opts.fmt(f),
+            Self::RemoteCommit(opts) => opts.fmt(f),
+            Self::RecoverPendingCommit(opts) => opts.fmt(f),
+            Self::SyncRemoteToLocal(opts) => opts.fmt(f),
+        }
+    }
+}
+
 impl Job {
     pub fn pull_volume(vid: VolumeId, max_lsn: Option<LSN>) -> Self {
         Job::PullVolume(pull_volume::Opts { vid, max_lsn })
@@ -40,8 +53,8 @@ impl Job {
         Job::RecoverPendingCommit(recover_pending_commit::Opts { name })
     }
 
-    pub fn sync_remote_to_local(name: VolumeName, force: bool) -> Self {
-        Job::SyncRemoteToLocal(sync_remote_to_local::Opts { name, force })
+    pub fn sync_remote_to_local(name: VolumeName) -> Self {
+        Job::SyncRemoteToLocal(sync_remote_to_local::Opts { name })
     }
 
     /// Inspects all named volumes to compute a list of outstanding jobs.
@@ -54,19 +67,19 @@ impl Job {
                 jobs.push(Self::recover_pending_commit(volume.name().clone()));
             } else if let Some(sync) = volume.sync() {
                 let local_snapshot = reader.snapshot(volume.local()).or_into_ctx()?;
-                let local_changes = local_snapshot.lsn() != Some(sync.local().lsn());
+                let local_changes = sync.local_changes(&local_snapshot).is_some();
                 let remote_snapshot = reader.snapshot(sync.remote().vid()).or_into_ctx()?;
-                let remote_changes = remote_snapshot.lsn() != Some(sync.remote().lsn());
+                let remote_changes = sync.remote_changes(&remote_snapshot).is_some();
 
                 if remote_changes && local_changes {
                     todo!("user needs to intervene")
                 } else if remote_changes {
-                    jobs.push(Self::sync_remote_to_local(volume.name().clone(), false))
+                    jobs.push(Self::sync_remote_to_local(volume.name().clone()))
                 } else if local_changes {
                     jobs.push(Self::remote_commit(volume.name().clone()));
                 } else {
                     jobs.push(Self::pull_volume(sync.remote().vid().clone(), None));
-                    jobs.push(Self::sync_remote_to_local(volume.name().clone(), false))
+                    jobs.push(Self::sync_remote_to_local(volume.name().clone()))
                 }
             }
         }
@@ -74,6 +87,7 @@ impl Job {
     }
 
     /// Run this job, potentially returning a job to run next
+    #[tracing::instrument("Job::run", level = "debug", skip(storage, remote))]
     pub async fn run(
         self,
         storage: &FjallStorage,
@@ -85,7 +99,7 @@ impl Job {
             Job::RecoverPendingCommit(opts) => {
                 recover_pending_commit::run(storage, remote, opts).await
             }
-            Job::SyncRemoteToLocal(opts) => sync_remote_to_local::run(storage, remote, opts).await,
+            Job::SyncRemoteToLocal(opts) => sync_remote_to_local::run(storage, opts).await,
         }
     }
 }

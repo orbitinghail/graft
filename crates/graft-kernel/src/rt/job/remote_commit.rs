@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::RangeInclusive, time::SystemTime};
+use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive, time::SystemTime};
 
 use bytes::Bytes;
 use culprit::ResultExt;
@@ -25,15 +25,16 @@ use crate::{
 };
 
 /// Commits a Named Volume's local changes into its remote.
-///
-/// This process involves the following stages:
-///
-/// 1. prepare commit
-/// 2. push segment
-/// 3. commit
-/// 4. update named volume (on success or failure)
 pub struct Opts {
     pub name: VolumeName,
+}
+
+impl Debug for Opts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteCommit")
+            .field("name", &self.name.to_string())
+            .finish()
+    }
 }
 
 pub async fn run(
@@ -160,10 +161,7 @@ fn plan_commit(
     let latest_remote = reader.snapshot(sync.remote().vid()).or_into_ctx()?;
 
     // calculate which LSNs we need to sync
-    let Some(local_lsns) = latest_local
-        .lsn()
-        .and_then(|latest| (sync.local().lsn() < latest).then_some(sync.local().lsn()..=latest))
-    else {
+    let Some(local_lsns) = sync.local_changes(&latest_local) else {
         // nothing to push
         let status = handle.sync_status(&latest_local, Some(&latest_remote));
         return Err(RuntimeErr::NamedVolumeNoChanges(name.clone(), status).into());
