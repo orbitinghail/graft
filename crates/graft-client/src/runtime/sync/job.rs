@@ -1,10 +1,5 @@
 use culprit::{Result, ResultExt};
-use graft_core::{
-    PageIdx, VolumeId,
-    gid::ClientId,
-    lsn::{LSN, LSNRangeExt},
-    page::Page,
-};
+use graft_core::{PageIdx, VolumeId, gid::ClientId, lsn::LSN, page::Page};
 use graft_proto::pagestore::v1::PageAtIdx;
 use splinter_rs::PartitionRead;
 use tryiter::TryIteratorExt;
@@ -148,7 +143,7 @@ impl PushJob {
         }
 
         precept::expect_always_or_unreachable!(
-            num_commits == lsns.len(),
+            num_commits == graft_core::lsn::LSNRangeExt::len(&lsns),
             "push job always pushes all expected commits",
             { "vid": self.vid, "cid": self.cid, "lsns": format!("{lsns:?}") }
         );

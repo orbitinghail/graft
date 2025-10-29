@@ -33,11 +33,6 @@ jobs:
     needs: skip-check
     if: needs.skip-check.outputs.should_skip != 'true'
     steps:
-      # - name: system dependencies
-      #   run: |
-      #     sudo apt-get update
-      #     sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential fuse3 libfuse3-dev libreadline-dev
-
       - name: system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
