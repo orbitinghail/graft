@@ -11,9 +11,9 @@ pub struct Opts {
 }
 
 pub async fn run(
-    storage: &FjallStorage,
-    remote: &Remote,
-    opts: Opts,
+    _storage: &FjallStorage,
+    _remote: &Remote,
+    _opts: Opts,
 ) -> culprit::Result<(), RuntimeErr> {
     todo!()
 }

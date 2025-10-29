@@ -2,7 +2,7 @@ use graft_core::{VolumeId, lsn::LSN};
 
 use crate::search_path::SearchPath;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Snapshot {
     vid: VolumeId,
     path: SearchPath,

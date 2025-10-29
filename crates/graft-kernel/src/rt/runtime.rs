@@ -50,7 +50,7 @@ impl<S: Stream<Item = Event>> Runtime<S> {
     async fn run(&mut self) -> culprit::Result<(), RuntimeErr> {
         while let Some(event) = self.events.next().await {
             match event {
-                Event::Rpc(rpc) => {
+                Event::Rpc(_rpc) => {
                     todo!("handle rpc")
                 }
                 Event::Tick(_instant) => {

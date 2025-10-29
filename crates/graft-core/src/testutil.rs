@@ -62,7 +62,7 @@ impl SampleUniform for PageIdx {
 }
 
 impl PageIdx {
-    /// `testonly_new` is only defined for tests, regular code should use `try_new` and handle errors
+    /// `must_new` is only defined for tests, regular code should use `try_new` and handle errors
     #[inline]
     pub const fn must_new(n: u32) -> Self {
         Self::try_new(n).expect("page index must be non-zero")

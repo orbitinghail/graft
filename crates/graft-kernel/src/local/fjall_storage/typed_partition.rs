@@ -70,6 +70,11 @@ where
     K: FjallRepr,
     V: FjallRepr,
 {
+    /// Returns `true` if this snapshot contains the provided key
+    pub fn contains(&self, key: &K) -> culprit::Result<bool, FjallStorageErr> {
+        Ok(self.snapshot.contains_key(key.as_slice()).or_into_ctx()?)
+    }
+
     /// Retrieve the value corresponding to the key
     pub fn get(&self, key: &K) -> culprit::Result<Option<V>, FjallStorageErr> {
         if let Some(slice) = self.snapshot.get(key.as_slice())? {

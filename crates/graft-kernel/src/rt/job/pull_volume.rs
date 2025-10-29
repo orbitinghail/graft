@@ -42,7 +42,7 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
     for PathEntry { vid, lsns } in search {
         let all_lsns = storage.read().lsns(&vid).or_into_ctx()?;
         let lsns = RangeOnce::new(lsns) - all_lsns.ranges();
-        let mut commits = remote.fetch_sorted_commits(&vid, lsns.flat_map(|r| r.iter()));
+        let mut commits = remote.stream_sorted_commits(&vid, lsns.flat_map(|r| r.iter()));
         while let Some(commit) = commits.try_next().await.or_into_ctx()? {
             batch.write_commit(commit);
         }
@@ -76,7 +76,7 @@ async fn fetch_search_path(
             None => (None, &Checkpoints::EMPTY),
         };
 
-        let remote_checkpoints = match remote.fetch_checkpoints(vref.vid(), known_etag).await {
+        let remote_checkpoints = match remote.get_checkpoints(vref.vid(), known_etag).await {
             Ok(cached) => {
                 refresh_checkpoint_commits(
                     storage,
@@ -106,7 +106,7 @@ async fn fetch_search_path(
                 .or_into_ctx()?
         } else {
             // we don't know about this volume, pull it
-            let control = remote.fetch_control(vref.vid()).await.or_into_ctx()?;
+            let control = remote.get_control(vref.vid()).await.or_into_ctx()?;
             storage
                 .register_volume(control, remote_checkpoints)
                 .or_into_ctx()?
@@ -148,7 +148,7 @@ async fn refresh_checkpoint_commits(
         })
         .collect();
 
-    let mut commits = remote.fetch_sorted_commits(vid, added);
+    let mut commits = remote.stream_sorted_commits(vid, added);
     let mut batch = storage.batch();
     while let Some(commit) = commits.try_next().await.or_into_ctx()? {
         batch.write_commit(commit);

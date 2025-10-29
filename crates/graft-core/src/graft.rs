@@ -49,11 +49,20 @@ impl Graft {
             unsafe { PageIdx::new_unchecked(v) }
         })
     }
+
+    pub fn splinter(&self) -> &CowSplinter<Bytes> {
+        &self.splinter
+    }
+
+    pub fn splinter_mut(&mut self) -> &CowSplinter<Bytes> {
+        &mut self.splinter
+    }
 }
 
 impl From<Splinter> for Graft {
+    #[inline]
     fn from(value: Splinter) -> Self {
-        Graft { splinter: CowSplinter::from(value) }
+        Self { splinter: CowSplinter::Owned(value) }
     }
 }
 

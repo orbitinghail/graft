@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use bytes::Bytes;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
@@ -75,6 +77,12 @@ impl From<VolumeRef> for CommitKey {
     fn from(volume_ref: VolumeRef) -> Self {
         let (vid, lsn) = volume_ref.into();
         Self { vid, lsn }
+    }
+}
+
+impl Display for CommitKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.vid, self.lsn)
     }
 }
 

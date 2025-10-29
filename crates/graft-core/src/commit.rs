@@ -123,27 +123,21 @@ pub struct SegmentIdx {
     frames: SmallVec<[SegmentFrameIdx; 1]>,
 }
 
-impl Deref for SegmentIdx {
-    type Target = Graft;
-
-    fn deref(&self) -> &Self::Target {
-        &self.graft
-    }
-}
-
-impl DerefMut for SegmentIdx {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.graft
-    }
-}
-
 impl SegmentIdx {
     pub fn new(sid: SegmentId, graft: Graft) -> Self {
         SegmentIdx { sid, graft, frames: SmallVec::new() }
     }
 
+    pub fn with_frames(self, frames: SmallVec<[SegmentFrameIdx; 1]>) -> Self {
+        Self { frames, ..self }
+    }
+
     pub fn sid(&self) -> &SegmentId {
         &self.sid
+    }
+
+    pub fn graft(&self) -> &Graft {
+        &self.graft
     }
 
     pub fn frame_for_pageidx(&self, pageidx: PageIdx) -> Option<SegmentFrameRef> {
@@ -160,6 +154,20 @@ impl SegmentIdx {
             })
             .find(|(_, pages)| pages.contains(&pageidx))
             .map(|(bytes, pages)| SegmentFrameRef { sid: self.sid.clone(), bytes, pages })
+    }
+}
+
+impl Deref for SegmentIdx {
+    type Target = Graft;
+
+    fn deref(&self) -> &Self::Target {
+        &self.graft
+    }
+}
+
+impl DerefMut for SegmentIdx {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.graft
     }
 }
 

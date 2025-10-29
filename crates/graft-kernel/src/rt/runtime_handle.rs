@@ -108,9 +108,10 @@ impl RuntimeHandle {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{sync::Arc, time::Duration};
 
     use graft_core::{PageIdx, page::Page};
+    use tokio::time::sleep;
 
     use crate::{
         local::fjall_storage::FjallStorage, remote::RemoteConfig,
@@ -150,5 +151,8 @@ mod tests {
                 page.into_bytes()
             );
         }
+
+        // sanity check remote commit
+        tokio_rt.block_on(async { sleep(Duration::from_secs(1)).await });
     }
 }

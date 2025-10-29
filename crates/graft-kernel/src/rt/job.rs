@@ -52,13 +52,11 @@ impl Job {
         while let Some(volume) = volumes.try_next().or_into_ctx()? {
             if volume.pending_commit().is_some() {
                 jobs.push(Self::recover_pending_commit(volume.name().clone()));
-            } else if let Some(remote_ref) = volume.remote() {
-                let local_ref = volume.local();
-                let local_snapshot = reader.snapshot(local_ref.vid()).or_into_ctx()?;
-                let local_changes = local_snapshot.lsn() != Some(local_ref.lsn());
-
-                let remote_snapshot = reader.snapshot(remote_ref.vid()).or_into_ctx()?;
-                let remote_changes = remote_snapshot.lsn() != Some(remote_ref.lsn());
+            } else if let Some(sync) = volume.sync() {
+                let local_snapshot = reader.snapshot(volume.local()).or_into_ctx()?;
+                let local_changes = local_snapshot.lsn() != Some(sync.local().lsn());
+                let remote_snapshot = reader.snapshot(sync.remote().vid()).or_into_ctx()?;
+                let remote_changes = remote_snapshot.lsn() != Some(sync.remote().lsn());
 
                 if remote_changes && local_changes {
                     todo!("user needs to intervene")
@@ -67,7 +65,7 @@ impl Job {
                 } else if local_changes {
                     jobs.push(Self::remote_commit(volume.name().clone()));
                 } else {
-                    jobs.push(Self::pull_volume(remote_ref.vid().clone(), None));
+                    jobs.push(Self::pull_volume(sync.remote().vid().clone(), None));
                     jobs.push(Self::sync_remote_to_local(volume.name().clone(), false))
                 }
             }

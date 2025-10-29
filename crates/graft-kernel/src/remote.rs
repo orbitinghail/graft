@@ -1,6 +1,7 @@
 use std::{future, path::PathBuf};
 
-use bilrost::OwnedMessage;
+use bilrost::{Message, OwnedMessage};
+use bytes::Bytes;
 use culprit::ResultExt;
 use futures::{
     Stream, StreamExt, TryStreamExt,
@@ -15,8 +16,8 @@ use graft_core::{
     volume_control::VolumeControl,
 };
 use object_store::{
-    GetOptions, ObjectStore, aws::S3ConditionalPut, local::LocalFileSystem, memory::InMemory,
-    path::Path, prefix::PrefixStore,
+    GetOptions, ObjectStore, PutOptions, PutPayload, aws::S3ConditionalPut, local::LocalFileSystem,
+    memory::InMemory, path::Path, prefix::PrefixStore,
 };
 use thiserror::Error;
 
@@ -71,6 +72,13 @@ pub enum RemoteErr {
 }
 
 impl RemoteErr {
+    pub fn is_already_exists(&self) -> bool {
+        matches!(
+            self,
+            Self::ObjectStore(object_store::Error::AlreadyExists { .. })
+        )
+    }
+
     pub fn is_not_found(&self) -> bool {
         matches!(
             self,
@@ -139,16 +147,34 @@ impl Remote {
         Ok(Self { store })
     }
 
-    pub async fn fetch_control(&self, vid: &VolumeId) -> Result<VolumeControl> {
+    pub async fn get_control(&self, vid: &VolumeId) -> Result<VolumeControl> {
         let path = RemotePath::Control.build(vid);
         let result = self.store.get(&path).await?;
         let bytes = result.bytes().await?;
         Ok(VolumeControl::decode(bytes)?)
     }
 
+    /// Atomically write a volume control to the remote, returning
+    /// RemoteErr::ObjectStore(Error::AlreadyExists) on a collision
+    pub async fn put_control(&self, vid: &VolumeId, control: VolumeControl) -> Result<()> {
+        let path = RemotePath::Control.build(vid);
+        let payload = PutPayload::from_bytes(control.encode_to_bytes());
+        self.store
+            .put_opts(
+                &path,
+                payload,
+                PutOptions {
+                    mode: object_store::PutMode::Create,
+                    ..PutOptions::default()
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
     /// Fetches checkpoints for the specified volume. If `etag` is not `None`
     /// then this method will return a not modified error.
-    pub async fn fetch_checkpoints(
+    pub async fn get_checkpoints(
         &self,
         vid: &VolumeId,
         etag: Option<String>,
@@ -166,11 +192,11 @@ impl Remote {
         Ok(CachedCheckpoints::new(Checkpoints::decode(bytes)?, etag))
     }
 
-    /// Fetches commits by LSN in the same order as the input iterator.
+    /// Streams commits by LSN in the same order as the input iterator.
     /// Stops fetching commits as soon as we receive a `NotFound` error from the
     /// remote, thus even if `lsns` contains every LSN we will stop loading
     /// commits as soon as we reach the end of the log.
-    pub fn fetch_sorted_commits<I: IntoIterator<Item = LSN>>(
+    pub fn stream_sorted_commits<I: IntoIterator<Item = LSN>>(
         &self,
         vid: &VolumeId,
         lsns: I,
@@ -203,5 +229,37 @@ impl Remote {
             Err(object_store::Error::NotFound { .. }) => Ok(None),
             Err(err) => Err(err.into()),
         }
+    }
+
+    /// Atomically write a commit to the remote, returning
+    /// RemoteErr::ObjectStore(Error::AlreadyExists) on a collision
+    pub async fn put_commit(&self, vid: &VolumeId, commit: Commit) -> Result<()> {
+        let path = RemotePath::Commit(commit.lsn()).build(vid);
+        let payload = PutPayload::from_bytes(commit.encode_to_bytes());
+        self.store
+            .put_opts(
+                &path,
+                payload,
+                PutOptions {
+                    // Perform an atomic write operation, returning
+                    // AlreadyExists if the commit already exists
+                    mode: object_store::PutMode::Create,
+                    ..PutOptions::default()
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Uploads a segment to this Remote
+    pub async fn put_segment<I: IntoIterator<Item = Bytes>>(
+        &self,
+        vid: &VolumeId,
+        sid: &SegmentId,
+        chunks: I,
+    ) -> Result<()> {
+        let path = RemotePath::Segment(sid).build(vid);
+        self.store.put(&path, PutPayload::from_iter(chunks)).await?;
+        Ok(())
     }
 }

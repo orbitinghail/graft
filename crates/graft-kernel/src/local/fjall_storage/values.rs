@@ -73,7 +73,7 @@ mod tests {
     fn test_volume_handle() {
         test_roundtrip(NamedVolumeState::new(
             VolumeName::new("test-handle").unwrap(),
-            VolumeRef::new(VolumeId::random(), lsn!(123)),
+            VolumeId::random(),
             None,
             None,
         ));
