@@ -81,7 +81,7 @@ impl LSN {
 
     /// Creates a new LSN from a non-zero u64 value.
     ///
-    /// SAFETY:
+    /// # Safety
     /// Undefined behavior if value is zero.
     #[inline]
     pub const unsafe fn new_unchecked(lsn: u64) -> Self {

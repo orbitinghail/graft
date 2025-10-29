@@ -72,7 +72,7 @@ where
 {
     /// Returns `true` if this snapshot contains the provided key
     pub fn contains(&self, key: &K) -> culprit::Result<bool, FjallStorageErr> {
-        Ok(self.snapshot.contains_key(key.as_slice()).or_into_ctx()?)
+        self.snapshot.contains_key(key.as_slice()).or_into_ctx()
     }
 
     /// Retrieve the value corresponding to the key

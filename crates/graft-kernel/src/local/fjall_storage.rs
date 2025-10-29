@@ -631,7 +631,7 @@ impl<'a> ReadWriteGuard<'a> {
         );
 
         // update the handle with a pending commit
-        let pending_commit = PendingCommit::new(commit_lsn, commit_hash.clone());
+        let pending_commit = PendingCommit::new(commit_lsn, *commit_hash);
         let handle = latest_handle.with_pending_commit(Some(pending_commit));
         self.storage()
             .named

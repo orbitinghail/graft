@@ -146,7 +146,7 @@ impl NamedVolumeState {
                 .expect("BUG: remote snapshot behind sync point");
             let remote_status = AheadStatus::new(latest_remote_lsn, sync.remote.lsn());
 
-            format!("{} {}", local_status, remote_status)
+            format!("{local_status} {remote_status}")
         } else {
             latest_local
                 .lsn()

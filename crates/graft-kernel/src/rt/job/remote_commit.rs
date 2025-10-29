@@ -150,7 +150,7 @@ fn plan_commit(
             handle,
             local_ref: VolumeRef::new(latest_local.vid().clone(), latest_local_lsn),
             local_lsns: LSN::FIRST..=latest_local_lsn,
-            page_count: page_count,
+            page_count,
             remote: None,
             commit_ref: VolumeRef::new(VolumeId::random(), LSN::FIRST),
         });
