@@ -1,9 +1,12 @@
+use core::ops::RangeInclusive;
 use std::{
     fmt::Display,
+    iter::FusedIterator,
     num::{NonZero, ParseIntError},
-    ops::{Bound, RangeBounds, RangeInclusive},
+    ops::{Bound, RangeBounds},
 };
 
+use range_set_blaze::RangeSetBlaze;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
@@ -18,6 +21,22 @@ impl<S, D: TryFromBytes> From<ValidityError<S, D>> for InvalidLSN {
     fn from(_: ValidityError<S, D>) -> Self {
         InvalidLSN
     }
+}
+
+/// Creates a `LSN` value from a literal or expression. Expressions are
+/// evaluated at compile time.
+///
+/// This macro provides a convenient way to construct `LSN` values with compile-time
+/// validation. For literal values, it ensures they don't exceed `u64::MAX`.
+#[macro_export]
+macro_rules! lsn {
+    ($v:expr) => {{
+        // force $v to be u64
+        const V: u64 = $v;
+        static_assertions::const_assert!(V > 0 && V <= u64::MAX);
+        // SAFETY: V is checked at compile time to be > 0
+        unsafe { $crate::lsn::LSN::new_unchecked(V) }
+    }};
 }
 
 #[derive(
@@ -62,10 +81,10 @@ impl LSN {
 
     /// Creates a new LSN from a non-zero u64 value.
     ///
-    /// SAFETY:
+    /// # Safety
     /// Undefined behavior if value is zero.
     #[inline]
-    const unsafe fn new_unchecked(lsn: u64) -> Self {
+    pub const unsafe fn new_unchecked(lsn: u64) -> Self {
         // SAFETY: Undefined behavior if value is zero.
         unsafe { Self(NonZero::new_unchecked(lsn)) }
     }
@@ -105,7 +124,7 @@ impl LSN {
     /// Returns the difference between this LSN and another LSN.
     /// If the other LSN is greater than this LSN, None is returned.
     #[inline]
-    pub fn since(&self, other: &Self) -> Option<u64> {
+    pub fn since(&self, other: Self) -> Option<u64> {
         let me = self.0.get();
         let other = other.0.get();
         if me >= other { Some(me - other) } else { None }
@@ -125,6 +144,33 @@ impl LSN {
     #[inline]
     pub const fn to_u64(self) -> u64 {
         self.0.get()
+    }
+
+    /// Wrapping addition for LSN values.
+    /// Since LSN values are in range [1, `u64::MAX`], wrapping occurs at `u64::MAX`.
+    /// For example: `LSN(u64::MAX).wrapping_add(1)` == LSN(1)
+    #[inline]
+    fn wrapping_add(self, rhs: u64) -> Self {
+        // Use u128 for intermediate calculation to handle overflow correctly
+        // We need to compute: ((self + rhs - 1) % u64::MAX) + 1
+        let sum = (self.0.get() as u128) + (rhs as u128);
+        let result = (((sum - 1) % (u64::MAX as u128)) + 1) as u64;
+        // SAFETY: result is in range [1, u64::MAX], so it's always non-zero
+        unsafe { Self::new_unchecked(result) }
+    }
+
+    /// Wrapping subtraction for LSN values.
+    /// Since LSN values are in range [1, `u64::MAX`], wrapping occurs at the boundaries.
+    /// For example: `LSN(1).wrapping_sub(1)` == `LSN(u64::MAX)`
+    #[inline]
+    fn wrapping_sub(self, rhs: u64) -> Self {
+        // Use i128 for intermediate calculation to handle underflow correctly
+        // We need to compute: ((self - rhs - 1) rem_euclid u64::MAX) + 1
+        let diff = (self.0.get() as i128) - (rhs as i128);
+        let modulus = u64::MAX as i128;
+        let result = ((diff - 1).rem_euclid(modulus) + 1) as u64;
+        // SAFETY: result is in range [1, u64::MAX], so it's always non-zero
+        unsafe { Self::new_unchecked(result) }
     }
 }
 
@@ -226,11 +272,104 @@ impl TryFrom<CBE64> for LSN {
     }
 }
 
+impl range_set_blaze::Integer for LSN {
+    type SafeLen = u64;
+
+    fn checked_add_one(self) -> Option<Self> {
+        self.next()
+    }
+
+    fn add_one(self) -> Self {
+        LSN(self.0.checked_add(1).unwrap())
+    }
+
+    fn sub_one(self) -> Self {
+        let n = self.0.get().saturating_sub(1);
+        if n == 0 {
+            panic!("LSN underflow")
+        } else {
+            // SAFETY: n is non-zero
+            unsafe { Self(NonZero::new_unchecked(n)) }
+        }
+    }
+
+    fn assign_sub_one(&mut self) {
+        *self = self.sub_one();
+    }
+
+    fn range_next(range: &mut RangeInclusive<Self>) -> Option<Self> {
+        use core::cmp::Ordering;
+        let (start, end) = (*range.start(), *range.end());
+        match start.cmp(&end) {
+            Ordering::Less => {
+                *range = start.saturating_next()..=end;
+                Some(start)
+            }
+            Ordering::Equal => {
+                *range = LSN::LAST..=LSN::FIRST;
+                Some(start)
+            }
+            Ordering::Greater => None,
+        }
+    }
+
+    fn range_next_back(range: &mut RangeInclusive<Self>) -> Option<Self> {
+        use core::cmp::Ordering;
+        let (end, start) = (*range.end(), *range.start());
+        match end.cmp(&start) {
+            Ordering::Greater => {
+                *range = start..=end.saturating_prev();
+                Some(end)
+            }
+            Ordering::Equal => {
+                *range = LSN::LAST..=LSN::FIRST;
+                Some(end)
+            }
+            Ordering::Less => None,
+        }
+    }
+
+    fn min_value() -> Self {
+        LSN::FIRST
+    }
+
+    fn max_value() -> Self {
+        LSN::LAST
+    }
+
+    fn safe_len(range: &RangeInclusive<Self>) -> Self::SafeLen {
+        match range.end().since(*range.start()) {
+            None => 0,
+            Some(delta) => delta + 1,
+        }
+    }
+
+    fn f64_to_safe_len_lossy(f: f64) -> Self::SafeLen {
+        f as Self::SafeLen
+    }
+
+    fn safe_len_to_f64_lossy(len: Self::SafeLen) -> f64 {
+        len as f64
+    }
+
+    fn inclusive_end_from_start(self, b: Self::SafeLen) -> Self {
+        debug_assert!(b > 0 && b < u64::MAX, "b must be in range 1..=max_len");
+        // If b is in range, two’s-complement wrap-around yields the correct inclusive end even if the add overflows
+        self.wrapping_add(b - 1)
+    }
+
+    fn start_from_inclusive_end(self, b: Self::SafeLen) -> Self {
+        debug_assert!(b > 0 && b < u64::MAX, "b must be in range 1..=max_len");
+        // If b is in range, two’s-complement wrap-around yields the correct inclusive end even if the add overflows
+        self.wrapping_sub(b - 1)
+    }
+}
+
 derive_newtype_proxy!(
     newtype (LSN)
     with empty value (LSN::FIRST)
     with proxy type (u64) and encoding (::bilrost::encoding::Varint)
-    with sample value (LSN::new(12345))
+    with sample value (lsn!(12345))
     into_proxy (&self) {
         self.0.get()
     }
@@ -241,57 +380,55 @@ derive_newtype_proxy!(
 );
 
 pub trait LSNRangeExt {
-    fn try_len(&self) -> Option<usize>;
-    fn try_start(&self) -> Option<LSN>;
-    fn try_start_exclusive(&self) -> Option<LSN>;
-    fn try_end(&self) -> Option<LSN>;
-    fn try_end_exclusive(&self) -> Option<LSN>;
+    fn is_empty(&self) -> bool;
+    fn len(&self) -> u64;
+    fn as_inclusive(&self) -> RangeInclusive<LSN>;
     fn iter(&self) -> LSNRangeIter;
 }
 
+fn as_inclusive_raw<T: RangeBounds<LSN>>(range: &T) -> (LSN, LSN) {
+    const EMPTY_RANGE: (LSN, LSN) = (LSN::LAST, LSN::FIRST);
+    let start = match range.start_bound() {
+        Bound::Included(&start) => start,
+        Bound::Excluded(&prev) => match prev.next() {
+            Some(start) => start,
+            None => return EMPTY_RANGE,
+        },
+        Bound::Unbounded => LSN::FIRST,
+    };
+    let end = match range.end_bound() {
+        Bound::Included(&end) => end,
+        Bound::Excluded(&next) => match next.prev() {
+            Some(end) => end,
+            None => return EMPTY_RANGE,
+        },
+        Bound::Unbounded => LSN::LAST,
+    };
+    (start, end)
+}
+
 impl<T: RangeBounds<LSN>> LSNRangeExt for T {
-    fn try_len(&self) -> Option<usize> {
-        let start = self.try_start()?;
-        let end = self.try_end_exclusive()?;
-        end.since(&start).map(|len| len as usize)
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
-    fn try_start(&self) -> Option<LSN> {
-        match self.start_bound() {
-            Bound::Included(lsn) => Some(*lsn),
-            Bound::Excluded(lsn) => Some(lsn.saturating_next()),
-            Bound::Unbounded => None,
+    /// Returns the length of this LSN range.
+    fn len(&self) -> u64 {
+        let (start, end) = as_inclusive_raw(self);
+        match end.since(start) {
+            Some(diff) => diff + 1,
+            None => 0,
         }
     }
 
-    fn try_start_exclusive(&self) -> Option<LSN> {
-        match self.start_bound() {
-            Bound::Included(lsn) => lsn.prev(),
-            Bound::Excluded(lsn) => Some(*lsn),
-            Bound::Unbounded => None,
-        }
-    }
-
-    fn try_end(&self) -> Option<LSN> {
-        match self.end_bound() {
-            Bound::Included(lsn) => Some(*lsn),
-            Bound::Excluded(lsn) => Some(lsn.saturating_prev()),
-            Bound::Unbounded => None,
-        }
-    }
-
-    fn try_end_exclusive(&self) -> Option<LSN> {
-        match self.end_bound() {
-            Bound::Included(lsn) => lsn.next(),
-            Bound::Excluded(lsn) => Some(*lsn),
-            Bound::Unbounded => None,
-        }
+    fn as_inclusive(&self) -> RangeInclusive<LSN> {
+        let (start, end) = as_inclusive_raw(self);
+        start..=end
     }
 
     fn iter(&self) -> LSNRangeIter {
-        let start = self.try_start().unwrap_or(LSN::FIRST).into();
-        let end = self.try_end().unwrap_or(LSN::LAST).into();
-        LSNRangeIter { range: start..=end }
+        let (start, end) = as_inclusive_raw(self);
+        LSNRangeIter { range: start.into()..=end.into() }
     }
 }
 
@@ -306,20 +443,170 @@ impl Iterator for LSNRangeIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.range.next().map(|n| {
-            // SAFETY: we know n is non-zero because next is monotonically
-            // increasing
+            // SAFETY: LSNRangeExt::iter ensures that start is never == 0
+            unsafe { LSN::new_unchecked(n) }
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.range.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for LSNRangeIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.range.next_back().map(|n| {
+            // SAFETY: LSNRangeExt::iter ensures that start is never == 0
             unsafe { LSN::new_unchecked(n) }
         })
     }
 }
 
+impl ExactSizeIterator for LSNRangeIter {}
+impl FusedIterator for LSNRangeIter {}
+
+/// A set of LSNs, optimized to store LSNs in runs.
+pub type LSNSet = RangeSetBlaze<LSN>;
+
 #[cfg(test)]
 mod tests {
+    use crate::lsn;
+
     use super::*;
 
-    #[graft_test::test]
+    #[test]
     fn test_lsn_next() {
         let lsn = LSN::FIRST;
         assert_eq!(lsn.saturating_next(), 2);
+    }
+
+    #[test]
+    fn test_lsn_wrapping_add() {
+        // Test wrapping at the boundary
+        assert_eq!(LSN::LAST.wrapping_add(1), LSN::FIRST);
+        assert_eq!(LSN::LAST.wrapping_add(2), lsn!(2));
+
+        // Test normal addition
+        assert_eq!(lsn!(5).wrapping_add(3), lsn!(8));
+
+        // Test large addition that wraps: (u64::MAX - 5) + 10 = u64::MAX + 5 wraps to 5
+        assert_eq!(lsn!(u64::MAX - 5).wrapping_add(10), lsn!(5));
+    }
+
+    #[test]
+    fn test_lsn_wrapping_sub() {
+        // Test wrapping at the boundary
+        assert_eq!(LSN::FIRST.wrapping_sub(1), LSN::LAST);
+        assert_eq!(lsn!(2).wrapping_sub(2), LSN::LAST);
+
+        // Test normal subtraction
+        assert_eq!(lsn!(8).wrapping_sub(3), lsn!(5));
+
+        // Test large subtraction that wraps: 5 - 10 wraps to u64::MAX - 5
+        assert_eq!(lsn!(5).wrapping_sub(10), lsn!(u64::MAX - 5));
+    }
+
+    #[test]
+    fn test_lsn_set() {
+        let mut set = LSNSet::new();
+        for i in 1..=10 {
+            assert!(set.insert(LSN::new(i)));
+        }
+        for i in 1024..=2048 {
+            assert!(set.insert(LSN::new(i)));
+        }
+        assert!(set.ranges_insert(lsn!(128)..=lsn!(256)));
+
+        // inserting an empty range should not actually insert anything
+        assert!(!set.ranges_insert(lsn!(700)..=lsn!(699)));
+
+        assert_eq!(
+            set.ranges().collect::<Vec<_>>(),
+            vec![
+                lsn!(1)..=lsn!(10),
+                lsn!(128)..=lsn!(256),
+                lsn!(1024)..=lsn!(2048)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_lsn_range_ext() {
+        use Bound::*;
+
+        #[derive(Debug)]
+        struct Case {
+            range: (Bound<LSN>, Bound<LSN>),
+            len: u64,
+            as_inclusive: RangeInclusive<LSN>,
+        }
+
+        let cases = [
+            Case {
+                range: (Unbounded, Unbounded),
+                len: u64::MAX,
+                as_inclusive: LSN::FIRST..=LSN::LAST,
+            },
+            Case {
+                range: (Unbounded, Included(LSN::FIRST)),
+                len: 1,
+                as_inclusive: LSN::FIRST..=LSN::FIRST,
+            },
+            Case {
+                range: (Unbounded, Excluded(LSN::FIRST)),
+                len: 0,
+                as_inclusive: LSN::LAST..=LSN::FIRST,
+            },
+            Case {
+                range: (Included(LSN::LAST), Unbounded),
+                len: 1,
+                as_inclusive: LSN::LAST..=LSN::LAST,
+            },
+            Case {
+                range: (Excluded(LSN::LAST), Unbounded),
+                len: 0,
+                as_inclusive: LSN::LAST..=LSN::FIRST,
+            },
+            Case {
+                range: (Excluded(LSN::FIRST), Excluded(LSN::FIRST)),
+                len: 0,
+                as_inclusive: LSN::LAST..=LSN::FIRST,
+            },
+            Case {
+                range: (Excluded(LSN::FIRST), Excluded(lsn!(2))),
+                len: 0,
+                as_inclusive: lsn!(2)..=LSN::FIRST,
+            },
+            Case {
+                range: (Excluded(LSN::FIRST), Included(lsn!(2))),
+                len: 1,
+                as_inclusive: lsn!(2)..=lsn!(2),
+            },
+            Case {
+                range: (Excluded(LSN::FIRST), Included(lsn!(3))),
+                len: 2,
+                as_inclusive: lsn!(2)..=lsn!(3),
+            },
+            Case {
+                range: (Included(LSN::FIRST), Excluded(lsn!(2))),
+                len: 1,
+                as_inclusive: lsn!(1)..=lsn!(1),
+            },
+        ];
+
+        for (i, case) in cases.into_iter().enumerate() {
+            println!("Case {}: {:?}", i, case);
+            assert_eq!(case.range.len(), case.len, "len");
+            let is_empty = LSNRangeExt::is_empty(&case.range);
+            assert_eq!(is_empty, case.len == 0, "is_empty");
+            assert_eq!(case.range.as_inclusive(), case.as_inclusive, "as_inclusive");
+            let mut iter = case.range.iter().peekable();
+            if is_empty {
+                assert_eq!(iter.next(), None, "iter is empty")
+            } else {
+                assert_eq!(iter.peek(), Some(case.as_inclusive.start()), "iter start");
+                assert_eq!(iter.next_back(), Some(*case.as_inclusive.end()), "iter end");
+            }
+        }
     }
 }

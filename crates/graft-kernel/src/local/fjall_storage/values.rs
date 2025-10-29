@@ -53,10 +53,9 @@ impl_fjallrepr_for_bilrost!(NamedVolumeState, VolumeMeta, Commit);
 mod tests {
     use super::*;
 
-    use graft_core::{
-        PageCount, VolumeId, checkpoint_set::CheckpointSet, lsn::LSN, page::PAGESIZE,
-        volume_ref::VolumeRef,
-    };
+    use graft_core::checkpoints::{CachedCheckpoints, Checkpoints};
+    use graft_core::lsn;
+    use graft_core::{PageCount, VolumeId, page::PAGESIZE, volume_ref::VolumeRef};
 
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_empty_default, test_invalid, test_roundtrip,
@@ -74,7 +73,7 @@ mod tests {
     fn test_volume_handle() {
         test_roundtrip(NamedVolumeState::new(
             VolumeName::new("test-handle").unwrap(),
-            VolumeRef::new(VolumeId::random(), LSN::new(123)),
+            VolumeId::random(),
             None,
             None,
         ));
@@ -86,9 +85,8 @@ mod tests {
     fn test_volume_meta() {
         test_roundtrip(VolumeMeta::new(
             VolumeId::random(),
-            Some(VolumeRef::new(VolumeId::random(), LSN::new(123))),
-            Some(Bytes::from_static(b"asdf")),
-            CheckpointSet::from([LSN::new(123)].as_ref()),
+            Some(VolumeRef::new(VolumeId::random(), lsn!(123))),
+            CachedCheckpoints::new(Checkpoints::from([lsn!(123)].as_slice()), Some("asdf")),
         ));
         test_empty_default::<VolumeMeta>();
         test_invalid::<VolumeMeta>(&b"abc".repeat(123));
@@ -98,7 +96,7 @@ mod tests {
     fn test_commit() {
         test_roundtrip(Commit::new(
             VolumeId::random(),
-            LSN::new(123),
+            lsn!(123),
             PageCount::new(456),
         ));
         test_empty_default::<Commit>();

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use bytes::Bytes;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
@@ -65,8 +67,8 @@ impl CommitKey {
     }
 
     #[inline]
-    pub fn lsn(&self) -> &LSN {
-        &self.lsn
+    pub fn lsn(&self) -> LSN {
+        self.lsn
     }
 }
 
@@ -75,6 +77,12 @@ impl From<VolumeRef> for CommitKey {
     fn from(volume_ref: VolumeRef) -> Self {
         let (vid, lsn) = volume_ref.into();
         Self { vid, lsn }
+    }
+}
+
+impl Display for CommitKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.vid, self.lsn)
     }
 }
 
@@ -172,6 +180,8 @@ proxy_to_fjall_repr!(
 
 #[cfg(test)]
 mod tests {
+    use graft_core::{lsn, pageidx};
+
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_invalid, test_roundtrip, test_serialized_order,
     };
@@ -197,7 +207,7 @@ mod tests {
 
     #[graft_test::test]
     fn test_commit_key() {
-        test_roundtrip(CommitKey::new(VolumeId::random(), LSN::new(123)));
+        test_roundtrip(CommitKey::new(VolumeId::random(), lsn!(123)));
 
         // zero LSN is invalid
         test_invalid::<CommitKey>(
@@ -215,18 +225,18 @@ mod tests {
         let vid1: VolumeId = "GonvRDHqjHwNsCpPBET3Ly".parse().unwrap();
         let vid2: VolumeId = "GonvRDHruDyBB6s6RmuiSZ".parse().unwrap();
         test_serialized_order(&[
-            CommitKey::new(vid1.clone(), LSN::new(4)),
-            CommitKey::new(vid1.clone(), LSN::new(3)),
-            CommitKey::new(vid1.clone(), LSN::new(2)),
-            CommitKey::new(vid1, LSN::new(1)),
-            CommitKey::new(vid2.clone(), LSN::new(2)),
-            CommitKey::new(vid2, LSN::new(1)),
+            CommitKey::new(vid1.clone(), lsn!(4)),
+            CommitKey::new(vid1.clone(), lsn!(3)),
+            CommitKey::new(vid1.clone(), lsn!(2)),
+            CommitKey::new(vid1, lsn!(1)),
+            CommitKey::new(vid2.clone(), lsn!(2)),
+            CommitKey::new(vid2, lsn!(1)),
         ]);
     }
 
     #[graft_test::test]
     fn test_page_key() {
-        test_roundtrip(PageKey::new(SegmentId::random(), PageIdx::new(42)));
+        test_roundtrip(PageKey::new(SegmentId::random(), pageidx!(42)));
 
         // zero page index is invalid
         test_invalid::<PageKey>(
@@ -244,12 +254,12 @@ mod tests {
         let sid1: SegmentId = "LkykngWAEj8KaTkYeg5ZBY".parse().unwrap();
         let sid2: SegmentId = "LkykngWBbT1v8zGaRpdbpK".parse().unwrap();
         test_serialized_order(&[
-            PageKey::new(sid1.clone(), PageIdx::new(1)),
-            PageKey::new(sid1.clone(), PageIdx::new(2)),
-            PageKey::new(sid1.clone(), PageIdx::new(3)),
-            PageKey::new(sid1, PageIdx::new(4)),
-            PageKey::new(sid2.clone(), PageIdx::new(1)),
-            PageKey::new(sid2, PageIdx::new(2)),
+            PageKey::new(sid1.clone(), pageidx!(1)),
+            PageKey::new(sid1.clone(), pageidx!(2)),
+            PageKey::new(sid1.clone(), pageidx!(3)),
+            PageKey::new(sid1, pageidx!(4)),
+            PageKey::new(sid2.clone(), pageidx!(1)),
+            PageKey::new(sid2, pageidx!(2)),
         ]);
     }
 }

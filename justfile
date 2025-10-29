@@ -58,6 +58,7 @@ run *args:
 
 test:
     cargo nextest run
+    cargo test --doc
     just run sqlite test
     just run fuse test
 

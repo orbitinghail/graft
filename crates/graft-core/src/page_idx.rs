@@ -34,14 +34,18 @@ pub struct PageIdx(NonZero<u32>);
 #[macro_export]
 /// Create a `PageIndex` from a literal at compile time.
 macro_rules! pageidx {
-    ($idx:literal) => {
-        $crate::PageIdx::try_new($idx).expect("page index out of range")
-    };
+    ($v:expr) => {{
+        // force $v to be u32
+        const V: u32 = $v;
+        static_assertions::const_assert!(V > 0 && V <= u32::MAX);
+        // SAFETY: V is checked at compile time to be > 0
+        unsafe { $crate::PageIdx::new_unchecked(V) }
+    }};
 }
 
 impl PageIdx {
     pub const FIRST: Self = pageidx!(1);
-    pub const LAST: Self = pageidx!(0xFFFF_FFFF);
+    pub const LAST: Self = pageidx!(u32::MAX);
 
     /// Create a new `PageIndex` from a u32. Returns None if the `PageIndex` is 0.
     #[inline]
@@ -305,7 +309,7 @@ derive_newtype_proxy!(
     newtype (PageIdx)
     with empty value (PageIdx::FIRST)
     with proxy type (u32) and encoding (::bilrost::encoding::Varint)
-    with sample value (PageIdx::new(12345))
+    with sample value (pageidx!(12345))
     into_proxy (&self) {
         self.0.get()
     }
@@ -339,12 +343,12 @@ mod tests {
 
         let custom = pageidx!(5)..pageidx!(10);
         for (i, idx) in custom.iter().enumerate() {
-            assert_eq!(idx, PageIdx::new(i as u32 + 5));
+            assert_eq!(idx, PageIdx::must_new(i as u32 + 5));
         }
 
         let custom = pageidx!(5)..=pageidx!(10);
         for (i, idx) in custom.iter().enumerate() {
-            assert_eq!(idx, PageIdx::new(i as u32 + 5));
+            assert_eq!(idx, PageIdx::must_new(i as u32 + 5));
         }
     }
 }

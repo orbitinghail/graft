@@ -1,6 +1,0 @@
-syntax = "proto3";
-package graft.core.v1;
-
-// A HandleId represents a unique identifier for a Volume Handle.
-// It must match the Regex: ^[-_a-zA-Z0-9]{0,128}$
-message HandleId { string id = 1; }

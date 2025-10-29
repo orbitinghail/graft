@@ -1,9 +1,6 @@
 use std::ops::RangeInclusive;
 
-use graft_core::{
-    VolumeId,
-    lsn::{LSN, LSNRangeExt},
-};
+use graft_core::{VolumeId, lsn::LSN};
 use smallvec::SmallVec;
 
 /// A `SearchPath` represents a ordered set of Volumes along with a LSN range for
@@ -17,29 +14,40 @@ pub struct SearchPath {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathEntry {
-    vid: VolumeId,
-    lsns: RangeInclusive<LSN>,
+    pub vid: VolumeId,
+    pub lsns: RangeInclusive<LSN>,
 }
 
 impl SearchPath {
     pub const EMPTY: SearchPath = SearchPath { path: SmallVec::new_const() };
 
+    pub fn new(vid: VolumeId, lsns: RangeInclusive<LSN>) -> Self {
+        SearchPath {
+            path: SmallVec::from_const([PathEntry { vid, lsns }]),
+        }
+    }
+
     pub fn append(&mut self, vid: VolumeId, lsns: RangeInclusive<LSN>) {
-        assert!(
-            lsns.try_len().is_some_and(|l| l > 0),
-            "LSN range must be in the form low..=high"
-        );
+        assert!(!lsns.is_empty(), "LSN range must not be empty");
         self.path.push(PathEntry { vid, lsns });
     }
 
     pub fn first(&self) -> Option<(&VolumeId, LSN)> {
         self.path
             .first()
-            .map(|entry| (&entry.vid, *entry.lsns.start()))
+            .map(|entry| (&entry.vid, *entry.lsns.end()))
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &PathEntry> {
         self.path.iter()
+    }
+}
+
+impl IntoIterator for SearchPath {
+    type Item = PathEntry;
+    type IntoIter = smallvec::IntoIter<[PathEntry; 1]>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.path.into_iter()
     }
 }
 

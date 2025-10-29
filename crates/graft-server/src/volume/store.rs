@@ -1,6 +1,6 @@
 use std::{
     future::{self},
-    ops::RangeBounds,
+    ops::RangeInclusive,
     sync::Arc,
 };
 
@@ -77,10 +77,10 @@ impl VolumeStore {
     }
 
     /// Replay all commits for a volume contained by the specified LSN range.
-    pub fn replay_ordered<'a, R: RangeBounds<LSN> + 'a>(
+    pub fn replay_ordered<'a>(
         &'a self,
         vid: &'a VolumeId,
-        range: &'a R,
+        range: &'a RangeInclusive<LSN>,
     ) -> impl Stream<Item = Result<Commit<Bytes>, Culprit<VolumeStoreErr>>> + 'a {
         // convert the range into a stream of chunks, such that the first chunk
         // only contains the first LSN, and the remaining chunks have a maximum
@@ -173,7 +173,7 @@ mod tests {
         // verify that we can replay commits, and the result is ordered, and the
         // expected number of requests were issued
         let start_lsn = LSN::new(1);
-        let lsns = start_lsn..;
+        let lsns = start_lsn..=LSN::LAST;
         let replay = volstore.replay_ordered(&vid, &lsns);
 
         // zip the replay with the expected commits

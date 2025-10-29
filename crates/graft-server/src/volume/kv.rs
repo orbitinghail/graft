@@ -1,11 +1,11 @@
 use std::{
     fmt::{Debug, Display},
-    ops::{Range, RangeBounds},
+    ops::RangeInclusive,
 };
 
 use fjall::Slice;
 use graft_core::{
-    lsn::{LSN, LSNRangeExt},
+    lsn::LSN,
     {SegmentId, VolumeId},
 };
 use zerocopy::{BE, Immutable, IntoBytes, KnownLayout, TryFromBytes, U64, Unaligned};
@@ -32,10 +32,10 @@ impl CommitKey {
         self.lsn.try_into().expect("invalid LSN")
     }
 
-    pub fn range<R: RangeBounds<LSN>>(vid: &VolumeId, lsns: &R) -> Range<CommitKey> {
-        let start = CommitKey::new(vid.clone(), lsns.try_start().unwrap_or(LSN::FIRST));
-        let end = CommitKey::new(vid.clone(), lsns.try_end_exclusive().unwrap_or(LSN::LAST));
-        start..end
+    pub fn range(vid: &VolumeId, lsns: &RangeInclusive<LSN>) -> RangeInclusive<CommitKey> {
+        let start = CommitKey::new(vid.clone(), *lsns.start());
+        let end = CommitKey::new(vid.clone(), *lsns.end());
+        start..=end
     }
 }
 

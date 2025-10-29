@@ -668,7 +668,7 @@ impl Storage {
         let local_lsn = snapshot.local();
         let pages = snapshot.pages();
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
-        let remote_local_lsn = synced_lsns.try_end().expect("lsn range is RangeInclusive");
+        let remote_local_lsn = *synced_lsns.end();
 
         // check invariants
         assert!(

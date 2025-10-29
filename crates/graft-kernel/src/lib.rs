@@ -7,11 +7,14 @@ pub mod rt {
 
     pub(crate) mod rpc;
 
+    mod err;
+    mod job;
     mod runtime;
 }
 
 pub mod changeset;
 pub mod named_volume;
+pub mod remote;
 pub mod search_path;
 pub mod snapshot;
 pub mod volume_name;

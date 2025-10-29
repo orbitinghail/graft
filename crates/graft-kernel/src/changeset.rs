@@ -30,7 +30,7 @@ struct Inner<K> {
 impl<K> Default for Inner<K> {
     fn default() -> Self {
         Self {
-            next_version: Default::default(),
+            next_version: AtomicU64::new(1),
             event: Default::default(),
             set: Default::default(),
         }
@@ -69,7 +69,7 @@ impl<K: Eq + Hash + Clone + Debug> ChangeSet<K> {
 
     pub fn subscribe_all(&self) -> impl Stream<Item = HashSet<K>> + use<K> {
         let inner = self.inner.clone();
-        let mut version = inner.version();
+        let mut version = 0;
 
         stream! {
             loop {
@@ -90,7 +90,8 @@ impl<K: Eq + Hash + Clone + Debug> ChangeSet<K> {
 
 impl<K: Eq + Hash + Clone + Debug> Inner<K> {
     fn version(&self) -> u64 {
-        self.next_version.load(Ordering::Acquire)
+        // SAFETY: self.next_version starts at 1
+        self.next_version.load(Ordering::Acquire) - 1
     }
 
     fn next_version(&self) -> u64 {
@@ -117,23 +118,32 @@ impl<K: Eq + Hash + Clone + Debug> Inner<K> {
 
 #[cfg(test)]
 mod tests {
-    use tokio_stream::StreamExt;
+    use futures::{FutureExt, StreamExt};
 
     use super::*;
 
     #[graft_test::test]
-    async fn test_changeset() {
+    fn test_changeset() {
         let set = ChangeSet::new();
-
         let mut sub = Box::pin(set.subscribe_all());
 
         set.mark_changed(&1);
 
-        assert_eq!(sub.next().await, Some(HashSet::from_iter([1])));
+        // we use now_or_never rather than async/await to test exactly when and
+        // how the changeset yields a new set
+        assert_eq!(
+            sub.next().now_or_never(),
+            Some(Some(HashSet::from_iter([1])))
+        );
+        assert_eq!(sub.next().now_or_never(), None);
 
         set.mark_changed(&1);
         set.mark_changed(&2);
 
-        assert_eq!(sub.next().await, Some(HashSet::from_iter([1, 2])));
+        assert_eq!(
+            sub.next().now_or_never(),
+            Some(Some(HashSet::from_iter([1, 2])))
+        );
+        assert_eq!(sub.next().now_or_never(), None);
     }
 }

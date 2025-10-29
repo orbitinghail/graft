@@ -70,6 +70,11 @@ where
     K: FjallRepr,
     V: FjallRepr,
 {
+    /// Returns `true` if this snapshot contains the provided key
+    pub fn contains(&self, key: &K) -> culprit::Result<bool, FjallStorageErr> {
+        self.snapshot.contains_key(key.as_slice()).or_into_ctx()
+    }
+
     /// Retrieve the value corresponding to the key
     pub fn get(&self, key: &K) -> culprit::Result<Option<V>, FjallStorageErr> {
         if let Some(slice) = self.snapshot.get(key.as_slice())? {
@@ -112,18 +117,6 @@ where
         TypedPartitionIter::<K, V, _> {
             iter: self.snapshot.prefix(prefix),
             _phantom: PhantomData,
-        }
-    }
-
-    pub fn first<P>(&self, prefix: &P) -> culprit::Result<Option<V>, FjallStorageErr>
-    where
-        K: FjallKeyPrefix<Prefix = P>,
-        P: AsRef<[u8]>,
-    {
-        if let Some((_, v)) = self.prefix(prefix).try_next()? {
-            Ok(Some(v))
-        } else {
-            Ok(None)
         }
     }
 }
@@ -173,6 +166,11 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.try_next().transpose()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
     }
 }
 

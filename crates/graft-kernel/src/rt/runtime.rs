@@ -1,38 +1,34 @@
-use std::{collections::HashSet, pin::Pin, sync::Arc, time::Duration};
+use std::{collections::HashSet, pin::Pin, sync::Arc};
 
 use futures::{Stream, StreamExt};
-use tokio::time::sleep;
+use tokio::time::Instant;
 
 use crate::{
-    local::fjall_storage::{FjallStorage, FjallStorageErr},
-    rt::rpc::Rpc,
+    local::fjall_storage::FjallStorage,
+    remote::Remote,
+    rt::{
+        err::{RuntimeErr, RuntimeFatalErr},
+        job::Job,
+        rpc::Rpc,
+    },
     volume_name::VolumeName,
 };
 
-#[derive(Debug, thiserror::Error)]
-#[error("fatal runtime error")]
-pub struct RuntimeFatalErr;
-
-#[derive(Debug, thiserror::Error)]
-enum RuntimeErr {
-    #[error(transparent)]
-    StorageError(#[from] FjallStorageErr),
-}
-
 pub enum Event {
     Rpc(Rpc),
-    Tick,
+    Tick(Instant),
     Commits(HashSet<VolumeName>),
 }
 
 pub struct Runtime<S> {
+    remote: Remote,
     storage: Arc<FjallStorage>,
     events: Pin<Box<S>>,
 }
 
 impl<S: Stream<Item = Event>> Runtime<S> {
-    pub fn new(storage: Arc<FjallStorage>, events: Pin<Box<S>>) -> Self {
-        Runtime { storage, events }
+    pub fn new(remote: Remote, storage: Arc<FjallStorage>, events: Pin<Box<S>>) -> Self {
+        Runtime { remote, storage, events }
     }
 
     pub async fn start(mut self) -> Result<(), RuntimeFatalErr> {
@@ -46,23 +42,27 @@ impl<S: Stream<Item = Event>> Runtime<S> {
                     tracing::error!("sync task error: {:?}", err);
                     // we want to explore system states that include runtime errors
                     precept::expect_reachable!("graft-kernel runtime error", { "error": err.to_string() });
-                    sleep(Duration::from_millis(100)).await
                 }
             }
         }
     }
 
-    async fn run(&mut self) -> Result<(), RuntimeErr> {
+    async fn run(&mut self) -> culprit::Result<(), RuntimeErr> {
         while let Some(event) = self.events.next().await {
             match event {
-                Event::Rpc(rpc) => {
+                Event::Rpc(_rpc) => {
                     todo!("handle rpc")
                 }
-                Event::Tick => {
-                    todo!("handle tick")
+                Event::Tick(_instant) => {
+                    for job in Job::collect(&self.storage)? {
+                        job.run(&self.storage, &self.remote).await?
+                    }
                 }
                 Event::Commits(commits) => {
-                    todo!("handle commits")
+                    let jobs = commits.into_iter().map(Job::remote_commit);
+                    for job in jobs {
+                        job.run(&self.storage, &self.remote).await?
+                    }
                 }
             }
         }

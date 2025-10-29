@@ -29,8 +29,12 @@ pub async fn handler(
 ) -> Result<ProtoResponse<PullGraftResponse>, ApiErr> {
     let vid: VolumeId = req.vid.try_into()?;
     let lsns = req.range;
-    let end_lsn = match lsns {
-        Some(l) => l.end().or_into_ctx()?,
+    let start_lsn = match lsns.as_ref() {
+        Some(lsns) => Some(lsns.start().or_into_ctx()?),
+        None => None,
+    };
+    let end_lsn = match lsns.as_ref() {
+        Some(lsns) => lsns.end().or_into_ctx()?,
         None => None,
     };
 
@@ -53,10 +57,7 @@ pub async fn handler(
 
     // resolve the start of the range, defaulting to the last checkpoint
     let checkpoint = snapshot.checkpoint();
-    let start_lsn = match lsns {
-        Some(l) => l.start().or_into_ctx()?,
-        None => checkpoint,
-    };
+    let start_lsn = start_lsn.unwrap_or(checkpoint);
 
     // if the snapshot happens before the start_lsn, return a missing snapshot error
     if snapshot.lsn() < start_lsn {
@@ -83,10 +84,12 @@ pub async fn handler(
         .or_into_ctx()?;
 
     // read the segments, and merge into a single splinter
-    let mut iter = state.catalog.scan_segments(&vid, &lsns);
     let mut graft = Splinter::default();
-    while let Some((_, segment_graft)) = iter.try_next().or_into_ctx()? {
-        graft |= segment_graft;
+    {
+        let mut iter = state.catalog.scan_segments(&vid, &lsns);
+        while let Some((_, segment_graft)) = iter.try_next().or_into_ctx()? {
+            graft |= segment_graft;
+        }
     }
 
     Ok(ProtoResponse::new(PullGraftResponse {

@@ -1,9 +1,0 @@
-syntax = "proto3";
-package graft.core.v1;
-
-// A PageIdx represents the index of a page in a Volume. PageIdx's are non-zero.
-// The first page in a Volume has an index of 1.
-message PageIdx { uint32 pageidx = 1; }
-
-// A PageCount represents the number of pages in a Volume.
-message PageCount { uint32 page_count = 1; }

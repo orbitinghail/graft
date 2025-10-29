@@ -62,7 +62,7 @@ fn test_client_sync_sanity() {
         // as well as the segment flush interval in the backend
         subscription
             .recv_timeout(Duration::from_secs(5))
-            .expect("subscription failed");
+            .expect(&format!("{i}: subscription failed"));
 
         let snapshot = handle2.snapshot().unwrap().unwrap();
         tracing::info!("received remote snapshot: {snapshot:?}");

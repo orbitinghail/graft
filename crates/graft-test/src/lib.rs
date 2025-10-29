@@ -313,7 +313,7 @@ mod test {
 
         for (i, page) in pages.into_iter().enumerate() {
             let hash = PageHash::new(&page);
-            let pageidx = PageIdx::new(i as u32 + 1);
+            let pageidx = PageIdx::must_new(i as u32 + 1);
             assert!(tracker.insert(pageidx, hash).is_none());
             assert_eq!(tracker.get_hash(pageidx), Some(&hash));
         }
