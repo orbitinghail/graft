@@ -26,8 +26,7 @@ SQLITE_SRC_URL="https://www.sqlite.org/${SQLITE_YEAR}/sqlite-autoconf-${SQLITE_V
 SQLITE_DIR="${GIT_ROOT}/target/sqlite-${SQLITE_VERSION}"
 SQLITE_BIN="${SQLITE_DIR}/sqlite3"
 
-# install sqlite3 into ${GIT_ROOT}/target/sqlite3/
-# if it's not already installed
+# compile sqlite3 if needed
 if [ ! -f "${SQLITE_BIN}" ]; then
   echo "Downloading sqlite3 from ${SQLITE_SRC_URL} into ${SQLITE_DIR}"
   mkdir -p "${SQLITE_DIR}"

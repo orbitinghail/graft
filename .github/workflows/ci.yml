@@ -34,9 +34,10 @@ jobs:
     if: needs.skip-check.outputs.should_skip != 'true'
     steps:
       - name: system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang libclang-dev llvm mold libncurses-dev build-essential fuse3 libfuse3-dev libreadline-dev
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: clang libclang-dev llvm mold libncurses-dev build-essential fuse3 libfuse3-dev libreadline-dev
+          version: 1.0
 
       - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
 
@@ -66,6 +67,12 @@ jobs:
 
       - name: Cargo doctests
         run: cargo test --doc
+
+      - name: Cache SQLite
+        uses: actions/cache@v4
+        with:
+          path: target/sqlite-*/sqlite3
+          key: ${{ runner.os }}-sqlite3-${{ hashFiles('tasks/sqlite/*') }}
 
       - name: SQLite Tests
         run: just run sqlite test
