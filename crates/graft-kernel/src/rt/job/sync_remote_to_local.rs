@@ -6,7 +6,7 @@ use tryiter::TryIteratorExt;
 
 use crate::{
     local::fjall_storage::FjallStorage, rt::err::RuntimeErr, search_path::SearchPath,
-    volume_name::VolumeName,
+    volume_err::VolumeErr, volume_name::VolumeName,
 };
 
 /// Fast-forwards the local volume to include any remote commits. Fails if
@@ -28,7 +28,7 @@ pub async fn run(storage: &FjallStorage, opts: Opts) -> culprit::Result<(), Runt
     // check that the named volume has a sync point
     let reader = storage.read();
     let Some(handle) = reader.named_volume(&opts.name).or_into_ctx()? else {
-        return Err(RuntimeErr::NamedVolumeNotFound(opts.name).into());
+        return Err(VolumeErr::NamedVolumeNotFound(opts.name).into());
     };
     let Some(sync) = handle.sync() else {
         // nothing to sync
@@ -47,7 +47,7 @@ pub async fn run(storage: &FjallStorage, opts: Opts) -> culprit::Result<(), Runt
     if sync.local_changes(&latest_local).is_some() {
         // the remote and local volumes have diverged
         let status = handle.sync_status(&latest_local, Some(&latest_remote));
-        return Err(RuntimeErr::NamedVolumeDiverged(opts.name, status).into());
+        return Err(VolumeErr::NamedVolumeDiverged(opts.name, status).into());
     }
 
     tracing::debug!(

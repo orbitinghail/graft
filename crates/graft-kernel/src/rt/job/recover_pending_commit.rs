@@ -1,7 +1,9 @@
 use std::fmt::Debug;
 
+use culprit::ResultExt;
+
 use crate::{
-    local::fjall_storage::FjallStorage, remote::Remote, rt::err::RuntimeErr,
+    local::fjall_storage::FjallStorage, remote::Remote, rt::err::RuntimeErr, volume_err::VolumeErr,
     volume_name::VolumeName,
 };
 
@@ -21,9 +23,46 @@ impl Debug for Opts {
 }
 
 pub async fn run(
-    _storage: &FjallStorage,
-    _remote: &Remote,
-    _opts: Opts,
+    storage: &FjallStorage,
+    remote: &Remote,
+    opts: Opts,
 ) -> culprit::Result<(), RuntimeErr> {
-    todo!()
+    // the named volume must have a pending commit
+    let reader = storage.read();
+    let Some(handle) = reader.named_volume(&opts.name).or_into_ctx()? else {
+        return Err(VolumeErr::NamedVolumeNotFound(opts.name).into());
+    };
+    let Some(pending_commit) = handle.pending_commit() else {
+        // nothing to recover
+        return Ok(());
+    };
+
+    // to recover, we need to determine whether or not the pending commit made
+    // it to the server. thus, there are three outcomes to this job:
+    // 1. the commit made it (commit hash equal)
+    // 2. the commit did not make it (commit hash not equal, or commit missing)
+    // 3. an error occurs (retry later)
+
+    let remote_commit = remote
+        .get_commit(
+            pending_commit.commit_ref.vid(),
+            pending_commit.commit_ref.lsn(),
+        )
+        .await
+        .or_into_ctx()?;
+
+    match remote_commit {
+        Some(commit) if commit.commit_hash() == Some(&pending_commit.commit_hash) => {
+            // the commit made it! finish up the sync process
+            storage
+                .remote_commit_success(handle.name(), commit)
+                .or_into_ctx()?;
+        }
+        Some(_) | None => {
+            // the commit didn't make it, clear the pending commit.
+            // the pull_volume/sync_remote_to_local jobs will handle the new commit
+            storage.drop_pending_commit(handle.name()).or_into_ctx()?;
+        }
+    }
+    Ok(())
 }

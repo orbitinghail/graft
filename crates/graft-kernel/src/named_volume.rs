@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::RangeInclusive};
 
 use bilrost::Message;
 use culprit::Culprit;
@@ -8,25 +8,31 @@ use crate::{
     sync_point::SyncPoint, volume_name::VolumeName, volume_reader::VolumeReader,
     volume_writer::VolumeWriter,
 };
-use graft_core::{VolumeId, commit_hash::CommitHash, lsn::LSN};
+use graft_core::{PageCount, VolumeId, commit_hash::CommitHash, lsn::LSN, volume_ref::VolumeRef};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct PendingCommit {
-    /// The resulting remote LSN that the push job is attempting to create.
+    /// A reference to the local commit.
     #[bilrost(1)]
-    remote_lsn: LSN,
+    pub local_vid: VolumeId,
 
-    /// The associated commit hash. This is used to determine whether or not the
-    /// commit has landed in the remote, in the case that we are interrupted
-    /// while attempting to push.
+    /// The range of local LSNs that are included in the pending commit.
     #[bilrost(2)]
-    commit_hash: CommitHash,
-}
+    pub local_lsns: RangeInclusive<LSN>,
 
-impl PendingCommit {
-    pub fn new(remote_lsn: LSN, commit_hash: CommitHash) -> Self {
-        Self { remote_lsn, commit_hash }
-    }
+    /// A reference to the pending remote commit.
+    #[bilrost(3)]
+    pub commit_ref: VolumeRef,
+
+    /// The page count of the pending commit.
+    #[bilrost(4)]
+    pub page_count: PageCount,
+
+    /// The pending remote commit hash. This is used to determine whether or not
+    /// the commit has landed in the remote, in the case that we are interrupted
+    /// while attempting to push.
+    #[bilrost(5)]
+    pub commit_hash: CommitHash,
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]

@@ -18,6 +18,7 @@ pub mod remote;
 pub mod search_path;
 pub mod snapshot;
 pub mod sync_point;
+pub mod volume_err;
 pub mod volume_name;
 pub mod volume_reader;
 pub mod volume_writer;

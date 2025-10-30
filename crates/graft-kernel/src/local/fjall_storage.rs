@@ -19,17 +19,18 @@ use tryiter::TryIteratorExt;
 use crate::{
     changeset::ChangeSet,
     local::fjall_storage::{
-        keys::{CommitKey, PageKey},
+        keys::PageKey,
         typed_partition::{FjallBatchExt, TypedPartition, TypedPartitionSnapshot},
     },
     named_volume::{NamedVolumeState, PendingCommit},
     search_path::SearchPath,
     snapshot::Snapshot,
     sync_point::SyncPoint,
+    volume_err::VolumeErr,
     volume_name::VolumeName,
 };
 
-use culprit::{Culprit, Result, ResultExt};
+use culprit::{Result, ResultExt};
 
 mod fjall_repr;
 pub mod keys;
@@ -50,20 +51,11 @@ pub enum FjallStorageErr {
     #[error("I/O Error: {0}")]
     IoErr(#[from] std::io::Error),
 
-    #[error("Concurrent write to Volume {0} detected")]
-    ConcurrentWrite(VolumeId),
+    #[error("batch commit precondition failed")]
+    BatchPreconditionErr,
 
-    #[error("Unknown Volume {0}")]
-    VolumeNotFound(VolumeId),
-
-    #[error("Unknown Named Volume {0}")]
-    NamedVolumeNotFound(VolumeName),
-
-    #[error("A pre-commit check failed while preparing a remote commit: {0}")]
-    PrepareRemoteCommitCheck(&'static str),
-
-    #[error("A precondition failed while batch committing")]
-    PreconditionFailed,
+    #[error(transparent)]
+    VolumeErr(#[from] VolumeErr),
 }
 
 pub struct FjallStorage {
@@ -79,7 +71,7 @@ pub struct FjallStorage {
 
     /// This partition stores commits
     /// {vid} / {lsn} -> Commit
-    log: TypedPartition<CommitKey, Commit>,
+    log: TypedPartition<VolumeRef, Commit>,
 
     /// This partition stores Pages
     /// {sid} / {pageidx} -> Page
@@ -232,37 +224,29 @@ impl FjallStorage {
 
     /// Verify we are ready to make a remote commit and update the named volume
     /// with a `PendingCommit`
-    ///
-    /// Returns the updated named volume.
     pub fn remote_commit_prepare(
         &self,
-        handle: &NamedVolumeState,
-        remote_snapshot: Option<&Snapshot>,
-        commit_lsn: LSN,
-        commit_hash: &CommitHash,
-    ) -> Result<NamedVolumeState, FjallStorageErr> {
+        name: &VolumeName,
+        pending_commit: &PendingCommit,
+    ) -> Result<(), FjallStorageErr> {
         self.read_write()
-            .remote_commit_prepare(handle, remote_snapshot, commit_lsn, commit_hash)
+            .remote_commit_prepare(name, pending_commit)
     }
 
     /// Finish the remote commit process by writing out an updated named volume
     /// and recording the remote commit locally
     pub fn remote_commit_success(
         &self,
-        handle: &NamedVolumeState,
-        local_ref: VolumeRef,
+        name: &VolumeName,
         remote_commit: Commit,
     ) -> Result<(), FjallStorageErr> {
-        self.read_write()
-            .remote_commit_success(handle, local_ref, remote_commit)
+        self.read_write().remote_commit_success(name, remote_commit)
     }
 
-    /// This function is called when we attempt to make a remote commit, but are
-    /// rejected due to the Remote already containing the commit LSN. In this
-    /// case, we check some invariants and then clear the `pending_commit` from
-    /// the named volume.
-    pub fn remote_commit_rejected(&self, handle: &NamedVolumeState) -> Result<(), FjallStorageErr> {
-        self.read_write().remote_commit_rejected(handle)
+    /// Drop a pending commit without applying it. This should only be called
+    /// after receiving a rejection from the remote.
+    pub fn drop_pending_commit(&self, name: &VolumeName) -> Result<(), FjallStorageErr> {
+        self.read_write().drop_pending_commit(name)
     }
 
     /// Commit a batch with a precondition check.
@@ -304,7 +288,7 @@ impl<'a> ReadGuard<'a> {
         self.storage.volumes.snapshot_at(self.seqno)
     }
 
-    fn log(&self) -> TypedPartitionSnapshot<CommitKey, Commit> {
+    fn log(&self) -> TypedPartitionSnapshot<VolumeRef, Commit> {
         self.storage.log.snapshot_at(self.seqno)
     }
 
@@ -353,7 +337,7 @@ impl<'a> ReadGuard<'a> {
         max_lsn: Option<LSN>,
     ) -> Result<Snapshot, FjallStorageErr> {
         // compute the Snapshot's VolumeRef at the search LSN (or latest)
-        let search_range = CommitKey::new(vid.clone(), max_lsn.unwrap_or(LSN::LAST))..;
+        let search_range = VolumeRef::new(vid.clone(), max_lsn.unwrap_or(LSN::LAST))..;
         let vref = if let Some((_, commit)) = self.log().range(search_range).try_next()? {
             Some(commit.vref())
         } else {
@@ -366,8 +350,7 @@ impl<'a> ReadGuard<'a> {
         // assuming we found a vref, compute the snapshots search path and return a new tracked snapshot
         if let Some(vref) = vref {
             let path = self.search_path(vref.clone())?;
-            let (vid, _) = vref.into();
-            Ok(Snapshot::new(vid, path))
+            Ok(Snapshot::new(vref.vid, path))
         } else {
             Ok(Snapshot::new(vid.clone(), SearchPath::EMPTY))
         }
@@ -414,7 +397,7 @@ impl<'a> ReadGuard<'a> {
 
     /// Retrieve a specific commit
     fn get_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>, FjallStorageErr> {
-        self.log().get_owned(CommitKey::new(vid.clone(), lsn))
+        self.log().get_owned(VolumeRef::new(vid.clone(), lsn))
     }
 
     /// Iterates through all of the commits reachable by the provided `SearchPath`
@@ -429,8 +412,8 @@ impl<'a> ReadGuard<'a> {
             // the entry range is in the form `low..high` but the commits
             // partition orders LSNs in reverse. thus we need to flip the range
             // when passing it down to the underlying scan.
-            let low = CommitKey::new(entry.vid().clone(), *entry.lsns().start());
-            let high = CommitKey::new(entry.vid().clone(), *entry.lsns().end());
+            let low = entry.start_ref();
+            let high = entry.end_ref();
             let range = high..=low;
             log.range(range).map_ok(|(_, commit)| Ok(commit))
         })
@@ -510,8 +493,8 @@ impl<'a> WriteBatch<'a> {
     }
 
     pub fn write_commit(&mut self, commit: Commit) {
-        let key = CommitKey::new(commit.vid().clone(), commit.lsn());
-        self.batch.insert_typed(&self.storage.log, key, commit);
+        self.batch
+            .insert_typed(&self.storage.log, commit.vref(), commit);
     }
 
     pub fn write_named_volume(&mut self, handle: NamedVolumeState) {
@@ -580,9 +563,7 @@ impl<'a> ReadWriteGuard<'a> {
         // Verify that the commit was constructed using the latest snapshot for
         // the volume.
         if snapshot != latest_snapshot {
-            return Err(Culprit::from_err(FjallStorageErr::ConcurrentWrite(
-                snapshot.vid().clone(),
-            )));
+            return Err(VolumeErr::ConcurrentWrite(snapshot.vid().clone()).into());
         }
 
         let commit_lsn = latest_snapshot
@@ -593,12 +574,9 @@ impl<'a> ReadWriteGuard<'a> {
         let commit = Commit::new(snapshot.vid().clone(), commit_lsn, page_count)
             .with_segment_idx(Some(segment));
 
-        tracing::debug!(vid = ?snapshot.vid(), lsn = %commit_lsn, "local commit");
-
-        self.read
-            .storage
-            .log
-            .insert(CommitKey::new(snapshot.vid().clone(), commit_lsn), commit)
+        let vref = commit.vref();
+        tracing::debug!(%vref, "local commit");
+        self.read.storage.log.insert(vref, commit)
     }
 
     pub fn update_checkpoints(
@@ -609,7 +587,7 @@ impl<'a> ReadWriteGuard<'a> {
         let meta = self
             .read
             .volume_meta(&vid)?
-            .ok_or_else(|| FjallStorageErr::VolumeNotFound(vid.clone()))?
+            .ok_or_else(|| VolumeErr::VolumeNotFound(vid.clone()))?
             .with_checkpoints(checkpoints);
         self.storage().volumes.insert(vid, meta.clone())?;
         Ok(meta)
@@ -617,66 +595,84 @@ impl<'a> ReadWriteGuard<'a> {
 
     pub fn remote_commit_prepare(
         self,
-        handle: &NamedVolumeState,
-        remote_snapshot: Option<&Snapshot>,
-        commit_lsn: LSN,
-        commit_hash: &CommitHash,
-    ) -> Result<NamedVolumeState, FjallStorageErr> {
-        let Some(latest_handle) = self.read.named_volume(handle.name())? else {
-            return Err(FjallStorageErr::NamedVolumeNotFound(handle.name().clone()).into());
+        name: &VolumeName,
+        pending_commit: &PendingCommit,
+    ) -> Result<(), FjallStorageErr> {
+        let Some(handle) = self.read.named_volume(name)? else {
+            return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
         };
-        if &latest_handle != handle {
-            return Err(FjallStorageErr::PrepareRemoteCommitCheck("handle changed").into());
-        }
-
-        if let Some(remote_snapshot) = remote_snapshot {
-            let latest = self.read.snapshot(remote_snapshot.vid())?;
-            if &latest != remote_snapshot {
-                return Err(
-                    FjallStorageErr::PrepareRemoteCommitCheck("remote snapshot changed").into(),
-                );
-            }
-        }
 
         // This is checked during the remote commit planning stage
         assert!(
-            latest_handle.pending_commit().is_none(),
+            handle.pending_commit().is_none(),
             "BUG: pending commit is not None"
         );
 
-        // update the handle with a pending commit
-        let pending_commit = PendingCommit::new(commit_lsn, *commit_hash);
-        let handle = latest_handle.with_pending_commit(Some(pending_commit));
-        self.storage()
-            .named
-            .insert(handle.name().clone(), handle.clone())?;
+        // ensure the local volume is correct
+        assert_eq!(&pending_commit.local_vid, handle.local());
 
-        Ok(handle)
+        // ensure the remote volume is correct
+        if let Some(sync) = handle.sync() {
+            assert_eq!(sync.remote().vid(), pending_commit.commit_ref.vid());
+        }
+
+        // ensure LSN monotonicity
+        let latest_remote = self.read.snapshot(&pending_commit.commit_ref.vid)?;
+        assert_eq!(latest_remote.lsn(), pending_commit.commit_ref.lsn.prev());
+
+        // remember to set the commit hash
+        assert!(pending_commit.commit_hash != CommitHash::ZERO);
+
+        // save the new pending commit
+        let handle = handle.with_pending_commit(Some(pending_commit.clone()));
+        self.storage().named.insert(handle.name().clone(), handle)?;
+
+        Ok(())
     }
 
     pub fn remote_commit_success(
         self,
-        handle: &NamedVolumeState,
-        local_ref: VolumeRef,
+        name: &VolumeName,
         remote_commit: Commit,
     ) -> Result<(), FjallStorageErr> {
-        // fail if the handle has changed or if the remote lsn already exists
-        let Some(latest_handle) = self.read.named_volume(handle.name())? else {
-            return Err(FjallStorageErr::NamedVolumeNotFound(handle.name().clone()).into());
+        let Some(handle) = self.read.named_volume(name)? else {
+            return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
         };
+
+        let pending_commit = handle.pending_commit().unwrap();
+        assert_eq!(handle.local(), &pending_commit.local_vid);
+        assert_eq!(remote_commit.lsn(), pending_commit.commit_ref.lsn());
         assert_eq!(
-            &latest_handle, handle,
-            "BUG: named volume changed during remote commit"
+            remote_commit.commit_hash(),
+            Some(&pending_commit.commit_hash)
         );
 
+        if let Some(sync) = handle.sync() {
+            // the vids match up
+            assert_eq!(sync.local().vid(), &pending_commit.local_vid);
+            assert_eq!(sync.remote().vid(), pending_commit.commit_ref.vid());
+
+            // the lsns match up
+            assert_eq!(sync.local().lsn(), *pending_commit.local_lsns.start());
+            assert_eq!(
+                sync.remote().lsn(),
+                // we know this is not None, since there exists a sync point
+                // which implies that there is a previous remote commit
+                pending_commit.commit_ref.lsn().prev().unwrap()
+            );
+        }
+
         // fail if we somehow already know about this commit locally
-        let commit_key = CommitKey::new(remote_commit.vid().clone(), remote_commit.lsn());
         assert!(
-            !self.read.log().contains(&commit_key)?,
-            "BUG: commit {commit_key} already exists"
+            !self.read.log().contains(&remote_commit.vref())?,
+            "BUG: remote commit already exists"
         );
 
         // build a new handle with the updated sync points and no pending_commit
+        let local_ref = VolumeRef::new(
+            pending_commit.local_vid.clone(),
+            *pending_commit.local_lsns.end(),
+        );
         let new_handle = NamedVolumeState::new(
             handle.name().clone(),
             handle.local().clone(),
@@ -690,21 +686,13 @@ impl<'a> ReadWriteGuard<'a> {
         batch.commit()
     }
 
-    pub fn remote_commit_rejected(self, handle: &NamedVolumeState) -> Result<(), FjallStorageErr> {
-        // fail if the handle has changed or if the remote lsn already exists
-        let Some(latest_handle) = self.read.named_volume(handle.name())? else {
-            return Err(FjallStorageErr::NamedVolumeNotFound(handle.name().clone()).into());
+    pub fn drop_pending_commit(self, name: &VolumeName) -> Result<(), FjallStorageErr> {
+        let Some(handle) = self.read.named_volume(name)? else {
+            return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
         };
-        assert_eq!(
-            &latest_handle, handle,
-            "BUG: named volume changed during remote commit"
-        );
-
-        // clear pending_commit
-        self.storage().named.insert(
-            handle.name().clone(),
-            latest_handle.with_pending_commit(None),
-        )
+        self.storage()
+            .named
+            .insert(handle.name().clone(), handle.with_pending_commit(None))
     }
 
     pub fn batch_commit_precondition<F: FnOnce(ReadGuard) -> Result<bool, FjallStorageErr>>(
@@ -715,7 +703,7 @@ impl<'a> ReadWriteGuard<'a> {
         if precondition(self.read)? {
             batch.commit()
         } else {
-            Err(FjallStorageErr::PreconditionFailed.into())
+            Err(FjallStorageErr::BatchPreconditionErr.into())
         }
     }
 }

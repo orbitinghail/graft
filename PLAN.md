@@ -5,7 +5,7 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 [this RFC]: https://graft.rs/docs/rfcs/0001-direct-storage-architecture/
 
 - [x] structured logging
-- [ ] RecoverPendingCommit job
+- [x] RecoverPendingCommit job
 - [ ] RuntimeHandle::read_page
 - [ ] comprehensive tests
 - [ ] libgraft SQLite

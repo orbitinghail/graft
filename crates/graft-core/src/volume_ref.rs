@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use bilrost::Message;
 
 use crate::{VolumeId, lsn::LSN};
@@ -7,11 +9,11 @@ use crate::{VolumeId, lsn::LSN};
 pub struct VolumeRef {
     /// The referenced Volume ID
     #[bilrost(1)]
-    vid: VolumeId,
+    pub vid: VolumeId,
 
     /// The referenced LSN.
     #[bilrost(2)]
-    lsn: LSN,
+    pub lsn: LSN,
 }
 
 impl VolumeRef {
@@ -28,9 +30,8 @@ impl VolumeRef {
     }
 }
 
-impl From<VolumeRef> for (VolumeId, LSN) {
-    #[inline]
-    fn from(volume_ref: VolumeRef) -> Self {
-        (volume_ref.vid, volume_ref.lsn)
+impl Display for VolumeRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.vid.short(), self.lsn)
     }
 }

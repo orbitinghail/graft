@@ -61,17 +61,7 @@ pub enum CommitHashPrefix {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Default,
-    TryFromBytes,
-    IntoBytes,
-    Immutable,
-    KnownLayout,
-    Unaligned,
+    Debug, Clone, PartialEq, Eq, Default, TryFromBytes, IntoBytes, Immutable, KnownLayout, Unaligned,
 )]
 #[repr(C)]
 pub struct CommitHash {
@@ -82,7 +72,7 @@ pub struct CommitHash {
 static_assertions::assert_eq_size!(CommitHash, [u8; COMMIT_HASH_SIZE]);
 
 impl CommitHash {
-    const ZERO: Self = Self {
+    pub const ZERO: Self = Self {
         prefix: CommitHashPrefix::Value,
         hash: [0; HASH_SIZE],
     };

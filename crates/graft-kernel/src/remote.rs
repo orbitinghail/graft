@@ -158,9 +158,9 @@ impl Remote {
 
     /// Atomically write a volume control to the remote, returning
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
-    #[tracing::instrument(level = "debug", skip(self, control), fields(parent = ?control.parent()))]
-    pub async fn put_control(&self, vid: &VolumeId, control: VolumeControl) -> Result<()> {
-        let path = RemotePath::Control.build(vid);
+    #[tracing::instrument(level = "debug", skip(self, control), fields(vid = ?control.vid(), parent = ?control.parent()))]
+    pub async fn put_control(&self, control: VolumeControl) -> Result<()> {
+        let path = RemotePath::Control.build(control.vid());
         let payload = PutPayload::from_bytes(control.encode_to_bytes());
         self.store
             .put_opts(
@@ -239,8 +239,8 @@ impl Remote {
     /// Atomically write a commit to the remote, returning
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
     #[tracing::instrument(level = "debug", skip(self, commit), fields(lsn = %commit.lsn()))]
-    pub async fn put_commit(&self, vid: &VolumeId, commit: Commit) -> Result<()> {
-        let path = RemotePath::Commit(commit.lsn()).build(vid);
+    pub async fn put_commit(&self, commit: Commit) -> Result<()> {
+        let path = RemotePath::Commit(commit.lsn()).build(commit.vid());
         let payload = PutPayload::from_bytes(commit.encode_to_bytes());
         self.store
             .put_opts(

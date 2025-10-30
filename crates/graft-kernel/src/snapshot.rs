@@ -1,4 +1,4 @@
-use graft_core::{VolumeId, lsn::LSN};
+use graft_core::{VolumeId, lsn::LSN, volume_ref::VolumeRef};
 
 use crate::search_path::SearchPath;
 
@@ -36,3 +36,15 @@ impl PartialEq for Snapshot {
     }
 }
 impl Eq for Snapshot {}
+
+impl PartialEq<VolumeRef> for Snapshot {
+    fn eq(&self, other: &VolumeRef) -> bool {
+        &self.vid == other.vid() && self.lsn() == Some(other.lsn())
+    }
+}
+
+impl PartialEq<Snapshot> for VolumeRef {
+    fn eq(&self, other: &Snapshot) -> bool {
+        other.eq(self)
+    }
+}

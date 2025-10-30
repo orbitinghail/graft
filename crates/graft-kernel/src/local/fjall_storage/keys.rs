@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use bytes::Bytes;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
@@ -48,72 +46,34 @@ impl FjallRepr for VolumeId {
     }
 }
 
-/// Key for the `log` partition
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CommitKey {
-    vid: VolumeId,
-    lsn: LSN,
-}
-
-impl CommitKey {
-    #[inline]
-    pub fn new(vid: VolumeId, lsn: LSN) -> Self {
-        Self { vid, lsn }
-    }
-
-    #[inline]
-    pub fn vid(&self) -> &VolumeId {
-        &self.vid
-    }
-
-    #[inline]
-    pub fn lsn(&self) -> LSN {
-        self.lsn
-    }
-}
-
-impl From<VolumeRef> for CommitKey {
-    #[inline]
-    fn from(volume_ref: VolumeRef) -> Self {
-        let (vid, lsn) = volume_ref.into();
-        Self { vid, lsn }
-    }
-}
-
-impl Display for CommitKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.vid, self.lsn)
-    }
-}
-
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
-struct SerializedCommitKey {
+struct SerializedVolumeRef {
     vid: VolumeId,
     lsn: CBE64,
 }
 
-impl AsRef<[u8]> for SerializedCommitKey {
+impl AsRef<[u8]> for SerializedVolumeRef {
     #[inline]
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
 }
 
-impl FjallKeyPrefix for CommitKey {
+impl FjallKeyPrefix for VolumeRef {
     type Prefix = VolumeId;
 }
 
 proxy_to_fjall_repr!(
-    encode (CommitKey) using proxy (SerializedCommitKey)
+    encode (VolumeRef) using proxy (SerializedVolumeRef)
     into_proxy(me) {
-        SerializedCommitKey {
+        SerializedVolumeRef {
             vid: me.vid,
             lsn: me.lsn.into(),
         }
     }
     from_proxy(proxy) {
-        Ok(CommitKey {
+        Ok(VolumeRef {
             vid: proxy.vid.clone(),
             lsn: LSN::try_from(proxy.lsn)?,
         })
@@ -207,30 +167,30 @@ mod tests {
 
     #[graft_test::test]
     fn test_commit_key() {
-        test_roundtrip(CommitKey::new(VolumeId::random(), lsn!(123)));
+        test_roundtrip(VolumeRef::new(VolumeId::random(), lsn!(123)));
 
         // zero LSN is invalid
-        test_invalid::<CommitKey>(
-            SerializedCommitKey {
+        test_invalid::<VolumeRef>(
+            SerializedVolumeRef {
                 vid: VolumeId::random(),
                 lsn: CBE64::new(0),
             }
             .as_bytes(),
         );
 
-        test_invalid::<CommitKey>(b"short");
-        test_invalid::<CommitKey>(b"");
+        test_invalid::<VolumeRef>(b"short");
+        test_invalid::<VolumeRef>(b"");
 
         // CommitKeys must naturally sort in descending order by LSN
         let vid1: VolumeId = "GonvRDHqjHwNsCpPBET3Ly".parse().unwrap();
         let vid2: VolumeId = "GonvRDHruDyBB6s6RmuiSZ".parse().unwrap();
         test_serialized_order(&[
-            CommitKey::new(vid1.clone(), lsn!(4)),
-            CommitKey::new(vid1.clone(), lsn!(3)),
-            CommitKey::new(vid1.clone(), lsn!(2)),
-            CommitKey::new(vid1, lsn!(1)),
-            CommitKey::new(vid2.clone(), lsn!(2)),
-            CommitKey::new(vid2, lsn!(1)),
+            VolumeRef::new(vid1.clone(), lsn!(4)),
+            VolumeRef::new(vid1.clone(), lsn!(3)),
+            VolumeRef::new(vid1.clone(), lsn!(2)),
+            VolumeRef::new(vid1, lsn!(1)),
+            VolumeRef::new(vid2.clone(), lsn!(2)),
+            VolumeRef::new(vid2, lsn!(1)),
         ]);
     }
 

@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use graft_core::{VolumeId, lsn::LSN};
+use graft_core::{VolumeId, lsn::LSN, volume_ref::VolumeRef};
 use smallvec::SmallVec;
 
 /// A `SearchPath` represents a ordered set of Volumes along with a LSN range for
@@ -16,6 +16,16 @@ pub struct SearchPath {
 pub struct PathEntry {
     pub vid: VolumeId,
     pub lsns: RangeInclusive<LSN>,
+}
+
+impl PathEntry {
+    pub fn start_ref(&self) -> VolumeRef {
+        VolumeRef::new(self.vid.clone(), *self.lsns.start())
+    }
+
+    pub fn end_ref(&self) -> VolumeRef {
+        VolumeRef::new(self.vid.clone(), *self.lsns.end())
+    }
 }
 
 impl SearchPath {
