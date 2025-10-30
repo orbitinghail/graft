@@ -4,10 +4,18 @@ use std::{
 };
 
 use culprit::ResultExt;
-use fjall::{Batch, Keyspace, KvPair, PartitionCreateOptions, Slice};
-use tryiter::TryIteratorExt;
+use fjall::{Keyspace, PartitionCreateOptions, Slice};
 
-use crate::local::fjall_storage::{FjallStorageErr, fjall_repr::FjallRepr, keys::FjallKeyPrefix};
+use crate::local::fjall_storage::{
+    FjallStorageErr,
+    fjall_repr::FjallRepr,
+    keys::FjallKeyPrefix,
+    typed_partition::{typed_key_iter::TypedKeyIter, typed_kv_iter::TypedKVIter},
+};
+
+pub mod fjall_batch_ext;
+pub mod typed_key_iter;
+pub mod typed_kv_iter;
 
 #[derive(Clone)]
 pub struct TypedPartition<K, V> {
@@ -91,6 +99,20 @@ where
         Ok(None)
     }
 
+    pub fn range_keys<R: RangeBounds<K>>(
+        &self,
+        range: R,
+    ) -> impl DoubleEndedIterator<Item = culprit::Result<K, FjallStorageErr>> + use<R, K, V> {
+        let r: (Bound<Slice>, Bound<Slice>) = (
+            range.start_bound().map(|b| b.clone().into_slice()),
+            range.end_bound().map(|b| b.clone().into_slice()),
+        );
+        TypedKeyIter::<K, _> {
+            iter: self.snapshot.range(r),
+            _phantom: PhantomData,
+        }
+    }
+
     pub fn range<R: RangeBounds<K>>(
         &self,
         range: R,
@@ -100,7 +122,7 @@ where
             range.start_bound().map(|b| b.clone().into_slice()),
             range.end_bound().map(|b| b.clone().into_slice()),
         );
-        TypedPartitionIter::<K, V, _> {
+        TypedKVIter::<K, V, _> {
             iter: self.snapshot.range(r),
             _phantom: PhantomData,
         }
@@ -114,108 +136,9 @@ where
         K: FjallKeyPrefix<Prefix = P>,
         P: AsRef<[u8]>,
     {
-        TypedPartitionIter::<K, V, _> {
+        TypedKVIter::<K, V, _> {
             iter: self.snapshot.prefix(prefix),
             _phantom: PhantomData,
         }
-    }
-}
-
-pub struct TypedPartitionIter<K, V, I> {
-    iter: I,
-    _phantom: PhantomData<(K, V)>,
-}
-
-impl<K, V, I> TypedPartitionIter<K, V, I>
-where
-    K: FjallRepr,
-    V: FjallRepr,
-    I: DoubleEndedIterator<Item = Result<KvPair, lsm_tree::Error>>,
-{
-    fn try_next(&mut self) -> culprit::Result<Option<(K, V)>, FjallStorageErr> {
-        if let Some((key, val)) = self.iter.try_next()? {
-            Ok(Some((
-                K::try_from_slice(key).or_into_ctx()?,
-                V::try_from_slice(val).or_into_ctx()?,
-            )))
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn try_next_back(&mut self) -> culprit::Result<Option<(K, V)>, FjallStorageErr> {
-        if let Some((key, val)) = self.iter.next_back().transpose()? {
-            Ok(Some((
-                K::try_from_slice(key).or_into_ctx()?,
-                V::try_from_slice(val).or_into_ctx()?,
-            )))
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-impl<K, V, I> Iterator for TypedPartitionIter<K, V, I>
-where
-    K: FjallRepr,
-    V: FjallRepr,
-    I: DoubleEndedIterator<Item = Result<KvPair, lsm_tree::Error>>,
-{
-    type Item = culprit::Result<(K, V), FjallStorageErr>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.try_next().transpose()
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.iter.size_hint()
-    }
-}
-
-impl<K, V, I> DoubleEndedIterator for TypedPartitionIter<K, V, I>
-where
-    K: FjallRepr,
-    V: FjallRepr,
-    I: DoubleEndedIterator<Item = Result<KvPair, lsm_tree::Error>>,
-{
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.try_next_back().transpose()
-    }
-}
-
-pub trait FjallBatchExt {
-    fn insert_typed<K: FjallRepr, V: FjallRepr>(
-        &mut self,
-        partition: &TypedPartition<K, V>,
-        key: K,
-        val: V,
-    );
-
-    fn remove_typed<K: FjallRepr, V: FjallRepr>(
-        &mut self,
-        partition: &TypedPartition<K, V>,
-        key: K,
-    );
-}
-
-impl FjallBatchExt for Batch {
-    fn insert_typed<K: FjallRepr, V: FjallRepr>(
-        &mut self,
-        partition: &TypedPartition<K, V>,
-        key: K,
-        val: V,
-    ) {
-        self.insert(&partition.partition, key.into_slice(), val.into_slice())
-    }
-
-    fn remove_typed<K: FjallRepr, V: FjallRepr>(
-        &mut self,
-        partition: &TypedPartition<K, V>,
-        key: K,
-    ) {
-        self.remove(&partition.partition, key.into_slice())
     }
 }

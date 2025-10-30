@@ -20,7 +20,7 @@ use crate::{
     changeset::ChangeSet,
     local::fjall_storage::{
         keys::PageKey,
-        typed_partition::{FjallBatchExt, TypedPartition, TypedPartitionSnapshot},
+        typed_partition::{TypedPartition, TypedPartitionSnapshot, fjall_batch_ext::FjallBatchExt},
     },
     named_volume::{NamedVolumeState, PendingCommit},
     search_path::SearchPath,
@@ -409,8 +409,8 @@ impl<'a> ReadGuard<'a> {
         let log = self.log();
 
         path.iter().flat_map(move |entry| {
-            // the entry range is in the form `low..high` but the commits
-            // partition orders LSNs in reverse. thus we need to flip the range
+            // the entry range is in the form `low..=high` but the log orders
+            // LSNs in reverse. thus we need to flip the range
             // when passing it down to the underlying scan.
             let low = entry.start_ref();
             let high = entry.end_ref();
@@ -419,14 +419,21 @@ impl<'a> ReadGuard<'a> {
         })
     }
 
-    /// Returns the set of all LSNs we have for a particular volume.
-    pub fn lsns(&self, vid: &VolumeId) -> Result<LSNSet, FjallStorageErr> {
-        // TODO: This set usually only changes when we commit, and rarely has
-        // gaps. Thus, it's an ideal candidate for caching in memory which will
-        // improve pull_volume performance for volumes with large logs.
+    /// Given a range of LSNs for a particular volume, returns the set of LSNs
+    /// we have
+    pub fn lsns(
+        &self,
+        vid: &VolumeId,
+        lsns: &RangeInclusive<LSN>,
+    ) -> Result<LSNSet, FjallStorageErr> {
+        // lsns is in the form `low..=high` but the log orders
+        // LSNs in reverse. thus we need to flip the range
+        let low = VolumeRef::new(vid.clone(), *lsns.start());
+        let high = VolumeRef::new(vid.clone(), *lsns.end());
+        let range = high..=low;
         self.log()
-            .prefix(vid)
-            .map_ok(|(key, _)| Ok(key.lsn()))
+            .range_keys(range)
+            .map_ok(|key| Ok(key.lsn()))
             .collect()
     }
 

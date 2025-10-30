@@ -52,9 +52,10 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
     for PathEntry { vid, lsns } in search {
         tracing::debug!(vid = ?opts.vid, lsns = %lsns.to_string(), "pulling volume commits");
 
-        let all_lsns = storage.read().lsns(&vid).or_into_ctx()?;
-        let lsns = RangeOnce::new(lsns) - all_lsns.ranges();
-        let mut commits = remote.stream_commits_ordered(&vid, lsns.flat_map(|r| r.iter()));
+        let existing_lsns = storage.read().lsns(&vid, &lsns).or_into_ctx()?;
+        let missing_lsns = RangeOnce::new(lsns) - existing_lsns.into_ranges();
+
+        let mut commits = remote.stream_commits_ordered(&vid, missing_lsns.flat_map(|r| r.iter()));
         while let Some(commit) = commits.try_next().await.or_into_ctx()? {
             batch.write_commit(commit);
         }
