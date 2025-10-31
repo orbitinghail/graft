@@ -717,6 +717,7 @@ impl<'a> ReadWriteGuard<'a> {
         }
 
         tracing::debug!(
+            sync = ?handle.sync(),
             lsns = %remote_changes.to_string(),
             remote = ?latest_remote.vid(),
             local = ?latest_local.vid(),

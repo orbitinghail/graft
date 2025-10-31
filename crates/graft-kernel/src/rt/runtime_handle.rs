@@ -170,7 +170,7 @@ mod tests {
 
         // let both runtimes run for a little while
         tokio_rt.block_on(async {
-            // this sleep lets tokio advance time, allowing the runtime to flush all it's jobs
+            // this sleep lets tokio advance time, allowing the runtime to flush all its jobs
             sleep(Duration::from_secs(5)).await;
             let tree = remote.testonly_format_tree().await;
             tracing::info!("remote tree\n{tree}")
@@ -180,13 +180,47 @@ mod tests {
         assert_eq!(volume_2.status().unwrap().to_string(), "1 r1",);
 
         // sanity check volume reader semantics in the second runtime
+        let reader_2 = volume_2.reader().unwrap();
         let task = tokio_rt.spawn_blocking(move || {
-            let reader_2 = volume_2.reader().unwrap();
             for i in [1u8, 2, 5, 9] {
                 let pageidx = PageIdx::must_new(i as u32);
                 tracing::info!("checking page {pageidx}");
                 let expected = Page::test_filled(i);
                 let actual = reader_2.read_page(pageidx).unwrap();
+                assert_eq!(expected, actual, "read unexpected page contents");
+            }
+        });
+        tokio_rt.block_on(task).unwrap();
+
+        // now write to the second volume, and sync back to the first
+        let mut writer_2 = volume_2.writer().unwrap();
+        for i in [3u8, 4, 5, 7] {
+            let pageidx = PageIdx::must_new(i as u32);
+            let page = Page::test_filled(i + 10);
+            writer_2.write_page(pageidx, page.clone()).unwrap();
+            assert_eq!(writer_2.read_page(pageidx).unwrap(), page);
+        }
+        writer_2.commit().unwrap();
+
+        // let both runtimes run for a little while
+        tokio_rt.block_on(async {
+            // this sleep lets tokio advance time, allowing the runtime to flush all its jobs
+            sleep(Duration::from_secs(5)).await;
+            let tree = remote.testonly_format_tree().await;
+            tracing::info!("remote tree\n{tree}")
+        });
+
+        assert_eq!(volume.status().unwrap().to_string(), "2 r2",);
+        assert_eq!(volume_2.status().unwrap().to_string(), "2 r2",);
+
+        // sanity check volume reader semantics in the first runtime
+        let reader = volume.reader().unwrap();
+        let task = tokio_rt.spawn_blocking(move || {
+            for i in [3u8, 4, 5, 7] {
+                let pageidx = PageIdx::must_new(i as u32);
+                tracing::info!("checking page {pageidx}");
+                let expected = Page::test_filled(i + 10);
+                let actual = reader.read_page(pageidx).unwrap();
                 assert_eq!(expected, actual, "read unexpected page contents");
             }
         });

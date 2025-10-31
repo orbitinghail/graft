@@ -210,7 +210,7 @@ impl AheadStatus {
         match (self.base, self.head) {
             (None, None) => None,
             (None, Some(head)) => Some(LSN::FIRST..=head),
-            (Some(base), Some(head)) => (base < head).then(|| base..=head),
+            (Some(base), Some(head)) => (base < head).then(|| base.next()..=head),
 
             (Some(_), None) => unreachable!("BUG: snapshot behind sync point"),
         }
