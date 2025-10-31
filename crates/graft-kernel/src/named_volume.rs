@@ -1,13 +1,15 @@
 use std::{fmt::Display, ops::RangeInclusive};
 
 use bilrost::Message;
-use culprit::Culprit;
+use culprit::ResultExt;
 
 use crate::{
-    local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
-    volume_name::VolumeName, volume_reader::VolumeReader, volume_writer::VolumeWriter,
+    GraftErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
+    volume_reader::VolumeReader, volume_writer::VolumeWriter,
 };
 use graft_core::{VolumeId, commit_hash::CommitHash, lsn::LSN};
+
+type Result<T> = culprit::Result<T, GraftErr>;
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct SyncPoint {
@@ -123,18 +125,7 @@ impl NamedVolumeState {
         .changes()
     }
 
-    /// Given the latest local and remote snapshot, format a human readable
-    /// concise description of the status of this named volume.
-    ///
-    /// # Output examples:
-    ///  - `_`: empty volume
-    ///  - `123`: never synced
-    ///  - `123 r130`: remote and local in sync
-    ///  - `_ r130+130`: remote is 130 commits ahead, local is empty
-    ///  - `123+3 r130`: local is 3 commits ahead
-    ///  - `123 r130+3`: remote is 3 commits ahead
-    ///  - `123+2 r130+3`: local and remote have diverged
-    pub fn sync_status(&self, latest_local: &Snapshot, latest_remote: &Snapshot) -> String {
+    pub fn status(&self, latest_local: &Snapshot, latest_remote: &Snapshot) -> NamedVolumeStatus {
         assert_eq!(
             &self.local,
             latest_local.vid(),
@@ -145,20 +136,10 @@ impl NamedVolumeState {
             latest_remote.vid(),
             "BUG: remote snapshot out of sync"
         );
-
-        let local = AheadStatus {
-            head: latest_local.lsn(),
-            base: self.sync().map(|s| s.local),
-        };
-        let remote = AheadStatus {
-            head: latest_remote.lsn(),
-            base: self.sync().map(|s| s.remote),
-        };
-
-        if remote.is_empty() {
-            format!("{local}")
-        } else {
-            format!("{local} {remote}")
+        NamedVolumeStatus {
+            local: latest_local.clone(),
+            remote: latest_remote.clone(),
+            sync: self.sync.clone(),
         }
     }
 }
@@ -173,22 +154,24 @@ impl NamedVolume {
         Self { runtime, name }
     }
 
-    pub fn status(&self) -> Result<String, Culprit<FjallStorageErr>> {
+    pub fn status(&self) -> Result<NamedVolumeStatus> {
         let reader = self.runtime.storage().read();
         let state = reader
-            .named_volume(&self.name)?
+            .named_volume(&self.name)
+            .or_into_ctx()?
             .expect("BUG: NamedVolume missing state");
-        let latest_local = reader.snapshot(&state.local)?;
-        let latest_remote = reader.snapshot(&state.remote)?;
-        Ok(state.sync_status(&latest_local, &latest_remote))
+        let latest_local = reader.snapshot(&state.local).or_into_ctx()?;
+        let latest_remote = reader.snapshot(&state.remote).or_into_ctx()?;
+        Ok(state.status(&latest_local, &latest_remote))
     }
 
-    pub fn reader(&self) -> Result<VolumeReader, Culprit<FjallStorageErr>> {
+    pub fn reader(&self) -> Result<VolumeReader> {
         let snapshot = self
             .runtime
             .storage()
             .read()
-            .named_local_snapshot(&self.name)?
+            .named_local_snapshot(&self.name)
+            .or_into_ctx()?
             .expect("BUG: NamedVolume missing local snapshot");
         Ok(VolumeReader::new(
             self.name.clone(),
@@ -197,12 +180,13 @@ impl NamedVolume {
         ))
     }
 
-    pub fn writer(&self) -> Result<VolumeWriter, Culprit<FjallStorageErr>> {
+    pub fn writer(&self) -> Result<VolumeWriter> {
         let read = self.runtime.storage().read();
         let snapshot = read
-            .named_local_snapshot(&self.name)?
+            .named_local_snapshot(&self.name)
+            .or_into_ctx()?
             .expect("BUG: NamedVolume missing local snapshot");
-        let page_count = read.page_count(&snapshot)?;
+        let page_count = read.page_count(&snapshot).or_into_ctx()?;
         Ok(VolumeWriter::new(
             self.name.clone(),
             self.runtime.clone(),
@@ -248,6 +232,48 @@ impl Display for AheadStatus {
             (None, None) => write!(f, "_"),
 
             (Some(_), None) => unreachable!("BUG: snapshot behind sync point"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct NamedVolumeStatus {
+    pub local: Snapshot,
+    pub remote: Snapshot,
+    pub sync: Option<SyncPoint>,
+}
+
+impl NamedVolumeStatus {
+    pub fn sync(&self) -> Option<&SyncPoint> {
+        self.sync.as_ref()
+    }
+}
+
+/// Output a human readable concise description of the status of this named
+/// volume.
+///
+/// # Output examples:
+///  - `_`: empty volume
+///  - `123`: never synced
+///  - `123 r130`: remote and local in sync
+///  - `_ r130+130`: remote is 130 commits ahead, local is empty
+///  - `123+3 r130`: local is 3 commits ahead
+///  - `123 r130+3`: remote is 3 commits ahead
+///  - `123+2 r130+3`: local and remote have diverged
+impl Display for NamedVolumeStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let local = AheadStatus {
+            head: self.local.lsn(),
+            base: self.sync().map(|s| s.local),
+        };
+        let remote = AheadStatus {
+            head: self.remote.lsn(),
+            base: self.sync().map(|s| s.remote),
+        };
+        if remote.is_empty() {
+            write!(f, "{local}")
+        } else {
+            write!(f, "{local} r{remote}")
         }
     }
 }

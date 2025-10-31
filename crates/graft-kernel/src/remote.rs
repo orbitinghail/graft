@@ -26,35 +26,39 @@ pub mod segment;
 const FETCH_COMMITS_CONCURRENCY: usize = 5;
 
 enum RemotePath<'a> {
-    /// Control files are stored at `/{vid}/control`
-    Control,
+    /// Control files are stored at `/volumes/{vid}/control`
+    Control(&'a VolumeId),
 
-    /// Forks are stored at `/{vid}/forks/{fork_vid}`
+    /// Forks are stored at `/volumes/{vid}/forks/{fork_vid}`
     /// Forks point from the parent to the child.
     ///
     /// TODO: Implement Forks!
     // Fork(&'a VolumeId),
 
-    /// `CheckpointSets` are stored at `/{vid}/checkpoints`
-    CheckpointSet,
+    /// `CheckpointSets` are stored at `/volumes/{vid}/checkpoints`
+    CheckpointSet(&'a VolumeId),
 
-    /// Commits are stored at `/{vid}/log/{CBE64 hex LSN}`
-    Commit(LSN),
+    /// Commits are stored at `/volumes/{vid}/log/{CBE64 hex LSN}`
+    Commit(&'a VolumeId, LSN),
 
-    /// Segments are stored at `/{vid}/segments/{sid}`
+    /// Segments are stored at `/segments/{sid}`
     Segment(&'a SegmentId),
 }
 
 impl RemotePath<'_> {
-    fn build(self, vid: &VolumeId) -> object_store::path::Path {
-        let vid = vid.pretty();
+    fn build(self) -> object_store::path::Path {
         match self {
-            Self::Control => Path::from_iter([&vid, "control"]),
+            Self::Control(vid) => Path::from_iter(["volumes", &vid.pretty(), "control"]),
             // TODO: Implement Forks!
             // Self::Fork(fork) => Path::from_iter([&vid, "forks", &fork.pretty()]),
-            Self::CheckpointSet => Path::from_iter([&vid, "checkpoints"]),
-            Self::Commit(lsn) => Path::from_iter([&vid, "log", &CBE64::from(lsn).to_string()]),
-            Self::Segment(sid) => Path::from_iter([&vid, "segments", &sid.pretty()]),
+            Self::CheckpointSet(vid) => Path::from_iter(["volumes", &vid.pretty(), "checkpoints"]),
+            Self::Commit(vid, lsn) => Path::from_iter([
+                "volumes",
+                &vid.pretty(),
+                "log",
+                &CBE64::from(lsn).to_string(),
+            ]),
+            Self::Segment(sid) => Path::from_iter(["segments", &sid.pretty()]),
         }
     }
 }
@@ -150,7 +154,7 @@ impl Remote {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_control(&self, vid: &VolumeId) -> Result<VolumeControl> {
-        let path = RemotePath::Control.build(vid);
+        let path = RemotePath::Control(vid).build();
         let result = self.store.get(&path).await?;
         let bytes = result.bytes().await?;
         Ok(VolumeControl::decode(bytes)?)
@@ -160,7 +164,7 @@ impl Remote {
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
     #[tracing::instrument(level = "debug", skip(self, control), fields(vid = ?control.vid(), parent = ?control.parent()))]
     pub async fn put_control(&self, control: VolumeControl) -> Result<()> {
-        let path = RemotePath::Control.build(control.vid());
+        let path = RemotePath::Control(&control.vid).build();
         let payload = PutPayload::from_bytes(control.encode_to_bytes());
         self.store
             .put_opts(
@@ -183,7 +187,7 @@ impl Remote {
         vid: &VolumeId,
         etag: Option<String>,
     ) -> Result<CachedCheckpoints> {
-        let path = RemotePath::CheckpointSet.build(vid);
+        let path = RemotePath::CheckpointSet(vid).build();
         let opts = GetOptions {
             if_none_match: etag,
             ..GetOptions::default()
@@ -228,7 +232,7 @@ impl Remote {
     /// Fetches a single commit, returning None if the commit is not found.
     #[tracing::instrument(level = "trace", skip(self, lsn), fields(lsn = %lsn))]
     pub async fn get_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>> {
-        let path = RemotePath::Commit(lsn).build(vid);
+        let path = RemotePath::Commit(vid, lsn).build();
         match self.store.get(&path).await {
             Ok(res) => Commit::decode(res.bytes().await?).or_into_ctx().map(Some),
             Err(object_store::Error::NotFound { .. }) => Ok(None),
@@ -240,7 +244,7 @@ impl Remote {
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
     #[tracing::instrument(level = "debug", skip(self, commit), fields(lsn = %commit.lsn()))]
     pub async fn put_commit(&self, commit: Commit) -> Result<()> {
-        let path = RemotePath::Commit(commit.lsn()).build(commit.vid());
+        let path = RemotePath::Commit(commit.vid(), commit.lsn()).build();
         let payload = PutPayload::from_bytes(commit.encode_to_bytes());
         self.store
             .put_opts(
@@ -258,27 +262,23 @@ impl Remote {
     }
 
     /// Uploads a segment to this Remote
-    #[tracing::instrument(level = "debug", skip(self, chunks))]
+    #[tracing::instrument(level = "debug", skip(self, chunks), fields(size))]
     pub async fn put_segment<I: IntoIterator<Item = Bytes>>(
         &self,
-        vid: &VolumeId,
         sid: &SegmentId,
         chunks: I,
     ) -> Result<()> {
-        let path = RemotePath::Segment(sid).build(vid);
-        self.store.put(&path, PutPayload::from_iter(chunks)).await?;
+        let path = RemotePath::Segment(sid).build();
+        let payload = PutPayload::from_iter(chunks);
+        tracing::Span::current().record("size", payload.content_length());
+        self.store.put(&path, payload).await?;
         Ok(())
     }
 
     /// Reads a byte range of a segment
     #[tracing::instrument(level = "debug", skip(self))]
-    pub async fn get_segment_range(
-        &self,
-        vid: &VolumeId,
-        sid: &SegmentId,
-        bytes: &Range<usize>,
-    ) -> Result<Bytes> {
-        let path = RemotePath::Segment(sid).build(vid);
+    pub async fn get_segment_range(&self, sid: &SegmentId, bytes: &Range<usize>) -> Result<Bytes> {
+        let path = RemotePath::Segment(sid).build();
         let get_opts = GetOptions {
             range: Some(GetRange::Bounded(bytes.start as u64..bytes.end as u64)),
             ..GetOptions::default()
@@ -289,7 +289,7 @@ impl Remote {
 
     /// TESTONLY: list contents of this remote in a tree-like format
     #[cfg(test)]
-    pub async fn testonly_print_tree(&self) {
+    pub async fn testonly_format_tree(&self) -> String {
         use itertools::Itertools;
         use std::collections::BTreeMap;
         use text_trees::{
@@ -341,16 +341,14 @@ impl Remote {
             root.insert(&path);
         }
 
-        print!(
-            "{}",
-            root.to_tree_node(self.store.to_string())
-                .to_string_with_format(&TreeFormatting {
-                    prefix_str: None,
-                    orientation: TreeOrientation::TopDown,
-                    anchor: AnchorPosition::Left,
-                    chars: FormatCharacters::box_chars(),
-                })
-                .unwrap()
-        )
+        root.to_tree_node(self.store.to_string())
+            .to_string_with_format(&TreeFormatting {
+                prefix_str: None,
+                orientation: TreeOrientation::TopDown,
+                anchor: AnchorPosition::Left,
+                chars: FormatCharacters::box_chars(),
+            })
+            .unwrap()
+            .to_string()
     }
 }

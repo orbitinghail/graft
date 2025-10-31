@@ -1,26 +1,19 @@
-use graft_core::{PageIdx, VolumeId, commit::SegmentIdx, page::Page};
+use graft_core::{PageIdx, commit::SegmentIdx, page::Page};
 use tokio::{
     runtime::Handle,
     sync::{mpsc, oneshot},
 };
 
-use crate::{GraftErr, named_volume::NamedVolumeState, volume_name::VolumeName};
+use crate::GraftErr;
 
 type Result<T> = culprit::Result<T, GraftErr>;
 
 #[derive(Debug)]
 pub enum Rpc {
     RemoteReadPage {
-        vid: VolumeId,
         idx: SegmentIdx,
         pageidx: PageIdx,
         complete: oneshot::Sender<Result<Page>>,
-    },
-
-    CreateVolumeFromRemote {
-        name: VolumeName,
-        vid: VolumeId,
-        complete: oneshot::Sender<Result<NamedVolumeState>>,
     },
 }
 
@@ -34,23 +27,9 @@ impl RpcHandle {
         Self { tx }
     }
 
-    pub fn remote_read_page(
-        &self,
-        vid: VolumeId,
-        idx: SegmentIdx,
-        pageidx: PageIdx,
-    ) -> Result<Page> {
+    pub fn remote_read_page(&self, idx: SegmentIdx, pageidx: PageIdx) -> Result<Page> {
         let (tx, rx) = oneshot::channel();
-        self.rpc(Rpc::RemoteReadPage { vid, idx, pageidx, complete: tx }, rx)
-    }
-
-    pub fn create_volume_from_remote(
-        &self,
-        name: VolumeName,
-        vid: VolumeId,
-    ) -> Result<NamedVolumeState> {
-        let (tx, rx) = oneshot::channel();
-        self.rpc(Rpc::CreateVolumeFromRemote { name, vid, complete: tx }, rx)
+        self.rpc(Rpc::RemoteReadPage { idx, pageidx, complete: tx }, rx)
     }
 
     fn rpc<T>(&self, msg: Rpc, recv: oneshot::Receiver<T>) -> T {

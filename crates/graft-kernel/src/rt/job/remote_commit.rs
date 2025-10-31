@@ -49,7 +49,7 @@ pub async fn run(
     // build & upload segment
     let (commit_hash, segment_idx, segment_chunks) = build_segment(storage, &plan)?;
     remote
-        .put_segment(plan.commit_ref.vid(), segment_idx.sid(), segment_chunks)
+        .put_segment(segment_idx.sid(), segment_chunks)
         .await
         .or_into_ctx()?;
 
@@ -157,7 +157,7 @@ fn plan_commit(
     // check for divergence
     if handle.remote_changes(&latest_remote).is_some() {
         // the remote and local volumes have diverged
-        let status = handle.sync_status(&latest_local, &latest_remote);
+        let status = handle.status(&latest_local, &latest_remote);
         return Err(VolumeErr::NamedVolumeDiverged(name.clone(), status).into());
     }
 

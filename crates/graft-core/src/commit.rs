@@ -1,10 +1,11 @@
 use std::{
-    ops::{Deref, DerefMut, Range, RangeInclusive},
+    ops::{Deref, DerefMut, Range},
     time::SystemTime,
 };
 
 use bilrost::Message;
 use smallvec::SmallVec;
+use splinter_rs::Splinter;
 
 use crate::{
     PageCount, PageIdx, SegmentId, VolumeId, commit_hash::CommitHash, graft::Graft, lsn::LSN,
@@ -161,7 +162,11 @@ impl SegmentIdx {
                 Some((bytes, pages))
             })
             .find(|(_, pages)| pages.contains(&pageidx))
-            .map(|(bytes, pages)| SegmentFrameRef { sid: self.sid.clone(), bytes, pages })
+            .map(|(bytes, pages)| {
+                let pages = pages.start().to_u32()..=pages.end().to_u32();
+                let graft = (Splinter::from(pages) & self.graft.splinter()).into();
+                SegmentFrameRef { sid: self.sid.clone(), bytes, graft }
+            })
     }
 }
 
@@ -204,30 +209,19 @@ impl SegmentFrameIdx {
     }
 }
 
-/// A `SegmentFrameRef` contains the byte range and corresponding page range for a
+/// A `SegmentFrameRef` contains the byte range and corresponding pages for a
 /// particular frame in a segment.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SegmentFrameRef {
-    sid: SegmentId,
-    bytes: Range<usize>,
-    pages: RangeInclusive<PageIdx>,
+    pub sid: SegmentId,
+    pub bytes: Range<usize>,
+    pub graft: Graft,
 }
 
 impl SegmentFrameRef {
-    pub fn sid(&self) -> &SegmentId {
-        &self.sid
-    }
-
     /// The size of the frame in bytes
     pub fn size(&self) -> usize {
         self.bytes.end - self.bytes.start
-    }
-
-    pub fn bytes(&self) -> &Range<usize> {
-        &self.bytes
-    }
-
-    pub fn pages(&self) -> &RangeInclusive<PageIdx> {
-        &self.pages
     }
 }
 
@@ -239,6 +233,7 @@ mod tests {
 
     #[test]
     fn test_frame_for_pageidx() {
+        let graft = Graft::from_range(pageidx!(5)..=pageidx!(25));
         let mut frames = SmallVec::new();
         frames.push(SegmentFrameIdx {
             frame_size: 100,
@@ -246,49 +241,66 @@ mod tests {
         });
         frames.push(SegmentFrameIdx {
             frame_size: 200,
-            last_pageidx: pageidx!(25),
+            last_pageidx: pageidx!(20),
         });
         frames.push(SegmentFrameIdx {
             frame_size: 150,
-            last_pageidx: pageidx!(40),
+            last_pageidx: pageidx!(25),
         });
 
-        let segment_idx = SegmentIdx {
-            sid: SegmentId::random(),
-            graft: Graft::EMPTY,
-            frames,
-        };
+        let segment_idx = SegmentIdx { sid: SegmentId::EMPTY, graft, frames };
 
-        let test_cases = [
-            (pageidx!(5), Some((0..100, PageIdx::FIRST..=pageidx!(10)))),
-            (pageidx!(10), Some((0..100, PageIdx::FIRST..=pageidx!(10)))),
-            (pageidx!(20), Some((100..300, pageidx!(11)..=pageidx!(25)))),
-            (pageidx!(35), Some((300..450, pageidx!(26)..=pageidx!(40)))),
-            (pageidx!(50), None),
+        let tests = [
+            (pageidx!(4), None),
+            (
+                pageidx!(5),
+                Some(SegmentFrameRef {
+                    sid: SegmentId::EMPTY,
+                    bytes: 0..100,
+                    graft: Graft::from_range(pageidx!(5)..=pageidx!(10)),
+                }),
+            ),
+            (
+                pageidx!(10),
+                Some(SegmentFrameRef {
+                    sid: SegmentId::EMPTY,
+                    bytes: 0..100,
+                    graft: Graft::from_range(pageidx!(5)..=pageidx!(10)),
+                }),
+            ),
+            (
+                pageidx!(11),
+                Some(SegmentFrameRef {
+                    sid: SegmentId::EMPTY,
+                    bytes: 100..300,
+                    graft: Graft::from_range(pageidx!(11)..=pageidx!(20)),
+                }),
+            ),
+            (
+                pageidx!(20),
+                Some(SegmentFrameRef {
+                    sid: SegmentId::EMPTY,
+                    bytes: 100..300,
+                    graft: Graft::from_range(pageidx!(11)..=pageidx!(20)),
+                }),
+            ),
+            (
+                pageidx!(25),
+                Some(SegmentFrameRef {
+                    sid: SegmentId::EMPTY,
+                    bytes: 300..450,
+                    graft: Graft::from_range(pageidx!(21)..=pageidx!(25)),
+                }),
+            ),
+            (pageidx!(26), None),
         ];
 
-        for (pageidx, expected) in test_cases {
-            let result = segment_idx.frame_for_pageidx(pageidx);
-
-            match expected {
-                Some((expected_bytes, expected_pages)) => {
-                    assert!(
-                        result.is_some(),
-                        "Expected frame for PageIdx {}",
-                        pageidx.to_u32()
-                    );
-                    let frame_ref = result.unwrap();
-                    assert_eq!(*frame_ref.bytes(), expected_bytes);
-                    assert_eq!(*frame_ref.pages(), expected_pages);
-                }
-                None => {
-                    assert!(
-                        result.is_none(),
-                        "Expected no frame for PageIdx {}",
-                        pageidx.to_u32()
-                    );
-                }
-            }
+        for (pageidx, expected) in tests {
+            assert_eq!(
+                segment_idx.frame_for_pageidx(pageidx),
+                expected,
+                "wrong frame for pageidx {pageidx}"
+            );
         }
     }
 

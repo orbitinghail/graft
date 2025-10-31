@@ -25,7 +25,7 @@ pub struct VolumeName(ByteString);
 impl VolumeName {
     pub const DEFAULT: Self = VolumeName(ByteString::from_static("default"));
 
-    pub fn new(raw: &str) -> Result<Self, VolumeNameErr> {
+    pub fn new<T: Deref<Target = str>>(raw: T) -> Result<Self, VolumeNameErr> {
         raw.parse()
     }
 

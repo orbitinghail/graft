@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{ops::Deref, sync::Arc, time::Duration};
 
 use culprit::ResultExt;
 use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentIdx, graft::Graft, page::Page};
@@ -69,22 +69,16 @@ impl RuntimeHandle {
         }
     }
 
-    pub fn open_volume(&self, name: VolumeName) -> Result<NamedVolume> {
+    pub fn open_volume<S: Deref<Target = str>>(
+        &self,
+        name: S,
+        remote_vid: Option<VolumeId>,
+    ) -> Result<NamedVolume> {
+        let name: VolumeName = name.parse().expect("invalid Volume name");
         // make sure the named volume exists
         self.storage()
-            .open_named_volume(name.clone())
+            .open_named_volume(name.clone(), remote_vid)
             .or_into_ctx()?;
-        Ok(NamedVolume::new(self.clone(), name))
-    }
-
-    pub fn create_volume_from_remote(
-        &self,
-        name: VolumeName,
-        vid: VolumeId,
-    ) -> Result<NamedVolume> {
-        self.inner
-            .rpc
-            .create_volume_from_remote(name.clone(), vid)?;
         Ok(NamedVolume::new(self.clone(), name))
     }
 
@@ -112,9 +106,7 @@ impl RuntimeHandle {
             }
 
             // fallthrough to loading the page from the remote
-            self.inner
-                .rpc
-                .remote_read_page(commit.vid().clone(), idx.clone(), pageidx)
+            self.inner.rpc.remote_read_page(idx.clone(), pageidx)
         } else {
             Ok(Page::EMPTY)
         }
@@ -130,8 +122,7 @@ mod tests {
 
     use crate::{
         local::fjall_storage::FjallStorage, remote::RemoteConfig,
-        rt::runtime_handle::RuntimeHandle, volume_name::VolumeName, volume_reader::VolumeRead,
-        volume_writer::VolumeWrite,
+        rt::runtime_handle::RuntimeHandle, volume_reader::VolumeRead, volume_writer::VolumeWrite,
     };
 
     #[graft_test::test]
@@ -146,7 +137,8 @@ mod tests {
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
         let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
 
-        let volume = runtime.open_volume(VolumeName::DEFAULT).unwrap();
+        let volume = runtime.open_volume("leader", None).unwrap();
+        let remote_vid = volume.status().unwrap().remote.vid().clone();
 
         // sanity check volume writer semantics
         let mut writer = volume.writer().unwrap();
@@ -173,12 +165,31 @@ mod tests {
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
         let runtime_2 = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
 
+        // open the same named volume in the second runtime
+        let volume_2 = runtime_2.open_volume("follower", Some(remote_vid)).unwrap();
+
         // let both runtimes run for a little while
         tokio_rt.block_on(async {
             // this sleep lets tokio advance time, allowing the runtime to flush all it's jobs
             sleep(Duration::from_secs(5)).await;
-            remote.testonly_print_tree().await;
+            let tree = remote.testonly_format_tree().await;
+            tracing::info!("remote tree\n{tree}")
         });
-        assert_eq!(volume.status().unwrap(), "1 1", "named volume status");
+
+        assert_eq!(volume.status().unwrap().to_string(), "1 r1",);
+        assert_eq!(volume_2.status().unwrap().to_string(), "1 r1",);
+
+        // sanity check volume reader semantics in the second runtime
+        let task = tokio_rt.spawn_blocking(move || {
+            let reader_2 = volume_2.reader().unwrap();
+            for i in [1u8, 2, 5, 9] {
+                let pageidx = PageIdx::must_new(i as u32);
+                tracing::info!("checking page {pageidx}");
+                let expected = Page::test_filled(i);
+                let actual = reader_2.read_page(pageidx).unwrap();
+                assert_eq!(expected, actual, "read unexpected page contents");
+            }
+        });
+        tokio_rt.block_on(task).unwrap();
     }
 }

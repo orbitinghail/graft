@@ -163,38 +163,33 @@ impl SegmentBuilder {
     }
 }
 
-#[must_use]
-pub struct SegmentFrameIter<'a> {
-    dctx: DCtx<'static>,
-    in_buf: InBuffer<'a>,
-}
+pub fn segment_frame_iter<'a>(
+    mut pages: impl Iterator<Item = PageIdx> + 'a,
+    frame: &'a [u8],
+) -> impl Iterator<Item = (PageIdx, Page)> + 'a {
+    let mut dctx = DCtx::create();
+    let mut in_buf = InBuffer::around(frame);
 
-impl<'a> SegmentFrameIter<'a> {
-    pub fn from_bytes(frame: &'a [u8]) -> Self {
-        let dctx = DCtx::create();
-        let in_buf = InBuffer::around(frame);
-        SegmentFrameIter { dctx, in_buf }
-    }
-}
+    std::iter::from_fn(move || {
+        if let Some(pageidx) = pages.next() {
+            let mut page = BytesMut::zeroed(PAGESIZE.as_usize());
+            let mut out_buf = OutBuffer::around(page.as_mut());
 
-impl Iterator for SegmentFrameIter<'_> {
-    type Item = Page;
+            while out_buf.pos() < out_buf.capacity() {
+                let n = dctx
+                    .decompress_stream(&mut out_buf, &mut in_buf)
+                    .expect("BUG: failed to decompress segment frame");
+                assert!(
+                    n > 0 || out_buf.pos() == out_buf.capacity(),
+                    "BUG: reached end of frame before filling page"
+                );
+            }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut page = BytesMut::with_capacity(PAGESIZE.as_usize());
-        let mut out_buf = OutBuffer::around(page.as_mut());
-
-        while out_buf.pos() < out_buf.capacity() {
-            let n = self
-                .dctx
-                .decompress_stream(&mut out_buf, &mut self.in_buf)
-                .expect("BUG: failed to decompress segment frame");
-            assert!(n > 0, "BUG: reached end of frame before filling page");
+            Some((pageidx, Page::try_from(page).expect("BUG: invalid page")))
+        } else {
+            None
         }
-
-        // SAFETY: we just allocated page to be PAGESIZE bytes
-        Some(unsafe { Page::from_bytes_unchecked(page.freeze()) })
-    }
+    })
 }
 
 #[cfg(test)]

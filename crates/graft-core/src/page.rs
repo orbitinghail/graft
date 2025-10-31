@@ -153,6 +153,7 @@ impl TryFrom<&[u8]> for Page {
 impl Debug for Page {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Page({PAGESIZE})")
+        let prefix = &self.0[..4];
+        write!(f, "Page({PAGESIZE}, {prefix:?}...)")
     }
 }

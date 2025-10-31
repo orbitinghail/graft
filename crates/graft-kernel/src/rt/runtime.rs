@@ -2,14 +2,13 @@ use std::{collections::HashSet, pin::Pin, sync::Arc};
 
 use culprit::ResultExt;
 use futures::{Stream, StreamExt};
-use graft_core::{PageIdx, VolumeId, commit::SegmentIdx, page::Page, page_idx::PageIdxRangeExt};
+use graft_core::{PageIdx, commit::SegmentIdx, page::Page};
 use tokio::time::Instant;
 
 use crate::{
     err::GraftErr,
     local::fjall_storage::FjallStorage,
-    named_volume::NamedVolumeState,
-    remote::{Remote, segment::SegmentFrameIter},
+    remote::{Remote, segment::segment_frame_iter},
     rt::{job::Job, rpc::Rpc},
     volume_name::VolumeName,
 };
@@ -55,11 +54,8 @@ impl<S: Stream<Item = Event>> Runtime<S> {
         while let Some(event) = self.events.next().await {
             match event {
                 Event::Rpc(rpc) => match rpc {
-                    Rpc::RemoteReadPage { vid, idx, pageidx, complete } => {
-                        let _ = complete.send(self.remote_read_page(vid, idx, pageidx).await);
-                    }
-                    Rpc::CreateVolumeFromRemote { name, vid, complete } => {
-                        let _ = complete.send(self.create_volume_from_remote(name, vid).await);
+                    Rpc::RemoteReadPage { idx, pageidx, complete } => {
+                        let _ = complete.send(self.remote_read_page(idx, pageidx).await);
                     }
                 },
                 Event::Tick(_instant) => {
@@ -80,7 +76,6 @@ impl<S: Stream<Item = Event>> Runtime<S> {
 
     async fn remote_read_page(
         &self,
-        vid: VolumeId,
         idx: SegmentIdx,
         pageidx: PageIdx,
     ) -> culprit::Result<Page, GraftErr> {
@@ -91,34 +86,20 @@ impl<S: Stream<Item = Event>> Runtime<S> {
             .expect("BUG: SegmentIdx does not contain page");
         let bytes = self
             .remote
-            .get_segment_range(&vid, idx.sid(), frame.bytes())
+            .get_segment_range(idx.sid(), &frame.bytes)
             .await
             .or_into_ctx()?;
-        let pages = SegmentFrameIter::from_bytes(&bytes);
-        let pageidxs = frame.pages().clone().iter();
+        let pages = segment_frame_iter(frame.graft.iter(), &bytes);
         let mut batch = self.storage.batch();
         let mut target_page = None;
-        for (pidx, page) in pageidxs.zip(pages) {
+        for (pidx, page) in pages {
             if pageidx == pidx {
                 // found our target page
                 target_page = Some(page.clone());
             }
-            batch.write_page(idx.sid().clone(), pageidx, page);
+            batch.write_page(idx.sid().clone(), pidx, page);
         }
         batch.commit().or_into_ctx()?;
         Ok(target_page.expect("BUG: target page not found in frame"))
-    }
-
-    async fn create_volume_from_remote(
-        &self,
-        _name: VolumeName,
-        vid: VolumeId,
-    ) -> culprit::Result<NamedVolumeState, GraftErr> {
-        // first make sure we have the remote volume
-        let job = Job::pull_volume(vid.clone(), None);
-        job.run(&self.storage, &self.remote).await?;
-
-        // then create a named Volume
-        todo!()
     }
 }

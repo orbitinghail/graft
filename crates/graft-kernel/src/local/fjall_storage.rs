@@ -7,7 +7,7 @@ use graft_core::{
     checkpoints::CachedCheckpoints,
     commit::{Commit, SegmentIdx},
     commit_hash::CommitHash,
-    lsn::{LSN, LSNSet},
+    lsn::{LSN, LSNRangeExt, LSNSet},
     page::Page,
     volume_control::VolumeControl,
     volume_meta::VolumeMeta,
@@ -23,7 +23,7 @@ use crate::{
         keys::PageKey,
         typed_partition::{TypedPartition, TypedPartitionSnapshot, fjall_batch_ext::FjallBatchExt},
     },
-    named_volume::{NamedVolumeState, PendingCommit},
+    named_volume::{NamedVolumeState, PendingCommit, SyncPoint},
     search_path::SearchPath,
     snapshot::Snapshot,
     volume_name::VolumeName,
@@ -195,8 +195,12 @@ impl FjallStorage {
         Ok(())
     }
 
-    pub fn open_named_volume(&self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
-        self.read_write().open_named_volume(name)
+    pub fn open_named_volume(
+        &self,
+        name: VolumeName,
+        remote_vid: Option<VolumeId>,
+    ) -> Result<NamedVolumeState, FjallStorageErr> {
+        self.read_write().open_named_volume(name, remote_vid)
     }
 
     pub fn register_volume(
@@ -249,13 +253,8 @@ impl FjallStorage {
     }
 
     /// Commit a batch with a precondition check.
-    pub fn batch_commit_precondition<F: FnOnce(ReadGuard) -> Result<bool, FjallStorageErr>>(
-        &self,
-        batch: WriteBatch,
-        precondition: F,
-    ) -> Result<(), FjallStorageErr> {
-        self.read_write()
-            .batch_commit_precondition(batch, precondition)
+    pub fn sync_remote_to_local(&self, name: VolumeName) -> Result<(), FjallStorageErr> {
+        self.read_write().sync_remote_to_local(name)
     }
 }
 
@@ -296,7 +295,7 @@ impl<'a> ReadGuard<'a> {
     }
 
     pub fn named_volumes(&self) -> impl Iterator<Item = Result<NamedVolumeState, FjallStorageErr>> {
-        self.named().range(..).map_ok(|(_, v)| Ok(v))
+        self.named().values()
     }
 
     pub fn named_volume(
@@ -336,7 +335,8 @@ impl<'a> ReadGuard<'a> {
         max_lsn: Option<LSN>,
     ) -> Result<Snapshot, FjallStorageErr> {
         // compute the Snapshot's VolumeRef at the search LSN (or latest)
-        let search_range = VolumeRef::new(vid.clone(), max_lsn.unwrap_or(LSN::LAST))..;
+        let search_range = VolumeRef::new(vid.clone(), max_lsn.unwrap_or(LSN::LAST))
+            ..=VolumeRef::new(vid.clone(), LSN::FIRST);
         let vref = if let Some((_, commit)) = self.log().range(search_range).try_next()? {
             Some(commit.vref())
         } else {
@@ -536,19 +536,37 @@ impl<'a> ReadWriteGuard<'a> {
         self.read.storage
     }
 
-    pub fn open_named_volume(self, name: VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
+    pub fn open_named_volume(
+        self,
+        name: VolumeName,
+        remote_vid: Option<VolumeId>,
+    ) -> Result<NamedVolumeState, FjallStorageErr> {
         if let Some(state) = self.read.named().get(&name)? {
-            Ok(state)
+            if let Some(expected) = remote_vid
+                && state.remote != expected
+            {
+                Err(
+                    VolumeErr::NamedVolumeRemoteMismatch { name, expected, actual: state.remote }
+                        .into(),
+                )
+            } else {
+                Ok(state)
+            }
         } else {
             // create volume ids for the local and remote volume
             let lvid = VolumeId::random();
-            let rvid = VolumeId::random();
+            let rvid = remote_vid.unwrap_or_else(VolumeId::random);
 
             // create the named volume
             let volume = NamedVolumeState::new(name.clone(), lvid, rvid, None, None);
             self.storage().named.insert(name, volume.clone())?;
 
-            tracing::debug!(name = %volume.name, "created named volume");
+            tracing::debug!(
+                name = %volume.name,
+                local_vid = ?volume.local,
+                remote_vid = ?volume.remote,
+                "created named volume"
+            );
 
             Ok(volume)
         }
@@ -678,15 +696,60 @@ impl<'a> ReadWriteGuard<'a> {
             .insert(handle.name.clone(), handle.with_pending_commit(None))
     }
 
-    pub fn batch_commit_precondition<F: FnOnce(ReadGuard) -> Result<bool, FjallStorageErr>>(
-        self,
-        batch: WriteBatch,
-        precondition: F,
-    ) -> Result<(), FjallStorageErr> {
-        if precondition(self.read)? {
-            batch.commit()
-        } else {
-            Err(FjallStorageErr::BatchPreconditionErr.into())
+    pub fn sync_remote_to_local(self, name: VolumeName) -> Result<(), FjallStorageErr> {
+        let Some(handle) = self.read.named_volume(&name).or_into_ctx()? else {
+            return Err(VolumeErr::NamedVolumeNotFound(name).into());
+        };
+
+        // check to see if we have any changes to sync
+        let latest_remote = self.read.snapshot(&handle.remote).or_into_ctx()?;
+        let Some(remote_changes) = handle.remote_changes(&latest_remote) else {
+            // nothing to sync
+            return Ok(());
+        };
+
+        // check for divergence
+        let latest_local = self.read.snapshot(&handle.local).or_into_ctx()?;
+        if handle.local_changes(&latest_local).is_some() {
+            // the remote and local volumes have diverged
+            let status = handle.status(&latest_local, &latest_remote);
+            return Err(VolumeErr::NamedVolumeDiverged(name, status).into());
         }
+
+        tracing::debug!(
+            lsns = %remote_changes.to_string(),
+            remote = ?latest_remote.vid(),
+            local = ?latest_local.vid(),
+            "syncing commits from remote to local volume"
+        );
+
+        // save the remote lsn for later
+        let remote_lsn = *remote_changes.end();
+
+        // iterate missing remote commits, and commit them to the local volume
+        let search = SearchPath::new(handle.remote.clone(), remote_changes);
+        let mut batch = self.storage().batch();
+        let mut commits = self.read.commits(&search);
+        let mut latest_local_lsn = latest_local.lsn();
+        while let Some(commit) = commits.try_next().or_into_ctx()? {
+            let next_lsn = latest_local_lsn.map(|l| l.next()).unwrap_or(LSN::FIRST);
+            // map the remote commit into the local volume
+            batch.write_commit(
+                commit
+                    .with_vid(latest_local.vid().clone())
+                    .with_lsn(next_lsn),
+            );
+            // advance LSN
+            latest_local_lsn = Some(next_lsn);
+        }
+
+        // update the sync point
+        batch.write_named_volume(handle.with_sync(Some(SyncPoint {
+            local: latest_local_lsn.expect("BUG: no commits found"),
+            remote: remote_lsn,
+        })));
+
+        // commit the batch
+        batch.commit()
     }
 }

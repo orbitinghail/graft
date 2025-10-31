@@ -1,4 +1,4 @@
-use std::ops::RangeBounds;
+use std::ops::{RangeBounds, RangeInclusive};
 
 use bytes::Bytes;
 use splinter_rs::{CowSplinter, PartitionRead, PartitionWrite, Splinter};
@@ -22,6 +22,13 @@ impl Graft {
             "Invalid Graft: Splinter contains PageIdx 0"
         );
         Self { splinter }
+    }
+
+    #[inline]
+    pub fn from_range(range: RangeInclusive<PageIdx>) -> Self {
+        Self {
+            splinter: Splinter::from(range.start().to_u32()..=range.end().to_u32()).into(),
+        }
     }
 
     #[inline]
