@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use culprit::ResultExt;
 
 use crate::{
-    local::fjall_storage::FjallStorage, remote::Remote, rt::err::RuntimeErr, volume_err::VolumeErr,
+    GraftErr, VolumeErr, local::fjall_storage::FjallStorage, remote::Remote,
     volume_name::VolumeName,
 };
 
@@ -26,7 +26,7 @@ pub async fn run(
     storage: &FjallStorage,
     remote: &Remote,
     opts: Opts,
-) -> culprit::Result<(), RuntimeErr> {
+) -> culprit::Result<(), GraftErr> {
     // the named volume must have a pending commit
     let reader = storage.read();
     let Some(handle) = reader.named_volume(&opts.name).or_into_ctx()? else {
@@ -44,10 +44,7 @@ pub async fn run(
     // 3. an error occurs (retry later)
 
     let remote_commit = remote
-        .get_commit(
-            pending_commit.commit_ref.vid(),
-            pending_commit.commit_ref.lsn(),
-        )
+        .get_commit(&handle.remote, pending_commit.commit_lsn)
         .await
         .or_into_ctx()?;
 
@@ -55,13 +52,13 @@ pub async fn run(
         Some(commit) if commit.commit_hash() == Some(&pending_commit.commit_hash) => {
             // the commit made it! finish up the sync process
             storage
-                .remote_commit_success(handle.name(), commit)
+                .remote_commit_success(&handle.name, commit)
                 .or_into_ctx()?;
         }
         Some(_) | None => {
             // the commit didn't make it, clear the pending commit.
             // the pull_volume/sync_remote_to_local jobs will handle the new commit
-            storage.drop_pending_commit(handle.name()).or_into_ctx()?;
+            storage.drop_pending_commit(&handle.name).or_into_ctx()?;
         }
     }
     Ok(())

@@ -1,16 +1,16 @@
-use culprit::Result;
+use culprit::{Result, ResultExt};
 use graft_core::{PageCount, PageIdx, commit::SegmentIdx, page::Page};
 
 use crate::{
-    local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
-    volume_name::VolumeName, volume_reader::VolumeRead,
+    GraftErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
+    volume_reader::VolumeRead,
 };
 
 /// A type which can write to a Volume
 pub trait VolumeWrite {
-    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), FjallStorageErr>;
-    fn truncate(&mut self, page_count: PageCount) -> Result<(), FjallStorageErr>;
-    fn commit(self) -> Result<(), FjallStorageErr>;
+    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr>;
+    fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr>;
+    fn commit(self) -> Result<(), GraftErr>;
 }
 
 pub struct VolumeWriter {
@@ -40,11 +40,11 @@ impl VolumeWriter {
 }
 
 impl VolumeRead for VolumeWriter {
-    fn page_count(&self) -> Result<PageCount, FjallStorageErr> {
+    fn page_count(&self) -> Result<PageCount, GraftErr> {
         Ok(self.page_count)
     }
 
-    fn read_page(&self, pageidx: PageIdx) -> Result<Page, FjallStorageErr> {
+    fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr> {
         if !self.page_count.contains(pageidx) {
             Ok(Page::EMPTY)
         } else if self.segment.contains(pageidx) {
@@ -54,6 +54,7 @@ impl VolumeRead for VolumeWriter {
                 .read_page(self.segment.sid().clone(), pageidx)
                 .transpose()
                 .expect("BUG: Staged segment out of sync with storage")
+                .or_into_ctx()
         } else {
             self.runtime.read_page(&self.snapshot, pageidx)
         }
@@ -61,17 +62,18 @@ impl VolumeRead for VolumeWriter {
 }
 
 impl VolumeWrite for VolumeWriter {
-    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), FjallStorageErr> {
+    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr> {
         self.page_count = self.page_count.max(pageidx.pages());
         self.segment.insert(pageidx);
         self.runtime
             .storage()
             .write_page(self.segment.sid().clone(), pageidx, page)
+            .or_into_ctx()
     }
 
-    fn truncate(&mut self, page_count: PageCount) -> Result<(), FjallStorageErr> {
+    fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr> {
         let start = page_count
-            .last_index()
+            .last_pageidx()
             .unwrap_or_default()
             .saturating_next();
         self.page_count = page_count;
@@ -79,11 +81,13 @@ impl VolumeWrite for VolumeWriter {
         self.runtime
             .storage()
             .remove_page_range(self.segment.sid(), start..=PageIdx::LAST)
+            .or_into_ctx()
     }
 
-    fn commit(self) -> Result<(), FjallStorageErr> {
+    fn commit(self) -> Result<(), GraftErr> {
         self.runtime
             .storage()
             .commit(self.name, self.snapshot, self.page_count, self.segment)
+            .or_into_ctx()
     }
 }

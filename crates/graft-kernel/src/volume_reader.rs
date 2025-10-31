@@ -1,15 +1,15 @@
-use culprit::Culprit;
+use culprit::{Culprit, ResultExt};
 use graft_core::{PageCount, PageIdx, page::Page};
 
 use crate::{
-    local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
-    volume_name::VolumeName, volume_writer::VolumeWriter,
+    GraftErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
+    volume_writer::VolumeWriter,
 };
 
 /// A type which can read from a Volume
 pub trait VolumeRead {
-    fn page_count(&self) -> culprit::Result<PageCount, FjallStorageErr>;
-    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, FjallStorageErr>;
+    fn page_count(&self) -> culprit::Result<PageCount, GraftErr>;
+    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, GraftErr>;
 }
 
 #[derive(Debug, Clone)]
@@ -26,7 +26,7 @@ impl VolumeReader {
 }
 
 impl TryFrom<VolumeReader> for VolumeWriter {
-    type Error = Culprit<FjallStorageErr>;
+    type Error = Culprit<GraftErr>;
 
     fn try_from(reader: VolumeReader) -> Result<Self, Self::Error> {
         let page_count = reader.page_count()?;
@@ -40,11 +40,15 @@ impl TryFrom<VolumeReader> for VolumeWriter {
 }
 
 impl VolumeRead for VolumeReader {
-    fn page_count(&self) -> culprit::Result<PageCount, FjallStorageErr> {
-        self.runtime.storage().read().page_count(&self.snapshot)
+    fn page_count(&self) -> culprit::Result<PageCount, GraftErr> {
+        self.runtime
+            .storage()
+            .read()
+            .page_count(&self.snapshot)
+            .or_into_ctx()
     }
 
-    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, FjallStorageErr> {
+    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, GraftErr> {
         self.runtime.read_page(&self.snapshot, pageidx)
     }
 }

@@ -5,74 +5,88 @@ use culprit::Culprit;
 
 use crate::{
     local::fjall_storage::FjallStorageErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
-    sync_point::SyncPoint, volume_name::VolumeName, volume_reader::VolumeReader,
-    volume_writer::VolumeWriter,
+    volume_name::VolumeName, volume_reader::VolumeReader, volume_writer::VolumeWriter,
 };
-use graft_core::{PageCount, VolumeId, commit_hash::CommitHash, lsn::LSN, volume_ref::VolumeRef};
+use graft_core::{VolumeId, commit_hash::CommitHash, lsn::LSN};
+
+#[derive(Debug, Clone, Message, PartialEq, Eq)]
+pub struct SyncPoint {
+    /// The local LSN
+    #[bilrost(1)]
+    pub local: LSN,
+
+    /// The remote LSN
+    #[bilrost(2)]
+    pub remote: LSN,
+}
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct PendingCommit {
-    /// A reference to the local commit.
+    /// The LSN we are syncing from the local Volume
     #[bilrost(1)]
-    pub local_vid: VolumeId,
+    pub local_lsn: LSN,
 
-    /// The range of local LSNs that are included in the pending commit.
+    /// The LSN we are creating in the remote Volume
     #[bilrost(2)]
-    pub local_lsns: RangeInclusive<LSN>,
-
-    /// A reference to the pending remote commit.
-    #[bilrost(3)]
-    pub commit_ref: VolumeRef,
-
-    /// The page count of the pending commit.
-    #[bilrost(4)]
-    pub page_count: PageCount,
+    pub commit_lsn: LSN,
 
     /// The pending remote commit hash. This is used to determine whether or not
     /// the commit has landed in the remote, in the case that we are interrupted
     /// while attempting to push.
-    #[bilrost(5)]
+    #[bilrost(3)]
     pub commit_hash: CommitHash,
+}
+
+impl From<PendingCommit> for SyncPoint {
+    fn from(value: PendingCommit) -> Self {
+        Self {
+            local: value.local_lsn,
+            remote: value.commit_lsn,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct NamedVolumeState {
     /// The Volume name
     #[bilrost(1)]
-    name: VolumeName,
+    pub name: VolumeName,
 
     /// The local Volume backing this Named Volume
     #[bilrost(2)]
-    local: VolumeId,
+    pub local: VolumeId,
+
+    /// The remote Volume backing this Named Volume.
+    #[bilrost(3)]
+    pub remote: VolumeId,
 
     /// The most recent successful sync point for this Named Volume
-    #[bilrost(3)]
-    sync: Option<SyncPoint>,
+    #[bilrost(4)]
+    pub sync: Option<SyncPoint>,
 
     /// Presence of the `pending_commit` field means that the Push operation is in
     /// the process of committing to the remote. If no such Push job is currently
     /// running (i.e. it was interrupted), this field must be used to resume or
     /// abort the commit process.
-    #[bilrost(4)]
-    pending_commit: Option<PendingCommit>,
+    #[bilrost(5)]
+    pub pending_commit: Option<PendingCommit>,
 }
 
 impl NamedVolumeState {
     pub fn new(
         name: VolumeName,
         local: VolumeId,
+        remote: VolumeId,
         sync: Option<SyncPoint>,
         pending_commit: Option<PendingCommit>,
     ) -> Self {
-        Self { name, local, sync, pending_commit }
-    }
-
-    pub fn name(&self) -> &VolumeName {
-        &self.name
-    }
-
-    pub fn local(&self) -> &VolumeId {
-        &self.local
+        Self {
+            name,
+            local,
+            remote,
+            sync,
+            pending_commit,
+        }
     }
 
     pub fn with_sync(self, sync: Option<SyncPoint>) -> Self {
@@ -91,6 +105,24 @@ impl NamedVolumeState {
         self.pending_commit.as_ref()
     }
 
+    pub fn local_changes(&self, snapshot: &Snapshot) -> Option<RangeInclusive<LSN>> {
+        assert_eq!(&self.local, snapshot.vid());
+        AheadStatus {
+            head: snapshot.lsn(),
+            base: self.sync().map(|s| s.local),
+        }
+        .changes()
+    }
+
+    pub fn remote_changes(&self, snapshot: &Snapshot) -> Option<RangeInclusive<LSN>> {
+        assert_eq!(&self.remote, snapshot.vid());
+        AheadStatus {
+            head: snapshot.lsn(),
+            base: self.sync().map(|s| s.remote),
+        }
+        .changes()
+    }
+
     /// Given the latest local and remote snapshot, format a human readable
     /// concise description of the status of this named volume.
     ///
@@ -98,38 +130,35 @@ impl NamedVolumeState {
     ///  - `_`: empty volume
     ///  - `123`: never synced
     ///  - `123 r130`: remote and local in sync
+    ///  - `_ r130+130`: remote is 130 commits ahead, local is empty
     ///  - `123+3 r130`: local is 3 commits ahead
     ///  - `123 r130+3`: remote is 3 commits ahead
     ///  - `123+2 r130+3`: local and remote have diverged
-    pub fn sync_status(&self, latest_local: &Snapshot, latest_remote: Option<&Snapshot>) -> String {
+    pub fn sync_status(&self, latest_local: &Snapshot, latest_remote: &Snapshot) -> String {
         assert_eq!(
             &self.local,
             latest_local.vid(),
             "BUG: local snapshot out of sync"
         );
+        assert_eq!(
+            &self.remote,
+            latest_remote.vid(),
+            "BUG: remote snapshot out of sync"
+        );
 
-        if let Some(sync) = self.sync() {
-            let latest_local_lsn = latest_local
-                .lsn()
-                .expect("BUG: local snapshot behind sync point");
-            let local_status = AheadStatus::new(latest_local_lsn, sync.local().lsn());
+        let local = AheadStatus {
+            head: latest_local.lsn(),
+            base: self.sync().map(|s| s.local),
+        };
+        let remote = AheadStatus {
+            head: latest_remote.lsn(),
+            base: self.sync().map(|s| s.remote),
+        };
 
-            let latest_remote = latest_remote.expect("BUG: remote snapshot missing");
-            assert_eq!(
-                sync.remote().vid(),
-                latest_remote.vid(),
-                "BUG: remote snapshot out of sync"
-            );
-            let latest_remote_lsn = latest_remote
-                .lsn()
-                .expect("BUG: remote snapshot behind sync point");
-            let remote_status = AheadStatus::new(latest_remote_lsn, sync.remote().lsn());
-
-            format!("{local_status} {remote_status}")
+        if remote.is_empty() {
+            format!("{local}")
         } else {
-            latest_local
-                .lsn()
-                .map_or(String::from("_"), |lsn| lsn.to_string())
+            format!("{local} {remote}")
         }
     }
 }
@@ -150,11 +179,8 @@ impl NamedVolume {
             .named_volume(&self.name)?
             .expect("BUG: NamedVolume missing state");
         let latest_local = reader.snapshot(&state.local)?;
-        let latest_remote = state
-            .sync()
-            .map(|s| reader.snapshot(s.remote().vid()))
-            .transpose()?;
-        Ok(state.sync_status(&latest_local, latest_remote.as_ref()))
+        let latest_remote = reader.snapshot(&state.remote)?;
+        Ok(state.sync_status(&latest_local, &latest_remote))
     }
 
     pub fn reader(&self) -> Result<VolumeReader, Culprit<FjallStorageErr>> {
@@ -187,29 +213,41 @@ impl NamedVolume {
 }
 
 struct AheadStatus {
-    head: LSN,
-    base: LSN,
+    head: Option<LSN>,
+    base: Option<LSN>,
 }
 
 impl AheadStatus {
-    fn new(head: LSN, base: LSN) -> Self {
-        Self { head, base }
+    fn is_empty(&self) -> bool {
+        self.head.is_none() && self.base.is_none()
     }
 
-    fn ahead(&self) -> u64 {
-        self.head
-            .since(self.base)
-            .expect("BUG: monotonicity violation")
+    fn changes(&self) -> Option<RangeInclusive<LSN>> {
+        match (self.base, self.head) {
+            (None, None) => None,
+            (None, Some(head)) => Some(LSN::FIRST..=head),
+            (Some(base), Some(head)) => (base < head).then(|| base..=head),
+
+            (Some(_), None) => unreachable!("BUG: snapshot behind sync point"),
+        }
     }
 }
 
 impl Display for AheadStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ahead = self.ahead();
-        if ahead > 0 {
-            write!(f, "{}+{}", self.head, ahead)
-        } else {
-            write!(f, "{}", self.head)
+        match (self.base, self.head) {
+            (Some(base), Some(head)) => {
+                let ahead = head.since(base).expect("BUG: monotonicity violation");
+                if ahead == 0 {
+                    write!(f, "{head}")
+                } else {
+                    write!(f, "{head}+{ahead}")
+                }
+            }
+            (None, Some(head)) => write!(f, "{head}"),
+            (None, None) => write!(f, "_"),
+
+            (Some(_), None) => unreachable!("BUG: snapshot behind sync point"),
         }
     }
 }

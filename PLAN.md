@@ -6,6 +6,7 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 
 - [x] structured logging
 - [x] RecoverPendingCommit job
-- [ ] RuntimeHandle::read_page
+- [x] RuntimeHandle::read_page
+- [ ] Runtime::create_volume_from_remote
 - [ ] comprehensive tests
 - [ ] libgraft SQLite

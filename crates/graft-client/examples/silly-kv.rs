@@ -214,7 +214,7 @@ impl ListHeader {
     /// allocates a node by either reusing a previously freed node or
     /// creating a new one;
     fn allocate(&mut self, reader: &impl VolumeRead) -> Result<NodeView> {
-        let last_index = reader.snapshot().and_then(|s| s.pages().last_index());
+        let last_index = reader.snapshot().and_then(|s| s.pages().last_pageidx());
         let unused_index = last_index.map_or(pageidx!(2), |o| o.saturating_next());
 
         if self.free.is_first_page() {

@@ -5,8 +5,7 @@ use graft_core::{VolumeId, lsn::LSN};
 use tryiter::TryIteratorExt;
 
 use crate::{
-    local::fjall_storage::FjallStorage, remote::Remote, rt::err::RuntimeErr,
-    volume_name::VolumeName,
+    GraftErr, local::fjall_storage::FjallStorage, remote::Remote, volume_name::VolumeName,
 };
 
 mod pull_volume;
@@ -58,28 +57,30 @@ impl Job {
     }
 
     /// Inspects all named volumes to compute a list of outstanding jobs.
-    pub fn collect(storage: &FjallStorage) -> Result<Vec<Self>, Culprit<RuntimeErr>> {
+    pub fn collect(storage: &FjallStorage) -> Result<Vec<Self>, Culprit<GraftErr>> {
         let mut jobs = vec![];
         let reader = storage.read();
         let mut volumes = reader.named_volumes();
         while let Some(volume) = volumes.try_next().or_into_ctx()? {
+            let name = volume.name.clone();
+
             if volume.pending_commit().is_some() {
-                jobs.push(Self::recover_pending_commit(volume.name().clone()));
-            } else if let Some(sync) = volume.sync() {
-                let local_snapshot = reader.snapshot(volume.local()).or_into_ctx()?;
-                let local_changes = sync.local_changes(&local_snapshot).is_some();
-                let remote_snapshot = reader.snapshot(sync.remote().vid()).or_into_ctx()?;
-                let remote_changes = sync.remote_changes(&remote_snapshot).is_some();
+                jobs.push(Self::recover_pending_commit(name));
+            } else {
+                let local_snapshot = reader.snapshot(&volume.local).or_into_ctx()?;
+                let local_changes = volume.local_changes(&local_snapshot).is_some();
+                let remote_snapshot = reader.snapshot(&volume.remote).or_into_ctx()?;
+                let remote_changes = volume.remote_changes(&remote_snapshot).is_some();
 
                 if remote_changes && local_changes {
                     todo!("user needs to intervene")
                 } else if remote_changes {
-                    jobs.push(Self::sync_remote_to_local(volume.name().clone()))
+                    jobs.push(Self::sync_remote_to_local(name))
                 } else if local_changes {
-                    jobs.push(Self::remote_commit(volume.name().clone()));
+                    jobs.push(Self::remote_commit(name));
                 } else {
-                    jobs.push(Self::pull_volume(sync.remote().vid().clone(), None));
-                    jobs.push(Self::sync_remote_to_local(volume.name().clone()))
+                    jobs.push(Self::pull_volume(volume.remote.clone(), None));
+                    jobs.push(Self::sync_remote_to_local(name))
                 }
             }
         }
@@ -92,7 +93,7 @@ impl Job {
         self,
         storage: &FjallStorage,
         remote: &Remote,
-    ) -> culprit::Result<(), RuntimeErr> {
+    ) -> culprit::Result<(), GraftErr> {
         match self {
             Job::PullVolume(opts) => pull_volume::run(storage, remote, opts).await,
             Job::RemoteCommit(opts) => remote_commit::run(storage, remote, opts).await,

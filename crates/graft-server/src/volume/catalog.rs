@@ -218,7 +218,7 @@ impl VolumeCatalog {
         // thus we need to scan from the first commit key
         let start = Bound::Included(CommitKey::new(vid.clone(), *lsns.start()));
         // to the NEXT commit key after the end commit key or the end of the partition
-        let end = match lsns.end().next() {
+        let end = match lsns.end().checked_next() {
             Some(end) => Bound::Included(CommitKey::new(vid.clone(), end)),
             None => Bound::Unbounded,
         };

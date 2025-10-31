@@ -86,7 +86,7 @@ impl VolumeWrite for VolumeWriter {
 
     fn truncate(&mut self, pages: PageCount) {
         self.pages = pages;
-        self.memtable.truncate(self.pages.last_index())
+        self.memtable.truncate(self.pages.last_pageidx())
     }
 
     fn commit(self) -> Result<VolumeReader, ClientErr> {

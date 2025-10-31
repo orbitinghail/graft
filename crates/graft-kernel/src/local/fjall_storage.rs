@@ -17,6 +17,7 @@ use parking_lot::{Mutex, MutexGuard};
 use tryiter::TryIteratorExt;
 
 use crate::{
+    VolumeErr,
     changeset::ChangeSet,
     local::fjall_storage::{
         keys::PageKey,
@@ -25,8 +26,6 @@ use crate::{
     named_volume::{NamedVolumeState, PendingCommit},
     search_path::SearchPath,
     snapshot::Snapshot,
-    sync_point::SyncPoint,
-    volume_err::VolumeErr,
     volume_name::VolumeName,
 };
 
@@ -227,7 +226,7 @@ impl FjallStorage {
     pub fn remote_commit_prepare(
         &self,
         name: &VolumeName,
-        pending_commit: &PendingCommit,
+        pending_commit: PendingCommit,
     ) -> Result<(), FjallStorageErr> {
         self.read_write()
             .remote_commit_prepare(name, pending_commit)
@@ -314,7 +313,7 @@ impl<'a> ReadGuard<'a> {
         name: &VolumeName,
     ) -> Result<Option<Snapshot>, FjallStorageErr> {
         if let Some(handle) = self.named().get(name)? {
-            Ok(Some(self.snapshot(handle.local())?))
+            Ok(Some(self.snapshot(&handle.local)?))
         } else {
             Ok(None)
         }
@@ -506,7 +505,12 @@ impl<'a> WriteBatch<'a> {
 
     pub fn write_named_volume(&mut self, handle: NamedVolumeState) {
         self.batch
-            .insert_typed(&self.storage.named, handle.name().clone(), handle);
+            .insert_typed(&self.storage.named, handle.name.clone(), handle);
+    }
+
+    pub fn write_page(&mut self, sid: SegmentId, pageidx: PageIdx, page: Page) {
+        self.batch
+            .insert_typed(&self.storage.pages, PageKey::new(sid, pageidx), page);
     }
 
     pub fn commit(self) -> Result<(), FjallStorageErr> {
@@ -536,20 +540,15 @@ impl<'a> ReadWriteGuard<'a> {
         if let Some(state) = self.read.named().get(&name)? {
             Ok(state)
         } else {
-            let mut batch = self.storage().keyspace.batch();
-
-            // create a local volume
-            let vid = VolumeId::random();
-            let local = VolumeMeta::new(vid.clone(), None, CachedCheckpoints::EMPTY);
-            batch.insert_typed(&self.storage().volumes, vid.clone(), local);
+            // create volume ids for the local and remote volume
+            let lvid = VolumeId::random();
+            let rvid = VolumeId::random();
 
             // create the named volume
-            let volume = NamedVolumeState::new(name.clone(), vid, None, None);
-            batch.insert_typed(&self.storage().named, name, volume.clone());
+            let volume = NamedVolumeState::new(name.clone(), lvid, rvid, None, None);
+            self.storage().named.insert(name, volume.clone())?;
 
-            batch.commit()?;
-
-            tracing::debug!(name = %volume.name(), "created named volume");
+            tracing::debug!(name = %volume.name, "created named volume");
 
             Ok(volume)
         }
@@ -575,7 +574,7 @@ impl<'a> ReadWriteGuard<'a> {
 
         let commit_lsn = latest_snapshot
             .lsn()
-            .map(|lsn| lsn.next().expect("LSN overflow"))
+            .map(|lsn| lsn.next())
             .unwrap_or_default();
 
         let commit = Commit::new(snapshot.vid().clone(), commit_lsn, page_count)
@@ -603,36 +602,33 @@ impl<'a> ReadWriteGuard<'a> {
     pub fn remote_commit_prepare(
         self,
         name: &VolumeName,
-        pending_commit: &PendingCommit,
+        pending_commit: PendingCommit,
     ) -> Result<(), FjallStorageErr> {
         let Some(handle) = self.read.named_volume(name)? else {
             return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
         };
 
-        // This is checked during the remote commit planning stage
         assert!(
             handle.pending_commit().is_none(),
-            "BUG: pending commit is not None"
+            "BUG: pending commit is present"
         );
 
-        // ensure the local volume is correct
-        assert_eq!(&pending_commit.local_vid, handle.local());
-
-        // ensure the remote volume is correct
-        if let Some(sync) = handle.sync() {
-            assert_eq!(sync.remote().vid(), pending_commit.commit_ref.vid());
-        }
-
         // ensure LSN monotonicity
-        let latest_remote = self.read.snapshot(&pending_commit.commit_ref.vid)?;
-        assert_eq!(latest_remote.lsn(), pending_commit.commit_ref.lsn.prev());
+        if let Some(sync) = handle.sync() {
+            assert!(sync.local < pending_commit.local_lsn);
+        }
+        let latest_remote = self.read.snapshot(&handle.remote)?;
+        assert_eq!(
+            latest_remote.lsn(),
+            pending_commit.commit_lsn.checked_prev()
+        );
 
         // remember to set the commit hash
         assert!(pending_commit.commit_hash != CommitHash::ZERO);
 
         // save the new pending commit
         let handle = handle.with_pending_commit(Some(pending_commit.clone()));
-        self.storage().named.insert(handle.name().clone(), handle)?;
+        self.storage().named.insert(handle.name.clone(), handle)?;
 
         Ok(())
     }
@@ -646,28 +642,13 @@ impl<'a> ReadWriteGuard<'a> {
             return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
         };
 
-        let pending_commit = handle.pending_commit().unwrap();
-        assert_eq!(handle.local(), &pending_commit.local_vid);
-        assert_eq!(remote_commit.lsn(), pending_commit.commit_ref.lsn());
+        // verify the pending commit matches the remote commit
+        let pending_commit = handle.pending_commit.unwrap();
+        assert_eq!(remote_commit.lsn(), pending_commit.commit_lsn);
         assert_eq!(
             remote_commit.commit_hash(),
             Some(&pending_commit.commit_hash)
         );
-
-        if let Some(sync) = handle.sync() {
-            // the vids match up
-            assert_eq!(sync.local().vid(), &pending_commit.local_vid);
-            assert_eq!(sync.remote().vid(), pending_commit.commit_ref.vid());
-
-            // the lsns match up
-            assert_eq!(sync.local().lsn(), *pending_commit.local_lsns.start());
-            assert_eq!(
-                sync.remote().lsn(),
-                // we know this is not None, since there exists a sync point
-                // which implies that there is a previous remote commit
-                pending_commit.commit_ref.lsn().prev().unwrap()
-            );
-        }
 
         // fail if we somehow already know about this commit locally
         assert!(
@@ -676,16 +657,11 @@ impl<'a> ReadWriteGuard<'a> {
         );
 
         // build a new handle with the updated sync points and no pending_commit
-        let local_ref = VolumeRef::new(
-            pending_commit.local_vid.clone(),
-            *pending_commit.local_lsns.end(),
-        );
-        let new_handle = NamedVolumeState::new(
-            handle.name().clone(),
-            handle.local().clone(),
-            Some(SyncPoint::new(local_ref, remote_commit.vref())),
-            None,
-        );
+        let new_handle = NamedVolumeState {
+            sync: Some(pending_commit.into()),
+            pending_commit: None,
+            ..handle
+        };
 
         let mut batch = self.storage().batch();
         batch.write_commit(remote_commit);
@@ -699,7 +675,7 @@ impl<'a> ReadWriteGuard<'a> {
         };
         self.storage()
             .named
-            .insert(handle.name().clone(), handle.with_pending_commit(None))
+            .insert(handle.name.clone(), handle.with_pending_commit(None))
     }
 
     pub fn batch_commit_precondition<F: FnOnce(ReadGuard) -> Result<bool, FjallStorageErr>>(

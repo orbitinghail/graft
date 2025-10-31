@@ -114,7 +114,7 @@ impl VolumeCatalogUpdater {
         }
 
         // we only need to reply commits that happened after the last snapshot
-        let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or(LSN::FIRST);
+        let start_lsn = catalog_lsn.map(|lsn| lsn.next()).unwrap_or(LSN::FIRST);
         let lsns = start_lsn..=LSN::LAST;
 
         // update the catalog from the store
@@ -218,7 +218,7 @@ impl VolumeCatalogUpdater {
         }
 
         // we only need to reply commits that happened after the last snapshot
-        let start_lsn = catalog_lsn.and_then(|lsn| lsn.next()).unwrap_or(LSN::FIRST);
+        let start_lsn = catalog_lsn.map(|lsn| lsn.next()).unwrap_or(LSN::FIRST);
         let lsns = start_lsn..;
 
         let span = tracing::debug_span!(

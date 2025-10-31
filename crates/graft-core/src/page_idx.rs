@@ -2,6 +2,7 @@ use std::{
     fmt::{Debug, Display},
     iter::FusedIterator,
     num::{NonZero, ParseIntError, TryFromIntError},
+    ops::RangeInclusive,
     str::FromStr,
 };
 
@@ -238,16 +239,23 @@ impl TryFrom<CBE32> for PageIdx {
     }
 }
 
+#[derive(Debug, Clone)]
+#[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct PageIdxIter {
-    /// The inclusive start `pageidx`
-    start: PageIdx,
-    /// The exclusive end `pageidx`
-    end: PageIdx,
+    range: RangeInclusive<u32>,
 }
 
 impl PageIdxIter {
-    pub const fn new(start: PageIdx, end: PageIdx) -> Self {
-        Self { start, end }
+    pub const fn new(range: RangeInclusive<PageIdx>) -> Self {
+        Self {
+            range: range.start().to_u32()..=range.end().to_u32(),
+        }
+    }
+}
+
+impl From<RangeInclusive<PageIdx>> for PageIdxIter {
+    fn from(value: RangeInclusive<PageIdx>) -> Self {
+        Self::new(value)
     }
 }
 
@@ -255,53 +263,38 @@ impl Iterator for PageIdxIter {
     type Item = PageIdx;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.start >= self.end {
-            return None;
-        }
-
-        let next = self.start;
-        self.start = self.start.saturating_next();
-        Some(next)
+        self.range.next().map(|n| {
+            // SAFETY: PageIdxIter ensures that start is never == 0 during
+            // construction
+            unsafe { PageIdx::new_unchecked(n) }
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = if self.start < self.end {
-            self.end.to_u32() - self.start.to_u32()
-        } else {
-            0
-        };
-        (len as usize, Some(len as usize))
+        self.range.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for PageIdxIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.range.next_back().map(|n| {
+            // SAFETY: LSNRangeExt::iter ensures that start is never == 0
+            unsafe { PageIdx::new_unchecked(n) }
+        })
     }
 }
 
 impl ExactSizeIterator for PageIdxIter {}
 impl FusedIterator for PageIdxIter {}
 
-impl DoubleEndedIterator for PageIdxIter {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.start >= self.end {
-            return None;
-        }
-
-        let prev = self.end.saturating_prev();
-        self.end = prev;
-        Some(prev)
-    }
-}
-
 pub trait PageIdxRangeExt {
     fn iter(self) -> PageIdxIter;
 }
 
-impl PageIdxRangeExt for std::ops::Range<PageIdx> {
-    fn iter(self) -> PageIdxIter {
-        PageIdxIter::new(self.start, self.end)
-    }
-}
-
 impl PageIdxRangeExt for std::ops::RangeInclusive<PageIdx> {
+    #[inline]
     fn iter(self) -> PageIdxIter {
-        PageIdxIter::new(*self.start(), self.end().saturating_next())
+        PageIdxIter::from(self)
     }
 }
 
@@ -340,11 +333,6 @@ mod tests {
         let mut iter = count.iter();
         assert_eq!(iter.next(), Some(pageidx!(1)));
         assert_eq!(iter.next(), None);
-
-        let custom = pageidx!(5)..pageidx!(10);
-        for (i, idx) in custom.iter().enumerate() {
-            assert_eq!(idx, PageIdx::must_new(i as u32 + 5));
-        }
 
         let custom = pageidx!(5)..=pageidx!(10);
         for (i, idx) in custom.iter().enumerate() {

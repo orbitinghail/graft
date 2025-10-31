@@ -1,9 +1,9 @@
-use std::{collections::BTreeMap, fmt::Debug, time::SystemTime};
+use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive, time::SystemTime};
 
 use bytes::Bytes;
 use culprit::ResultExt;
 use graft_core::{
-    CommitHashBuilder, PageIdx, SegmentId, VolumeId,
+    CommitHashBuilder, PageCount, PageIdx, SegmentId, VolumeId,
     commit::{Commit, SegmentIdx},
     commit_hash::CommitHash,
     lsn::LSN,
@@ -15,12 +15,11 @@ use splinter_rs::{PartitionRead, Splinter};
 use tryiter::TryIteratorExt;
 
 use crate::{
+    GraftErr, VolumeErr,
     local::fjall_storage::FjallStorage,
     named_volume::PendingCommit,
     remote::{Remote, segment::SegmentBuilder},
-    rt::err::RuntimeErr,
     search_path::SearchPath,
-    volume_err::VolumeErr,
     volume_name::VolumeName,
 };
 
@@ -41,8 +40,8 @@ pub async fn run(
     storage: &FjallStorage,
     remote: &Remote,
     opts: Opts,
-) -> culprit::Result<(), RuntimeErr> {
-    let Some(mut plan) = plan_commit(storage, &opts.name)? else {
+) -> culprit::Result<(), GraftErr> {
+    let Some(plan) = plan_commit(storage, &opts.name)? else {
         // nothing to commit
         return Ok(());
     };
@@ -54,17 +53,14 @@ pub async fn run(
         .await
         .or_into_ctx()?;
 
-    // update the commit plan with the computed commit hash
-    plan.commit_hash = commit_hash.clone();
-
     // if this is the first commit to the remote volume, create the control
     if plan.commit_ref.lsn() == LSN::FIRST {
         remote
-            .put_control(VolumeControl::new(
-                plan.commit_ref.vid().clone(),
-                None,
-                SystemTime::now(),
-            ))
+            .put_control(VolumeControl {
+                vid: plan.commit_ref.vid.clone(),
+                parent: None,
+                created_at: SystemTime::now(),
+            })
             .await
             .or_into_ctx()?;
     }
@@ -73,7 +69,14 @@ pub async fn run(
     // these preparations include checking preconditions and setting
     // pending_commit on the NamedVolume
     storage
-        .remote_commit_prepare(&opts.name, &plan)
+        .remote_commit_prepare(
+            &opts.name,
+            PendingCommit {
+                local_lsn: *plan.lsns.end(),
+                commit_lsn: plan.commit_ref.lsn,
+                commit_hash: commit_hash.clone(),
+            },
+        )
         .or_into_ctx()?;
 
     let commit = Commit::new(
@@ -114,10 +117,17 @@ pub async fn run(
     }
 }
 
+struct CommitPlan {
+    local_vid: VolumeId,
+    lsns: RangeInclusive<LSN>,
+    commit_ref: VolumeRef,
+    page_count: PageCount,
+}
+
 fn plan_commit(
     storage: &FjallStorage,
     name: &VolumeName,
-) -> culprit::Result<Option<PendingCommit>, RuntimeErr> {
+) -> culprit::Result<Option<CommitPlan>, GraftErr> {
     let reader = storage.read();
     let Some(handle) = reader.named_volume(name).or_into_ctx()? else {
         return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
@@ -126,61 +136,57 @@ fn plan_commit(
         return Err(VolumeErr::NamedVolumeNeedsRecovery(name.clone()).into());
     }
 
-    let latest_local = reader.snapshot(handle.local()).or_into_ctx()?;
+    let latest_local = reader.snapshot(&handle.local).or_into_ctx()?;
     let page_count = reader.page_count(&latest_local).or_into_ctx()?;
+    let latest_remote = reader.snapshot(&handle.remote).or_into_ctx()?;
 
     let Some(sync) = handle.sync() else {
         // this is the first time we are pushing this named volume to the remote
+        assert_eq!(latest_remote.lsn(), None, "BUG: remote should be empty");
         let Some(latest_local_lsn) = latest_local.lsn() else {
             return Ok(None);
         };
-        return Ok(Some(PendingCommit {
-            local_vid: latest_local.vid().clone(),
-            local_lsns: LSN::FIRST..=latest_local_lsn,
+        return Ok(Some(CommitPlan {
+            local_vid: handle.local.clone(),
+            lsns: LSN::FIRST..=latest_local_lsn,
+            commit_ref: VolumeRef::new(handle.remote.clone(), LSN::FIRST),
             page_count,
-            commit_ref: VolumeRef::new(VolumeId::random(), LSN::FIRST),
-            commit_hash: CommitHash::ZERO,
         }));
     };
 
-    // load the latest remote snapshot
-    let latest_remote = reader.snapshot(sync.remote().vid()).or_into_ctx()?;
+    // check for divergence
+    if handle.remote_changes(&latest_remote).is_some() {
+        // the remote and local volumes have diverged
+        let status = handle.sync_status(&latest_local, &latest_remote);
+        return Err(VolumeErr::NamedVolumeDiverged(name.clone(), status).into());
+    }
 
     // calculate which LSNs we need to sync
-    let Some(local_lsns) = sync.local_changes(&latest_local) else {
+    let Some(local_lsns) = handle.local_changes(&latest_local) else {
         // nothing to push
         return Ok(None);
     };
 
-    // make sure the remote isn't ahead of the sync point
-    if latest_remote.lsn() != Some(sync.remote().lsn()) {
-        // the remote and local volumes have diverged
-        let status = handle.sync_status(&latest_local, Some(&latest_remote));
-        return Err(VolumeErr::NamedVolumeDiverged(name.clone(), status).into());
-    }
-
     // calculate the commit result
-    let commit_lsn = sync.remote().lsn().next().expect("maximum LSN exceeded");
-    let commit_ref = VolumeRef::new(sync.remote().vid().clone(), commit_lsn);
+    let commit_lsn = sync.remote.next();
 
-    Ok(Some(PendingCommit {
-        local_vid: latest_local.vid().clone(),
-        local_lsns,
-        commit_ref,
+    Ok(Some(CommitPlan {
+        local_vid: handle.local.clone(),
+        lsns: local_lsns,
+        commit_ref: VolumeRef::new(handle.remote.clone(), commit_lsn),
         page_count,
-        commit_hash: CommitHash::ZERO,
     }))
 }
 
 fn build_segment(
     storage: &FjallStorage,
-    plan: &PendingCommit,
-) -> culprit::Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), RuntimeErr> {
+    plan: &CommitPlan,
+) -> culprit::Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), GraftErr> {
     let reader = storage.read();
 
     // built a search path which only matches the LSNs we want to
     // include in the segment
-    let segment_path = SearchPath::new(plan.local_vid.clone(), plan.local_lsns.clone());
+    let segment_path = SearchPath::new(plan.local_vid.clone(), plan.lsns.clone());
 
     // collect all of the segment pages, only keeping the newest (first) page
     // for each unique pageidx

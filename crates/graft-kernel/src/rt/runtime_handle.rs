@@ -1,17 +1,16 @@
 use std::{sync::Arc, time::Duration};
 
-use culprit::Culprit;
-use graft_core::{PageIdx, SegmentId, commit::SegmentIdx, graft::Graft, page::Page};
+use culprit::ResultExt;
+use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentIdx, graft::Graft, page::Page};
 use tokio::task::JoinHandle;
 
 use crate::{
-    local::fjall_storage::FjallStorageErr,
+    GraftErr,
     named_volume::NamedVolume,
     remote::Remote,
     rt::{
-        err::RuntimeFatalErr,
         rpc::RpcHandle,
-        runtime::{Event, Runtime},
+        runtime::{Event, Runtime, RuntimeFatalErr},
     },
     snapshot::Snapshot,
     volume_name::VolumeName,
@@ -25,6 +24,8 @@ use tokio_stream::{
 
 use crate::local::fjall_storage::FjallStorage;
 
+type Result<T> = culprit::Result<T, GraftErr>;
+
 #[derive(Clone, Debug)]
 pub struct RuntimeHandle {
     inner: Arc<RuntimeHandleInner>,
@@ -32,7 +33,7 @@ pub struct RuntimeHandle {
 
 #[derive(Debug)]
 struct RuntimeHandleInner {
-    handle: JoinHandle<Result<(), RuntimeFatalErr>>,
+    _handle: JoinHandle<std::result::Result<(), RuntimeFatalErr>>,
     storage: Arc<FjallStorage>,
     rpc: RpcHandle,
 }
@@ -60,13 +61,30 @@ impl RuntimeHandle {
         let handle = tokio_rt.spawn(runtime.start());
 
         RuntimeHandle {
-            inner: Arc::new(RuntimeHandleInner { handle, storage, rpc: RpcHandle::new(tx) }),
+            inner: Arc::new(RuntimeHandleInner {
+                _handle: handle,
+                storage,
+                rpc: RpcHandle::new(tx),
+            }),
         }
     }
 
-    pub fn open_volume(&self, name: VolumeName) -> Result<NamedVolume, Culprit<FjallStorageErr>> {
+    pub fn open_volume(&self, name: VolumeName) -> Result<NamedVolume> {
         // make sure the named volume exists
-        self.storage().open_named_volume(name.clone())?;
+        self.storage()
+            .open_named_volume(name.clone())
+            .or_into_ctx()?;
+        Ok(NamedVolume::new(self.clone(), name))
+    }
+
+    pub fn create_volume_from_remote(
+        &self,
+        name: VolumeName,
+        vid: VolumeId,
+    ) -> Result<NamedVolume> {
+        self.inner
+            .rpc
+            .create_volume_from_remote(name.clone(), vid)?;
         Ok(NamedVolume::new(self.clone(), name))
     }
 
@@ -79,30 +97,27 @@ impl RuntimeHandle {
         SegmentIdx::new(SegmentId::random(), Graft::default())
     }
 
-    pub(crate) fn read_page(
-        &self,
-        snapshot: &Snapshot,
-        pageidx: PageIdx,
-    ) -> Result<Page, Culprit<FjallStorageErr>> {
+    pub(crate) fn read_page(&self, snapshot: &Snapshot, pageidx: PageIdx) -> Result<Page> {
         let storage = self.storage().read();
-        if let Some(commit) = storage.search_page(snapshot, pageidx)? {
+        if let Some(commit) = storage.search_page(snapshot, pageidx).or_into_ctx()? {
             let idx = commit
                 .segment_idx()
                 .expect("BUG: commit claims to contain pageidx");
 
-            if let Some(page) = storage.read_page(idx.sid().clone(), pageidx)? {
+            if let Some(page) = storage
+                .read_page(idx.sid().clone(), pageidx)
+                .or_into_ctx()?
+            {
                 return Ok(page);
             }
 
-            // page is not available locally, fall back to loading the page from remote storage.
-            // let frame = idx
-            //     .frame_for_pageidx(pageidx)
-            //     .expect("commit claims to contain pageidx but no frame found");
-
-            todo!("load page from remote storage")
+            // fallthrough to loading the page from the remote
+            self.inner
+                .rpc
+                .remote_read_page(commit.vid().clone(), idx.clone(), pageidx)
+        } else {
+            Ok(Page::EMPTY)
         }
-
-        Ok(Page::EMPTY)
     }
 }
 
@@ -121,13 +136,14 @@ mod tests {
 
     #[graft_test::test]
     fn runtime_sanity() {
-        let remote = Arc::new(RemoteConfig::Memory.build().unwrap());
-        let storage = Arc::new(FjallStorage::open_temporary().unwrap());
         let tokio_rt = tokio::runtime::Builder::new_current_thread()
             .start_paused(true)
             .enable_all()
             .build()
             .unwrap();
+
+        let remote = Arc::new(RemoteConfig::Memory.build().unwrap());
+        let storage = Arc::new(FjallStorage::open_temporary().unwrap());
         let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
 
         let volume = runtime.open_volume(VolumeName::DEFAULT).unwrap();
@@ -153,7 +169,11 @@ mod tests {
             );
         }
 
-        // sanity check remote commit
+        // create a second runtime connected to the same remote
+        let storage = Arc::new(FjallStorage::open_temporary().unwrap());
+        let runtime_2 = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
+
+        // let both runtimes run for a little while
         tokio_rt.block_on(async {
             // this sleep lets tokio advance time, allowing the runtime to flush all it's jobs
             sleep(Duration::from_secs(5)).await;

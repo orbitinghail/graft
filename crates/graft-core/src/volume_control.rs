@@ -11,22 +11,18 @@ use crate::{VolumeId, volume_ref::VolumeRef};
 pub struct VolumeControl {
     /// The Volume's ID
     #[bilrost(1)]
-    vid: VolumeId,
+    pub vid: VolumeId,
 
     /// The parent reference if this Volume is a fork.
     #[bilrost(2)]
-    parent: Option<VolumeRef>,
+    pub parent: Option<VolumeRef>,
 
     /// The creation timestamp of this Volume.
     #[bilrost(3)]
-    created_at: SystemTime,
+    pub created_at: SystemTime,
 }
 
 impl VolumeControl {
-    pub fn new(vid: VolumeId, parent: Option<VolumeRef>, created_at: SystemTime) -> Self {
-        Self { vid, parent, created_at }
-    }
-
     pub fn vid(&self) -> &VolumeId {
         &self.vid
     }

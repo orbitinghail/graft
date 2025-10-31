@@ -89,9 +89,13 @@ impl LSN {
         unsafe { Self(NonZero::new_unchecked(lsn)) }
     }
 
+    /// Returns the next LSN
+    ///
+    /// # Panics
+    /// Panics if the LSN would overflow
     #[inline]
-    pub fn next(&self) -> Option<Self> {
-        self.0.checked_add(1).map(Self)
+    pub fn next(&self) -> Self {
+        Self(self.0.checked_add(1).expect("LSN overflow"))
     }
 
     #[inline]
@@ -100,7 +104,12 @@ impl LSN {
     }
 
     #[inline]
-    pub fn prev(&self) -> Option<Self> {
+    pub fn checked_next(&self) -> Option<Self> {
+        Some(Self(self.0.checked_add(1)?))
+    }
+
+    #[inline]
+    pub fn checked_prev(&self) -> Option<Self> {
         let n = self.0.get().saturating_sub(1);
         if n == 0 {
             None
@@ -275,12 +284,14 @@ impl TryFrom<CBE64> for LSN {
 impl range_set_blaze::Integer for LSN {
     type SafeLen = u64;
 
+    #[inline]
     fn checked_add_one(self) -> Option<Self> {
-        self.next()
+        self.checked_next()
     }
 
+    #[inline]
     fn add_one(self) -> Self {
-        LSN(self.0.checked_add(1).unwrap())
+        self.next()
     }
 
     fn sub_one(self) -> Self {
@@ -391,7 +402,7 @@ fn as_inclusive_raw<T: RangeBounds<LSN>>(range: &T) -> (LSN, LSN) {
     const EMPTY_RANGE: (LSN, LSN) = (LSN::LAST, LSN::FIRST);
     let start = match range.start_bound() {
         Bound::Included(&start) => start,
-        Bound::Excluded(&prev) => match prev.next() {
+        Bound::Excluded(&prev) => match prev.checked_next() {
             Some(start) => start,
             None => return EMPTY_RANGE,
         },
@@ -399,7 +410,7 @@ fn as_inclusive_raw<T: RangeBounds<LSN>>(range: &T) -> (LSN, LSN) {
     };
     let end = match range.end_bound() {
         Bound::Included(&end) => end,
-        Bound::Excluded(&next) => match next.prev() {
+        Bound::Excluded(&next) => match next.checked_prev() {
             Some(end) => end,
             None => return EMPTY_RANGE,
         },

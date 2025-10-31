@@ -1,4 +1,4 @@
-use std::{future, path::PathBuf};
+use std::{future, ops::Range, path::PathBuf};
 
 use bilrost::{Message, OwnedMessage};
 use bytes::Bytes;
@@ -16,8 +16,8 @@ use graft_core::{
     volume_control::VolumeControl,
 };
 use object_store::{
-    GetOptions, ObjectStore, PutOptions, PutPayload, aws::S3ConditionalPut, local::LocalFileSystem,
-    memory::InMemory, path::Path, prefix::PrefixStore,
+    GetOptions, GetRange, ObjectStore, PutOptions, PutPayload, aws::S3ConditionalPut,
+    local::LocalFileSystem, memory::InMemory, path::Path, prefix::PrefixStore,
 };
 use thiserror::Error;
 
@@ -268,6 +268,23 @@ impl Remote {
         let path = RemotePath::Segment(sid).build(vid);
         self.store.put(&path, PutPayload::from_iter(chunks)).await?;
         Ok(())
+    }
+
+    /// Reads a byte range of a segment
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn get_segment_range(
+        &self,
+        vid: &VolumeId,
+        sid: &SegmentId,
+        bytes: &Range<usize>,
+    ) -> Result<Bytes> {
+        let path = RemotePath::Segment(sid).build(vid);
+        let get_opts = GetOptions {
+            range: Some(GetRange::Bounded(bytes.start as u64..bytes.end as u64)),
+            ..GetOptions::default()
+        };
+        let result = self.store.get_opts(&path, get_opts).await?;
+        Ok(result.bytes().await?)
     }
 
     /// TESTONLY: list contents of this remote in a tree-like format

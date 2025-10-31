@@ -121,7 +121,7 @@ impl Workload for SimpleReader {
             let start_idx = pageidxs.sample_single(&mut env.rng)?;
             let end_idx = start_idx
                 .saturating_add(num_idxs)
-                .min(PageTracker::MAX_PAGES.last_index().unwrap());
+                .min(PageTracker::MAX_PAGES.last_pageidx().unwrap());
             let pageidxs = start_idx..=end_idx;
 
             tracing::info!(?vid, ?pageidxs, "validating pages in range");

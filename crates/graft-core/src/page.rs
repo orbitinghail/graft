@@ -51,6 +51,15 @@ impl Page {
         Ok(Page(buf.copy_to_bytes(buf.remaining())))
     }
 
+    /// Construct a Page directly from a Bytes object which is already
+    /// `PAGESIZE` in length
+    /// # Safety
+    /// The caller must ensure that `bytes` has length equal to `PAGESIZE`.
+    #[inline]
+    pub unsafe fn from_bytes_unchecked(bytes: Bytes) -> Self {
+        Self(bytes)
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.0.len()

@@ -3,14 +3,14 @@
 * in order by `PageIdx`.
 */
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use graft_core::{
     PageCount, PageIdx,
     commit::SegmentFrameIdx,
     page::{PAGESIZE, Page},
 };
 use smallvec::SmallVec;
-use zstd::zstd_safe::{CCtx, CParameter, InBuffer, OutBuffer, zstd_sys::ZSTD_EndDirective};
+use zstd::zstd_safe::{CCtx, CParameter, DCtx, InBuffer, OutBuffer, zstd_sys::ZSTD_EndDirective};
 
 /// The maximum number of pages per Frame.
 /// At 4k per page this is 256k
@@ -160,6 +160,40 @@ impl SegmentBuilder {
         }
 
         (frames, chunks)
+    }
+}
+
+#[must_use]
+pub struct SegmentFrameIter<'a> {
+    dctx: DCtx<'static>,
+    in_buf: InBuffer<'a>,
+}
+
+impl<'a> SegmentFrameIter<'a> {
+    pub fn from_bytes(frame: &'a [u8]) -> Self {
+        let dctx = DCtx::create();
+        let in_buf = InBuffer::around(frame);
+        SegmentFrameIter { dctx, in_buf }
+    }
+}
+
+impl Iterator for SegmentFrameIter<'_> {
+    type Item = Page;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut page = BytesMut::with_capacity(PAGESIZE.as_usize());
+        let mut out_buf = OutBuffer::around(page.as_mut());
+
+        while out_buf.pos() < out_buf.capacity() {
+            let n = self
+                .dctx
+                .decompress_stream(&mut out_buf, &mut self.in_buf)
+                .expect("BUG: failed to decompress segment frame");
+            assert!(n > 0, "BUG: reached end of frame before filling page");
+        }
+
+        // SAFETY: we just allocated page to be PAGESIZE bytes
+        Some(unsafe { Page::from_bytes_unchecked(page.freeze()) })
     }
 }
 

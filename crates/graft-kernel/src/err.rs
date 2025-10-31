@@ -1,6 +1,26 @@
+use crate::{local::fjall_storage::FjallStorageErr, remote::RemoteErr, volume_name::VolumeName};
 use graft_core::VolumeId;
 
-use crate::volume_name::VolumeName;
+#[derive(Debug, thiserror::Error)]
+pub enum GraftErr {
+    #[error(transparent)]
+    Storage(FjallStorageErr),
+
+    #[error(transparent)]
+    Remote(#[from] RemoteErr),
+
+    #[error(transparent)]
+    Volume(#[from] VolumeErr),
+}
+
+impl From<FjallStorageErr> for GraftErr {
+    fn from(value: FjallStorageErr) -> Self {
+        match value {
+            FjallStorageErr::VolumeErr(verr) => GraftErr::Volume(verr),
+            other => GraftErr::Storage(other),
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum VolumeErr {

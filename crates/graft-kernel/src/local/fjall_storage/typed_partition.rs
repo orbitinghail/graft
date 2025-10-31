@@ -128,7 +128,8 @@ where
         }
     }
 
-    pub fn prefix<'a, P>(
+    // not currently used, rename if you need it
+    pub fn _prefix<'a, P>(
         &self,
         prefix: &'a P,
     ) -> impl DoubleEndedIterator<Item = culprit::Result<(K, V), FjallStorageErr>> + use<'a, P, K, V>

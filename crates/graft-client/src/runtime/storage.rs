@@ -345,7 +345,7 @@ impl Storage {
         batch = batch.durability(Some(fjall::PersistMode::SyncAll));
 
         let read_lsn = snapshot.as_ref().map(|s| s.local());
-        let commit_lsn = read_lsn.map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
+        let commit_lsn = read_lsn.map_or(LSN::FIRST, |lsn| lsn.next());
 
         // this Splinter will contain all of the PageIdxs this commit changed
         let mut graft = Splinter::default();
@@ -476,7 +476,7 @@ impl Storage {
         }
 
         // compute the next local lsn
-        let commit_lsn = snapshot.map_or(LSN::FIRST, |s| s.local().next().expect("lsn overflow"));
+        let commit_lsn = snapshot.map_or(LSN::FIRST, |s| s.local().next());
         let remote_mapping = RemoteMapping::new(remote_lsn, commit_lsn);
 
         // persist the new volume snapshot
@@ -596,7 +596,7 @@ impl Storage {
         let start_lsn = state
             .snapshot()
             .and_then(|s| s.remote_local())
-            .map_or(LSN::FIRST, |s| s.next().expect("LSN overflow"));
+            .map_or(LSN::FIRST, |s| s.next());
         let lsns = start_lsn..=end_lsn;
 
         // create a commit iterator
@@ -613,7 +613,7 @@ impl Storage {
 
                 // detect missing commits
                 assert_eq!(lsn, cursor, "missing commit detected");
-                cursor = cursor.next().expect("lsn overflow");
+                cursor = cursor.next();
 
                 let splinter = SplinterRef::from_bytes(v).or_into_ctx()?;
                 Ok((lsn, splinter))
@@ -756,7 +756,7 @@ impl Storage {
         // the remote lsn to receive
         let remote_lsn = remote_snapshot.lsn().expect("invalid remote LSN");
         // the new local lsn to commit the remote into
-        let commit_lsn = reset_lsn.map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
+        let commit_lsn = reset_lsn.map_or(LSN::FIRST, |lsn| lsn.next());
 
         span.record("local_lsn", format!("{local_lsn:?}"));
         span.record("reset_lsn", format!("{reset_lsn:?}"));

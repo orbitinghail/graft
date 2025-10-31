@@ -51,7 +51,7 @@ impl PullJob {
         let start_lsn = state
             .snapshot()
             .and_then(|s| s.remote())
-            .map_or(LSN::FIRST, |lsn| lsn.next().expect("lsn overflow"));
+            .map_or(LSN::FIRST, |lsn| lsn.next());
         let lsns = start_lsn..;
 
         let _span =

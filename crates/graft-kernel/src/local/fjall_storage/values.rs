@@ -74,6 +74,7 @@ mod tests {
         test_roundtrip(NamedVolumeState::new(
             VolumeName::new("test-handle").unwrap(),
             VolumeId::random(),
+            VolumeId::random(),
             None,
             None,
         ));

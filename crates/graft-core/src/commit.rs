@@ -1,5 +1,5 @@
 use std::{
-    ops::{Deref, DerefMut, RangeInclusive},
+    ops::{Deref, DerefMut, Range, RangeInclusive},
     time::SystemTime,
 };
 
@@ -152,7 +152,7 @@ impl SegmentIdx {
         self.frames
             .iter()
             .scan((0, PageIdx::FIRST), |(bytes_acc, pages_acc), frame| {
-                let bytes = *bytes_acc..=(*bytes_acc + frame.frame_size - 1);
+                let bytes = *bytes_acc..(*bytes_acc + frame.frame_size);
                 let pages = *pages_acc..=frame.last_pageidx;
 
                 *bytes_acc += frame.frame_size;
@@ -208,7 +208,7 @@ impl SegmentFrameIdx {
 /// particular frame in a segment.
 pub struct SegmentFrameRef {
     sid: SegmentId,
-    bytes: RangeInclusive<usize>,
+    bytes: Range<usize>,
     pages: RangeInclusive<PageIdx>,
 }
 
@@ -219,11 +219,10 @@ impl SegmentFrameRef {
 
     /// The size of the frame in bytes
     pub fn size(&self) -> usize {
-        // add 1 because it's RangeInclusive
-        self.bytes.end() - self.bytes.start() + 1
+        self.bytes.end - self.bytes.start
     }
 
-    pub fn bytes(&self) -> &RangeInclusive<usize> {
+    pub fn bytes(&self) -> &Range<usize> {
         &self.bytes
     }
 
@@ -261,10 +260,10 @@ mod tests {
         };
 
         let test_cases = [
-            (pageidx!(5), Some((0..=99, PageIdx::FIRST..=pageidx!(10)))),
-            (pageidx!(10), Some((0..=99, PageIdx::FIRST..=pageidx!(10)))),
-            (pageidx!(20), Some((100..=299, pageidx!(11)..=pageidx!(25)))),
-            (pageidx!(35), Some((300..=449, pageidx!(26)..=pageidx!(40)))),
+            (pageidx!(5), Some((0..100, PageIdx::FIRST..=pageidx!(10)))),
+            (pageidx!(10), Some((0..100, PageIdx::FIRST..=pageidx!(10)))),
+            (pageidx!(20), Some((100..300, pageidx!(11)..=pageidx!(25)))),
+            (pageidx!(35), Some((300..450, pageidx!(26)..=pageidx!(40)))),
             (pageidx!(50), None),
         ];
 

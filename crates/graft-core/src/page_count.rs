@@ -1,4 +1,4 @@
-use std::{fmt::Display, num::TryFromIntError, ops::Range};
+use std::{fmt::Display, num::TryFromIntError, ops::RangeInclusive};
 
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -45,21 +45,20 @@ impl PageCount {
         self.0 == 0
     }
 
-    pub const fn pageidxs(self) -> Range<PageIdx> {
-        PageIdx::FIRST..match self.last_index() {
-            Some(p) => p.saturating_next(),
-            None => PageIdx::FIRST,
+    pub const fn pageidxs(self) -> RangeInclusive<PageIdx> {
+        match self.last_pageidx() {
+            Some(last) => PageIdx::FIRST..=last,
+            None => PageIdx::LAST..=PageIdx::FIRST, // empty
         }
     }
 
     #[inline]
     pub const fn iter(self) -> PageIdxIter {
-        let pageidxs = self.pageidxs();
-        PageIdxIter::new(pageidxs.start, pageidxs.end)
+        PageIdxIter::new(self.pageidxs())
     }
 
     #[inline]
-    pub const fn last_index(self) -> Option<PageIdx> {
+    pub const fn last_pageidx(self) -> Option<PageIdx> {
         if self.is_empty() {
             None
         } else {

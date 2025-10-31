@@ -7,18 +7,18 @@ pub mod rt {
 
     pub(crate) mod rpc;
 
-    mod err;
     mod job;
     mod runtime;
 }
 
 pub mod changeset;
+pub mod err;
 pub mod named_volume;
 pub mod remote;
 pub mod search_path;
 pub mod snapshot;
-pub mod sync_point;
-pub mod volume_err;
 pub mod volume_name;
 pub mod volume_reader;
 pub mod volume_writer;
+
+pub use err::{GraftErr, VolumeErr};
