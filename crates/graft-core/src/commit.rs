@@ -150,9 +150,14 @@ impl SegmentIdx {
     }
 
     pub fn frame_for_pageidx(&self, pageidx: PageIdx) -> Option<SegmentFrameRef> {
+        if !self.graft.contains(pageidx) {
+            return None;
+        }
+        let first_page = self.graft.iter().next().unwrap_or(PageIdx::FIRST);
+
         self.frames
             .iter()
-            .scan((0, PageIdx::FIRST), |(bytes_acc, pages_acc), frame| {
+            .scan((0, first_page), |(bytes_acc, pages_acc), frame| {
                 let bytes = *bytes_acc..(*bytes_acc + frame.frame_size);
                 let pages = *pages_acc..=frame.last_pageidx;
 
