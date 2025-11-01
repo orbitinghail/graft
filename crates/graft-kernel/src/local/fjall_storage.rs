@@ -645,7 +645,7 @@ impl<'a> ReadWriteGuard<'a> {
         assert!(pending_commit.commit_hash != CommitHash::ZERO);
 
         // save the new pending commit
-        let handle = handle.with_pending_commit(Some(pending_commit.clone()));
+        let handle = handle.with_pending_commit(Some(pending_commit));
         self.storage().named.insert(handle.name.clone(), handle)?;
 
         Ok(())
@@ -713,7 +713,8 @@ impl<'a> ReadWriteGuard<'a> {
         if handle.local_changes(&latest_local).is_some() {
             // the remote and local volumes have diverged
             let status = handle.status(&latest_local, &latest_remote);
-            return Err(VolumeErr::NamedVolumeDiverged(name, status).into());
+            tracing::debug!("named volume {name} has diverged; status=`{status}`");
+            return Err(VolumeErr::NamedVolumeDiverged(name).into());
         }
 
         tracing::debug!(
@@ -733,7 +734,7 @@ impl<'a> ReadWriteGuard<'a> {
         let mut commits = self.read.commits(&search);
         let mut latest_local_lsn = latest_local.lsn();
         while let Some(commit) = commits.try_next().or_into_ctx()? {
-            let next_lsn = latest_local_lsn.map(|l| l.next()).unwrap_or(LSN::FIRST);
+            let next_lsn = latest_local_lsn.map_or(LSN::FIRST, |l| l.next());
             // map the remote commit into the local volume
             batch.write_commit(
                 commit

@@ -1,7 +1,4 @@
-use crate::{
-    local::fjall_storage::FjallStorageErr, named_volume::NamedVolumeStatus, remote::RemoteErr,
-    volume_name::VolumeName,
-};
+use crate::{local::fjall_storage::FjallStorageErr, remote::RemoteErr, volume_name::VolumeName};
 use graft_core::VolumeId;
 
 #[derive(Debug, thiserror::Error)]
@@ -39,8 +36,8 @@ pub enum VolumeErr {
     #[error("Named Volume `{0}` has a pending commit and needs recovery")]
     NamedVolumeNeedsRecovery(VolumeName),
 
-    #[error("Named Volume `{0}` has diverged from the remote; status={1}")]
-    NamedVolumeDiverged(VolumeName, NamedVolumeStatus),
+    #[error("Named Volume `{0}` has diverged from the remote")]
+    NamedVolumeDiverged(VolumeName),
 
     #[error(
         "Named Volume `{name}` has a different remote Volume than expected; expected={expected}, actual={actual}"

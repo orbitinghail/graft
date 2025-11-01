@@ -446,11 +446,11 @@ impl<T: RangeBounds<LSN>> LSNRangeExt for T {
     fn to_string(&self) -> String {
         let (start, end) = as_inclusive_raw(self);
         if end == LSN::LAST {
-            format!("{}..", start)
+            format!("{start}..")
         } else if start == LSN::FIRST {
-            format!("..={}", end)
+            format!("..={end}")
         } else {
-            format!("{}..={}", start, end)
+            format!("{start}..={end}")
         }
     }
 }

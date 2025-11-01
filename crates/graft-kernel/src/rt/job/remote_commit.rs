@@ -149,7 +149,7 @@ fn plan_commit(
         return Ok(Some(CommitPlan {
             local_vid: handle.local.clone(),
             lsns: LSN::FIRST..=latest_local_lsn,
-            commit_ref: VolumeRef::new(handle.remote.clone(), LSN::FIRST),
+            commit_ref: VolumeRef::new(handle.remote, LSN::FIRST),
             page_count,
         }));
     };
@@ -158,7 +158,8 @@ fn plan_commit(
     if handle.remote_changes(&latest_remote).is_some() {
         // the remote and local volumes have diverged
         let status = handle.status(&latest_local, &latest_remote);
-        return Err(VolumeErr::NamedVolumeDiverged(name.clone(), status).into());
+        tracing::debug!("named volume {name} has diverged; status=`{status}`");
+        return Err(VolumeErr::NamedVolumeDiverged(name.clone()).into());
     }
 
     // calculate which LSNs we need to sync
