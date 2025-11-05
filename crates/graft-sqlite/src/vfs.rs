@@ -180,7 +180,7 @@ impl Vfs for GraftVfs {
 
     fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         tracing::trace!("access: path={path:?}; flags={flags:?}");
-        ErrCtx::wrap(move || Ok(self.runtime.volume_exists(path).or_into_ctx()?))
+        ErrCtx::wrap(move || self.runtime.volume_exists(path).or_into_ctx())
     }
 
     fn open(&self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle> {

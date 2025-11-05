@@ -78,7 +78,7 @@ fn write_err_msg(
 }
 
 fn get_or_create_tokio_rt() -> Result<tokio::runtime::Handle, InitErr> {
-    if let Some(handle) = tokio::runtime::Handle::try_current().ok() {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
         return Ok(handle);
     }
 
@@ -95,7 +95,7 @@ fn get_or_create_tokio_rt() -> Result<tokio::runtime::Handle, InitErr> {
             rt.block_on(pending::<()>())
         })?;
 
-    return Ok(handle);
+    Ok(handle)
 }
 
 fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {

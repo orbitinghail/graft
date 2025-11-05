@@ -28,6 +28,7 @@ pub trait VfsFile: Debug {
 
 #[enum_dispatch(VfsFile)]
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum FileHandle {
     MemFile,
     VolFile,

@@ -182,7 +182,7 @@ impl FjallStorage {
     /// The `sid` must be a Segment containing all of the pages in this commit,
     /// which must match the provided `graft`.
     ///
-    /// Returns the resulting VolumeRef on success
+    /// Returns the resulting `VolumeRef` on success
     pub fn commit(
         &self,
         name: VolumeName,
