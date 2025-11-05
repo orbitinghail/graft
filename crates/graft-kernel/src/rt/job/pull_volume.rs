@@ -45,7 +45,14 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
     let max_lsn = opts.max_lsn.unwrap_or(LSN::LAST);
 
     // fetch the search path
-    let search = fetch_search_path(storage, remote, opts.vid.clone(), max_lsn).await?;
+    let search = match fetch_search_path(storage, remote, opts.vid.clone(), max_lsn).await {
+        Ok(search) => search,
+        Err(err) if err.ctx().is_remote_not_found() => {
+            // remote volume not found
+            return Ok(());
+        }
+        Err(err) => return Err(err),
+    };
 
     // fetch any missing commits
     let mut batch = storage.batch();

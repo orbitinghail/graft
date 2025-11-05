@@ -7,7 +7,7 @@ use crate::{
     GraftErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
     volume_reader::VolumeReader, volume_writer::VolumeWriter,
 };
-use graft_core::{VolumeId, commit_hash::CommitHash, lsn::LSN};
+use graft_core::{PageCount, VolumeId, commit_hash::CommitHash, lsn::LSN};
 
 type Result<T> = culprit::Result<T, GraftErr>;
 
@@ -154,45 +154,60 @@ impl NamedVolume {
         Self { runtime, name }
     }
 
+    pub fn name(&self) -> &VolumeName {
+        &self.name
+    }
+
+    pub fn state(&self) -> Result<NamedVolumeState> {
+        self.runtime
+            .storage()
+            .read()
+            .named_volume(&self.name)
+            .or_into_ctx()
+    }
+
     pub fn status(&self) -> Result<NamedVolumeStatus> {
         let reader = self.runtime.storage().read();
-        let state = reader
-            .named_volume(&self.name)
-            .or_into_ctx()?
-            .expect("BUG: NamedVolume missing state");
+        let state = reader.named_volume(&self.name).or_into_ctx()?;
         let latest_local = reader.snapshot(&state.local).or_into_ctx()?;
         let latest_remote = reader.snapshot(&state.remote).or_into_ctx()?;
         Ok(state.status(&latest_local, &latest_remote))
     }
 
+    #[inline]
+    pub fn page_count(&self) -> Result<PageCount> {
+        let reader = self.runtime.storage().read();
+        let state = reader.named_volume(&self.name).or_into_ctx()?;
+        let snapshot = reader.snapshot(&state.local).or_into_ctx()?;
+        reader.page_count(&snapshot).or_into_ctx()
+    }
+
+    #[inline]
+    pub fn snapshot(&self) -> Result<Snapshot> {
+        self.snapshot_at(None)
+    }
+
+    pub fn snapshot_at(&self, lsn: Option<LSN>) -> Result<Snapshot> {
+        let reader = self.runtime.storage().read();
+        let state = reader.named_volume(&self.name).or_into_ctx()?;
+        reader.snapshot_at(&state.local, lsn).or_into_ctx()
+    }
+
+    #[inline]
     pub fn reader(&self) -> Result<VolumeReader> {
-        let snapshot = self
-            .runtime
-            .storage()
-            .read()
-            .named_local_snapshot(&self.name)
-            .or_into_ctx()?
-            .expect("BUG: NamedVolume missing local snapshot");
+        self.reader_at(None)
+    }
+
+    pub fn reader_at(&self, lsn: Option<LSN>) -> Result<VolumeReader> {
         Ok(VolumeReader::new(
             self.name.clone(),
             self.runtime.clone(),
-            snapshot,
+            self.snapshot_at(lsn)?,
         ))
     }
 
     pub fn writer(&self) -> Result<VolumeWriter> {
-        let read = self.runtime.storage().read();
-        let snapshot = read
-            .named_local_snapshot(&self.name)
-            .or_into_ctx()?
-            .expect("BUG: NamedVolume missing local snapshot");
-        let page_count = read.page_count(&snapshot).or_into_ctx()?;
-        Ok(VolumeWriter::new(
-            self.name.clone(),
-            self.runtime.clone(),
-            snapshot,
-            page_count,
-        ))
+        self.reader()?.try_into()
     }
 }
 

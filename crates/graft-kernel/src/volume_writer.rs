@@ -1,5 +1,5 @@
 use culprit::{Result, ResultExt};
-use graft_core::{PageCount, PageIdx, commit::SegmentIdx, page::Page};
+use graft_core::{PageCount, PageIdx, commit::SegmentIdx, page::Page, volume_ref::VolumeRef};
 
 use crate::{
     GraftErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
@@ -10,9 +10,10 @@ use crate::{
 pub trait VolumeWrite {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr>;
     fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr>;
-    fn commit(self) -> Result<(), GraftErr>;
+    fn commit(self) -> Result<VolumeRef, GraftErr>;
 }
 
+#[derive(Debug)]
 pub struct VolumeWriter {
     name: VolumeName,
     runtime: RuntimeHandle,
@@ -40,6 +41,10 @@ impl VolumeWriter {
 }
 
 impl VolumeRead for VolumeWriter {
+    fn snapshot(&self) -> &Snapshot {
+        &self.snapshot
+    }
+
     fn page_count(&self) -> Result<PageCount, GraftErr> {
         Ok(self.page_count)
     }
@@ -84,7 +89,7 @@ impl VolumeWrite for VolumeWriter {
             .or_into_ctx()
     }
 
-    fn commit(self) -> Result<(), GraftErr> {
+    fn commit(self) -> Result<VolumeRef, GraftErr> {
         self.runtime
             .storage()
             .commit(self.name, self.snapshot, self.page_count, self.segment)

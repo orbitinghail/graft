@@ -1,182 +1,154 @@
 use std::{
     fmt::{Debug, Display},
-    sync::{Arc, Once},
-    thread::JoinHandle,
-    time::Duration,
+    sync::Once,
 };
 
-use culprit::Culprit;
-use graft_client::{ClientPair, MetastoreClient, NetClient, PagestoreClient};
 use graft_core::{
     PageCount, PageIdx,
     page::{PAGESIZE, Page},
     pageidx,
 };
-use graft_server::{
-    api::{
-        metastore::{MetastoreApiState, metastore_routes},
-        pagestore::{PagestoreApiState, pagestore_routes},
-        routes::build_router,
-        task::ApiServerTask,
-    },
-    metrics::registry::Registry,
-    object_store_util::ObjectStoreConfig,
-    segment::{
-        cache::mem::MemCache, loader::SegmentLoader, uploader::SegmentUploaderTask,
-        writer::SegmentWriterTask,
-    },
-    supervisor::{ShutdownErr, Supervisor},
-    volume::{catalog::VolumeCatalog, store::VolumeStore, updater::VolumeCatalogUpdater},
-};
 use graft_tracing::{TracingConsumer, init_tracing_with_writer};
 use precept::dispatch::test::TestDispatch;
 use thiserror::Error;
-use tokio::{
-    net::TcpListener,
-    sync::{
-        mpsc,
-        oneshot::{self},
-    },
-};
 use tracing_subscriber::fmt::TestWriter;
-use url::Url;
 
 pub use graft_test_macro::datatest;
 pub use graft_test_macro::test;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-pub mod workload;
+// pub mod workload;
 
 // this function is automatically run before each test by the macro graft_test_macro::test
 pub fn setup_test() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        init_tracing_with_writer(TracingConsumer::Test, None, TestWriter::default());
+        init_tracing_with_writer(TracingConsumer::Test, TestWriter::default());
         precept::init(&TestDispatch).expect("failed to setup precept");
         precept::disable_faults();
     });
 }
 
-pub struct GraftBackend {
-    shutdown_tx: oneshot::Sender<Duration>,
-    result_rx: oneshot::Receiver<Result<(), Culprit<ShutdownErr>>>,
-    handle: JoinHandle<()>,
-}
+// pub struct GraftBackend {
+//     shutdown_tx: oneshot::Sender<Duration>,
+//     result_rx: oneshot::Receiver<Result<(), Culprit<ShutdownErr>>>,
+//     handle: JoinHandle<()>,
+// }
 
-pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let (result_tx, result_rx) = oneshot::channel();
+// pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
+//     let (shutdown_tx, shutdown_rx) = oneshot::channel();
+//     let (result_tx, result_rx) = oneshot::channel();
 
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .thread_name("graft-backend")
-        .enable_all()
-        .start_paused(true)
-        .build()
-        .expect("failed to construct tokio runtime");
+//     let runtime = tokio::runtime::Builder::new_current_thread()
+//         .thread_name("graft-backend")
+//         .enable_all()
+//         .start_paused(true)
+//         .build()
+//         .expect("failed to construct tokio runtime");
 
-    let net_client = NetClient::new_with_proxy(None, None);
+//     let net_client = NetClient::new_with_proxy(None, None);
 
-    let mut supervisor = Supervisor::default();
-    let metastore = runtime.block_on(run_metastore(net_client.clone(), &mut supervisor));
-    let pagestore = runtime.block_on(run_pagestore(
-        net_client,
-        metastore.clone(),
-        &mut supervisor,
-    ));
+//     let mut supervisor = Supervisor::default();
+//     let metastore = runtime.block_on(run_metastore(net_client.clone(), &mut supervisor));
+//     let pagestore = runtime.block_on(run_pagestore(
+//         net_client,
+//         metastore.clone(),
+//         &mut supervisor,
+//     ));
 
-    let builder = std::thread::Builder::new().name("graft-backend".to_string());
+//     let builder = std::thread::Builder::new().name("graft-backend".to_string());
 
-    let handle = builder
-        .spawn(move || {
-            runtime.block_on(async {
-                // if the shutdown channel closes, try to shutdown the supervisor with a default timeout
-                let timeout = shutdown_rx.await.unwrap_or(Duration::from_secs(5));
-                let result = supervisor.shutdown(timeout).await;
-                let _ = result_tx.send(result);
-            })
-        })
-        .expect("failed to spawn backend thread");
+//     let handle = builder
+//         .spawn(move || {
+//             runtime.block_on(async {
+//                 // if the shutdown channel closes, try to shutdown the supervisor with a default timeout
+//                 let timeout = shutdown_rx.await.unwrap_or(Duration::from_secs(5));
+//                 let result = supervisor.shutdown(timeout).await;
+//                 let _ = result_tx.send(result);
+//             })
+//         })
+//         .expect("failed to spawn backend thread");
 
-    (
-        GraftBackend { shutdown_tx, result_rx, handle },
-        ClientPair::new(metastore, pagestore),
-    )
-}
+//     (
+//         GraftBackend { shutdown_tx, result_rx, handle },
+//         ClientPair::new(metastore, pagestore),
+//     )
+// }
 
-impl GraftBackend {
-    pub fn shutdown(self, timeout: Duration) -> Result<(), Culprit<ShutdownErr>> {
-        self.shutdown_tx
-            .send(timeout)
-            .expect("shutdown channel closed");
+// impl GraftBackend {
+//     pub fn shutdown(self, timeout: Duration) -> Result<(), Culprit<ShutdownErr>> {
+//         self.shutdown_tx
+//             .send(timeout)
+//             .expect("shutdown channel closed");
 
-        self.handle.join().expect("backend thread panic");
+//         self.handle.join().expect("backend thread panic");
 
-        self.result_rx
-            .blocking_recv()
-            .expect("result channel closed")
-    }
-}
+//         self.result_rx
+//             .blocking_recv()
+//             .expect("result channel closed")
+//     }
+// }
 
-pub async fn run_metastore(net_client: NetClient, supervisor: &mut Supervisor) -> MetastoreClient {
-    let obj_store = ObjectStoreConfig::Memory.build().unwrap();
-    let vol_store = Arc::new(VolumeStore::new(obj_store));
-    let catalog = VolumeCatalog::open_temporary().unwrap();
-    let updater = VolumeCatalogUpdater::new(8);
-    let state = Arc::new(MetastoreApiState::new(vol_store, catalog, updater));
-    let router = build_router(Registry::default(), None, state, metastore_routes());
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let endpoint = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
-    supervisor.spawn(ApiServerTask::new("metastore-api", listener, router));
-    MetastoreClient::new(endpoint, net_client)
-}
+// pub async fn run_metastore(net_client: NetClient, supervisor: &mut Supervisor) -> MetastoreClient {
+//     let obj_store = ObjectStoreConfig::Memory.build().unwrap();
+//     let vol_store = Arc::new(VolumeStore::new(obj_store));
+//     let catalog = VolumeCatalog::open_temporary().unwrap();
+//     let updater = VolumeCatalogUpdater::new(8);
+//     let state = Arc::new(MetastoreApiState::new(vol_store, catalog, updater));
+//     let router = build_router(Registry::default(), None, state, metastore_routes());
+//     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+//     let port = listener.local_addr().unwrap().port();
+//     let endpoint = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
+//     supervisor.spawn(ApiServerTask::new("metastore-api", listener, router));
+//     MetastoreClient::new(endpoint, net_client)
+// }
 
-pub async fn run_pagestore(
-    net_client: NetClient,
-    metastore: MetastoreClient,
-    supervisor: &mut Supervisor,
-) -> PagestoreClient {
-    let mut registry = Registry::default();
-    let obj_store = ObjectStoreConfig::Memory.build().unwrap();
-    let cache = Arc::new(MemCache::default());
-    let catalog = VolumeCatalog::open_temporary().unwrap();
-    let loader = SegmentLoader::new(obj_store.clone(), cache.clone(), 8);
-    let updater = VolumeCatalogUpdater::new(10);
+// pub async fn run_pagestore(
+//     net_client: NetClient,
+//     metastore: MetastoreClient,
+//     supervisor: &mut Supervisor,
+// ) -> PagestoreClient {
+//     let mut registry = Registry::default();
+//     let obj_store = ObjectStoreConfig::Memory.build().unwrap();
+//     let cache = Arc::new(MemCache::default());
+//     let catalog = VolumeCatalog::open_temporary().unwrap();
+//     let loader = SegmentLoader::new(obj_store.clone(), cache.clone(), 8);
+//     let updater = VolumeCatalogUpdater::new(10);
 
-    let (page_tx, page_rx) = mpsc::channel(128);
-    let (store_tx, store_rx) = mpsc::channel(8);
+//     let (page_tx, page_rx) = mpsc::channel(128);
+//     let (store_tx, store_rx) = mpsc::channel(8);
 
-    supervisor.spawn(SegmentWriterTask::new(
-        registry.segment_writer(),
-        page_rx,
-        store_tx,
-        Duration::from_secs(1),
-    ));
+//     supervisor.spawn(SegmentWriterTask::new(
+//         registry.segment_writer(),
+//         page_rx,
+//         store_tx,
+//         Duration::from_secs(1),
+//     ));
 
-    supervisor.spawn(SegmentUploaderTask::new(
-        registry.segment_uploader(),
-        store_rx,
-        obj_store,
-        cache,
-    ));
+//     supervisor.spawn(SegmentUploaderTask::new(
+//         registry.segment_uploader(),
+//         store_rx,
+//         obj_store,
+//         cache,
+//     ));
 
-    let state = Arc::new(PagestoreApiState::new(
-        page_tx,
-        catalog.clone(),
-        loader,
-        metastore,
-        updater,
-        10,
-    ));
-    let router = build_router(registry, None, state, pagestore_routes());
+//     let state = Arc::new(PagestoreApiState::new(
+//         page_tx,
+//         catalog.clone(),
+//         loader,
+//         metastore,
+//         updater,
+//         10,
+//     ));
+//     let router = build_router(registry, None, state, pagestore_routes());
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let endpoint = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
-    supervisor.spawn(ApiServerTask::new("pagestore-api", listener, router));
+//     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+//     let port = listener.local_addr().unwrap().port();
+//     let endpoint = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
+//     supervisor.spawn(ApiServerTask::new("pagestore-api", listener, router));
 
-    PagestoreClient::new(endpoint, net_client)
-}
+//     PagestoreClient::new(endpoint, net_client)
+// }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ticker {

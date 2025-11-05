@@ -2,10 +2,19 @@ use graft_core::{VolumeId, lsn::LSN, volume_ref::VolumeRef};
 
 use crate::search_path::SearchPath;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Snapshot {
     vid: VolumeId,
     path: SearchPath,
+}
+
+impl std::fmt::Debug for Snapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Snapshot")
+            .field(&self.vid)
+            .field(&self.lsn())
+            .finish()
+    }
 }
 
 impl Snapshot {

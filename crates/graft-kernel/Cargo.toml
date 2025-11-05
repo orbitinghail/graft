@@ -1,6 +1,6 @@
 [package]
 name = "graft-kernel"
-version = "0.1.0"
+version = "0.1.5"
 edition = "2024"
 authors.workspace = true
 license.workspace = true
@@ -21,6 +21,7 @@ culprit = { workspace = true }
 
 event-listener = { workspace = true }
 async-stream = { workspace = true }
+circular-buffer = { workspace = true }
 fjall = { workspace = true }
 lsm-tree = { workspace = true }
 zerocopy = { workspace = true }
@@ -28,10 +29,11 @@ bytestring = { workspace = true }
 thiserror = { workspace = true }
 bytes = { workspace = true }
 bilrost = { workspace = true }
-object_store = { workspace = true }
+object_store = { workspace = true, features = ["aws"] }
 static_assertions = { workspace = true }
 tryiter = { workspace = true }
 itertools = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 smallvec = { workspace = true }
 tempfile = { workspace = true }
 tracing = { workspace = true }

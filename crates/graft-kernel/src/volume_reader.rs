@@ -8,6 +8,7 @@ use crate::{
 
 /// A type which can read from a Volume
 pub trait VolumeRead {
+    fn snapshot(&self) -> &Snapshot;
     fn page_count(&self) -> culprit::Result<PageCount, GraftErr>;
     fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, GraftErr>;
 }
@@ -40,6 +41,10 @@ impl TryFrom<VolumeReader> for VolumeWriter {
 }
 
 impl VolumeRead for VolumeReader {
+    fn snapshot(&self) -> &Snapshot {
+        &self.snapshot
+    }
+
     fn page_count(&self) -> culprit::Result<PageCount, GraftErr> {
         self.runtime
             .storage()

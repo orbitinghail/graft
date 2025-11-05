@@ -181,18 +181,21 @@ impl FjallStorage {
     /// The resulting commit will claim the next LSN after the Snapshot.
     /// The `sid` must be a Segment containing all of the pages in this commit,
     /// which must match the provided `graft`.
+    ///
+    /// Returns the resulting VolumeRef on success
     pub fn commit(
         &self,
         name: VolumeName,
         snapshot: Snapshot,
         page_count: PageCount,
         segment: SegmentIdx,
-    ) -> Result<(), FjallStorageErr> {
-        self.read_write()
+    ) -> Result<VolumeRef, FjallStorageErr> {
+        let vref = self
+            .read_write()
             .commit(&name, snapshot, page_count, segment)?;
         // notify downstream subscribers
         self.commits.mark_changed(&name);
-        Ok(())
+        Ok(vref)
     }
 
     pub fn open_named_volume(
@@ -298,24 +301,15 @@ impl<'a> ReadGuard<'a> {
         self.named().values()
     }
 
-    pub fn named_volume(
-        &self,
-        name: &VolumeName,
-    ) -> Result<Option<NamedVolumeState>, FjallStorageErr> {
-        self.named().get(name)
+    pub fn named_volume_exists(&self, name: &VolumeName) -> Result<bool, FjallStorageErr> {
+        self.named().contains(name)
     }
 
-    /// Retrieve the latest `Snapshot` corresponding to the local Volume for the
-    /// `NamedVolume` named `name`
-    pub fn named_local_snapshot(
-        &self,
-        name: &VolumeName,
-    ) -> Result<Option<Snapshot>, FjallStorageErr> {
-        if let Some(handle) = self.named().get(name)? {
-            Ok(Some(self.snapshot(&handle.local)?))
-        } else {
-            Ok(None)
-        }
+    pub fn named_volume(&self, name: &VolumeName) -> Result<NamedVolumeState, FjallStorageErr> {
+        self.named()
+            .get(name)?
+            .ok_or_else(|| VolumeErr::NamedVolumeNotFound(name.clone()))
+            .or_into_ctx()
     }
 
     pub fn volume_meta(&self, vid: &VolumeId) -> Result<Option<VolumeMeta>, FjallStorageErr> {
@@ -578,11 +572,10 @@ impl<'a> ReadWriteGuard<'a> {
         snapshot: Snapshot,
         page_count: PageCount,
         segment: SegmentIdx,
-    ) -> Result<(), FjallStorageErr> {
-        let latest_snapshot = self
-            .read
-            .named_local_snapshot(name)?
-            .expect("BUG: named volume is missing");
+    ) -> Result<VolumeRef, FjallStorageErr> {
+        let handle = self.read.named_volume(name)?;
+
+        let latest_snapshot = self.read.snapshot(&handle.local)?;
 
         // Verify that the commit was constructed using the latest snapshot for
         // the volume.
@@ -600,7 +593,8 @@ impl<'a> ReadWriteGuard<'a> {
 
         let vref = commit.vref();
         tracing::debug!(%vref, "local commit");
-        self.read.storage.log.insert(vref, commit)
+        self.read.storage.log.insert(vref.clone(), commit)?;
+        Ok(vref)
     }
 
     pub fn update_checkpoints(
@@ -622,9 +616,7 @@ impl<'a> ReadWriteGuard<'a> {
         name: &VolumeName,
         pending_commit: PendingCommit,
     ) -> Result<(), FjallStorageErr> {
-        let Some(handle) = self.read.named_volume(name)? else {
-            return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
-        };
+        let handle = self.read.named_volume(name)?;
 
         assert!(
             handle.pending_commit().is_none(),
@@ -656,9 +648,7 @@ impl<'a> ReadWriteGuard<'a> {
         name: &VolumeName,
         remote_commit: Commit,
     ) -> Result<(), FjallStorageErr> {
-        let Some(handle) = self.read.named_volume(name)? else {
-            return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
-        };
+        let handle = self.read.named_volume(name)?;
 
         // verify the pending commit matches the remote commit
         let pending_commit = handle.pending_commit.unwrap();
@@ -688,18 +678,14 @@ impl<'a> ReadWriteGuard<'a> {
     }
 
     pub fn drop_pending_commit(self, name: &VolumeName) -> Result<(), FjallStorageErr> {
-        let Some(handle) = self.read.named_volume(name)? else {
-            return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
-        };
+        let handle = self.read.named_volume(name)?;
         self.storage()
             .named
             .insert(handle.name.clone(), handle.with_pending_commit(None))
     }
 
     pub fn sync_remote_to_local(self, name: VolumeName) -> Result<(), FjallStorageErr> {
-        let Some(handle) = self.read.named_volume(&name).or_into_ctx()? else {
-            return Err(VolumeErr::NamedVolumeNotFound(name).into());
-        };
+        let handle = self.read.named_volume(&name)?;
 
         // check to see if we have any changes to sync
         let latest_remote = self.read.snapshot(&handle.remote).or_into_ctx()?;

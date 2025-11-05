@@ -19,6 +19,7 @@ use object_store::{
     GetOptions, GetRange, ObjectStore, PutOptions, PutPayload, aws::S3ConditionalPut,
     local::LocalFileSystem, memory::InMemory, path::Path, prefix::PrefixStore,
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod segment;
@@ -100,7 +101,8 @@ impl RemoteErr {
 
 pub type Result<T> = culprit::Result<T, RemoteErr>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum RemoteConfig {
     /// In memory object store
     #[default]

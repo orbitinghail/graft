@@ -129,9 +129,7 @@ fn plan_commit(
     name: &VolumeName,
 ) -> culprit::Result<Option<CommitPlan>, GraftErr> {
     let reader = storage.read();
-    let Some(handle) = reader.named_volume(name).or_into_ctx()? else {
-        return Err(VolumeErr::NamedVolumeNotFound(name.clone()).into());
-    };
+    let handle = reader.named_volume(name).or_into_ctx()?;
     if handle.pending_commit().is_some() {
         return Err(VolumeErr::NamedVolumeNeedsRecovery(name.clone()).into());
     }

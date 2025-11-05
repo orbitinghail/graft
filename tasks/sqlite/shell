@@ -6,13 +6,10 @@ USAGE=$(
 Usage: $0 [OPTIONS]
 
 Options:
-  -v<VID>            Use the specified Volume ID (default: GontkHa6QVLMYnkyk16wUP).
-  --random-vid       Generate and use a random VID.
-  --random-cid       Generate and use a random client ID and temporary data directory.
-  --release          Build/run in release mode.
-  --trace            Enable trace-level logging (RUST_LOG=trace).
-  --fly              Use Fly-hosted MetaStore and PageStore services.
-  --gdb              Run sqlite3 under gdb debugger.
+  --temp        Generate and use a temporary data directory.
+  --release     Build/run in release mode.
+  --trace       Enable trace-level logging (RUST_LOG=trace).
+  --gdb         Run sqlite3 under gdb debugger.
 EOF
 )
 
@@ -20,24 +17,16 @@ GIT_ROOT="$(git rev-parse --show-toplevel)"
 
 TARGET="debug"
 BUILD_FLAGS=""
-VID="GontkHa6QVLMYnkyk16wUP"
 
 GDB=${GDB:-0}
 export RUST_LOG=${RUST_LOG:-warn}
 
+export GRAFT_REMOTE__TYPE='memory'
+
 # parse flags
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -v*)
-            VID="${1:2}"
-            shift
-            ;;
-        --random-vid)
-            VID="random"
-            shift
-            ;;
-        --random-cid)
-            export GRAFT_CLIENT_ID="$(just run tool cid)"
+        --temp)
             export GRAFT_DATA_DIR="$(mktemp -d)"
             shift
             ;;
@@ -48,11 +37,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --trace)
             RUST_LOG="trace"
-            shift
-            ;;
-        --fly)
-            export GRAFT_METASTORE="https://graft-metastore.fly.dev"
-            export GRAFT_PAGESTORE="https://graft-pagestore.fly.dev"
             shift
             ;;
         --gdb)
@@ -84,7 +68,7 @@ ARGS=(
     -table
     -cmd '.log stderr'
     -cmd ".load '${LIB_PATH}'"
-    -cmd ".open 'file:${VID}?vfs=graft'"
+    -cmd ".open 'file:default?vfs=graft'"
 )
 
 if [ "${GDB}" == 1 ]; then

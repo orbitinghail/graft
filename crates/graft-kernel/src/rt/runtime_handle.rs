@@ -1,4 +1,4 @@
-use std::{ops::Deref, sync::Arc, time::Duration};
+use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
 use culprit::ResultExt;
 use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentIdx, graft::Graft, page::Page};
@@ -67,6 +67,14 @@ impl RuntimeHandle {
                 rpc: RpcHandle::new(tx),
             }),
         }
+    }
+
+    pub fn volume_exists<S: Deref<Target = str>>(&self, name: S) -> Result<bool> {
+        let name: VolumeName = VolumeName::from_str(&name)?;
+        self.storage()
+            .read()
+            .named_volume_exists(&name)
+            .or_into_ctx()
     }
 
     pub fn open_volume<S: Deref<Target = str>>(

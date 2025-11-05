@@ -3,8 +3,7 @@ use std::fmt::Debug;
 use culprit::ResultExt;
 
 use crate::{
-    GraftErr, VolumeErr, local::fjall_storage::FjallStorage, remote::Remote,
-    volume_name::VolumeName,
+    GraftErr, local::fjall_storage::FjallStorage, remote::Remote, volume_name::VolumeName,
 };
 
 /// Resumes from an interrupted `Job::RemoteCommit`. This job should be
@@ -29,9 +28,7 @@ pub async fn run(
 ) -> culprit::Result<(), GraftErr> {
     // the named volume must have a pending commit
     let reader = storage.read();
-    let Some(handle) = reader.named_volume(&opts.name).or_into_ctx()? else {
-        return Err(VolumeErr::NamedVolumeNotFound(opts.name).into());
-    };
+    let handle = reader.named_volume(&opts.name).or_into_ctx()?;
     let Some(pending_commit) = handle.pending_commit() else {
         // nothing to recover
         return Ok(());
