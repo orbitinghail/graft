@@ -25,7 +25,7 @@ crossbeam = { workspace = true }
 file-lock = { workspace = true }
 url = { workspace = true }
 ureq = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full", "test-util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

@@ -48,6 +48,6 @@ range-set-blaze = { workspace = true }
 [dev-dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
 graft-test = { path = "../graft-test" }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full", "test-util"] }
 assert_matches = { workspace = true }
 rand = { workspace = true }
