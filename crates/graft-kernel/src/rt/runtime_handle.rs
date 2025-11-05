@@ -7,6 +7,7 @@ use tokio::task::JoinHandle;
 use crate::{
     GraftErr,
     named_volume::NamedVolume,
+    page_status::PageStatus,
     remote::Remote,
     rt::{
         rpc::RpcHandle,
@@ -100,16 +101,13 @@ impl RuntimeHandle {
     }
 
     pub(crate) fn read_page(&self, snapshot: &Snapshot, pageidx: PageIdx) -> Result<Page> {
-        let storage = self.storage().read();
-        if let Some(commit) = storage.search_page(snapshot, pageidx).or_into_ctx()? {
+        let reader = self.storage().read();
+        if let Some(commit) = reader.search_page(snapshot, pageidx).or_into_ctx()? {
             let idx = commit
                 .segment_idx()
                 .expect("BUG: commit claims to contain pageidx");
 
-            if let Some(page) = storage
-                .read_page(idx.sid().clone(), pageidx)
-                .or_into_ctx()?
-            {
+            if let Some(page) = reader.read_page(idx.sid().clone(), pageidx).or_into_ctx()? {
                 return Ok(page);
             }
 
@@ -117,6 +115,22 @@ impl RuntimeHandle {
             self.inner.rpc.remote_read_page(idx.clone(), pageidx)
         } else {
             Ok(Page::EMPTY)
+        }
+    }
+
+    pub(crate) fn page_status(&self, snapshot: &Snapshot, pageidx: PageIdx) -> Result<PageStatus> {
+        let reader = self.storage().read();
+        if let Some(commit) = reader.search_page(snapshot, pageidx).or_into_ctx()? {
+            let idx = commit
+                .segment_idx()
+                .expect("BUG: commit claims to contain pageidx");
+            if reader.has_page(idx.sid().clone(), pageidx).or_into_ctx()? {
+                Ok(PageStatus::Available(commit.lsn()))
+            } else {
+                Ok(PageStatus::Pending(commit.lsn()))
+            }
+        } else {
+            Ok(PageStatus::Empty(snapshot.lsn()))
         }
     }
 }

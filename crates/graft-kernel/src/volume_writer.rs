@@ -2,8 +2,12 @@ use culprit::{Result, ResultExt};
 use graft_core::{PageCount, PageIdx, commit::SegmentIdx, page::Page, volume_ref::VolumeRef};
 
 use crate::{
-    GraftErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
-    volume_reader::VolumeRead,
+    GraftErr,
+    page_status::PageStatus,
+    rt::runtime_handle::RuntimeHandle,
+    snapshot::Snapshot,
+    volume_name::VolumeName,
+    volume_reader::{VolumeRead, VolumeReadRef},
 };
 
 /// A type which can write to a Volume
@@ -64,6 +68,14 @@ impl VolumeRead for VolumeWriter {
             self.runtime.read_page(&self.snapshot, pageidx)
         }
     }
+
+    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, GraftErr> {
+        if self.segment.contains(pageidx) {
+            Ok(PageStatus::Dirty)
+        } else {
+            self.runtime.page_status(&self.snapshot, pageidx)
+        }
+    }
 }
 
 impl VolumeWrite for VolumeWriter {
@@ -94,5 +106,11 @@ impl VolumeWrite for VolumeWriter {
             .storage()
             .commit(self.name, self.snapshot, self.page_count, self.segment)
             .or_into_ctx()
+    }
+}
+
+impl<'a> From<&'a VolumeWriter> for VolumeReadRef<'a> {
+    fn from(writer: &'a VolumeWriter) -> Self {
+        VolumeReadRef::Writer(writer)
     }
 }

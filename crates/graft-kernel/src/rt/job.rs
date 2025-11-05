@@ -8,6 +8,7 @@ use crate::{
     GraftErr, local::fjall_storage::FjallStorage, remote::Remote, volume_name::VolumeName,
 };
 
+mod hydrate_volume;
 mod pull_volume;
 mod recover_pending_commit;
 mod remote_commit;
@@ -26,6 +27,9 @@ pub enum Job {
     /// Fast-forwards the local volume to include any remote commits. Fails if
     /// the local volume has unpushed commits, unless `force` is specified.
     SyncRemoteToLocal(sync_remote_to_local::Opts),
+
+    /// Downloads all missing pages for a Volume up to an optional maximum LSN.
+    HydrateVolume(hydrate_volume::Opts),
 }
 
 impl Debug for Job {
@@ -35,6 +39,7 @@ impl Debug for Job {
             Self::RemoteCommit(opts) => opts.fmt(f),
             Self::RecoverPendingCommit(opts) => opts.fmt(f),
             Self::SyncRemoteToLocal(opts) => opts.fmt(f),
+            Self::HydrateVolume(opts) => opts.fmt(f),
         }
     }
 }
@@ -54,6 +59,10 @@ impl Job {
 
     pub fn sync_remote_to_local(name: VolumeName) -> Self {
         Job::SyncRemoteToLocal(sync_remote_to_local::Opts { name })
+    }
+
+    pub fn hydrate_volume(vid: VolumeId, max_lsn: Option<LSN>) -> Self {
+        Job::HydrateVolume(hydrate_volume::Opts { vid, max_lsn })
     }
 
     /// Inspects all named volumes to compute a list of outstanding jobs.
@@ -101,6 +110,7 @@ impl Job {
                 recover_pending_commit::run(storage, remote, opts).await
             }
             Job::SyncRemoteToLocal(opts) => sync_remote_to_local::run(storage, opts).await,
+            Job::HydrateVolume(opts) => hydrate_volume::run(storage, remote, opts).await,
         }
     }
 }

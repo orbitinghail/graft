@@ -10,7 +10,7 @@ use graft_core::{
 use graft_kernel::{
     named_volume::NamedVolume,
     snapshot::Snapshot,
-    volume_reader::{VolumeRead, VolumeReader},
+    volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
     volume_writer::{VolumeWrite, VolumeWriter},
 };
 use parking_lot::{Mutex, MutexGuard};
@@ -100,6 +100,15 @@ impl VolFile {
             VolFileState::Idle => self.handle.page_count().or_into_ctx(),
             VolFileState::Shared { reader } => reader.page_count().or_into_ctx(),
             VolFileState::Reserved { writer } => writer.page_count().or_into_ctx(),
+            VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
+        }
+    }
+
+    pub fn reader(&self) -> Result<VolumeReadRef<'_>, ErrCtx> {
+        match &self.state {
+            VolFileState::Idle => self.handle().reader().map(|r| r.into()).or_into_ctx(),
+            VolFileState::Shared { reader } => Ok(reader.into()),
+            VolFileState::Reserved { writer } => Ok(writer.into()),
             VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
         }
     }

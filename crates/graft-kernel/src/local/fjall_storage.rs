@@ -460,6 +460,10 @@ impl<'a> ReadGuard<'a> {
         Ok(None)
     }
 
+    pub fn has_page(&self, sid: SegmentId, pageidx: PageIdx) -> Result<bool, FjallStorageErr> {
+        self.pages().contains(&PageKey::new(sid, pageidx))
+    }
+
     pub fn read_page(
         &self,
         sid: SegmentId,

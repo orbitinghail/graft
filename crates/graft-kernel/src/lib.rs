@@ -15,6 +15,7 @@ pub mod changeset;
 pub mod err;
 pub mod named_volume;
 pub mod oracle;
+pub mod page_status;
 pub mod remote;
 pub mod search_path;
 pub mod snapshot;
