@@ -209,6 +209,13 @@ impl NamedVolume {
     pub fn writer(&self) -> Result<VolumeWriter> {
         self.reader()?.try_into()
     }
+
+    /// Hydrates the volume by downloading all missing pages from remote storage.
+    /// This operation blocks until all pages are downloaded.
+    pub fn hydrate(&self) -> Result<()> {
+        let state = self.state()?;
+        self.runtime.rpc().hydrate_volume(state.remote, None)
+    }
 }
 
 struct AheadStatus {

@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive, time::SystemTime};
+use std::{
+    collections::BTreeMap,
+    fmt::Debug,
+    ops::{Bound, RangeInclusive},
+    time::SystemTime,
+};
 
 use bytes::Bytes;
 use culprit::ResultExt;
@@ -189,22 +194,33 @@ fn build_segment(
 
     // collect all of the segment pages, only keeping the newest (first) page
     // for each unique pageidx
+    let mut page_count = plan.page_count;
     let mut pages = BTreeMap::new();
     let mut graft = Splinter::default();
     let mut commits = reader.commits(&segment_path);
     while let Some(commit) = commits.try_next().or_into_ctx()? {
-        if let Some(idx) = commit.segment_idx() {
-            // calculate which pages we need from this commit
-            let outstanding = idx.graft().splinter() - &graft;
+        // if we encounter a smaller commit on our travels, we need to shrink
+        // the page_count to ensure that truncation is respected
+        page_count = page_count.min(commit.page_count);
+
+        if let Some(idx) = commit.segment_idx {
+            let mut commit_pages = idx.graft;
+            // remove any pages we dont want
+            commit_pages.remove_page_range((
+                page_count
+                    .last_pageidx()
+                    .map_or(Bound::Unbounded, Bound::Excluded),
+                Bound::Unbounded,
+            ));
+            // figure out which pages we haven't seen
+            let outstanding = Splinter::from(commit_pages) - &graft;
             // load all of the outstanding pages
             for pageidx in outstanding.iter() {
                 // SAFETY: outstanding is built from a Graft of already valid PageIdxs
                 let pageidx = unsafe { PageIdx::new_unchecked(pageidx) };
-                // ignore truncated pages
-                if plan.page_count.contains(pageidx) {
-                    let page = reader.read_page(idx.sid().clone(), pageidx).or_into_ctx()?;
-                    pages.insert(pageidx, page.expect("BUG: missing page"));
-                }
+                debug_assert!(plan.page_count.contains(pageidx));
+                let page = reader.read_page(idx.sid.clone(), pageidx).or_into_ctx()?;
+                pages.insert(pageidx, page.expect("BUG: missing page"));
             }
             // update the graft accordingly
             graft |= outstanding;

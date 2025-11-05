@@ -1,14 +1,12 @@
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 
-use culprit::ResultExt;
 use futures::{Stream, StreamExt};
-use graft_core::{PageIdx, commit::SegmentIdx, page::Page};
 use tokio::time::Instant;
 
 use crate::{
     err::GraftErr,
     local::fjall_storage::FjallStorage,
-    remote::{Remote, segment::segment_frame_iter},
+    remote::Remote,
     rt::{job::Job, rpc::Rpc},
     volume_name::VolumeName,
 };
@@ -54,8 +52,17 @@ impl<S: Stream<Item = Event>> Runtime<S> {
         while let Some(event) = self.events.next().await {
             match event {
                 Event::Rpc(rpc) => match rpc {
-                    Rpc::RemoteReadPage { idx, pageidx, complete } => {
-                        let _ = complete.send(self.remote_read_page(idx, pageidx).await);
+                    Rpc::FetchSegmentRange { sid, range, complete } => {
+                        let job = Job::fetch_segment(sid, range);
+                        complete
+                            .send(job.run(&self.storage, &self.remote).await)
+                            .unwrap();
+                    }
+                    Rpc::HydrateVolume { vid, max_lsn, complete } => {
+                        let job = Job::hydrate_volume(vid, max_lsn);
+                        complete
+                            .send(job.run(&self.storage, &self.remote).await)
+                            .unwrap();
                     }
                 },
                 Event::Tick(_instant) => {
@@ -72,34 +79,5 @@ impl<S: Stream<Item = Event>> Runtime<S> {
             }
         }
         Ok(())
-    }
-
-    async fn remote_read_page(
-        &self,
-        idx: SegmentIdx,
-        pageidx: PageIdx,
-    ) -> culprit::Result<Page, GraftErr> {
-        // download the corresponding frame and load all of it's pages into
-        // storage
-        let frame = idx
-            .frame_for_pageidx(pageidx)
-            .expect("BUG: SegmentIdx does not contain page");
-        let bytes = self
-            .remote
-            .get_segment_range(idx.sid(), &frame.bytes)
-            .await
-            .or_into_ctx()?;
-        let pages = segment_frame_iter(frame.graft.iter(), &bytes);
-        let mut batch = self.storage.batch();
-        let mut target_page = None;
-        for (pidx, page) in pages {
-            if pageidx == pidx {
-                // found our target page
-                target_page = Some(page.clone());
-            }
-            batch.write_page(idx.sid().clone(), pidx, page);
-        }
-        batch.commit().or_into_ctx()?;
-        Ok(target_page.expect("BUG: target page not found in frame"))
     }
 }

@@ -1,13 +1,14 @@
 use std::fmt::Debug;
 
 use culprit::{Culprit, ResultExt};
-use graft_core::{VolumeId, lsn::LSN};
+use graft_core::{SegmentId, VolumeId, commit::SegmentRangeRef, lsn::LSN};
 use tryiter::TryIteratorExt;
 
 use crate::{
     GraftErr, local::fjall_storage::FjallStorage, remote::Remote, volume_name::VolumeName,
 };
 
+mod fetch_segment;
 mod hydrate_volume;
 mod pull_volume;
 mod recover_pending_commit;
@@ -30,6 +31,9 @@ pub enum Job {
 
     /// Downloads all missing pages for a Volume up to an optional maximum LSN.
     HydrateVolume(hydrate_volume::Opts),
+
+    /// Fetches one or more Segment frames and loads the pages into Storage.
+    FetchSegment(fetch_segment::Opts),
 }
 
 impl Debug for Job {
@@ -40,6 +44,7 @@ impl Debug for Job {
             Self::RecoverPendingCommit(opts) => opts.fmt(f),
             Self::SyncRemoteToLocal(opts) => opts.fmt(f),
             Self::HydrateVolume(opts) => opts.fmt(f),
+            Self::FetchSegment(opts) => opts.fmt(f),
         }
     }
 }
@@ -63,6 +68,10 @@ impl Job {
 
     pub fn hydrate_volume(vid: VolumeId, max_lsn: Option<LSN>) -> Self {
         Job::HydrateVolume(hydrate_volume::Opts { vid, max_lsn })
+    }
+
+    pub fn fetch_segment(sid: SegmentId, frame: SegmentRangeRef) -> Self {
+        Job::FetchSegment(fetch_segment::Opts { sid, frame })
     }
 
     /// Inspects all named volumes to compute a list of outstanding jobs.
@@ -111,6 +120,7 @@ impl Job {
             }
             Job::SyncRemoteToLocal(opts) => sync_remote_to_local::run(storage, opts).await,
             Job::HydrateVolume(opts) => hydrate_volume::run(storage, remote, opts).await,
+            Job::FetchSegment(opts) => fetch_segment::run(storage, remote, opts).await,
         }
     }
 }

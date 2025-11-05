@@ -1,4 +1,4 @@
-use graft_core::{PageIdx, commit::SegmentIdx, page::Page};
+use graft_core::{SegmentId, VolumeId, commit::SegmentRangeRef, lsn::LSN};
 use tokio::{
     runtime::Handle,
     sync::{mpsc, oneshot},
@@ -10,10 +10,15 @@ type Result<T> = culprit::Result<T, GraftErr>;
 
 #[derive(Debug)]
 pub enum Rpc {
-    RemoteReadPage {
-        idx: SegmentIdx,
-        pageidx: PageIdx,
-        complete: oneshot::Sender<Result<Page>>,
+    FetchSegmentRange {
+        sid: SegmentId,
+        range: SegmentRangeRef,
+        complete: oneshot::Sender<Result<()>>,
+    },
+    HydrateVolume {
+        vid: VolumeId,
+        max_lsn: Option<LSN>,
+        complete: oneshot::Sender<Result<()>>,
     },
 }
 
@@ -27,9 +32,14 @@ impl RpcHandle {
         Self { tx }
     }
 
-    pub fn remote_read_page(&self, idx: SegmentIdx, pageidx: PageIdx) -> Result<Page> {
+    pub fn fetch_segment_range(&self, sid: SegmentId, range: SegmentRangeRef) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.rpc(Rpc::RemoteReadPage { idx, pageidx, complete: tx }, rx)
+        self.rpc(Rpc::FetchSegmentRange { sid, range, complete: tx }, rx)
+    }
+
+    pub fn hydrate_volume(&self, vid: VolumeId, max_lsn: Option<LSN>) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.rpc(Rpc::HydrateVolume { vid, max_lsn, complete: tx }, rx)
     }
 
     fn rpc<T>(&self, msg: Rpc, recv: oneshot::Receiver<T>) -> T {

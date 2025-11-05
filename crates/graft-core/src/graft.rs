@@ -1,7 +1,7 @@
 use std::ops::{RangeBounds, RangeInclusive};
 
 use bytes::Bytes;
-use splinter_rs::{CowSplinter, PartitionRead, PartitionWrite, Splinter};
+use splinter_rs::{CowSplinter, Cut, PartitionRead, PartitionWrite, Splinter};
 
 use crate::{PageIdx, derive_newtype_proxy};
 
@@ -32,6 +32,16 @@ impl Graft {
     }
 
     #[inline]
+    pub fn cardinality(&self) -> usize {
+        self.splinter.cardinality()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.splinter.is_empty()
+    }
+
+    #[inline]
     pub fn insert(&mut self, pageidx: PageIdx) -> bool {
         self.splinter.insert(pageidx.to_u32())
     }
@@ -47,6 +57,12 @@ impl Graft {
             pages.end_bound().map(|end| end.to_u32()),
         );
         self.splinter.remove_range(r);
+    }
+
+    /// Returns the intersection between self and rhs while removing the
+    /// intersection from self
+    pub fn cut(&mut self, rhs: &Graft) -> Graft {
+        self.splinter.to_mut().cut(&rhs.splinter).into()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = PageIdx> {
@@ -69,7 +85,13 @@ impl Graft {
 impl From<Splinter> for Graft {
     #[inline]
     fn from(value: Splinter) -> Self {
-        Self { splinter: CowSplinter::Owned(value) }
+        Self::new(CowSplinter::Owned(value))
+    }
+}
+
+impl From<Graft> for Splinter {
+    fn from(value: Graft) -> Self {
+        value.splinter.into_owned()
     }
 }
 

@@ -21,8 +21,8 @@ pub enum GraftPragma {
     /// `pragma graft_pages;`
     Pages,
 
-    /// `pragma graft_pull;`
-    Pull,
+    /// `pragma graft_hydrate;`
+    Hydrate,
 
     /// `pragma graft_sync_errors;`
     SyncErrors,
@@ -45,7 +45,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "status" => Ok(GraftPragma::Status),
                 "snapshot" => Ok(GraftPragma::Snapshot),
                 "pages" => Ok(GraftPragma::Pages),
-                "pull" => Ok(GraftPragma::Pull),
+                "hydrate" => Ok(GraftPragma::Hydrate),
                 "reset" => Ok(GraftPragma::Reset),
                 "sync_errors" => Ok(GraftPragma::SyncErrors),
                 "version" => Ok(GraftPragma::Version),
@@ -112,8 +112,9 @@ impl GraftPragma {
 
                 Ok(Some(out))
             }
-            GraftPragma::Pull => {
-                todo!("pull all of the pages accessible by the current or latest snapshot")
+            GraftPragma::Hydrate => {
+                file.handle().hydrate().or_into_ctx()?;
+                Ok(None)
             }
             GraftPragma::SyncErrors => todo!("list recent sync errors"),
             GraftPragma::Reset => todo!("reset the volume to the remote"),

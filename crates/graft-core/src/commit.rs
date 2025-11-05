@@ -1,5 +1,5 @@
 use std::{
-    ops::{Deref, DerefMut, Range},
+    ops::{Deref, DerefMut, Range, RangeInclusive},
     time::SystemTime,
 };
 
@@ -21,31 +21,31 @@ use crate::{
 pub struct Commit {
     /// The Volume's ID.
     #[bilrost(1)]
-    vid: VolumeId,
+    pub vid: VolumeId,
 
     /// The LSN of the Commit.
     #[bilrost(2)]
-    lsn: LSN,
+    pub lsn: LSN,
 
     /// The Volume's `PageCount` as of this Commit.
     #[bilrost(3)]
-    page_count: PageCount,
+    pub page_count: PageCount,
 
     /// An optional `CommitHash` for this Commit.
     /// Always present on Remote Volume commits.
     /// May be omitted on Local commits.
     #[bilrost(4)]
-    commit_hash: Option<CommitHash>,
+    pub commit_hash: Option<CommitHash>,
 
     /// If this Commit contains any pages, `segment_idx` records details on the
     /// relevant Segment.
     #[bilrost(5)]
-    segment_idx: Option<SegmentIdx>,
+    pub segment_idx: Option<SegmentIdx>,
 
     /// If this commit is a checkpoint, this timestamp is set and records the time
     /// the commit was made a checkpoint
     #[bilrost(6)]
-    checkpointed_at: Option<SystemTime>,
+    pub checkpointed_at: Option<SystemTime>,
 }
 
 impl Commit {
@@ -120,16 +120,16 @@ impl Commit {
 pub struct SegmentIdx {
     /// The Segment ID
     #[bilrost(1)]
-    sid: SegmentId,
+    pub sid: SegmentId,
 
     /// The Graft of `PageIdxs` contained by this Segment.
     #[bilrost(2)]
-    graft: Graft,
+    pub graft: Graft,
 
     /// An index of `SegmentFrameIdxs` contained by this Segment.
     /// Empty on local Segments which have not been encoded and uploaded to object storage.
     #[bilrost(3)]
-    frames: SmallVec<[SegmentFrameIdx; 1]>,
+    pub frames: SmallVec<[SegmentFrameIdx; 1]>,
 }
 
 impl SegmentIdx {
@@ -149,12 +149,11 @@ impl SegmentIdx {
         &self.graft
     }
 
-    pub fn frame_for_pageidx(&self, pageidx: PageIdx) -> Option<SegmentFrameRef> {
-        if !self.graft.contains(pageidx) {
-            return None;
-        }
+    pub fn iter_frames(
+        &self,
+        mut filter: impl FnMut(&RangeInclusive<PageIdx>) -> bool,
+    ) -> impl Iterator<Item = SegmentRangeRef> {
         let first_page = self.graft.iter().next().unwrap_or(PageIdx::FIRST);
-
         self.frames
             .iter()
             .scan((0, first_page), |(bytes_acc, pages_acc), frame| {
@@ -166,12 +165,19 @@ impl SegmentIdx {
 
                 Some((bytes, pages))
             })
-            .find(|(_, pages)| pages.contains(&pageidx))
+            .filter(move |(_, pages)| filter(pages))
             .map(|(bytes, pages)| {
                 let pages = pages.start().to_u32()..=pages.end().to_u32();
                 let graft = (Splinter::from(pages) & self.graft.splinter()).into();
-                SegmentFrameRef { sid: self.sid.clone(), bytes, graft }
+                SegmentRangeRef { bytes, graft }
             })
+    }
+
+    pub fn frame_for_pageidx(&self, pageidx: PageIdx) -> Option<SegmentRangeRef> {
+        if !self.graft.contains(pageidx) {
+            return None;
+        }
+        self.iter_frames(|pages| pages.contains(&pageidx)).next()
     }
 }
 
@@ -214,19 +220,46 @@ impl SegmentFrameIdx {
     }
 }
 
-/// A `SegmentFrameRef` contains the byte range and corresponding pages for a
-/// particular frame in a segment.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SegmentFrameRef {
-    pub sid: SegmentId,
+/// A `SegmentRangeRef` contains the byte range and corresponding pages for a
+/// subset of a segment. The subset must correspond to one or more entire
+/// SegmentFrames.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SegmentRangeRef {
     pub bytes: Range<usize>,
     pub graft: Graft,
 }
 
-impl SegmentFrameRef {
+impl std::fmt::Debug for SegmentRangeRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SegmentRangeRef")
+            .field("bytes", &self.bytes)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SegmentRangeRef {
     /// The size of the frame in bytes
     pub fn size(&self) -> usize {
         self.bytes.end - self.bytes.start
+    }
+
+    /// Attempt to coalesce two frame refs together.
+    /// Returns the two frame refs unmodified if coalescing is impossible.
+    pub fn coalesce(self, other: Self) -> Result<Self, (Self, Self)> {
+        let (left, right) = if self.bytes.end == other.bytes.start {
+            (self, other)
+        } else if other.bytes.end == self.bytes.start {
+            (other, self)
+        } else {
+            return Err((self, other));
+        };
+
+        let left_splinter: Splinter = left.graft.into();
+        let right_splinter: Splinter = right.graft.into();
+        Ok(Self {
+            bytes: left.bytes.start..right.bytes.end,
+            graft: (left_splinter | right_splinter).into(),
+        })
     }
 }
 
@@ -259,40 +292,35 @@ mod tests {
             (pageidx!(4), None),
             (
                 pageidx!(5),
-                Some(SegmentFrameRef {
-                    sid: SegmentId::EMPTY,
+                Some(SegmentRangeRef {
                     bytes: 0..100,
                     graft: Graft::from_range(pageidx!(5)..=pageidx!(10)),
                 }),
             ),
             (
                 pageidx!(10),
-                Some(SegmentFrameRef {
-                    sid: SegmentId::EMPTY,
+                Some(SegmentRangeRef {
                     bytes: 0..100,
                     graft: Graft::from_range(pageidx!(5)..=pageidx!(10)),
                 }),
             ),
             (
                 pageidx!(11),
-                Some(SegmentFrameRef {
-                    sid: SegmentId::EMPTY,
+                Some(SegmentRangeRef {
                     bytes: 100..300,
                     graft: Graft::from_range(pageidx!(11)..=pageidx!(20)),
                 }),
             ),
             (
                 pageidx!(20),
-                Some(SegmentFrameRef {
-                    sid: SegmentId::EMPTY,
+                Some(SegmentRangeRef {
                     bytes: 100..300,
                     graft: Graft::from_range(pageidx!(11)..=pageidx!(20)),
                 }),
             ),
             (
                 pageidx!(25),
-                Some(SegmentFrameRef {
-                    sid: SegmentId::EMPTY,
+                Some(SegmentRangeRef {
                     bytes: 300..450,
                     graft: Graft::from_range(pageidx!(21)..=pageidx!(25)),
                 }),
@@ -319,5 +347,131 @@ mod tests {
 
         let result = segment_idx.frame_for_pageidx(pageidx!(1));
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_segment_range_ref_coalesce_adjacent() {
+        // Test coalescing two adjacent ranges (first before second)
+        let frame1 = SegmentRangeRef {
+            bytes: 0..100,
+            graft: Graft::from_range(pageidx!(5)..=pageidx!(10)),
+        };
+        let frame2 = SegmentRangeRef {
+            bytes: 100..200,
+            graft: Graft::from_range(pageidx!(11)..=pageidx!(20)),
+        };
+
+        let result = frame1.clone().coalesce(frame2.clone()).unwrap();
+        assert_eq!(result.bytes, 0..200);
+        assert_eq!(result.graft, Graft::from_range(pageidx!(5)..=pageidx!(20)));
+
+        // Test coalescing in reverse order (second before first)
+        let result = frame2.coalesce(frame1).unwrap();
+        assert_eq!(result.bytes, 0..200);
+        assert_eq!(result.graft, Graft::from_range(pageidx!(5)..=pageidx!(20)));
+    }
+
+    #[test]
+    fn test_segment_range_ref_coalesce_non_adjacent() {
+        // Test that non-adjacent ranges cannot be coalesced
+        let frame1 = SegmentRangeRef {
+            bytes: 0..100,
+            graft: Graft::from_range(pageidx!(5)..=pageidx!(10)),
+        };
+        let frame2 = SegmentRangeRef {
+            bytes: 150..250,
+            graft: Graft::from_range(pageidx!(20)..=pageidx!(30)),
+        };
+
+        let result = frame1.clone().coalesce(frame2.clone());
+        assert!(result.is_err());
+        let (f1, f2) = result.unwrap_err();
+        assert_eq!(f1, frame1);
+        assert_eq!(f2, frame2);
+    }
+
+    #[test]
+    fn test_iter_frames_no_filter() {
+        let graft = Graft::from_range(pageidx!(5)..=pageidx!(25));
+        let mut frames = SmallVec::new();
+        frames.push(SegmentFrameIdx {
+            frame_size: 100,
+            last_pageidx: pageidx!(10),
+        });
+        frames.push(SegmentFrameIdx {
+            frame_size: 200,
+            last_pageidx: pageidx!(20),
+        });
+        frames.push(SegmentFrameIdx {
+            frame_size: 150,
+            last_pageidx: pageidx!(25),
+        });
+
+        let segment_idx = SegmentIdx { sid: SegmentId::EMPTY, graft, frames };
+
+        // Collect all frames
+        let all_frames: Vec<_> = segment_idx.iter_frames(|_| true).collect();
+        assert_eq!(all_frames.len(), 3);
+
+        assert_eq!(all_frames[0].bytes, 0..100);
+        assert_eq!(
+            all_frames[0].graft,
+            Graft::from_range(pageidx!(5)..=pageidx!(10))
+        );
+
+        assert_eq!(all_frames[1].bytes, 100..300);
+        assert_eq!(
+            all_frames[1].graft,
+            Graft::from_range(pageidx!(11)..=pageidx!(20))
+        );
+
+        assert_eq!(all_frames[2].bytes, 300..450);
+        assert_eq!(
+            all_frames[2].graft,
+            Graft::from_range(pageidx!(21)..=pageidx!(25))
+        );
+    }
+
+    #[test]
+    fn test_iter_frames_with_filter() {
+        let graft = Graft::from_range(pageidx!(5)..=pageidx!(25));
+        let mut frames = SmallVec::new();
+        frames.push(SegmentFrameIdx {
+            frame_size: 100,
+            last_pageidx: pageidx!(10),
+        });
+        frames.push(SegmentFrameIdx {
+            frame_size: 200,
+            last_pageidx: pageidx!(20),
+        });
+        frames.push(SegmentFrameIdx {
+            frame_size: 150,
+            last_pageidx: pageidx!(25),
+        });
+
+        let segment_idx = SegmentIdx { sid: SegmentId::EMPTY, graft, frames };
+
+        // Filter for frames containing page 15
+        let filtered_frames: Vec<_> = segment_idx
+            .iter_frames(|pages| pages.contains(&pageidx!(15)))
+            .collect();
+        assert_eq!(filtered_frames.len(), 1);
+        assert_eq!(filtered_frames[0].bytes, 100..300);
+        assert_eq!(
+            filtered_frames[0].graft,
+            Graft::from_range(pageidx!(11)..=pageidx!(20))
+        );
+    }
+
+    #[test]
+    fn test_iter_frames_empty() {
+        let segment_idx = SegmentIdx {
+            sid: SegmentId::random(),
+            graft: Graft::EMPTY,
+            frames: SmallVec::new(),
+        };
+
+        let frames: Vec<_> = segment_idx.iter_frames(|_| true).collect();
+        assert_eq!(frames.len(), 0);
     }
 }

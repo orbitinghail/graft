@@ -70,6 +70,10 @@ impl RuntimeHandle {
         }
     }
 
+    pub(crate) fn rpc(&self) -> &RpcHandle {
+        &self.inner.rpc
+    }
+
     pub fn volume_exists<S: Deref<Target = str>>(&self, name: S) -> Result<bool> {
         let name: VolumeName = VolumeName::from_str(&name)?;
         self.storage()
@@ -112,7 +116,19 @@ impl RuntimeHandle {
             }
 
             // fallthrough to loading the page from the remote
-            self.inner.rpc.remote_read_page(idx.clone(), pageidx)
+            let frame = idx
+                .frame_for_pageidx(pageidx)
+                .expect("BUG: no frame for pageidx");
+            self.inner.rpc.fetch_segment_range(idx.sid.clone(), frame)?;
+
+            // now that we've fetched the segment, read the page again using a
+            // fresh storage reader
+            Ok(self
+                .storage()
+                .read()
+                .read_page(idx.sid.clone(), pageidx)
+                .or_into_ctx()?
+                .expect("BUG: page not found after fetching"))
         } else {
             Ok(Page::EMPTY)
         }

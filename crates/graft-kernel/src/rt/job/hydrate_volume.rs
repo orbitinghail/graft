@@ -1,9 +1,14 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::Bound};
 
-use culprit::Result;
-use graft_core::{VolumeId, lsn::LSN};
+use culprit::{Result, ResultExt};
+use futures::{StreamExt, TryStreamExt};
+use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentRangeRef, graft::Graft, lsn::LSN};
+use itertools::Itertools;
+use tryiter::TryIteratorExt;
 
-use crate::{GraftErr, local::fjall_storage::FjallStorage, remote::Remote};
+use crate::{GraftErr, local::fjall_storage::FjallStorage, remote::Remote, rt::job::Job};
+
+const HYDRATE_CONCURRENCY: usize = 5;
 
 /// Downloads all missing pages for a Volume up to an optional maximum LSN.
 /// If max_lsn is not specified, will hydrate the Volume up to its latest snapshot.
@@ -29,5 +34,63 @@ impl Debug for Opts {
 }
 
 pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), GraftErr> {
-    todo!()
+    let outstanding_frames = get_outstanding_frames(storage, opts)?;
+    futures::stream::iter(outstanding_frames)
+        .map(Ok)
+        .try_for_each_concurrent(HYDRATE_CONCURRENCY, |(sid, frame)| {
+            Job::fetch_segment(sid, frame).run(storage, remote)
+        })
+        .await
+}
+
+fn get_outstanding_frames(
+    storage: &FjallStorage,
+    opts: Opts,
+) -> Result<Vec<(SegmentId, SegmentRangeRef)>, GraftErr> {
+    let reader = storage.read();
+    let snapshot = reader.snapshot_at(&opts.vid, opts.max_lsn).or_into_ctx()?;
+
+    let mut outstanding_frames: Vec<(SegmentId, SegmentRangeRef)> = vec![];
+
+    // the set of pages we are searching for.
+    // we remove pages from this set as we iterate through commits.
+    let mut pages = Graft::from_range(reader.page_count(&snapshot).or_into_ctx()?.pageidxs());
+
+    let mut page_count = reader.page_count(&snapshot).or_into_ctx()?;
+    let mut commits = reader.commits(snapshot.search_path());
+    while !pages.is_empty()
+        && let Some(commit) = commits.try_next().or_into_ctx()?
+    {
+        // if we encounter a smaller commit on our travels, we need to shrink
+        // the page_count to ensure that truncation is respected
+        page_count = page_count.min(commit.page_count);
+
+        if let Some(idx) = commit.segment_idx {
+            // figure out which pages to ignore from this commit
+            let truncate_start = match page_count.last_pageidx() {
+                Some(pi) => {
+                    if pi == PageIdx::LAST {
+                        Bound::Excluded(PageIdx::LAST)
+                    } else {
+                        Bound::Included(pi)
+                    }
+                }
+                None => Bound::Unbounded,
+            };
+
+            let mut commit_pages = idx.graft.clone();
+            // ignore pages we don't want
+            commit_pages.remove_page_range((truncate_start, Bound::Unbounded));
+
+            // figure out which pages we need from this commit
+            let outstanding = pages.cut(&commit_pages);
+            let frames = idx.iter_frames(|pages| outstanding.contains(*pages.start()));
+            // combine adjacent frames if possible to reduce the number of remote requests
+            for frame in frames.coalesce(|a, b| a.coalesce(b)) {
+                outstanding_frames.push((idx.sid.clone(), frame));
+            }
+        }
+    }
+
+    Ok(outstanding_frames)
 }

@@ -4,29 +4,9 @@ This file provides context and guidance for GitHub Copilot when working with the
 
 ## Project Overview
 
-Graft enables distributed, versioned SQLite databases with lazy replication and strong consistency guarantees. The system is transitioning from a legacy client/server architecture to a new direct-storage architecture.
+Graft enables distributed, versioned SQLite databases with lazy replication and strong consistency guarantees. The system uses a direct-storage architecture with object storage backend.
 
 ## Architecture Context
-
-### Current Transition: Legacy vs New Architecture
-
-The codebase has two parallel development tracks:
-
-**New Architecture (graft-kernel crate):**
-
-- Direct object storage access, eliminates metastore and pagestore
-- Local Fjall storage with partitioned keyspaces (handles, volumes, log, pages)
-- Direct object storage interface with Control/CheckpointSet/Commit/Segment files
-- Volume handles managing local-remote synchronization
-- CBE64 encoding for LSN ordering
-
-**Legacy Architecture (being phased out):**
-
-- `graft-client`, `graft-server`, metastore/pagestore services
-- Traditional client-server with separate metastore and pagestore
-- Maintained for compatibility but being phased out
-
-### Key Components
 
 **Core Abstractions:**
 
@@ -42,7 +22,6 @@ The codebase has two parallel development tracks:
 SQLite Database (VFS layer)
 ├── Graft Volume (logical container)
 ├── Local Storage (Fjall LSM-tree partitions)
-├── Network Layer (metastore/pagestore clients)
 └── Object Storage Backend (S3, etc.)
 ```
 
@@ -156,9 +135,7 @@ just run tool cid  # ClientId
 ```
 crates/
 ├── graft-core/          # Core types and utilities
-├── graft-kernel/        # New direct-storage architecture
-├── graft-client/        # Legacy client library
-├── graft-server/        # Legacy server components
+├── graft-kernel/        # Direct-storage architecture implementation
 ├── graft-sqlite/        # SQLite VFS integration
 └── graft-sqlite-extension/ # SQLite loadable extension
 ```
