@@ -26,19 +26,12 @@ fn default_data_dir() -> PathBuf {
         .data_dir
 }
 
-fn default_true() -> bool {
-    true
-}
-
 #[derive(Debug, Deserialize)]
 struct ExtensionConfig {
     remote: RemoteConfig,
 
     #[serde(default = "default_data_dir")]
     data_dir: PathBuf,
-
-    #[serde(default = "default_true")]
-    autosync: bool,
 
     log_file: Option<PathBuf>,
 

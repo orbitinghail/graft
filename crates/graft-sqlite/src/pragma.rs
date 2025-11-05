@@ -22,9 +22,6 @@ pub enum GraftPragma {
     /// `pragma graft_pull;`
     Pull,
 
-    /// `pragma graft_sync = true|false;`
-    SetAutosync(bool),
-
     /// `pragma graft_sync_errors;`
     SyncErrors,
 
@@ -48,13 +45,6 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "pages" => Ok(GraftPragma::Pages),
                 "pull" => Ok(GraftPragma::Pull),
                 "reset" => Ok(GraftPragma::Reset),
-                "sync" => {
-                    let arg = p.arg.ok_or(PragmaErr::required_arg(p))?;
-                    let autosync = arg
-                        .parse()
-                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(format!("{err:?}"))))?;
-                    Ok(GraftPragma::SetAutosync(autosync))
-                }
                 "sync_errors" => Ok(GraftPragma::SyncErrors),
                 "version" => Ok(GraftPragma::Version),
                 _ => Err(PragmaErr::Fail(
@@ -96,7 +86,6 @@ impl GraftPragma {
             GraftPragma::Pull => {
                 todo!("pull all of the pages accessible by the current or latest snapshot")
             }
-            GraftPragma::SetAutosync(_) => todo!("turn autosync on/off"),
             GraftPragma::SyncErrors => todo!("list recent sync errors"),
             GraftPragma::Reset => todo!("reset the volume to the remote"),
 
@@ -125,10 +114,6 @@ impl GraftPragma {
         //         Ok(Some(out))
         //     }
 
-        //     GraftPragma::SetAutosync(autosync) => {
-        //         runtime.set_autosync(autosync);
-        //         Ok(None)
-        //     }
         //     GraftPragma::Pages => {
         //         let mut out = format!("{:<8} | {:<6} | state\n", "pageno", "lsn");
         //         let reader = file.reader()?;
