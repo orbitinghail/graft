@@ -48,7 +48,7 @@ impl SearchPath {
             .map(|entry| (&entry.vid, *entry.lsns.end()))
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &PathEntry> {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &PathEntry> + ExactSizeIterator {
         self.path.iter()
     }
 }

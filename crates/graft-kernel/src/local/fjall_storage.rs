@@ -718,28 +718,41 @@ impl<'a> ReadWriteGuard<'a> {
         // save the remote lsn for later
         let remote_lsn = *remote_changes.end();
 
+        // construct an iterator of new local lsns
+        // note: this iterator must return new local lsns in reverse as the
+        // commits iterator returns commits from newest to oldest
+        let num_commits = remote_changes.len();
+        let local_first = latest_local.lsn().map_or(LSN::FIRST, |l| l.next());
+        let local_last = local_first
+            .checked_add(num_commits - 1)
+            .expect("LSN overflow");
+        let mut new_local_lsns = (local_first..=local_last).iter().rev();
+
         // iterate missing remote commits, and commit them to the local volume
         let search = SearchPath::new(handle.remote.clone(), remote_changes);
         let mut batch = self.storage().batch();
         let mut commits = self.read.commits(&search);
-        let mut latest_local_lsn = latest_local.lsn();
         while let Some(commit) = commits.try_next().or_into_ctx()? {
-            let next_lsn = latest_local_lsn.map_or(LSN::FIRST, |l| l.next());
+            let next_lsn = new_local_lsns
+                .next()
+                .expect("BUG: storage has more commits than expected");
             // map the remote commit into the local volume
             batch.write_commit(
                 commit
                     .with_vid(latest_local.vid().clone())
                     .with_lsn(next_lsn),
             );
-            // advance LSN
-            latest_local_lsn = Some(next_lsn);
         }
 
+        assert!(
+            new_local_lsns.next().is_none(),
+            "BUG: not all new local lsns were used"
+        );
+
         // update the sync point
-        batch.write_named_volume(handle.with_sync(Some(SyncPoint {
-            local: latest_local_lsn.expect("BUG: no commits found"),
-            remote: remote_lsn,
-        })));
+        batch.write_named_volume(
+            handle.with_sync(Some(SyncPoint { local: local_last, remote: remote_lsn })),
+        );
 
         // commit the batch
         batch.commit()

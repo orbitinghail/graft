@@ -119,6 +119,7 @@ impl RuntimeHandle {
             let frame = idx
                 .frame_for_pageidx(pageidx)
                 .expect("BUG: no frame for pageidx");
+
             self.inner.rpc.fetch_segment_range(idx.sid.clone(), frame)?;
 
             // now that we've fetched the segment, read the page again using a

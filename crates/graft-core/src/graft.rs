@@ -56,6 +56,7 @@ impl Graft {
             pages.start_bound().map(|start| start.to_u32()),
             pages.end_bound().map(|end| end.to_u32()),
         );
+
         self.splinter.remove_range(r);
     }
 

@@ -1131,7 +1131,7 @@ dependencies = [
  "graft-test",
  "hashbrown 0.16.0",
  "rand",
- "range-set-blaze 0.4.1",
+ "range-set-blaze",
  "serde",
  "smallvec",
  "splinter-rs",
@@ -1163,7 +1163,7 @@ dependencies = [
  "parking_lot",
  "precept",
  "rand",
- "range-set-blaze 0.4.1",
+ "range-set-blaze",
  "serde",
  "smallvec",
  "splinter-rs",
@@ -2305,7 +2305,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2365,18 +2365,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
 dependencies = [
  "getrandom 0.3.4",
-]
-
-[[package]]
-name = "range-set-blaze"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ffeb52b74f6ec552f08fbe89a7699402395ac359fe935ee67bc63fd30bca299"
-dependencies = [
- "gen_ops",
- "itertools 0.14.0",
- "num-integer",
- "num-traits",
 ]
 
 [[package]]
@@ -2876,9 +2864,9 @@ dependencies = [
 
 [[package]]
 name = "splinter-rs"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19d2e9f5ece5a6969c7049345a931a267092f79aa91cf319a24855f780f5bb8b"
+checksum = "b53842df039f903e612cee6b94db274580fdfca23ed665f2c9c36b953975a4ed"
 dependencies = [
  "assert_matches",
  "bitvec",
@@ -2888,7 +2876,7 @@ dependencies = [
  "either",
  "itertools 0.14.0",
  "num",
- "range-set-blaze 0.3.0",
+ "range-set-blaze",
  "static_assertions",
  "thiserror 2.0.17",
  "u24",
@@ -3343,12 +3331,12 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "u24"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59010043ec6096d22c45b26b4e6162c26c593e74ff6ffe51ba18af2ad0d08e42"
+checksum = "f2ff2222e7c3f4df7e99f0caff2cffc92cd70570a53e87731bf9844092e22e61"
 dependencies = [
  "num",
- "range-set-blaze 0.3.0",
+ "range-set-blaze",
  "static_assertions",
  "zerocopy",
 ]

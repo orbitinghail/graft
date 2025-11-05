@@ -13,7 +13,9 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 
 # Working on SQLite v2
 
-- implement pragmas
+- PRIORITY: allow specifying a remote vid when opening a volume
+- add remote information and full volume id to graft_status
+- implement rest of the pragmas
 - default `just run sqlite shell` to use a shared remote on the filesystem
 - consider adding a read oracle (do some perf testing)
 - port tests
