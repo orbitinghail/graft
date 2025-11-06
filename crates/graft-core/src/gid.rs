@@ -59,6 +59,8 @@ pub type SegmentId = Gid<prefix::Segment>;
 pub type ClientId = Gid<prefix::Client>;
 
 static_assertions::assert_eq_size!(VolumeId, [u8; GID_SIZE.as_usize()]);
+static_assertions::assert_eq_size!(SegmentId, [u8; GID_SIZE.as_usize()]);
+static_assertions::assert_eq_size!(ClientId, [u8; GID_SIZE.as_usize()]);
 
 impl<P: Prefix> Gid<P> {
     pub const SIZE: ByteUnit = GID_SIZE;
