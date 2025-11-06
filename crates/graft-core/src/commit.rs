@@ -222,7 +222,7 @@ impl SegmentFrameIdx {
 
 /// A `SegmentRangeRef` contains the byte range and corresponding pages for a
 /// subset of a segment. The subset must correspond to one or more entire
-/// SegmentFrames.
+/// `SegmentFrames`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SegmentRangeRef {
     pub bytes: Range<usize>,
@@ -286,7 +286,11 @@ mod tests {
             last_pageidx: pageidx!(25),
         });
 
-        let segment_idx = SegmentIdx { sid: SegmentId::new(), pageset, frames };
+        let segment_idx = SegmentIdx {
+            sid: SegmentId::random(),
+            pageset,
+            frames,
+        };
 
         let tests = [
             (pageidx!(4), None),
@@ -340,7 +344,7 @@ mod tests {
     #[test]
     fn test_frame_for_pageidx_empty_frames() {
         let segment_idx = SegmentIdx {
-            sid: SegmentId::new(),
+            sid: SegmentId::random(),
             pageset: PageSet::EMPTY,
             frames: SmallVec::new(),
         };
@@ -413,7 +417,11 @@ mod tests {
             last_pageidx: pageidx!(25),
         });
 
-        let segment_idx = SegmentIdx { sid: SegmentId::new(), pageset, frames };
+        let segment_idx = SegmentIdx {
+            sid: SegmentId::random(),
+            pageset,
+            frames,
+        };
 
         // Collect all frames
         let all_frames: Vec<_> = segment_idx.iter_frames(|_| true).collect();
@@ -455,7 +463,11 @@ mod tests {
             last_pageidx: pageidx!(25),
         });
 
-        let segment_idx = SegmentIdx { sid: SegmentId::new(), pageset, frames };
+        let segment_idx = SegmentIdx {
+            sid: SegmentId::random(),
+            pageset,
+            frames,
+        };
 
         // Filter for frames containing page 15
         let filtered_frames: Vec<_> = segment_idx
@@ -472,7 +484,7 @@ mod tests {
     #[test]
     fn test_iter_frames_empty() {
         let segment_idx = SegmentIdx {
-            sid: SegmentId::new(),
+            sid: SegmentId::random(),
             pageset: PageSet::EMPTY,
             frames: SmallVec::new(),
         };

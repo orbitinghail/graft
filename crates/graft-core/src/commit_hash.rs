@@ -274,7 +274,7 @@ mod tests {
     #[graft_test::test]
     #[should_panic(expected = "Pages must be written in order by pageidx")]
     fn test_commit_hash_builder_page_order_panic() {
-        let mut builder = CommitHashBuilder::new(VolumeId::new(), LSN::FIRST, PageCount::ZERO);
+        let mut builder = CommitHashBuilder::new(VolumeId::random(), LSN::FIRST, PageCount::ZERO);
         builder.write_page(pageidx!(2), &Page::test_filled(0x22));
         builder.write_page(pageidx!(1), &Page::test_filled(0x11)); // This should panic
     }

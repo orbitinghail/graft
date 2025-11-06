@@ -13,7 +13,7 @@ use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote, rt::j
 const HYDRATE_CONCURRENCY: usize = 5;
 
 /// Downloads all missing pages for a Volume up to an optional maximum LSN.
-/// If max_lsn is not specified, will hydrate the Volume up to its latest snapshot.
+/// If `max_lsn` is not specified, will hydrate the Volume up to its latest snapshot.
 pub struct Opts {
     /// The Volume to hydrate.
     pub vid: VolumeId,

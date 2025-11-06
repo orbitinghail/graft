@@ -75,9 +75,9 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
     match cli.tool {
-        Tool::Vid => println!("{}", VolumeId::new()),
-        Tool::Sid => println!("{}", SegmentId::new()),
-        Tool::Cid => println!("{}", ClientId::new()),
+        Tool::Vid => println!("{}", VolumeId::random()),
+        Tool::Sid => println!("{}", SegmentId::random()),
+        Tool::Cid => println!("{}", ClientId::random()),
         Tool::SecretKey => {
             let rand = rand::random::<[u8; 32]>();
             println!("{}", hex::encode(rand));

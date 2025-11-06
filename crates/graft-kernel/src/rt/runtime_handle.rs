@@ -101,7 +101,7 @@ impl RuntimeHandle {
 
     pub(crate) fn create_staged_segment(&self) -> SegmentIdx {
         // TODO: need to keep track of staged segments in memory to prevent the GC from clearing them
-        SegmentIdx::new(SegmentId::new(), PageSet::default())
+        SegmentIdx::new(SegmentId::random(), PageSet::default())
     }
 
     pub(crate) fn read_page(&self, snapshot: &Snapshot, pageidx: PageIdx) -> Result<Page> {

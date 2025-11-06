@@ -245,7 +245,7 @@ fn build_segment(
 
     let commit_hash = commithash_builder.build();
     let (frames, chunks) = segment_builder.finish();
-    let idx = SegmentIdx::new(SegmentId::new(), graft.into()).with_frames(frames);
+    let idx = SegmentIdx::new(SegmentId::random(), graft.into()).with_frames(frames);
 
     Ok((commit_hash, idx, chunks))
 }

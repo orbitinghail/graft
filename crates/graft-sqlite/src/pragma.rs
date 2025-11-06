@@ -98,7 +98,7 @@ impl GraftPragma {
                                 &mut out,
                                 "{} | empty",
                                 match lsn {
-                                    Some(lsn) => format!("{:<6}", lsn),
+                                    Some(lsn) => format!("{lsn:<6}"),
                                     None => format!("{:<6}", "_"),
                                 }
                             )?;

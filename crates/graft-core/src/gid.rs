@@ -72,7 +72,7 @@ impl<P: Prefix> Gid<P> {
         random: GidRandom::ZERO,
     };
 
-    pub fn new() -> Self {
+    pub fn random() -> Self {
         Self {
             time: GidTimestamp::now(),
             random: GidRandom::random(),
@@ -349,7 +349,7 @@ mod tests {
     fn test_serialize_short() {
         // short is always substr of serialize
         for _ in 0..100 {
-            let id = SegmentId::new();
+            let id = SegmentId::random();
             let serialized = id.serialize();
             let short = id.short();
             println!("{serialized} {short}");
@@ -362,7 +362,7 @@ mod tests {
 
     #[graft_test::test]
     fn test_ts() {
-        let vid = VolumeId::new();
+        let vid = VolumeId::random();
         let ts = vid.as_time();
         assert!(ts.duration_since(UNIX_EPOCH).unwrap().as_millis() > 0)
     }
@@ -384,7 +384,7 @@ mod tests {
 
     #[graft_test::test]
     fn test_parse_round_trip() {
-        let id = SegmentId::new();
+        let id = SegmentId::random();
 
         // round trip through string
         let pretty = id.serialize();
@@ -466,11 +466,11 @@ mod tests {
         }
 
         let msg = TestMsg {
-            vid: VolumeId::new(),
-            sid: SegmentId::new(),
-            cid: ClientId::new(),
+            vid: VolumeId::random(),
+            sid: SegmentId::random(),
+            cid: ClientId::random(),
 
-            vids: vec![VolumeId::new(), VolumeId::new()],
+            vids: vec![VolumeId::random(), VolumeId::random()],
         };
         let b = msg.encode_to_bytes();
         let decoded: TestMsg = TestMsg::decode(b).unwrap();

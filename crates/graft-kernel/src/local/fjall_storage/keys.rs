@@ -158,20 +158,24 @@ mod tests {
 
     #[graft_test::test]
     fn test_volume_id() {
-        test_roundtrip(VolumeId::new());
+        test_roundtrip(VolumeId::random());
         test_roundtrip(VolumeId::ZERO);
         test_invalid::<VolumeId>(b"");
         test_invalid::<VolumeId>(b"asdf");
-        test_invalid::<VolumeId>(SegmentId::new().as_bytes());
+        test_invalid::<VolumeId>(SegmentId::random().as_bytes());
     }
 
     #[graft_test::test]
     fn test_commit_key() {
-        test_roundtrip(VolumeRef::new(VolumeId::new(), lsn!(123)));
+        test_roundtrip(VolumeRef::new(VolumeId::random(), lsn!(123)));
 
         // zero LSN is invalid
         test_invalid::<VolumeRef>(
-            SerializedVolumeRef { vid: VolumeId::new(), lsn: CBE64::new(0) }.as_bytes(),
+            SerializedVolumeRef {
+                vid: VolumeId::random(),
+                lsn: CBE64::new(0),
+            }
+            .as_bytes(),
         );
 
         test_invalid::<VolumeRef>(b"short");
@@ -192,11 +196,15 @@ mod tests {
 
     #[graft_test::test]
     fn test_page_key() {
-        test_roundtrip(PageKey::new(SegmentId::new(), pageidx!(42)));
+        test_roundtrip(PageKey::new(SegmentId::random(), pageidx!(42)));
 
         // zero page index is invalid
         test_invalid::<PageKey>(
-            SerializedPageKey { sid: SegmentId::new(), pageidx: 0.into() }.as_bytes(),
+            SerializedPageKey {
+                sid: SegmentId::random(),
+                pageidx: 0.into(),
+            }
+            .as_bytes(),
         );
 
         test_invalid::<PageKey>(b"short");
