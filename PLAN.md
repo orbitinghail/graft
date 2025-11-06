@@ -11,10 +11,6 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 - [ ] comprehensive tests
 - [ ] libgraft SQLite
 
-# Other changes
-
-- switch Gid pretty to be `(prefix + ts)-(random)` and short to just be random. this will also ensure that it sorts alphanumerically.
-
 # Working on SQLite v2
 
 - PRIORITY: allow specifying a remote vid when opening a volume

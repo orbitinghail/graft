@@ -286,7 +286,7 @@ mod tests {
             last_pageidx: pageidx!(25),
         });
 
-        let segment_idx = SegmentIdx { sid: SegmentId::EMPTY, graft, frames };
+        let segment_idx = SegmentIdx { sid: SegmentId::new(), graft, frames };
 
         let tests = [
             (pageidx!(4), None),
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn test_frame_for_pageidx_empty_frames() {
         let segment_idx = SegmentIdx {
-            sid: SegmentId::random(),
+            sid: SegmentId::new(),
             graft: Graft::EMPTY,
             frames: SmallVec::new(),
         };
@@ -407,7 +407,7 @@ mod tests {
             last_pageidx: pageidx!(25),
         });
 
-        let segment_idx = SegmentIdx { sid: SegmentId::EMPTY, graft, frames };
+        let segment_idx = SegmentIdx { sid: SegmentId::new(), graft, frames };
 
         // Collect all frames
         let all_frames: Vec<_> = segment_idx.iter_frames(|_| true).collect();
@@ -449,7 +449,7 @@ mod tests {
             last_pageidx: pageidx!(25),
         });
 
-        let segment_idx = SegmentIdx { sid: SegmentId::EMPTY, graft, frames };
+        let segment_idx = SegmentIdx { sid: SegmentId::new(), graft, frames };
 
         // Filter for frames containing page 15
         let filtered_frames: Vec<_> = segment_idx
@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn test_iter_frames_empty() {
         let segment_idx = SegmentIdx {
-            sid: SegmentId::random(),
+            sid: SegmentId::new(),
             graft: Graft::EMPTY,
             frames: SmallVec::new(),
         };

@@ -49,17 +49,19 @@ enum RemotePath<'a> {
 impl RemotePath<'_> {
     fn build(self) -> object_store::path::Path {
         match self {
-            Self::Control(vid) => Path::from_iter(["volumes", &vid.pretty(), "control"]),
+            Self::Control(vid) => Path::from_iter(["volumes", &vid.serialize(), "control"]),
             // TODO: Implement Forks!
             // Self::Fork(fork) => Path::from_iter([&vid, "forks", &fork.pretty()]),
-            Self::CheckpointSet(vid) => Path::from_iter(["volumes", &vid.pretty(), "checkpoints"]),
+            Self::CheckpointSet(vid) => {
+                Path::from_iter(["volumes", &vid.serialize(), "checkpoints"])
+            }
             Self::Commit(vid, lsn) => Path::from_iter([
                 "volumes",
-                &vid.pretty(),
+                &vid.serialize(),
                 "log",
                 &CBE64::from(lsn).to_string(),
             ]),
-            Self::Segment(sid) => Path::from_iter(["segments", &sid.pretty()]),
+            Self::Segment(sid) => Path::from_iter(["segments", &sid.serialize()]),
         }
     }
 }

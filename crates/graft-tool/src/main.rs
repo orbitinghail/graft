@@ -41,10 +41,7 @@ enum Tool {
     /// Generate a Segment ID (sid)
     Sid,
     /// Generate a Client ID (cid)
-    Cid {
-        #[clap(short, long)]
-        derive: Option<String>,
-    },
+    Cid,
 
     /// Generate a new 32 byte hex encoded random key to use to create and
     /// validate Graft api tokens
@@ -78,14 +75,9 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
     match cli.tool {
-        Tool::Vid => println!("{}", VolumeId::random()),
-        Tool::Sid => println!("{}", SegmentId::random()),
-        Tool::Cid { derive } => match derive {
-            Some(derive) => {
-                println!("{}", ClientId::derive(derive.as_bytes()))
-            }
-            None => println!("{}", ClientId::random()),
-        },
+        Tool::Vid => println!("{}", VolumeId::new()),
+        Tool::Sid => println!("{}", SegmentId::new()),
+        Tool::Cid => println!("{}", ClientId::new()),
         Tool::SecretKey => {
             let rand = rand::random::<[u8; 32]>();
             println!("{}", hex::encode(rand));

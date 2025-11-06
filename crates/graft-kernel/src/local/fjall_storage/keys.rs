@@ -158,32 +158,28 @@ mod tests {
 
     #[graft_test::test]
     fn test_volume_id() {
-        test_roundtrip(VolumeId::random());
-        test_roundtrip(VolumeId::EMPTY);
+        test_roundtrip(VolumeId::new());
+        test_roundtrip(VolumeId::ZERO);
         test_invalid::<VolumeId>(b"");
         test_invalid::<VolumeId>(b"asdf");
-        test_invalid::<VolumeId>(SegmentId::random().as_bytes());
+        test_invalid::<VolumeId>(SegmentId::new().as_bytes());
     }
 
     #[graft_test::test]
     fn test_commit_key() {
-        test_roundtrip(VolumeRef::new(VolumeId::random(), lsn!(123)));
+        test_roundtrip(VolumeRef::new(VolumeId::new(), lsn!(123)));
 
         // zero LSN is invalid
         test_invalid::<VolumeRef>(
-            SerializedVolumeRef {
-                vid: VolumeId::random(),
-                lsn: CBE64::new(0),
-            }
-            .as_bytes(),
+            SerializedVolumeRef { vid: VolumeId::new(), lsn: CBE64::new(0) }.as_bytes(),
         );
 
         test_invalid::<VolumeRef>(b"short");
         test_invalid::<VolumeRef>(b"");
 
         // CommitKeys must naturally sort in descending order by LSN
-        let vid1: VolumeId = "GonvRDHqjHwNsCpPBET3Ly".parse().unwrap();
-        let vid2: VolumeId = "GonvRDHruDyBB6s6RmuiSZ".parse().unwrap();
+        let vid1: VolumeId = "5rMJhdYXJ3-2e64STQSCVT8X".parse().unwrap();
+        let vid2: VolumeId = "5rMJhdYYXB-2e2iX9AHva3xQ".parse().unwrap();
         test_serialized_order(&[
             VolumeRef::new(vid1.clone(), lsn!(4)),
             VolumeRef::new(vid1.clone(), lsn!(3)),
@@ -196,23 +192,19 @@ mod tests {
 
     #[graft_test::test]
     fn test_page_key() {
-        test_roundtrip(PageKey::new(SegmentId::random(), pageidx!(42)));
+        test_roundtrip(PageKey::new(SegmentId::new(), pageidx!(42)));
 
         // zero page index is invalid
         test_invalid::<PageKey>(
-            SerializedPageKey {
-                sid: SegmentId::random(),
-                pageidx: 0.into(),
-            }
-            .as_bytes(),
+            SerializedPageKey { sid: SegmentId::new(), pageidx: 0.into() }.as_bytes(),
         );
 
         test_invalid::<PageKey>(b"short");
         test_invalid::<PageKey>(b"");
 
         // PageKeys must naturally sort in ascending order by page index
-        let sid1: SegmentId = "LkykngWAEj8KaTkYeg5ZBY".parse().unwrap();
-        let sid2: SegmentId = "LkykngWBbT1v8zGaRpdbpK".parse().unwrap();
+        let sid1: SegmentId = "74ggYyz4aX-33cEC1Bm7Gekh".parse().unwrap();
+        let sid2: SegmentId = "74ggYyz7mA-33d6VHh4ENsxq".parse().unwrap();
         test_serialized_order(&[
             PageKey::new(sid1.clone(), pageidx!(1)),
             PageKey::new(sid1.clone(), pageidx!(2)),

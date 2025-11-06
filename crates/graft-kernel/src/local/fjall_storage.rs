@@ -552,8 +552,8 @@ impl<'a> ReadWriteGuard<'a> {
             }
         } else {
             // create volume ids for the local and remote volume
-            let lvid = VolumeId::random();
-            let rvid = remote_vid.unwrap_or_else(VolumeId::random);
+            let lvid = VolumeId::new();
+            let rvid = remote_vid.unwrap_or_else(VolumeId::new);
 
             // create the named volume
             let volume = NamedVolumeState::new(name.clone(), lvid, rvid, None, None);

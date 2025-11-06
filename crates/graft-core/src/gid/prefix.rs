@@ -1,13 +1,13 @@
 //! Prefixes are used to distinguish between different types of Graft IDs.
-//! The first bit is always set. This ensures that serialized graft IDs serialize to 22 bytes.
-//! The next 2 bits currently determine the variant.
+//! The most-significant bit is always set to ensure a Prefix byte is never zero.
+//! The next 2 bits determine the variant.
 //! The rest of the Prefix is reserved for future use.
 
 // We group bytes by field in this file to make it easier to see the bit layout.
 #![allow(clippy::unusual_byte_groupings)]
 
 use static_assertions::const_assert_ne;
-use std::hash::Hash;
+use std::{fmt::Debug, hash::Hash};
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 #[derive(
@@ -31,6 +31,12 @@ pub enum Volume {
     Value = 0b1_00_00000,
 }
 
+impl Debug for Volume {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Volume")
+    }
+}
+
 #[derive(
     Clone,
     Copy,
@@ -50,6 +56,12 @@ pub enum Volume {
 pub enum Segment {
     #[default]
     Value = 0b1_01_00000,
+}
+
+impl Debug for Segment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Segment")
+    }
 }
 
 #[derive(
@@ -73,9 +85,21 @@ pub enum Client {
     Value = 0b1_10_00000,
 }
 
+impl Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Client")
+    }
+}
+
+// Ensure none of the prefixes equal one-another
 const_assert_ne!(Volume::Value as u8, Segment::Value as u8);
 const_assert_ne!(Volume::Value as u8, Client::Value as u8);
 const_assert_ne!(Segment::Value as u8, Client::Value as u8);
+
+// Ensure none of the prefixes are zero.
+const_assert_ne!(Volume::Value as u8, 0);
+const_assert_ne!(Segment::Value as u8, 0);
+const_assert_ne!(Client::Value as u8, 0);
 
 pub trait ConstDefault {
     const DEFAULT: Self;

@@ -73,8 +73,8 @@ mod tests {
     fn test_volume_handle() {
         test_roundtrip(NamedVolumeState::new(
             VolumeName::new("test-handle").unwrap(),
-            VolumeId::random(),
-            VolumeId::random(),
+            VolumeId::new(),
+            VolumeId::new(),
             None,
             None,
         ));
@@ -85,8 +85,8 @@ mod tests {
     #[graft_test::test]
     fn test_volume_meta() {
         test_roundtrip(VolumeMeta::new(
-            VolumeId::random(),
-            Some(VolumeRef::new(VolumeId::random(), lsn!(123))),
+            VolumeId::new(),
+            Some(VolumeRef::new(VolumeId::new(), lsn!(123))),
             CachedCheckpoints::new(Checkpoints::from([lsn!(123)].as_slice()), Some("asdf")),
         ));
         test_empty_default::<VolumeMeta>();
@@ -95,11 +95,7 @@ mod tests {
 
     #[graft_test::test]
     fn test_commit() {
-        test_roundtrip(Commit::new(
-            VolumeId::random(),
-            lsn!(123),
-            PageCount::new(456),
-        ));
+        test_roundtrip(Commit::new(VolumeId::new(), lsn!(123), PageCount::new(456)));
         test_empty_default::<Commit>();
         test_invalid::<Commit>(&b"abc".repeat(123));
     }
