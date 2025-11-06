@@ -2,7 +2,7 @@ use crate::volume_name::VolumeNameErr;
 use culprit::Result;
 use fjall::Slice;
 use graft_core::{
-    lsn::InvalidLSN, page::PageSizeErr, page_idx::ConvertToPageIdxErr, zerocopy_ext::ZerocopyErr,
+    lsn::InvalidLSN, page::PageSizeErr, pageidx::ConvertToPageIdxErr, zerocopy_ext::ZerocopyErr,
 };
 
 #[derive(Debug, thiserror::Error)]

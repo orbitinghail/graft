@@ -20,7 +20,7 @@ use splinter_rs::{PartitionRead, Splinter};
 use tryiter::TryIteratorExt;
 
 use crate::{
-    GraftErr, VolumeErr,
+    KernelErr, VolumeErr,
     local::fjall_storage::FjallStorage,
     named_volume::PendingCommit,
     remote::{Remote, segment::SegmentBuilder},
@@ -45,7 +45,7 @@ pub async fn run(
     storage: &FjallStorage,
     remote: &Remote,
     opts: Opts,
-) -> culprit::Result<(), GraftErr> {
+) -> culprit::Result<(), KernelErr> {
     let Some(plan) = plan_commit(storage, &opts.name)? else {
         // nothing to commit
         return Ok(());
@@ -132,7 +132,7 @@ struct CommitPlan {
 fn plan_commit(
     storage: &FjallStorage,
     name: &VolumeName,
-) -> culprit::Result<Option<CommitPlan>, GraftErr> {
+) -> culprit::Result<Option<CommitPlan>, KernelErr> {
     let reader = storage.read();
     let handle = reader.named_volume(name).or_into_ctx()?;
     if handle.pending_commit().is_some() {
@@ -185,7 +185,7 @@ fn plan_commit(
 fn build_segment(
     storage: &FjallStorage,
     plan: &CommitPlan,
-) -> culprit::Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), GraftErr> {
+) -> culprit::Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), KernelErr> {
     let reader = storage.read();
 
     // built a search path which only matches the LSNs we want to
@@ -204,7 +204,7 @@ fn build_segment(
         page_count = page_count.min(commit.page_count);
 
         if let Some(idx) = commit.segment_idx {
-            let mut commit_pages = idx.graft;
+            let mut commit_pages = idx.pageset;
             // remove any pages we dont want
             commit_pages.remove_page_range((
                 page_count

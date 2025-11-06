@@ -4,16 +4,16 @@ use culprit::{Culprit, ResultExt};
 use graft_core::{PageCount, PageIdx, page::Page};
 
 use crate::{
-    GraftErr, page_status::PageStatus, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
+    KernelErr, page_status::PageStatus, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
     volume_name::VolumeName, volume_writer::VolumeWriter,
 };
 
 /// A type which can read from a Volume
 pub trait VolumeRead {
     fn snapshot(&self) -> &Snapshot;
-    fn page_count(&self) -> culprit::Result<PageCount, GraftErr>;
-    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, GraftErr>;
-    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, GraftErr>;
+    fn page_count(&self) -> culprit::Result<PageCount, KernelErr>;
+    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr>;
+    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, KernelErr>;
 }
 
 #[derive(Debug, Clone)]
@@ -30,7 +30,7 @@ impl VolumeReader {
 }
 
 impl TryFrom<VolumeReader> for VolumeWriter {
-    type Error = Culprit<GraftErr>;
+    type Error = Culprit<KernelErr>;
 
     fn try_from(reader: VolumeReader) -> Result<Self, Self::Error> {
         let page_count = reader.page_count()?;
@@ -48,7 +48,7 @@ impl VolumeRead for VolumeReader {
         &self.snapshot
     }
 
-    fn page_count(&self) -> culprit::Result<PageCount, GraftErr> {
+    fn page_count(&self) -> culprit::Result<PageCount, KernelErr> {
         self.runtime
             .storage()
             .read()
@@ -56,11 +56,11 @@ impl VolumeRead for VolumeReader {
             .or_into_ctx()
     }
 
-    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, GraftErr> {
+    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr> {
         self.runtime.read_page(&self.snapshot, pageidx)
     }
 
-    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, GraftErr> {
+    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, KernelErr> {
         self.runtime.page_status(&self.snapshot, pageidx)
     }
 }
@@ -90,21 +90,21 @@ impl VolumeRead for VolumeReadRef<'_> {
         }
     }
 
-    fn page_count(&self) -> culprit::Result<PageCount, GraftErr> {
+    fn page_count(&self) -> culprit::Result<PageCount, KernelErr> {
         match self {
             VolumeReadRef::Reader(reader) => reader.page_count(),
             VolumeReadRef::Writer(writer) => writer.page_count(),
         }
     }
 
-    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, GraftErr> {
+    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr> {
         match self {
             VolumeReadRef::Reader(reader) => reader.read_page(pageidx),
             VolumeReadRef::Writer(writer) => writer.read_page(pageidx),
         }
     }
 
-    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, GraftErr> {
+    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, KernelErr> {
         match self {
             VolumeReadRef::Reader(reader) => reader.page_status(pageidx),
             VolumeReadRef::Writer(writer) => writer.page_status(pageidx),

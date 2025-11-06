@@ -10,7 +10,7 @@ use rand::{
 
 use crate::{
     page::{PAGESIZE, Page},
-    page_idx::PageIdx,
+    pageidx::PageIdx,
 };
 
 impl Page {

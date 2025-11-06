@@ -1,11 +1,11 @@
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
 use culprit::ResultExt;
-use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentIdx, graft::Graft, page::Page};
+use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentIdx, page::Page, pageset::PageSet};
 use tokio::task::JoinHandle;
 
 use crate::{
-    GraftErr,
+    KernelErr,
     named_volume::NamedVolume,
     page_status::PageStatus,
     remote::Remote,
@@ -25,7 +25,7 @@ use tokio_stream::{
 
 use crate::local::fjall_storage::FjallStorage;
 
-type Result<T> = culprit::Result<T, GraftErr>;
+type Result<T> = culprit::Result<T, KernelErr>;
 
 #[derive(Clone, Debug)]
 pub struct RuntimeHandle {
@@ -101,7 +101,7 @@ impl RuntimeHandle {
 
     pub(crate) fn create_staged_segment(&self) -> SegmentIdx {
         // TODO: need to keep track of staged segments in memory to prevent the GC from clearing them
-        SegmentIdx::new(SegmentId::new(), Graft::default())
+        SegmentIdx::new(SegmentId::new(), PageSet::default())
     }
 
     pub(crate) fn read_page(&self, snapshot: &Snapshot, pageidx: PageIdx) -> Result<Page> {

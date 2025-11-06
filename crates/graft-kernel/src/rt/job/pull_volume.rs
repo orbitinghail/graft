@@ -12,7 +12,7 @@ use range_set_blaze::RangeOnce;
 use tokio_stream::StreamExt;
 
 use crate::{
-    GraftErr,
+    KernelErr,
     local::fjall_storage::FjallStorage,
     remote::Remote,
     search_path::{PathEntry, SearchPath},
@@ -40,7 +40,7 @@ impl Debug for Opts {
     }
 }
 
-pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), GraftErr> {
+pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), KernelErr> {
     // calculate the maximum commit LSN to retrieve
     let max_lsn = opts.max_lsn.unwrap_or(LSN::LAST);
 
@@ -82,7 +82,7 @@ async fn fetch_search_path(
     remote: &Remote,
     vid: VolumeId,
     lsn: LSN,
-) -> Result<SearchPath, GraftErr> {
+) -> Result<SearchPath, KernelErr> {
     let mut cursor = Some(VolumeRef::new(vid, lsn));
     let mut path = SearchPath::EMPTY;
 
@@ -156,7 +156,7 @@ async fn refresh_checkpoint_commits(
     vid: &VolumeId,
     prev_checkpoints: &Checkpoints,
     checkpoints: &Checkpoints,
-) -> Result<(), GraftErr> {
+) -> Result<(), KernelErr> {
     // Checkpoints are sorted, thus we can merge join the two lists of LSNs to
     // figure out which ones were added.
     let added: Vec<LSN> = prev_checkpoints

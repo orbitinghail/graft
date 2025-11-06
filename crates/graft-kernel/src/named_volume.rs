@@ -4,12 +4,12 @@ use bilrost::Message;
 use culprit::ResultExt;
 
 use crate::{
-    GraftErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
+    KernelErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
     volume_reader::VolumeReader, volume_writer::VolumeWriter,
 };
 use graft_core::{PageCount, VolumeId, commit_hash::CommitHash, lsn::LSN};
 
-type Result<T> = culprit::Result<T, GraftErr>;
+type Result<T> = culprit::Result<T, KernelErr>;
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct SyncPoint {

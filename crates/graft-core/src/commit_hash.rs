@@ -8,7 +8,7 @@ use crate::{
     lsn::LSN,
     page::Page,
     page_count::PageCount,
-    page_idx::PageIdx,
+    pageidx::PageIdx,
     zerocopy_ext::{self, ZerocopyErr},
 };
 

@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use culprit::ResultExt;
 
-use crate::{GraftErr, local::fjall_storage::FjallStorage, volume_name::VolumeName};
+use crate::{KernelErr, local::fjall_storage::FjallStorage, volume_name::VolumeName};
 
 /// Fast-forwards the local volume to include any remote commits. Fails if
 /// the local volume has unpushed commits.
@@ -19,6 +19,6 @@ impl Debug for Opts {
     }
 }
 
-pub async fn run(storage: &FjallStorage, opts: Opts) -> culprit::Result<(), GraftErr> {
+pub async fn run(storage: &FjallStorage, opts: Opts) -> culprit::Result<(), KernelErr> {
     storage.sync_remote_to_local(opts.name).or_into_ctx()
 }

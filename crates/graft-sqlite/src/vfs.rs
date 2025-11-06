@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use culprit::{Culprit, ResultExt};
 use graft_kernel::{
-    GraftErr, VolumeErr,
+    KernelErr, VolumeErr,
     rt::runtime_handle::RuntimeHandle,
     volume_name::{VolumeName, VolumeNameErr},
 };
@@ -26,8 +26,8 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum ErrCtx {
-    #[error("Graft error: {0}")]
-    Graft(#[from] GraftErr),
+    #[error("Graft kernel error: {0}")]
+    Kernel(#[from] KernelErr),
 
     #[error("Unknown Pragma")]
     UnknownPragma,
@@ -54,7 +54,7 @@ pub enum ErrCtx {
 impl From<VolumeNameErr> for ErrCtx {
     #[inline]
     fn from(value: VolumeNameErr) -> Self {
-        ErrCtx::Graft(value.into())
+        ErrCtx::Kernel(value.into())
     }
 }
 
@@ -79,16 +79,16 @@ impl ErrCtx {
             ErrCtx::CantOpen => SQLITE_CANTOPEN,
             ErrCtx::Busy => SQLITE_BUSY,
             ErrCtx::BusySnapshot => SQLITE_BUSY_SNAPSHOT,
-            ErrCtx::Graft(err) => Self::map_graft_err(err),
+            ErrCtx::Kernel(err) => Self::map_kernel_err(err),
             _ => SQLITE_INTERNAL,
         }
     }
 
-    fn map_graft_err(err: &GraftErr) -> SqliteErr {
+    fn map_kernel_err(err: &KernelErr) -> SqliteErr {
         match err {
-            GraftErr::Storage(_) => SQLITE_IOERR,
-            GraftErr::Remote(_) => SQLITE_IOERR,
-            GraftErr::Volume(err) => match err {
+            KernelErr::Storage(_) => SQLITE_IOERR,
+            KernelErr::Remote(_) => SQLITE_IOERR,
+            KernelErr::Volume(err) => match err {
                 VolumeErr::VolumeNotFound(_) | VolumeErr::NamedVolumeNotFound(_) => SQLITE_IOERR,
                 VolumeErr::ConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
                 VolumeErr::NamedVolumeNeedsRecovery(_)

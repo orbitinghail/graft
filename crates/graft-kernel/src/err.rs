@@ -6,7 +6,7 @@ use crate::{
 use graft_core::VolumeId;
 
 #[derive(Debug, thiserror::Error)]
-pub enum GraftErr {
+pub enum KernelErr {
     #[error(transparent)]
     Storage(FjallStorageErr),
 
@@ -17,9 +17,9 @@ pub enum GraftErr {
     Volume(#[from] VolumeErr),
 }
 
-impl GraftErr {
+impl KernelErr {
     pub(crate) fn is_remote_not_found(&self) -> bool {
-        if let GraftErr::Remote(err) = self {
+        if let KernelErr::Remote(err) = self {
             err.is_not_found()
         } else {
             false
@@ -27,19 +27,19 @@ impl GraftErr {
     }
 }
 
-impl From<FjallStorageErr> for GraftErr {
+impl From<FjallStorageErr> for KernelErr {
     fn from(value: FjallStorageErr) -> Self {
         match value {
-            FjallStorageErr::VolumeErr(verr) => GraftErr::Volume(verr),
-            other => GraftErr::Storage(other),
+            FjallStorageErr::VolumeErr(verr) => KernelErr::Volume(verr),
+            other => KernelErr::Storage(other),
         }
     }
 }
 
-impl From<VolumeNameErr> for GraftErr {
+impl From<VolumeNameErr> for KernelErr {
     #[inline]
     fn from(value: VolumeNameErr) -> Self {
-        GraftErr::Volume(VolumeErr::InvalidVolumeName(value))
+        KernelErr::Volume(VolumeErr::InvalidVolumeName(value))
     }
 }
 

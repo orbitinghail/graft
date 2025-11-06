@@ -4,7 +4,7 @@ use culprit::{Result, ResultExt};
 use graft_core::{SegmentId, commit::SegmentRangeRef};
 
 use crate::{
-    GraftErr,
+    KernelErr,
     local::fjall_storage::FjallStorage,
     remote::{Remote, segment::segment_frame_iter},
 };
@@ -27,12 +27,12 @@ impl Debug for Opts {
     }
 }
 
-pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), GraftErr> {
+pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), KernelErr> {
     let bytes = remote
         .get_segment_range(&opts.sid, &opts.frame.bytes)
         .await
         .or_into_ctx()?;
-    let pages = segment_frame_iter(opts.frame.graft.iter(), &bytes);
+    let pages = segment_frame_iter(opts.frame.pageset.iter(), &bytes);
     let mut batch = storage.batch();
     for (pageidx, page) in pages {
         batch.write_page(opts.sid.clone(), pageidx, page);

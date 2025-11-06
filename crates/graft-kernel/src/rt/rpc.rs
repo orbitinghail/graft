@@ -4,9 +4,9 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 
-use crate::GraftErr;
+use crate::KernelErr;
 
-type Result<T> = culprit::Result<T, GraftErr>;
+type Result<T> = culprit::Result<T, KernelErr>;
 
 #[derive(Debug)]
 pub enum Rpc {

@@ -4,7 +4,7 @@ use futures::{Stream, StreamExt};
 use tokio::time::Instant;
 
 use crate::{
-    err::GraftErr,
+    err::KernelErr,
     local::fjall_storage::FjallStorage,
     remote::Remote,
     rt::{job::Job, rpc::Rpc},
@@ -48,7 +48,7 @@ impl<S: Stream<Item = Event>> Runtime<S> {
         }
     }
 
-    async fn run(&mut self) -> culprit::Result<(), GraftErr> {
+    async fn run(&mut self) -> culprit::Result<(), KernelErr> {
         while let Some(event) = self.events.next().await {
             match event {
                 Event::Rpc(rpc) => match rpc {

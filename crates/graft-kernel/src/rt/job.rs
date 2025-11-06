@@ -5,7 +5,7 @@ use graft_core::{SegmentId, VolumeId, commit::SegmentRangeRef, lsn::LSN};
 use tryiter::TryIteratorExt;
 
 use crate::{
-    GraftErr, local::fjall_storage::FjallStorage, remote::Remote, volume_name::VolumeName,
+    KernelErr, local::fjall_storage::FjallStorage, remote::Remote, volume_name::VolumeName,
 };
 
 mod fetch_segment;
@@ -75,7 +75,7 @@ impl Job {
     }
 
     /// Inspects all named volumes to compute a list of outstanding jobs.
-    pub fn collect(storage: &FjallStorage) -> Result<Vec<Self>, Culprit<GraftErr>> {
+    pub fn collect(storage: &FjallStorage) -> Result<Vec<Self>, Culprit<KernelErr>> {
         let mut jobs = vec![];
         let reader = storage.read();
         let mut volumes = reader.named_volumes();
@@ -111,7 +111,7 @@ impl Job {
         self,
         storage: &FjallStorage,
         remote: &Remote,
-    ) -> culprit::Result<(), GraftErr> {
+    ) -> culprit::Result<(), KernelErr> {
         match self {
             Job::PullVolume(opts) => pull_volume::run(storage, remote, opts).await,
             Job::RemoteCommit(opts) => remote_commit::run(storage, remote, opts).await,

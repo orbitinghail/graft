@@ -7,7 +7,7 @@ use crate::{
     byte_unit::ByteUnit,
     derive_newtype_proxy,
     page::PAGESIZE,
-    page_idx::{PageIdx, PageIdxIter},
+    pageidx::{PageIdx, PageIdxIter},
 };
 
 #[derive(

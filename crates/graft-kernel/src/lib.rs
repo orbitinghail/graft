@@ -23,4 +23,4 @@ pub mod volume_name;
 pub mod volume_reader;
 pub mod volume_writer;
 
-pub use err::{GraftErr, VolumeErr};
+pub use err::{KernelErr, VolumeErr};

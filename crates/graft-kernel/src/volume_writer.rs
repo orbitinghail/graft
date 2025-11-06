@@ -2,7 +2,7 @@ use culprit::{Result, ResultExt};
 use graft_core::{PageCount, PageIdx, commit::SegmentIdx, page::Page, volume_ref::VolumeRef};
 
 use crate::{
-    GraftErr,
+    KernelErr,
     page_status::PageStatus,
     rt::runtime_handle::RuntimeHandle,
     snapshot::Snapshot,
@@ -12,9 +12,9 @@ use crate::{
 
 /// A type which can write to a Volume
 pub trait VolumeWrite {
-    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr>;
-    fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr>;
-    fn commit(self) -> Result<VolumeRef, GraftErr>;
+    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), KernelErr>;
+    fn truncate(&mut self, page_count: PageCount) -> Result<(), KernelErr>;
+    fn commit(self) -> Result<VolumeRef, KernelErr>;
 }
 
 #[derive(Debug)]
@@ -49,11 +49,11 @@ impl VolumeRead for VolumeWriter {
         &self.snapshot
     }
 
-    fn page_count(&self) -> Result<PageCount, GraftErr> {
+    fn page_count(&self) -> Result<PageCount, KernelErr> {
         Ok(self.page_count)
     }
 
-    fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr> {
+    fn read_page(&self, pageidx: PageIdx) -> Result<Page, KernelErr> {
         if !self.page_count.contains(pageidx) {
             Ok(Page::EMPTY)
         } else if self.segment.contains(pageidx) {
@@ -69,7 +69,7 @@ impl VolumeRead for VolumeWriter {
         }
     }
 
-    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, GraftErr> {
+    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, KernelErr> {
         if self.segment.contains(pageidx) {
             Ok(PageStatus::Dirty)
         } else {
@@ -79,7 +79,7 @@ impl VolumeRead for VolumeWriter {
 }
 
 impl VolumeWrite for VolumeWriter {
-    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr> {
+    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), KernelErr> {
         self.page_count = self.page_count.max(pageidx.pages());
         self.segment.insert(pageidx);
         self.runtime
@@ -88,7 +88,7 @@ impl VolumeWrite for VolumeWriter {
             .or_into_ctx()
     }
 
-    fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr> {
+    fn truncate(&mut self, page_count: PageCount) -> Result<(), KernelErr> {
         let start = page_count
             .last_pageidx()
             .unwrap_or_default()
@@ -101,7 +101,7 @@ impl VolumeWrite for VolumeWriter {
             .or_into_ctx()
     }
 
-    fn commit(self) -> Result<VolumeRef, GraftErr> {
+    fn commit(self) -> Result<VolumeRef, KernelErr> {
         self.runtime
             .storage()
             .commit(self.name, self.snapshot, self.page_count, self.segment)

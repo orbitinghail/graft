@@ -314,7 +314,7 @@ derive_newtype_proxy!(
 
 #[cfg(test)]
 mod tests {
-    use crate::{PageCount, PageIdx, page_idx::PageIdxRangeExt};
+    use crate::{PageCount, PageIdx, pageidx::PageIdxRangeExt};
 
     #[test]
     fn test_page_idx_iter() {

@@ -2,11 +2,13 @@ use std::{fmt::Debug, ops::Bound};
 
 use culprit::{Result, ResultExt};
 use futures::{StreamExt, TryStreamExt};
-use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentRangeRef, graft::Graft, lsn::LSN};
+use graft_core::{
+    PageIdx, SegmentId, VolumeId, commit::SegmentRangeRef, lsn::LSN, pageset::PageSet,
+};
 use itertools::Itertools;
 use tryiter::TryIteratorExt;
 
-use crate::{GraftErr, local::fjall_storage::FjallStorage, remote::Remote, rt::job::Job};
+use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote, rt::job::Job};
 
 const HYDRATE_CONCURRENCY: usize = 5;
 
@@ -33,7 +35,7 @@ impl Debug for Opts {
     }
 }
 
-pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), GraftErr> {
+pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), KernelErr> {
     let outstanding_frames = get_outstanding_frames(storage, opts)?;
     futures::stream::iter(outstanding_frames)
         .map(Ok)
@@ -46,7 +48,7 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
 fn get_outstanding_frames(
     storage: &FjallStorage,
     opts: Opts,
-) -> Result<Vec<(SegmentId, SegmentRangeRef)>, GraftErr> {
+) -> Result<Vec<(SegmentId, SegmentRangeRef)>, KernelErr> {
     let reader = storage.read();
     let snapshot = reader.snapshot_at(&opts.vid, opts.max_lsn).or_into_ctx()?;
 
@@ -54,7 +56,7 @@ fn get_outstanding_frames(
 
     // the set of pages we are searching for.
     // we remove pages from this set as we iterate through commits.
-    let mut pages = Graft::from_range(reader.page_count(&snapshot).or_into_ctx()?.pageidxs());
+    let mut pages = PageSet::from_range(reader.page_count(&snapshot).or_into_ctx()?.pageidxs());
 
     let mut page_count = reader.page_count(&snapshot).or_into_ctx()?;
     let mut commits = reader.commits(snapshot.search_path());
@@ -78,7 +80,7 @@ fn get_outstanding_frames(
                 None => Bound::Unbounded,
             };
 
-            let mut commit_pages = idx.graft.clone();
+            let mut commit_pages = idx.pageset.clone();
             // ignore pages we don't want
             commit_pages.remove_page_range((truncate_start, Bound::Unbounded));
 
