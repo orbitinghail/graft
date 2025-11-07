@@ -28,6 +28,10 @@ impl TagHandle {
         &self.tag
     }
 
+    pub fn graft(&self) -> &VolumeId {
+        &self.graft
+    }
+
     /// Checkout a new graft starting at the specified remote. If remote is not
     /// specified, will checkout a new Graft for the current remote.
     pub fn checkout(&mut self, remote: Option<VolumeId>) -> Result<()> {

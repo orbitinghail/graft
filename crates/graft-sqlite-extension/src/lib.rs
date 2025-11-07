@@ -37,6 +37,9 @@ struct ExtensionConfig {
 
     #[serde(default = "bool::default")]
     make_default: bool,
+
+    #[serde(default = "bool::default")]
+    autosync: bool,
 }
 
 pub fn setup_log_file(path: PathBuf) {
@@ -136,7 +139,7 @@ fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
 
     let remote = Arc::new(config.remote.build()?);
     let storage = Arc::new(FjallStorage::open(config.data_dir)?);
-    let runtime = RuntimeHandle::spawn(&tokio_handle, remote, storage);
+    let runtime = RuntimeHandle::spawn(&tokio_handle, remote, storage, config.autosync);
 
     Ok((
         RegisterOpts { make_default: config.make_default },

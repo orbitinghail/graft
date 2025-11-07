@@ -45,6 +45,7 @@ impl RuntimeHandle {
         tokio_rt: &tokio::runtime::Handle,
         remote: Arc<Remote>,
         storage: Arc<FjallStorage>,
+        autosync: bool,
     ) -> RuntimeHandle {
         let (tx, rx) = mpsc::channel(8);
 
@@ -57,7 +58,7 @@ impl RuntimeHandle {
         let commits = storage.subscribe_commits().map(Event::Commits);
         let events = Box::pin(rx.merge(ticks).merge(commits));
 
-        let runtime = Runtime::new(remote, storage.clone(), events);
+        let runtime = Runtime::new(remote, storage.clone(), events, autosync);
         let handle = tokio_rt.spawn(runtime.start());
 
         RuntimeHandle {
@@ -161,7 +162,7 @@ mod tests {
 
         let remote = Arc::new(RemoteConfig::Memory.build().unwrap());
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
+        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage, true);
 
         let handle = runtime.get_or_create_tag("leader").unwrap();
         let remote_vid = handle.remote().unwrap();
@@ -194,7 +195,7 @@ mod tests {
 
         // create a second runtime connected to the same remote
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let runtime_2 = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
+        let runtime_2 = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage, true);
 
         // open the same graft in the second runtime
         let mut handle_2 = runtime_2.get_or_create_tag("follower").unwrap();

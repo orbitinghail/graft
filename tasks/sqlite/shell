@@ -10,6 +10,7 @@ Options:
   --release     Build/run in release mode.
   --trace       Enable trace-level logging (RUST_LOG=trace).
   --gdb         Run sqlite3 under gdb debugger.
+  --autosync    Enable automatic background sync.
 EOF
 )
 
@@ -43,6 +44,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --gdb)
             export GDB=1
+            shift
+            ;;
+        --autosync)
+            export GRAFT_AUTOSYNC=1
             shift
             ;;
         *)

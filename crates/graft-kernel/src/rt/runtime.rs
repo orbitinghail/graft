@@ -25,11 +25,17 @@ pub struct Runtime<S> {
     remote: Arc<Remote>,
     storage: Arc<FjallStorage>,
     events: Pin<Box<S>>,
+    autosync: bool,
 }
 
 impl<S: Stream<Item = Event>> Runtime<S> {
-    pub fn new(remote: Arc<Remote>, storage: Arc<FjallStorage>, events: Pin<Box<S>>) -> Self {
-        Runtime { remote, storage, events }
+    pub fn new(
+        remote: Arc<Remote>,
+        storage: Arc<FjallStorage>,
+        events: Pin<Box<S>>,
+        autosync: bool,
+    ) -> Self {
+        Runtime { remote, storage, events, autosync }
     }
 
     pub async fn start(mut self) -> Result<(), RuntimeFatalErr> {
@@ -53,14 +59,18 @@ impl<S: Stream<Item = Event>> Runtime<S> {
             match event {
                 Event::Rpc(rpc) => rpc.run(&self.storage, &self.remote).await,
                 Event::Tick(_instant) => {
-                    for job in Job::collect(&self.storage)? {
-                        job.run(&self.storage, &self.remote).await?
+                    if self.autosync {
+                        for job in Job::collect(&self.storage)? {
+                            job.run(&self.storage, &self.remote).await?
+                        }
                     }
                 }
                 Event::Commits(commits) => {
-                    let jobs = commits.into_iter().map(Job::remote_commit);
-                    for job in jobs {
-                        job.run(&self.storage, &self.remote).await?
+                    if self.autosync {
+                        let jobs = commits.into_iter().map(Job::remote_commit);
+                        for job in jobs {
+                            job.run(&self.storage, &self.remote).await?
+                        }
                     }
                 }
             }

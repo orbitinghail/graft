@@ -1,7 +1,7 @@
-use std::fmt::Write;
+use std::{fmt::Write, str::FromStr};
 
 use culprit::{Culprit, ResultExt};
-use graft_core::lsn::LSNRangeExt;
+use graft_core::{VolumeId, lsn::LSNRangeExt};
 use graft_kernel::{
     graft::AheadStatus, page_status::PageStatus, rt::runtime_handle::RuntimeHandle,
     volume_reader::VolumeRead,
@@ -15,6 +15,9 @@ use sqlite_plugin::{
 use crate::{file::vol_file::VolFile, vfs::ErrCtx};
 
 pub enum GraftPragma {
+    /// `pragma graft_checkout [= remote_vid];`
+    Checkout { remote: Option<VolumeId> },
+
     /// `pragma graft_status;`
     Status,
 
@@ -48,6 +51,20 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
             && prefix == "graft"
         {
             return match suffix {
+                "new" => Ok(GraftPragma::Checkout { remote: Some(VolumeId::random()) }),
+                "checkout" => {
+                    let remote =
+                        p.arg
+                            .map(|s| VolumeId::from_str(s))
+                            .transpose()
+                            .map_err(|err| {
+                                PragmaErr::Fail(
+                                    SQLITE_ERROR,
+                                    Some(format!("failed to parse VolumeID: {}", err)),
+                                )
+                            })?;
+                    Ok(GraftPragma::Checkout { remote })
+                }
                 "status" => Ok(GraftPragma::Status),
                 "snapshot" => Ok(GraftPragma::Snapshot),
                 "fetch" => Ok(GraftPragma::Fetch),
@@ -73,6 +90,16 @@ impl GraftPragma {
         file: &mut VolFile,
     ) -> Result<Option<String>, Culprit<ErrCtx>> {
         match self {
+            GraftPragma::Checkout { remote } => {
+                file.handle_mut().checkout(remote).or_into_ctx()?;
+                let remote = file.handle().remote().or_into_ctx()?;
+                Ok(Some(format!(
+                    "Created new Graft {} with remote Volume {}",
+                    file.handle().graft(),
+                    remote,
+                )))
+            }
+
             GraftPragma::Status => Ok(Some(format_graft_status(file)?)),
 
             GraftPragma::Snapshot => {
@@ -161,7 +188,7 @@ fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
                 &mut f,
                 indoc! {"
                     The remote Volume is {} {} ahead of the local Volume.
-                      (use 'pragma graft_push' to push changes)
+                      (use 'pragma graft_pull' to pull changes)
                 "},
                 remote.len(),
                 pluralize!(remote.len(), "commit")
