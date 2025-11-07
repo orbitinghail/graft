@@ -6,7 +6,7 @@ USAGE=$(
 Usage: $0 [OPTIONS]
 
 Options:
-  --temp        Generate and use a temporary data directory.
+  --client ID   Specify an ID to identify this client. Default = "default"
   --release     Build/run in release mode.
   --trace       Enable trace-level logging (RUST_LOG=trace).
   --gdb         Run sqlite3 under gdb debugger.
@@ -21,13 +21,15 @@ BUILD_FLAGS=""
 GDB=${GDB:-0}
 export RUST_LOG=${RUST_LOG:-warn}
 
-export GRAFT_REMOTE__TYPE='memory'
+CLIENT_ID="default"
+DATA_ROOT="${GIT_ROOT}/.graft"
 
 # parse flags
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --temp)
-            export GRAFT_DATA_DIR="$(mktemp -d)"
+        --client)
+            shift
+            CLIENT_ID="$1"
             shift
             ;;
         --release)
@@ -40,7 +42,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --gdb)
-            GDB=1
+            export GDB=1
             shift
             ;;
         *)
@@ -50,6 +52,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+export GRAFT_REMOTE__TYPE="fs"
+export GRAFT_REMOTE__ROOT="${DATA_ROOT}/remote"
+export GRAFT_DATA_DIR="${DATA_ROOT}/clients/${CLIENT_ID}"
+
+mkdir -p "${GRAFT_REMOTE__ROOT}" "${GRAFT_DATA_DIR}"
 
 cargo build ${BUILD_FLAGS} --features precept/disabled --package graft-sqlite-extension
 
@@ -71,15 +79,4 @@ ARGS=(
     -cmd ".open 'file:default?vfs=graft'"
 )
 
-if [ "${GDB}" == 1 ]; then
-    GDB_ARGS=(
-        --eval-command="set breakpoint pending on"
-        --eval-command="break rust_panic"
-        -ex run
-        --args sqlite3
-        "${ARGS[@]}"
-    )
-    exec rust-gdb "${GDB_ARGS[@]}"
-else
-    exec just run sqlite bin "${ARGS[@]}"
-fi
+exec just run sqlite bin "${ARGS[@]}"

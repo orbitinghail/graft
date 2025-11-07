@@ -125,12 +125,12 @@ impl Graft {
 
 #[derive(Debug)]
 pub struct AheadStatus {
-    head: Option<LSN>,
-    base: Option<LSN>,
+    pub head: Option<LSN>,
+    pub base: Option<LSN>,
 }
 
 impl AheadStatus {
-    fn changes(&self) -> Option<RangeInclusive<LSN>> {
+    pub fn changes(&self) -> Option<RangeInclusive<LSN>> {
         match (self.base, self.head) {
             (None, None) => None,
             (None, Some(head)) => Some(LSN::FIRST..=head),

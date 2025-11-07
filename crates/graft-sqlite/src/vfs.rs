@@ -53,13 +53,7 @@ impl ErrCtx {
     fn wrap<T>(cb: impl FnOnce() -> culprit::Result<T, ErrCtx>) -> VfsResult<T> {
         match cb() {
             Ok(t) => Ok(t),
-            Err(err) => {
-                let code = err.ctx().sqlite_err();
-                if code == SQLITE_INTERNAL {
-                    tracing::error!("{}", err);
-                }
-                Err(code)
-            }
+            Err(err) => Err(err.ctx().sqlite_err()),
         }
     }
 
@@ -160,7 +154,7 @@ impl Vfs for GraftVfs {
                 Ok(val) => Ok(val),
                 Err(err) => Err(PragmaErr::Fail(
                     err.ctx().sqlite_err(),
-                    Some(format!("{err:?}")),
+                    Some(format!("{err}")),
                 )),
             }
         } else {

@@ -1,6 +1,10 @@
 use std::ops::RangeInclusive;
 
-use graft_core::{VolumeId, lsn::LSN, volume_ref::VolumeRef};
+use graft_core::{
+    VolumeId,
+    lsn::{LSN, LSNRangeExt},
+    volume_ref::VolumeRef,
+};
 use smallvec::SmallVec;
 
 /// A `Snapshot` represents a logical view of a Volume, possibly made
@@ -11,10 +15,16 @@ pub struct Snapshot {
 }
 
 /// A reference to a volume and a range of LSNs within that volume.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct VolumeRangeRef {
     pub vid: VolumeId,
     pub lsns: RangeInclusive<LSN>,
+}
+
+impl std::fmt::Debug for VolumeRangeRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}[{}]", self.vid, self.lsns.to_string())
+    }
 }
 
 impl VolumeRangeRef {
@@ -68,6 +78,6 @@ impl IntoIterator for Snapshot {
 
 impl std::fmt::Debug for Snapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Snapshot").field(&self.path.first()).finish()
+        f.debug_tuple("Snapshot").field(&self.path).finish()
     }
 }

@@ -241,5 +241,7 @@ fn build_segment(
     let (frames, chunks) = segment_builder.finish();
     let idx = SegmentIdx::new(sid, graft.into()).with_frames(frames);
 
+    batch.commit().or_into_ctx()?;
+
     Ok((commit_hash, idx, chunks))
 }

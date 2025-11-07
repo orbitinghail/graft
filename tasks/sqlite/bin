@@ -36,6 +36,7 @@ if [ ! -f "${SQLITE_BIN}" ]; then
   rm "${SQLITE_TAR}"
   cd "${SQLITE_DIR}/sqlite-autoconf-${SQLITE_VERSION}"
   export CFLAGS="\
+      -O2 -g -fno-omit-frame-pointer -DNDEBUG \
       -DSQLITE_ENABLE_DBSTAT_VTAB \
       -DSQLITE_ENABLE_BYTECODE_VTAB \
       -DSQLITE_ENABLE_FTS4 \
@@ -53,5 +54,15 @@ if [ ! -f "${SQLITE_BIN}" ]; then
   mv sqlite3 "${SQLITE_DIR}"
 fi
 
-# exec sqlite3 with all arguments
-exec "${SQLITE_BIN}" "$@"
+if [ "${GDB:-}" == 1 ]; then
+  GDB_ARGS=(
+      --eval-command="set breakpoint pending on"
+      --eval-command="break rust_panic"
+      -ex run
+      --args ${SQLITE_BIN}
+      "$@"
+  )
+  exec rust-gdb "${GDB_ARGS[@]}"
+else
+  exec "${SQLITE_BIN}" "$@"
+fi

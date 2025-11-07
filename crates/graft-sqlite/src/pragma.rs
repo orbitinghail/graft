@@ -1,9 +1,11 @@
 use std::fmt::Write;
 
 use culprit::{Culprit, ResultExt};
+use graft_core::lsn::LSNRangeExt;
 use graft_kernel::{
     page_status::PageStatus, rt::runtime_handle::RuntimeHandle, volume_reader::VolumeRead,
 };
+use indoc::indoc;
 use sqlite_plugin::{
     vars::SQLITE_ERROR,
     vfs::{Pragma, PragmaErr},
@@ -24,12 +26,6 @@ pub enum GraftPragma {
     /// `pragma graft_hydrate;`
     Hydrate,
 
-    /// `pragma graft_sync_errors;`
-    SyncErrors,
-
-    /// `pragma graft_reset;`
-    Reset,
-
     /// `pragma graft_version;`
     Version,
 }
@@ -46,8 +42,6 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "snapshot" => Ok(GraftPragma::Snapshot),
                 "pages" => Ok(GraftPragma::Pages),
                 "hydrate" => Ok(GraftPragma::Hydrate),
-                "reset" => Ok(GraftPragma::Reset),
-                "sync_errors" => Ok(GraftPragma::SyncErrors),
                 "version" => Ok(GraftPragma::Version),
                 _ => Err(PragmaErr::Fail(
                     SQLITE_ERROR,
@@ -66,58 +60,19 @@ impl GraftPragma {
         file: &mut VolFile,
     ) -> Result<Option<String>, Culprit<ErrCtx>> {
         match self {
-            GraftPragma::Status => {
-                let snapshot = file.snapshot_or_latest()?;
-                let page_count = file.page_count()?;
-                let status = file.handle().status().or_into_ctx()?;
-                let mut out = "Graft Status\n".to_string();
-                writeln!(&mut out, "Snapshot: {snapshot:?}")?;
-                writeln!(&mut out, "Page Count: {page_count}")?;
-                writeln!(&mut out, "Volume status: {status}",)?;
-                Ok(Some(out))
-            }
+            GraftPragma::Status => Ok(Some(format_graft_status(file)?)),
 
             GraftPragma::Snapshot => {
                 let snapshot = file.snapshot_or_latest()?;
                 Ok(Some(format!("{snapshot:?}")))
             }
 
-            GraftPragma::Pages => {
-                let mut out = format!("{:<8} | {:<6} | state\n", "pageno", "lsn");
-                let reader = file.reader()?;
-                let pages = reader.page_count().or_into_ctx()?;
+            GraftPragma::Pages => Ok(Some(format_graft_pages(file)?)),
 
-                for pageidx in pages.iter() {
-                    write!(&mut out, "{:<8} | ", pageidx.to_u32())?;
-                    match reader.page_status(pageidx).or_into_ctx()? {
-                        PageStatus::Pending(lsn) => {
-                            writeln!(&mut out, "{lsn:<6} | pending")?;
-                        }
-                        PageStatus::Empty(lsn) => {
-                            writeln!(
-                                &mut out,
-                                "{} | empty",
-                                match lsn {
-                                    Some(lsn) => format!("{lsn:<6}"),
-                                    None => format!("{:<6}", "_"),
-                                }
-                            )?;
-                        }
-                        PageStatus::Available(lsn) => {
-                            writeln!(&mut out, "{lsn:<6} | available")?;
-                        }
-                        PageStatus::Dirty => writeln!(&mut out, "{:<6} | dirty", "_")?,
-                    }
-                }
-
-                Ok(Some(out))
-            }
             GraftPragma::Hydrate => {
                 file.handle().hydrate().or_into_ctx()?;
                 Ok(None)
             }
-            GraftPragma::SyncErrors => todo!("list recent sync errors"),
-            GraftPragma::Reset => todo!("reset the volume to the remote"),
 
             GraftPragma::Version => {
                 const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -130,4 +85,108 @@ impl GraftPragma {
             }
         }
     }
+}
+
+macro_rules! pluralize {
+    (1, $s:literal) => {
+        $s
+    };
+    ($n:expr, $s:literal) => {
+        concat!($s, "s")
+    };
+}
+
+fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let mut f = String::new();
+
+    let tag = file.handle().tag();
+    writeln!(&mut f, "On tag {tag}")?;
+
+    let status = file.handle().status().or_into_ctx()?;
+    let local_changes = status.local_status.changes();
+    let remote_changes = status.remote_status.changes();
+
+    writeln!(
+        &mut f,
+        indoc! {"
+            Local Volume {} ({}) is grafted to
+            remote Volume {} ({}).
+        "},
+        status.local, status.local_status, status.remote, status.remote_status,
+    )?;
+
+    match (local_changes, remote_changes) {
+        (Some(local), Some(remote)) => {
+            writeln!(
+                &mut f,
+                indoc! {"
+                    The local and remote Volumes have diverged, and have {} and {}
+                    different commits each, respectively.
+                "},
+                local.len(),
+                remote.len(),
+            )?;
+        }
+        (Some(local), None) => {
+            writeln!(
+                &mut f,
+                indoc! {"
+                    The local Volume is {} {} ahead of the remote Volume.
+                      (use 'pragma graft_push' to push changes)
+                "},
+                local.len(),
+                pluralize!(local.len(), "commit")
+            )?;
+        }
+        (None, Some(remote)) => {
+            writeln!(
+                &mut f,
+                indoc! {"
+                    The remote Volume is {} {} ahead of the local Volume.
+                      (use 'pragma graft_push' to push changes)
+                "},
+                remote.len(),
+                pluralize!(remote.len(), "commit")
+            )?;
+        }
+        (None, None) => {
+            writeln!(
+                &mut f,
+                "The local Volume is up to date with the remote Volume."
+            )?;
+        }
+    }
+
+    Ok(f)
+}
+
+fn format_graft_pages(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let mut f = format!("{:<8} | {:<6} | state\n", "pageno", "lsn");
+    let reader = file.reader()?;
+    let pages = reader.page_count().or_into_ctx()?;
+
+    for pageidx in pages.iter() {
+        write!(&mut f, "{:<8} | ", pageidx.to_u32())?;
+        match reader.page_status(pageidx).or_into_ctx()? {
+            PageStatus::Pending(lsn) => {
+                writeln!(&mut f, "{lsn:<6} | pending")?;
+            }
+            PageStatus::Empty(lsn) => {
+                writeln!(
+                    &mut f,
+                    "{} | empty",
+                    match lsn {
+                        Some(lsn) => format!("{lsn:<6}"),
+                        None => format!("{:<6}", "_"),
+                    }
+                )?;
+            }
+            PageStatus::Available(lsn) => {
+                writeln!(&mut f, "{lsn:<6} | available")?;
+            }
+            PageStatus::Dirty => writeln!(&mut f, "{:<6} | dirty", "_")?,
+        }
+    }
+
+    Ok(f)
 }

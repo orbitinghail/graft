@@ -1190,6 +1190,7 @@ dependencies = [
  "graft-core",
  "graft-kernel",
  "graft-tracing",
+ "indoc",
  "parking_lot",
  "sqlite-plugin",
  "thiserror 2.0.17",
@@ -1601,6 +1602,15 @@ checksum = "6717a8d2a5a929a1a2eb43a12812498ed141a0bcfb7e8f7844fbdbe4303bba9f"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.0",
+]
+
+[[package]]
+name = "indoc"
+version = "2.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79cf5c93f93228cf8efb3ba362535fb11199ac548a09ce117c9b1adc3030d706"
+dependencies = [
+ "rustversion",
 ]
 
 [[package]]
