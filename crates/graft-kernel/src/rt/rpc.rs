@@ -4,7 +4,7 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 
-use crate::KernelErr;
+use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote, rt::job::Job};
 
 type Result<T> = culprit::Result<T, KernelErr>;
 
@@ -20,6 +20,38 @@ pub enum Rpc {
         max_lsn: Option<LSN>,
         complete: oneshot::Sender<Result<()>>,
     },
+    FetchVolume {
+        vid: VolumeId,
+        complete: oneshot::Sender<Result<()>>,
+    },
+}
+
+impl Rpc {
+    pub async fn run(
+        self,
+        storage: &FjallStorage,
+        remote: &Remote,
+    ) -> culprit::Result<(), KernelErr> {
+        macro_rules! run_job {
+            ($job:expr, $complete:ident) => {
+                $complete.send($job.run(storage, remote).await).unwrap();
+            };
+        }
+
+        match self {
+            Rpc::FetchSegmentRange { sid, range, complete } => {
+                run_job!(Job::fetch_segment(sid, range), complete);
+            }
+            Rpc::HydrateVolume { vid, max_lsn, complete } => {
+                run_job!(Job::hydrate_volume(vid, max_lsn), complete);
+            }
+            Rpc::FetchVolume { vid, complete } => {
+                run_job!(Job::fetch_volume(vid, None), complete);
+            }
+        };
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +72,11 @@ impl RpcHandle {
     pub fn hydrate_volume(&self, vid: VolumeId, max_lsn: Option<LSN>) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.rpc(Rpc::HydrateVolume { vid, max_lsn, complete: tx }, rx)
+    }
+
+    pub fn fetch_volume(&self, vid: VolumeId) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.rpc(Rpc::FetchVolume { vid, complete: tx }, rx)
     }
 
     fn rpc<T>(&self, msg: Rpc, recv: oneshot::Receiver<T>) -> T {

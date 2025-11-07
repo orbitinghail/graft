@@ -3,7 +3,8 @@ use std::fmt::Write;
 use culprit::{Culprit, ResultExt};
 use graft_core::lsn::LSNRangeExt;
 use graft_kernel::{
-    page_status::PageStatus, rt::runtime_handle::RuntimeHandle, volume_reader::VolumeRead,
+    graft::AheadStatus, page_status::PageStatus, rt::runtime_handle::RuntimeHandle,
+    volume_reader::VolumeRead,
 };
 use indoc::indoc;
 use sqlite_plugin::{
@@ -19,6 +20,9 @@ pub enum GraftPragma {
 
     /// `pragma graft_snapshot;`
     Snapshot,
+
+    /// `pragma graft_fetch;`
+    Fetch,
 
     /// `pragma graft_pages;`
     Pages,
@@ -40,6 +44,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
             return match suffix {
                 "status" => Ok(GraftPragma::Status),
                 "snapshot" => Ok(GraftPragma::Snapshot),
+                "fetch" => Ok(GraftPragma::Fetch),
                 "pages" => Ok(GraftPragma::Pages),
                 "hydrate" => Ok(GraftPragma::Hydrate),
                 "version" => Ok(GraftPragma::Version),
@@ -65,6 +70,24 @@ impl GraftPragma {
             GraftPragma::Snapshot => {
                 let snapshot = file.snapshot_or_latest()?;
                 Ok(Some(format!("{snapshot:?}")))
+            }
+
+            GraftPragma::Fetch => {
+                let pre = file.handle().status().or_into_ctx()?;
+                file.handle().fetch().or_into_ctx()?;
+                let post = file.handle().status().or_into_ctx()?;
+
+                if let Some(diff) =
+                    AheadStatus::new(post.remote_status.head, pre.remote_status.head).changes()
+                {
+                    Ok(Some(format!(
+                        "Pulled LSNs {} into remote Volume {}",
+                        diff.to_string(),
+                        post.remote
+                    )))
+                } else {
+                    Ok(Some(format!("No changes to remote Volume {}", post.remote)))
+                }
             }
 
             GraftPragma::Pages => Ok(Some(format_graft_pages(file)?)),

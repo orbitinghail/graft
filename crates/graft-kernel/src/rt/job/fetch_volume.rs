@@ -16,7 +16,7 @@ use crate::{
     remote::Remote,
 };
 
-/// Pulls commits and metadata from a remote.
+/// Fetches new commits and metadata from a remote.
 pub struct Opts {
     /// The Volume to fetch.
     pub vid: VolumeId,
@@ -27,7 +27,7 @@ pub struct Opts {
 
 impl Debug for Opts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut out = f.debug_struct("PullVolume");
+        let mut out = f.debug_struct("FetchVolume");
         out.field("vid", &self.vid);
         if let Some(max_lsn) = self.max_lsn {
             out.field("max_lsn", &max_lsn.to_string());
@@ -53,7 +53,7 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
     let end = opts.max_lsn.unwrap_or(LSN::LAST);
     let lsns = start..=end;
 
-    tracing::debug!(vid = ?opts.vid, lsns = %lsns.to_string(), "pulling volume commits");
+    tracing::debug!(vid = ?opts.vid, lsns = %lsns.to_string(), "fetching volume commits");
 
     // figure out which lsns we are missing
     let existing_lsns = storage.read().lsns(&opts.vid, &lsns).or_into_ctx()?;

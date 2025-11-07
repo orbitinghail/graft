@@ -7,15 +7,15 @@ use tryiter::TryIteratorExt;
 use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote};
 
 mod fetch_segment;
+mod fetch_volume;
 mod hydrate_volume;
-mod pull_volume;
 mod recover_pending_commit;
 mod remote_commit;
 mod sync_remote_to_local;
 
 pub enum Job {
     /// Pulls commits and metadata from a remote.
-    PullVolume(pull_volume::Opts),
+    FetchVolume(fetch_volume::Opts),
 
     /// Commits a Graft's local changes into its remote.
     RemoteCommit(remote_commit::Opts),
@@ -37,7 +37,7 @@ pub enum Job {
 impl Debug for Job {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PullVolume(opts) => opts.fmt(f),
+            Self::FetchVolume(opts) => opts.fmt(f),
             Self::RemoteCommit(opts) => opts.fmt(f),
             Self::RecoverPendingCommit(opts) => opts.fmt(f),
             Self::SyncRemoteToLocal(opts) => opts.fmt(f),
@@ -48,8 +48,8 @@ impl Debug for Job {
 }
 
 impl Job {
-    pub fn pull_volume(vid: VolumeId, max_lsn: Option<LSN>) -> Self {
-        Job::PullVolume(pull_volume::Opts { vid, max_lsn })
+    pub fn fetch_volume(vid: VolumeId, max_lsn: Option<LSN>) -> Self {
+        Job::FetchVolume(fetch_volume::Opts { vid, max_lsn })
     }
 
     pub fn remote_commit(graft: VolumeId) -> Self {
@@ -93,7 +93,7 @@ impl Job {
                 } else if local_changes {
                     jobs.push(Self::remote_commit(graft.local));
                 } else {
-                    jobs.push(Self::pull_volume(graft.remote, None));
+                    jobs.push(Self::fetch_volume(graft.remote, None));
                     jobs.push(Self::sync_remote_to_local(graft.local))
                 }
             }
@@ -109,7 +109,7 @@ impl Job {
         remote: &Remote,
     ) -> culprit::Result<(), KernelErr> {
         match self {
-            Job::PullVolume(opts) => pull_volume::run(storage, remote, opts).await,
+            Job::FetchVolume(opts) => fetch_volume::run(storage, remote, opts).await,
             Job::RemoteCommit(opts) => remote_commit::run(storage, remote, opts).await,
             Job::RecoverPendingCommit(opts) => {
                 recover_pending_commit::run(storage, remote, opts).await

@@ -51,20 +51,7 @@ impl<S: Stream<Item = Event>> Runtime<S> {
     async fn run(&mut self) -> culprit::Result<(), KernelErr> {
         while let Some(event) = self.events.next().await {
             match event {
-                Event::Rpc(rpc) => match rpc {
-                    Rpc::FetchSegmentRange { sid, range, complete } => {
-                        let job = Job::fetch_segment(sid, range);
-                        complete
-                            .send(job.run(&self.storage, &self.remote).await)
-                            .unwrap();
-                    }
-                    Rpc::HydrateVolume { vid, max_lsn, complete } => {
-                        let job = Job::hydrate_volume(vid, max_lsn);
-                        complete
-                            .send(job.run(&self.storage, &self.remote).await)
-                            .unwrap();
-                    }
-                },
+                Event::Rpc(rpc) => rpc.run(&self.storage, &self.remote).await?,
                 Event::Tick(_instant) => {
                     for job in Job::collect(&self.storage)? {
                         job.run(&self.storage, &self.remote).await?

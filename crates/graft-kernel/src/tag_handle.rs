@@ -98,4 +98,11 @@ impl TagHandle {
             Ok(())
         }
     }
+
+    /// Fetches any new changes to the remote volume. Does not immediately pull
+    /// those changes into the local volume. Either enable autosync or use
+    /// `pull` to do that.
+    pub fn fetch(&self) -> Result<()> {
+        self.runtime.rpc().fetch_volume(self.remote()?)
+    }
 }
