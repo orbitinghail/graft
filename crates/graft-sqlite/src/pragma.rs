@@ -265,15 +265,12 @@ fn push(file: &mut VolFile) -> Result<String, Culprit<ErrCtx>> {
                 Pushed LSNs {} from local Volume {}
                 to remote Volume {} @ {}
             ",
-            pushed
-                .map(|lsns| lsns.to_string())
-                .unwrap_or("unknown".into()),
+            pushed.map_or("unknown".into(), |lsns| lsns.to_string()),
             post.local,
             post.remote,
             post.remote_status
                 .base
-                .map(|l| l.to_string())
-                .unwrap_or("unknown".into())
+                .map_or("unknown".into(), |l| l.to_string())
         ))
     } else {
         Ok("Everything up-to-date".to_string())
