@@ -49,8 +49,7 @@ pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<
     let start = reader
         .latest_lsn(&opts.vid)
         .or_into_ctx()?
-        .map(|lsn| lsn.next())
-        .unwrap_or(LSN::FIRST);
+        .map_or(LSN::FIRST, |lsn| lsn.next());
     let end = opts.max_lsn.unwrap_or(LSN::LAST);
     let lsns = start..=end;
 

@@ -65,7 +65,7 @@ fn get_outstanding_frames(
     };
 
     // build a snapshot to search for commits
-    let snapshot = Snapshot::new(opts.vid.clone(), LSN::FIRST..=target_lsn);
+    let snapshot = Snapshot::new(opts.vid, LSN::FIRST..=target_lsn);
 
     // the set of pages we are searching for.
     // we remove pages from this set as we iterate through commits.

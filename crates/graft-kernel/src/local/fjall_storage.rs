@@ -536,8 +536,7 @@ impl<'a> ReadWriteGuard<'a> {
         let commit_lsn = self
             .read
             .latest_lsn(&graft.local)?
-            .map(|lsn| lsn.next())
-            .unwrap_or(LSN::FIRST);
+            .map_or(LSN::FIRST, |lsn| lsn.next());
 
         tracing::debug!(vid=?graft.local, %commit_lsn, "local commit");
 

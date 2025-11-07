@@ -334,7 +334,7 @@ impl VfsFile for VolFile {
             let change_counter = &hash.to_be_bytes()[..4];
 
             // write the latest change counter to the buffer
-            data[fcc_offset..fcc_offset + 4].copy_from_slice(&change_counter);
+            data[fcc_offset..fcc_offset + 4].copy_from_slice(change_counter);
         }
 
         Ok(data.len())

@@ -164,7 +164,7 @@ where
             })
     }
 
-    pub fn first<'a, P>(&self, prefix: &'a P) -> Result<Option<(K, V)>>
+    pub fn first<P>(&self, prefix: &P) -> Result<Option<(K, V)>>
     where
         K: FjallKeyPrefix<Prefix = P>,
         P: AsRef<[u8]>,
