@@ -76,7 +76,7 @@ impl SegmentBuilder {
         self.chunks.push(chunk.into());
     }
 
-    pub fn write(&mut self, pageidx: PageIdx, page: Page) {
+    pub fn write(&mut self, pageidx: PageIdx, page: &Page) {
         if let Some(last_pageidx) = self.last_pageidx.replace(pageidx) {
             assert!(pageidx > last_pageidx, "Pages must be pushed in order")
         }
@@ -212,7 +212,7 @@ mod test {
 
         // Push 1.5 frames worth of pages
         for i in 1..=96 {
-            segment.write(PageIdx::must_new(i), Page::test_filled(i as u8));
+            segment.write(PageIdx::must_new(i), &Page::test_filled(i as u8));
         }
 
         // Finish the segment

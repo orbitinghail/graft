@@ -1,4 +1,5 @@
-use crate::volume_name::VolumeNameErr;
+use std::str::Utf8Error;
+
 use culprit::Result;
 use fjall::Slice;
 use graft_core::{
@@ -16,8 +17,8 @@ pub enum DecodeErr {
     #[error("Invalid page index: {0}")]
     InvalidPageIdx(#[from] ConvertToPageIdxErr),
 
-    #[error("Invalid handle ID: {0}")]
-    InvalidHandleId(#[from] VolumeNameErr),
+    #[error(transparent)]
+    InvalidUtf8(#[from] Utf8Error),
 
     #[error("Invalid VolumeID: {0}")]
     GidParseErr(#[from] graft_core::gid::GidParseErr),
@@ -29,18 +30,29 @@ pub enum DecodeErr {
     PageSizeErr(#[from] PageSizeErr),
 }
 
-pub trait FjallRepr: Sized + Clone {
+pub trait FjallReprRef {
     /// Converts Self into a type that can be cheaply converted into a byte
     /// slice. For `ZeroCopy` types, this may simply be the raw bytes of Self.
     fn as_slice(&self) -> impl AsRef<[u8]>;
 
-    /// Converts a Fjall Slice into Self.
-    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr>;
-
     /// Converts Self into a Fjall Slice
     #[inline]
-    fn into_slice(self) -> Slice {
+    fn into_slice(self) -> Slice
+    where
+        Self: Sized,
+    {
         Slice::new(self.as_slice().as_ref())
+    }
+}
+
+pub trait FjallRepr: FjallReprRef + Clone {
+    /// Converts a Fjall Slice into Self.
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr>;
+}
+
+impl FjallReprRef for str {
+    fn as_slice(&self) -> impl AsRef<[u8]> {
+        self
     }
 }
 
@@ -51,7 +63,7 @@ macro_rules! proxy_to_fjall_repr {
         into_proxy($me:ident) $into_proxy:block
         from_proxy($iproxy:ident) $from_proxy:block
     ) => {
-        impl FjallRepr for $ty {
+        impl FjallReprRef for $ty {
             #[inline]
             fn as_slice(&self) -> impl AsRef<[u8]> {
                 let $me = self.clone();
@@ -59,18 +71,23 @@ macro_rules! proxy_to_fjall_repr {
             }
 
             #[inline]
+            fn into_slice(self) -> Slice
+            where
+                Self: Sized,
+            {
+                let $me = self;
+                Slice::new($into_proxy.as_ref())
+            }
+        }
+
+        impl FjallRepr for $ty {
+            #[inline]
             fn try_from_slice(
                 slice: Slice,
             ) -> Result<Self, $crate::local::fjall_storage::fjall_repr::DecodeErr> {
                 let $iproxy: &$proxy =
                     <$proxy>::try_ref_from_unaligned_bytes(&slice).or_into_ctx()?;
                 $from_proxy
-            }
-
-            #[inline]
-            fn into_slice(self) -> Slice {
-                let $me = self;
-                Slice::new($into_proxy.as_ref())
             }
         }
     };

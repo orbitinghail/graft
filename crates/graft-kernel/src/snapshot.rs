@@ -1,59 +1,73 @@
+use std::ops::RangeInclusive;
+
 use graft_core::{VolumeId, lsn::LSN, volume_ref::VolumeRef};
+use smallvec::SmallVec;
 
-use crate::search_path::SearchPath;
-
-#[derive(Clone)]
+/// A `Snapshot` represents a logical view of a Volume, possibly made
+/// up of LSN ranges from multiple physical Volumes.
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Snapshot {
-    vid: VolumeId,
-    path: SearchPath,
+    path: SmallVec<[VolumeRangeRef; 1]>,
 }
 
-impl std::fmt::Debug for Snapshot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Snapshot")
-            .field(&self.vid)
-            .field(&self.lsn())
-            .finish()
+/// A reference to a volume and a range of LSNs within that volume.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VolumeRangeRef {
+    pub vid: VolumeId,
+    pub lsns: RangeInclusive<LSN>,
+}
+
+impl VolumeRangeRef {
+    pub fn start_ref(&self) -> VolumeRef {
+        VolumeRef::new(self.vid.clone(), *self.lsns.start())
+    }
+
+    pub fn end_ref(&self) -> VolumeRef {
+        VolumeRef::new(self.vid.clone(), *self.lsns.end())
     }
 }
 
 impl Snapshot {
-    pub fn new(vid: VolumeId, path: SearchPath) -> Self {
-        Self { vid, path }
+    pub const EMPTY: Self = Self { path: SmallVec::new_const() };
+
+    pub fn new(vid: VolumeId, lsns: RangeInclusive<LSN>) -> Self {
+        assert!(!lsns.is_empty());
+        Self {
+            path: SmallVec::from_const([VolumeRangeRef { vid, lsns }]),
+        }
     }
 
-    pub fn vid(&self) -> &VolumeId {
-        &self.vid
+    pub fn head(&self) -> Option<(&VolumeId, LSN)> {
+        self.path
+            .first()
+            .map(|entry| (&entry.vid, *entry.lsns.end()))
     }
 
-    pub fn lsn(&self) -> Option<LSN> {
-        self.path.first().map(|(_, lsn)| lsn)
+    pub fn is_empty(&self) -> bool {
+        self.path.is_empty()
     }
 
-    pub fn search_path(&self) -> &SearchPath {
-        &self.path
+    pub fn append(&mut self, vid: VolumeId, lsns: RangeInclusive<LSN>) {
+        assert!(!lsns.is_empty());
+        self.path.push(VolumeRangeRef { vid, lsns });
     }
-}
 
-impl PartialEq for Snapshot {
-    fn eq(&self, other: &Self) -> bool {
-        // 1. We check the LSN rather than the whole path, as checkpoints may
-        // cause the path to change without changing the logical representation
-        // of the snapshot.
-        // 2. We check that the VolumeId is the same
-        self.vid == other.vid && self.lsn() == other.lsn()
-    }
-}
-impl Eq for Snapshot {}
-
-impl PartialEq<VolumeRef> for Snapshot {
-    fn eq(&self, other: &VolumeRef) -> bool {
-        &self.vid == other.vid() && self.lsn() == Some(other.lsn())
+    /// iterate through all of the volume range references in the snapshot
+    pub fn iter(&self) -> std::slice::Iter<'_, VolumeRangeRef> {
+        self.path.iter()
     }
 }
 
-impl PartialEq<Snapshot> for VolumeRef {
-    fn eq(&self, other: &Snapshot) -> bool {
-        other.eq(self)
+impl IntoIterator for Snapshot {
+    type Item = VolumeRangeRef;
+    type IntoIter = smallvec::IntoIter<[VolumeRangeRef; 1]>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.path.into_iter()
+    }
+}
+
+impl std::fmt::Debug for Snapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Snapshot").field(&self.path.first()).finish()
     }
 }

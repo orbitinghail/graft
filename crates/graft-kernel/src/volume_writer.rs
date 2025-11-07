@@ -1,26 +1,25 @@
 use culprit::{Result, ResultExt};
-use graft_core::{PageCount, PageIdx, commit::SegmentIdx, page::Page, volume_ref::VolumeRef};
+use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
 
 use crate::{
     KernelErr,
     page_status::PageStatus,
     rt::runtime_handle::RuntimeHandle,
     snapshot::Snapshot,
-    volume_name::VolumeName,
-    volume_reader::{VolumeRead, VolumeReadRef},
+    volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
 };
 
 /// A type which can write to a Volume
 pub trait VolumeWrite {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), KernelErr>;
     fn truncate(&mut self, page_count: PageCount) -> Result<(), KernelErr>;
-    fn commit(self) -> Result<VolumeRef, KernelErr>;
+    fn commit(self) -> Result<VolumeReader, KernelErr>;
 }
 
 #[derive(Debug)]
 pub struct VolumeWriter {
-    name: VolumeName,
     runtime: RuntimeHandle,
+    graft: VolumeId,
     snapshot: Snapshot,
     page_count: PageCount,
     segment: SegmentIdx,
@@ -28,15 +27,15 @@ pub struct VolumeWriter {
 
 impl VolumeWriter {
     pub(crate) fn new(
-        name: VolumeName,
         runtime: RuntimeHandle,
+        graft: VolumeId,
         snapshot: Snapshot,
         page_count: PageCount,
     ) -> Self {
         let segment = runtime.create_staged_segment();
         Self {
-            name,
             runtime,
+            graft,
             snapshot,
             page_count,
             segment,
@@ -101,11 +100,18 @@ impl VolumeWrite for VolumeWriter {
             .or_into_ctx()
     }
 
-    fn commit(self) -> Result<VolumeRef, KernelErr> {
-        self.runtime
+    fn commit(self) -> Result<VolumeReader, KernelErr> {
+        let snapshot = self
+            .runtime
             .storage()
-            .commit(self.name, self.snapshot, self.page_count, self.segment)
-            .or_into_ctx()
+            .commit(
+                self.graft.clone(),
+                self.snapshot,
+                self.page_count,
+                self.segment,
+            )
+            .or_into_ctx()?;
+        Ok(VolumeReader::new(self.runtime, self.graft, snapshot))
     }
 }
 

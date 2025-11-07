@@ -1184,6 +1184,7 @@ name = "graft-sqlite"
 version = "0.1.5"
 dependencies = [
  "bytes",
+ "bytestring",
  "culprit",
  "enum_dispatch",
  "graft-core",

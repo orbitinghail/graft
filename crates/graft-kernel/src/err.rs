@@ -1,8 +1,5 @@
-use crate::{
-    local::fjall_storage::FjallStorageErr,
-    remote::RemoteErr,
-    volume_name::{VolumeName, VolumeNameErr},
-};
+use crate::{local::fjall_storage::FjallStorageErr, remote::RemoteErr};
+use bytestring::ByteString;
 use graft_core::VolumeId;
 
 #[derive(Debug, thiserror::Error)]
@@ -17,16 +14,6 @@ pub enum KernelErr {
     Logical(#[from] LogicalErr),
 }
 
-impl KernelErr {
-    pub(crate) fn is_remote_not_found(&self) -> bool {
-        if let KernelErr::Remote(err) = self {
-            err.is_not_found()
-        } else {
-            false
-        }
-    }
-}
-
 impl From<FjallStorageErr> for KernelErr {
     fn from(value: FjallStorageErr) -> Self {
         match value {
@@ -36,38 +23,31 @@ impl From<FjallStorageErr> for KernelErr {
     }
 }
 
-impl From<VolumeNameErr> for KernelErr {
-    #[inline]
-    fn from(value: VolumeNameErr) -> Self {
-        KernelErr::Logical(LogicalErr::InvalidVolumeName(value))
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum LogicalErr {
     #[error("Unknown Volume {0}")]
     VolumeNotFound(VolumeId),
 
-    #[error("Concurrent write to Volume {0} detected")]
-    ConcurrentWrite(VolumeId),
+    #[error("Tag `{0}` not found")]
+    TagNotFound(ByteString),
 
-    #[error("Invalid Volume Name")]
-    InvalidVolumeName(#[from] VolumeNameErr),
+    #[error("Concurrent write to Graft {0}")]
+    GraftConcurrentWrite(VolumeId),
 
-    #[error("Graft `{0}` not found")]
-    GraftNotFound(VolumeName),
+    #[error("Graft {0} not found")]
+    GraftNotFound(VolumeId),
 
-    #[error("Graft `{0}` has a pending commit and needs recovery")]
-    GraftNeedsRecovery(VolumeName),
+    #[error("Graft {0} has a pending commit and needs recovery")]
+    GraftNeedsRecovery(VolumeId),
 
-    #[error("Graft `{0}` has diverged from the remote")]
-    GraftDiverged(VolumeName),
+    #[error("Graft {0} has diverged from the remote")]
+    GraftDiverged(VolumeId),
 
     #[error(
-        "Graft `{name}` has a different remote Volume than expected; expected={expected}, actual={actual}"
+        "Graft `{vid}` has a different remote Volume than expected; expected={expected}, actual={actual}"
     )]
     GraftRemoteMismatch {
-        name: VolumeName,
+        vid: VolumeId,
         expected: VolumeId,
         actual: VolumeId,
     },

@@ -1,36 +1,30 @@
 use std::{fmt::Display, ops::RangeInclusive};
 
 use bilrost::Message;
-use culprit::ResultExt;
 
-use crate::{
-    KernelErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
-    volume_reader::VolumeReader, volume_writer::VolumeWriter,
-};
-use graft_core::{PageCount, VolumeId, commit_hash::CommitHash, lsn::LSN};
-
-type Result<T> = culprit::Result<T, KernelErr>;
+use graft_core::{VolumeId, commit_hash::CommitHash, lsn::LSN};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct SyncPoint {
-    /// The local LSN
+    /// This Graft is attached to the Remote Volume at this LSN
     #[bilrost(1)]
-    pub local: LSN,
-
-    /// The remote LSN
-    #[bilrost(2)]
     pub remote: LSN,
+
+    /// All commits up to this watermark in the local volume have been written
+    /// to the remote.
+    #[bilrost(2)]
+    pub local_watermark: Option<LSN>,
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct PendingCommit {
     /// The LSN we are syncing from the local Volume
     #[bilrost(1)]
-    pub local_lsn: LSN,
+    pub local: LSN,
 
     /// The LSN we are creating in the remote Volume
     #[bilrost(2)]
-    pub commit_lsn: LSN,
+    pub commit: LSN,
 
     /// The pending remote commit hash. This is used to determine whether or not
     /// the commit has landed in the remote, in the case that we are interrupted
@@ -42,53 +36,43 @@ pub struct PendingCommit {
 impl From<PendingCommit> for SyncPoint {
     fn from(value: PendingCommit) -> Self {
         Self {
-            local: value.local_lsn,
-            remote: value.commit_lsn,
+            remote: value.commit,
+            local_watermark: Some(value.local),
         }
     }
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
-pub struct GraftState {
-    /// The Volume name
-    #[bilrost(1)]
-    pub name: VolumeName,
-
+pub struct Graft {
     /// The local Volume backing this Graft
-    #[bilrost(2)]
+    #[bilrost(1)]
     pub local: VolumeId,
 
     /// The remote Volume backing this Graft.
-    #[bilrost(3)]
+    #[bilrost(2)]
     pub remote: VolumeId,
 
-    /// The most recent successful sync point for this Graft
-    #[bilrost(4)]
+    /// Metadata keeping track of which portion of the local and remote volume
+    /// this Graft cares about.
+    #[bilrost(3)]
     pub sync: Option<SyncPoint>,
 
     /// Presence of the `pending_commit` field means that the Push operation is in
     /// the process of committing to the remote. If no such Push job is currently
     /// running (i.e. it was interrupted), this field must be used to resume or
     /// abort the commit process.
-    #[bilrost(5)]
+    #[bilrost(4)]
     pub pending_commit: Option<PendingCommit>,
 }
 
-impl GraftState {
+impl Graft {
     pub fn new(
-        name: VolumeName,
         local: VolumeId,
         remote: VolumeId,
         sync: Option<SyncPoint>,
         pending_commit: Option<PendingCommit>,
     ) -> Self {
-        Self {
-            name,
-            local,
-            remote,
-            sync,
-            pending_commit,
-        }
+        Self { local, remote, sync, pending_commit }
     }
 
     pub fn with_sync(self, sync: Option<SyncPoint>) -> Self {
@@ -107,127 +91,45 @@ impl GraftState {
         self.pending_commit.as_ref()
     }
 
-    pub fn local_changes(&self, snapshot: &Snapshot) -> Option<RangeInclusive<LSN>> {
-        assert_eq!(&self.local, snapshot.vid());
-        AheadStatus {
-            head: snapshot.lsn(),
-            base: self.sync().map(|s| s.local),
-        }
-        .changes()
+    pub fn local_watermark(&self) -> Option<LSN> {
+        self.sync().and_then(|s| s.local_watermark)
     }
 
-    pub fn remote_changes(&self, snapshot: &Snapshot) -> Option<RangeInclusive<LSN>> {
-        assert_eq!(&self.remote, snapshot.vid());
+    pub fn local_changes(&self, head: Option<LSN>) -> Option<RangeInclusive<LSN>> {
+        AheadStatus { head, base: self.local_watermark() }.changes()
+    }
+
+    pub fn remote_changes(&self, head: Option<LSN>) -> Option<RangeInclusive<LSN>> {
         AheadStatus {
-            head: snapshot.lsn(),
+            head,
             base: self.sync().map(|s| s.remote),
         }
         .changes()
     }
 
-    pub fn status(&self, latest_local: &Snapshot, latest_remote: &Snapshot) -> GraftStatus {
-        assert_eq!(
-            &self.local,
-            latest_local.vid(),
-            "BUG: local snapshot out of sync"
-        );
-        assert_eq!(
-            &self.remote,
-            latest_remote.vid(),
-            "BUG: remote snapshot out of sync"
-        );
+    pub fn status(&self, latest_local: Option<LSN>, latest_remote: Option<LSN>) -> GraftStatus {
         GraftStatus {
-            local: latest_local.clone(),
-            remote: latest_remote.clone(),
-            sync: self.sync.clone(),
+            local: self.local.clone(),
+            local_status: AheadStatus {
+                head: latest_local,
+                base: self.local_watermark(),
+            },
+            remote: self.remote.clone(),
+            remote_status: AheadStatus {
+                head: latest_remote,
+                base: self.sync().map(|s| s.remote),
+            },
         }
     }
 }
 
-pub struct Graft {
-    runtime: RuntimeHandle,
-    name: VolumeName,
-}
-
-impl Graft {
-    pub(crate) fn new(runtime: RuntimeHandle, name: VolumeName) -> Self {
-        Self { runtime, name }
-    }
-
-    pub fn name(&self) -> &VolumeName {
-        &self.name
-    }
-
-    pub fn state(&self) -> Result<GraftState> {
-        self.runtime
-            .storage()
-            .read()
-            .graft(&self.name)
-            .or_into_ctx()
-    }
-
-    pub fn status(&self) -> Result<GraftStatus> {
-        let reader = self.runtime.storage().read();
-        let state = reader.graft(&self.name).or_into_ctx()?;
-        let latest_local = reader.snapshot(&state.local).or_into_ctx()?;
-        let latest_remote = reader.snapshot(&state.remote).or_into_ctx()?;
-        Ok(state.status(&latest_local, &latest_remote))
-    }
-
-    #[inline]
-    pub fn page_count(&self) -> Result<PageCount> {
-        let reader = self.runtime.storage().read();
-        let state = reader.graft(&self.name).or_into_ctx()?;
-        let snapshot = reader.snapshot(&state.local).or_into_ctx()?;
-        reader.page_count(&snapshot).or_into_ctx()
-    }
-
-    #[inline]
-    pub fn snapshot(&self) -> Result<Snapshot> {
-        self.snapshot_at(None)
-    }
-
-    pub fn snapshot_at(&self, lsn: Option<LSN>) -> Result<Snapshot> {
-        let reader = self.runtime.storage().read();
-        let state = reader.graft(&self.name).or_into_ctx()?;
-        reader.snapshot_at(&state.local, lsn).or_into_ctx()
-    }
-
-    #[inline]
-    pub fn reader(&self) -> Result<VolumeReader> {
-        self.reader_at(None)
-    }
-
-    pub fn reader_at(&self, lsn: Option<LSN>) -> Result<VolumeReader> {
-        Ok(VolumeReader::new(
-            self.name.clone(),
-            self.runtime.clone(),
-            self.snapshot_at(lsn)?,
-        ))
-    }
-
-    pub fn writer(&self) -> Result<VolumeWriter> {
-        self.reader()?.try_into()
-    }
-
-    /// Hydrates the volume by downloading all missing pages from remote storage.
-    /// This operation blocks until all pages are downloaded.
-    pub fn hydrate(&self) -> Result<()> {
-        let state = self.state()?;
-        self.runtime.rpc().hydrate_volume(state.remote, None)
-    }
-}
-
-struct AheadStatus {
+#[derive(Debug)]
+pub struct AheadStatus {
     head: Option<LSN>,
     base: Option<LSN>,
 }
 
 impl AheadStatus {
-    fn is_empty(&self) -> bool {
-        self.head.is_none() && self.base.is_none()
-    }
-
     fn changes(&self) -> Option<RangeInclusive<LSN>> {
         match (self.base, self.head) {
             (None, None) => None,
@@ -260,23 +162,18 @@ impl Display for AheadStatus {
 
 #[derive(Debug)]
 pub struct GraftStatus {
-    pub local: Snapshot,
-    pub remote: Snapshot,
-    pub sync: Option<SyncPoint>,
-}
-
-impl GraftStatus {
-    pub fn sync(&self) -> Option<&SyncPoint> {
-        self.sync.as_ref()
-    }
+    pub local: VolumeId,
+    pub local_status: AheadStatus,
+    pub remote: VolumeId,
+    pub remote_status: AheadStatus,
 }
 
 /// Output a human readable concise description of the status of this named
 /// volume.
 ///
 /// # Output examples:
-///  - `_`: empty volume
-///  - `123`: never synced
+///  - `_ r_`: empty volume
+///  - `123 r_`: never synced
 ///  - `123 r130`: remote and local in sync
 ///  - `_ r130+130`: remote is 130 commits ahead, local is empty
 ///  - `123+3 r130`: local is 3 commits ahead
@@ -284,18 +181,6 @@ impl GraftStatus {
 ///  - `123+2 r130+3`: local and remote have diverged
 impl Display for GraftStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let local = AheadStatus {
-            head: self.local.lsn(),
-            base: self.sync().map(|s| s.local),
-        };
-        let remote = AheadStatus {
-            head: self.remote.lsn(),
-            base: self.sync().map(|s| s.remote),
-        };
-        if remote.is_empty() {
-            write!(f, "{local}")
-        } else {
-            write!(f, "{local} r{remote}")
-        }
+        write!(f, "{} r{}", self.local_status, self.remote_status)
     }
 }

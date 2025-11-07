@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use bytestring::ByteString;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
 use graft_core::{
@@ -8,41 +9,40 @@ use graft_core::{
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
 
 use crate::{
-    local::fjall_storage::fjall_repr::{DecodeErr, FjallRepr},
+    local::fjall_storage::fjall_repr::{DecodeErr, FjallRepr, FjallReprRef},
     proxy_to_fjall_repr,
-    volume_name::VolumeName,
 };
 
 pub trait FjallKeyPrefix {
     type Prefix: AsRef<[u8]>;
 }
 
-impl FjallRepr for VolumeName {
+impl FjallReprRef for VolumeId {
     #[inline]
     fn as_slice(&self) -> impl AsRef<[u8]> {
         self.as_bytes()
-    }
-
-    #[inline]
-    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-        VolumeName::try_from(Bytes::from(slice)).or_into_ctx()
-    }
-
-    #[inline]
-    fn into_slice(self) -> Slice {
-        Bytes::from(self).into()
     }
 }
 
 impl FjallRepr for VolumeId {
     #[inline]
-    fn as_slice(&self) -> impl AsRef<[u8]> {
-        self.as_bytes()
-    }
-
-    #[inline]
     fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
         VolumeId::try_from(Bytes::from(slice)).or_into_ctx()
+    }
+}
+
+impl FjallReprRef for ByteString {
+    #[inline]
+    fn as_slice(&self) -> impl AsRef<[u8]> {
+        self
+    }
+}
+
+impl FjallRepr for ByteString {
+    #[inline]
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
+        let bytes: Bytes = slice.into();
+        ByteString::try_from(bytes).or_into_ctx()
     }
 }
 
@@ -147,14 +147,6 @@ mod tests {
     };
 
     use super::*;
-
-    #[graft_test::test]
-    fn test_volume_name() {
-        test_roundtrip(VolumeName::new("test-volume").unwrap());
-        test_invalid::<VolumeName>(b"bad id");
-        test_invalid::<VolumeName>(b"");
-        test_invalid::<VolumeName>(&b"a".repeat(crate::volume_name::MAX_VOLUME_NAME_LEN + 1));
-    }
 
     #[graft_test::test]
     fn test_volume_id() {

@@ -1,4 +1,5 @@
 use std::{
+    borrow::Borrow,
     marker::PhantomData,
     ops::{Bound, RangeBounds},
 };
@@ -7,7 +8,11 @@ use culprit::{Culprit, ResultExt};
 use fjall::{Keyspace, PartitionCreateOptions, Slice};
 use tryiter::TryIteratorExt;
 
-use crate::local::fjall_storage::{FjallStorageErr, fjall_repr::FjallRepr, keys::FjallKeyPrefix};
+use crate::local::fjall_storage::{
+    FjallStorageErr,
+    fjall_repr::{FjallRepr, FjallReprRef},
+    keys::FjallKeyPrefix,
+};
 
 pub mod fjall_batch_ext;
 
@@ -71,12 +76,20 @@ where
     V: FjallRepr,
 {
     /// Returns `true` if this snapshot contains the provided key
-    pub fn contains(&self, key: &K) -> Result<bool> {
+    pub fn contains<B>(&self, key: &B) -> Result<bool>
+    where
+        B: FjallReprRef + ?Sized,
+        K: Borrow<B>,
+    {
         self.snapshot.contains_key(key.as_slice()).or_into_ctx()
     }
 
     /// Retrieve the value corresponding to the key
-    pub fn get(&self, key: &K) -> Result<Option<V>> {
+    pub fn get<B>(&self, key: &B) -> Result<Option<V>>
+    where
+        B: FjallReprRef + ?Sized,
+        K: Borrow<B>,
+    {
         if let Some(slice) = self.snapshot.get(key.as_slice())? {
             return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
         }
@@ -132,8 +145,7 @@ where
             .map_ok(|v| V::try_from_slice(v).or_into_ctx())
     }
 
-    // not currently used, rename if you need it
-    pub fn _prefix<'a, P>(
+    pub fn prefix<'a, P>(
         &self,
         prefix: &'a P,
     ) -> impl Iterator<Item = Result<(K, V)>> + use<'a, P, K, V>
@@ -150,5 +162,13 @@ where
                     V::try_from_slice(v).or_into_ctx()?,
                 ))
             })
+    }
+
+    pub fn first<'a, P>(&self, prefix: &'a P) -> Result<Option<(K, V)>>
+    where
+        K: FjallKeyPrefix<Prefix = P>,
+        P: AsRef<[u8]>,
+    {
+        self.prefix(prefix).try_next()
     }
 }

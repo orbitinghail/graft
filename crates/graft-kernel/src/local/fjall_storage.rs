@@ -1,5 +1,6 @@
 use std::{collections::HashSet, fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
+use bytestring::ByteString;
 use fjall::{Batch, Instant, PartitionCreateOptions};
 use futures::Stream;
 use graft_core::{
@@ -9,8 +10,6 @@ use graft_core::{
     commit_hash::CommitHash,
     lsn::{LSN, LSNRangeExt, LSNSet},
     page::Page,
-    volume_control::VolumeControl,
-    volume_meta::VolumeMeta,
     volume_ref::VolumeRef,
 };
 use parking_lot::{Mutex, MutexGuard};
@@ -19,14 +18,12 @@ use tryiter::TryIteratorExt;
 use crate::{
     LogicalErr,
     changeset::ChangeSet,
-    graft::{GraftState, PendingCommit, SyncPoint},
+    graft::{Graft, PendingCommit, SyncPoint},
     local::fjall_storage::{
         keys::PageKey,
         typed_partition::{TypedPartition, TypedPartitionSnapshot, fjall_batch_ext::FjallBatchExt},
     },
-    search_path::SearchPath,
     snapshot::Snapshot,
-    volume_name::VolumeName,
 };
 
 use culprit::{Result, ResultExt};
@@ -60,13 +57,18 @@ pub enum FjallStorageErr {
 pub struct FjallStorage {
     keyspace: fjall::Keyspace,
 
-    /// This partition stores state regarding each `Graft`
-    /// {`VolumeName`} -> `GraftState`
-    grafts: TypedPartition<VolumeName, GraftState>,
+    /// This partition allows grafts to be identified by a tag.
+    /// The graft a tag points at can be changed.
+    tags: TypedPartition<ByteString, VolumeId>,
 
-    /// This partition stores metadata about each Volume
-    /// {vid} -> `VolumeMeta`
-    volumes: TypedPartition<VolumeId, VolumeMeta>,
+    /// This partition stores state regarding each `Graft`
+    /// keyed by its Local Volume ID
+    /// {`VolumeId`} -> `GraftState`
+    grafts: TypedPartition<VolumeId, Graft>,
+
+    /// This partition stores `CachedCheckpoints` for each Volume
+    /// {vid} -> `CachedCheckpoints`
+    checkpoints: TypedPartition<VolumeId, CachedCheckpoints>,
 
     /// This partition stores commits
     /// {vid} / {lsn} -> Commit
@@ -85,7 +87,7 @@ pub struct FjallStorage {
 
     /// The commits changeset is notified whenever a `Graft`'s
     /// local Volume receives a commit.
-    commits: ChangeSet<VolumeName>,
+    commits: ChangeSet<VolumeId>,
 }
 
 impl Debug for FjallStorage {
@@ -106,8 +108,9 @@ impl FjallStorage {
 
     fn open_config(config: fjall::Config) -> Result<Self, FjallStorageErr> {
         let keyspace = config.open()?;
+        let tags = TypedPartition::open(&keyspace, "tags", Default::default())?;
         let grafts = TypedPartition::open(&keyspace, "grafts", Default::default())?;
-        let volumes = TypedPartition::open(&keyspace, "volumes", Default::default())?;
+        let checkpoints = TypedPartition::open(&keyspace, "checkpoints", Default::default())?;
         let log = TypedPartition::open(&keyspace, "log", Default::default())?;
         let pages = TypedPartition::open(
             &keyspace,
@@ -117,8 +120,9 @@ impl FjallStorage {
 
         Ok(Self {
             keyspace,
+            tags,
             grafts,
-            volumes,
+            checkpoints,
             log,
             pages,
             lock: Default::default(),
@@ -126,7 +130,7 @@ impl FjallStorage {
         })
     }
 
-    pub fn subscribe_commits(&self) -> impl Stream<Item = HashSet<VolumeName>> + use<> {
+    pub fn subscribe_commits(&self) -> impl Stream<Item = HashSet<VolumeId>> + use<> {
         self.commits.subscribe_all()
     }
 
@@ -177,87 +181,86 @@ impl FjallStorage {
         Ok(())
     }
 
-    /// Attempt to execute a local commit on the volume pointed to by Snapshot.
-    /// The resulting commit will claim the next LSN after the Snapshot.
-    /// The `sid` must be a Segment containing all of the pages in this commit,
-    /// which must match the provided `graft`.
+    pub fn checkout_graft(&self, tag: &str, remote: VolumeId) -> Result<Graft, FjallStorageErr> {
+        let local = VolumeId::random();
+        let graft = Graft::new(local.clone(), remote, None, None);
+
+        let mut batch = self.batch();
+        batch.write_tag(tag, local);
+        batch.write_graft(graft.clone());
+        batch.commit()?;
+
+        tracing::debug!(
+            tag,
+            local_vid = ?graft.local,
+            remote_vid = ?graft.remote,
+            "checkout graft"
+        );
+
+        Ok(graft)
+    }
+
+    pub fn get_or_create_tag(&self, tag: &str) -> Result<Graft, FjallStorageErr> {
+        self.read_write().get_or_create_tag(tag)
+    }
+
+    /// Attempt to execute a local commit to the specified Graft's local volume.
     ///
     /// Returns the resulting `VolumeRef` on success
     pub fn commit(
         &self,
-        name: VolumeName,
+        graft: VolumeId,
         snapshot: Snapshot,
         page_count: PageCount,
         segment: SegmentIdx,
-    ) -> Result<VolumeRef, FjallStorageErr> {
-        let vref = self
+    ) -> Result<Snapshot, FjallStorageErr> {
+        let snapshot = self
             .read_write()
-            .commit(&name, snapshot, page_count, segment)?;
+            .commit(&graft, snapshot, page_count, segment)?;
         // notify downstream subscribers
-        self.commits.mark_changed(&name);
-        Ok(vref)
-    }
-
-    pub fn open_graft(
-        &self,
-        name: VolumeName,
-        remote_vid: Option<VolumeId>,
-    ) -> Result<GraftState, FjallStorageErr> {
-        self.read_write().open_graft(name, remote_vid)
-    }
-
-    pub fn register_volume(
-        &self,
-        control: VolumeControl,
-        checkpoints: CachedCheckpoints,
-    ) -> Result<VolumeMeta, FjallStorageErr> {
-        let meta = VolumeMeta::new(
-            control.vid().clone(),
-            control.parent().cloned(),
-            checkpoints,
-        );
-        self.volumes.insert(control.vid().clone(), meta.clone())?;
-        Ok(meta)
-    }
-
-    pub fn update_checkpoints(
-        &self,
-        vid: VolumeId,
-        checkpoints: CachedCheckpoints,
-    ) -> Result<VolumeMeta, FjallStorageErr> {
-        self.read_write().update_checkpoints(vid, checkpoints)
+        self.commits.mark_changed(&graft);
+        Ok(snapshot)
     }
 
     /// Verify we are ready to make a remote commit and update the graft
     /// with a `PendingCommit`
     pub fn remote_commit_prepare(
         &self,
-        name: &VolumeName,
+        graft: &VolumeId,
         pending_commit: PendingCommit,
     ) -> Result<(), FjallStorageErr> {
         self.read_write()
-            .remote_commit_prepare(name, pending_commit)
+            .remote_commit_prepare(graft, pending_commit)
     }
 
     /// Finish the remote commit process by writing out an updated graft
     /// and recording the remote commit locally
     pub fn remote_commit_success(
         &self,
-        name: &VolumeName,
+        graft: &VolumeId,
         remote_commit: Commit,
     ) -> Result<(), FjallStorageErr> {
-        self.read_write().remote_commit_success(name, remote_commit)
+        self.read_write()
+            .remote_commit_success(graft, remote_commit)
     }
 
     /// Drop a pending commit without applying it. This should only be called
     /// after receiving a rejection from the remote.
-    pub fn drop_pending_commit(&self, name: &VolumeName) -> Result<(), FjallStorageErr> {
-        self.read_write().drop_pending_commit(name)
+    pub fn drop_pending_commit(&self, graft: &VolumeId) -> Result<(), FjallStorageErr> {
+        self.read_write().drop_pending_commit(graft)
     }
 
     /// Commit a batch with a precondition check.
-    pub fn sync_remote_to_local(&self, name: VolumeName) -> Result<(), FjallStorageErr> {
-        self.read_write().sync_remote_to_local(name)
+    pub fn sync_remote_to_local(&self, graft: VolumeId) -> Result<(), FjallStorageErr> {
+        self.read_write().sync_remote_to_local(graft)
+    }
+
+    pub fn write_checkpoints(
+        &self,
+        vid: VolumeId,
+        checkpoints: CachedCheckpoints,
+    ) -> Result<(), FjallStorageErr> {
+        self.checkpoints.insert(vid, checkpoints)
     }
 }
 
@@ -281,131 +284,93 @@ impl<'a> ReadGuard<'a> {
         Self { storage, seqno }
     }
 
-    fn grafts_snapshot(&self) -> TypedPartitionSnapshot<VolumeName, GraftState> {
+    fn _tags(&self) -> TypedPartitionSnapshot<ByteString, VolumeId> {
+        self.storage.tags.snapshot_at(self.seqno)
+    }
+
+    fn _grafts(&self) -> TypedPartitionSnapshot<VolumeId, Graft> {
         self.storage.grafts.snapshot_at(self.seqno)
     }
 
-    fn volumes_snapshot(&self) -> TypedPartitionSnapshot<VolumeId, VolumeMeta> {
-        self.storage.volumes.snapshot_at(self.seqno)
+    fn _checkpoints(&self) -> TypedPartitionSnapshot<VolumeId, CachedCheckpoints> {
+        self.storage.checkpoints.snapshot_at(self.seqno)
     }
 
-    fn log_snapshot(&self) -> TypedPartitionSnapshot<VolumeRef, Commit> {
+    fn _log(&self) -> TypedPartitionSnapshot<VolumeRef, Commit> {
         self.storage.log.snapshot_at(self.seqno)
     }
 
-    fn pages_snapshot(&self) -> TypedPartitionSnapshot<PageKey, Page> {
+    fn _pages(&self) -> TypedPartitionSnapshot<PageKey, Page> {
         self.storage.pages.snapshot_at(self.seqno)
     }
 
-    pub fn grafts(&self) -> impl Iterator<Item = Result<GraftState, FjallStorageErr>> {
-        self.grafts_snapshot().values()
+    pub fn tag_exists(&self, name: &str) -> Result<bool, FjallStorageErr> {
+        self._tags().contains(name)
     }
 
-    pub fn graft_exists(&self, name: &VolumeName) -> Result<bool, FjallStorageErr> {
-        self.grafts_snapshot().contains(name)
-    }
-
-    pub fn graft(&self, name: &VolumeName) -> Result<GraftState, FjallStorageErr> {
-        self.grafts_snapshot()
-            .get(name)?
-            .ok_or_else(|| LogicalErr::GraftNotFound(name.clone()))
-            .or_into_ctx()
-    }
-
-    pub fn volume_meta(&self, vid: &VolumeId) -> Result<Option<VolumeMeta>, FjallStorageErr> {
-        self.volumes_snapshot().get(vid)
-    }
-
-    /// Load a Volume's latest snapshot
-    pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
-        self.snapshot_at(vid, None)
-    }
-
-    /// Load the most recent Snapshot for a Volume as of the provided `max_lsn`.
-    /// If `max_lsn` is None, loads the most recent Snapshot available.
-    pub fn snapshot_at(
-        &self,
-        vid: &VolumeId,
-        max_lsn: Option<LSN>,
-    ) -> Result<Snapshot, FjallStorageErr> {
-        // compute the Snapshot's VolumeRef at the search LSN (or latest)
-        let search_range = VolumeRef::new(vid.clone(), max_lsn.unwrap_or(LSN::LAST))
-            ..=VolumeRef::new(vid.clone(), LSN::FIRST);
-        let vref = if let Some((_, commit)) = self.log_snapshot().range(search_range).try_next()? {
-            Some(commit.vref())
+    pub fn get_tag(&self, name: &str) -> Result<Option<Graft>, FjallStorageErr> {
+        if let Some(vid) = self._tags().get(name)? {
+            self._grafts().get(&vid)
         } else {
-            // no commit found in volume, search starting at the volume's parent
-            self.volumes_snapshot()
-                .get(vid)?
-                .and_then(|meta| meta.parent().cloned())
-        };
-
-        // assuming we found a vref, compute the snapshots search path and return a new tracked snapshot
-        if let Some(vref) = vref {
-            let path = self.search_path(vref.clone())?;
-            Ok(Snapshot::new(vref.vid, path))
-        } else {
-            Ok(Snapshot::new(vid.clone(), SearchPath::EMPTY))
+            Ok(None)
         }
     }
 
-    fn search_path(&self, mut vref: VolumeRef) -> Result<SearchPath, FjallStorageErr> {
-        let volumes = self.volumes_snapshot();
-        let mut path = SearchPath::default();
+    /// Lookup the latest LSN for a volume
+    pub fn latest_lsn(&self, vid: &VolumeId) -> Result<Option<LSN>, FjallStorageErr> {
+        Ok(self._log().first(vid)?.map(|(vref, _)| vref.lsn))
+    }
 
-        const MAX_HOPS: usize = 10;
-        for hops in 0.. {
-            assert!(
-                hops <= MAX_HOPS,
-                "Exceeded maximum parent recursion ({}) when building search path for volume {}",
-                MAX_HOPS,
-                vref.vid()
-            );
+    pub fn iter_grafts(&self) -> impl Iterator<Item = Result<Graft, FjallStorageErr>> {
+        self._grafts().values()
+    }
 
-            if let Some(meta) = volumes.get(vref.vid())? {
-                if let Some(checkpoint) = meta.checkpoint_for(vref.lsn()) {
-                    // found a checkpoint, we can terminate the path here
-                    path.append(meta.vid().clone(), checkpoint..=vref.lsn());
-                    return Ok(path);
-                }
+    pub fn graft(&self, vid: &VolumeId) -> Result<Graft, FjallStorageErr> {
+        self._grafts()
+            .get(vid)?
+            .ok_or_else(|| LogicalErr::GraftNotFound(vid.clone()).into())
+    }
 
-                // no checkpoint, scan to the beginning and recurse to the parent if possible
-                path.append(meta.vid().clone(), LSN::FIRST..=vref.lsn());
-                if let Some(parent) = meta.parent() {
-                    vref = parent.clone();
-                } else {
-                    break; // no parent, we reached the root
+    /// Load the most recent Snapshot for a Graft.
+    pub fn snapshot(&self, graft: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
+        let graft = self.graft(graft)?;
+
+        let mut snapshot = Snapshot::EMPTY;
+
+        if let Some(latest) = self.latest_lsn(&graft.local)? {
+            if let Some(watermark) = graft.sync().and_then(|s| s.local_watermark) {
+                if watermark < latest {
+                    snapshot.append(graft.local, watermark..=latest);
                 }
             } else {
-                // There is no VolumeMeta for this VRef
-                // this means there is no parent and no checkpoints
-                // so scan to the beginning and stop searching
-                path.append(vref.vid().clone(), LSN::FIRST..=vref.lsn());
-                break;
+                snapshot.append(graft.local, LSN::FIRST..=latest);
             }
         }
 
-        Ok(path)
+        if let Some(remote) = graft.sync.map(|s| s.remote) {
+            snapshot.append(graft.remote, LSN::FIRST..=remote);
+        }
+
+        Ok(snapshot)
     }
 
     /// Retrieve a specific commit
     fn get_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>, FjallStorageErr> {
-        self.log_snapshot()
-            .get_owned(VolumeRef::new(vid.clone(), lsn))
+        self._log().get_owned(VolumeRef::new(vid.clone(), lsn))
     }
 
-    /// Iterates through all of the commits reachable by the provided `SearchPath`
+    /// Iterates through all of the commits reachable by the provided `Snapshot`
     /// from the newest to oldest commit.
     pub fn commits(
         &self,
-        path: &SearchPath,
+        snapshot: &Snapshot,
     ) -> impl Iterator<Item = Result<Commit, FjallStorageErr>> {
-        let log = self.log_snapshot();
+        let log = self._log();
 
-        path.iter().flat_map(move |entry| {
-            // the entry range is in the form `low..=high` but the log orders
-            // LSNs in reverse. thus we need to flip the range
-            // when passing it down to the underlying scan.
+        snapshot.iter().flat_map(move |entry| {
+            // the snapshot range is in the form `low..=high` but the log orders
+            // LSNs in reverse. thus we need to flip the range when passing it
+            // down to the underlying scan.
             let low = entry.start_ref();
             let high = entry.end_ref();
             let range = high..=low;
@@ -425,7 +390,7 @@ impl<'a> ReadGuard<'a> {
         let low = VolumeRef::new(vid.clone(), *lsns.start());
         let high = VolumeRef::new(vid.clone(), *lsns.end());
         let range = high..=low;
-        self.log_snapshot()
+        self._log()
             .range_keys(range)
             .map_ok(|key| Ok(key.lsn()))
             .collect()
@@ -436,7 +401,7 @@ impl<'a> ReadGuard<'a> {
         snapshot: &Snapshot,
         pageidx: PageIdx,
     ) -> Result<Option<Commit>, FjallStorageErr> {
-        let mut commits = self.commits(snapshot.search_path());
+        let mut commits = self.commits(snapshot);
 
         while let Some(commit) = commits.try_next()? {
             if !commit.page_count().contains(pageidx) {
@@ -462,7 +427,7 @@ impl<'a> ReadGuard<'a> {
     }
 
     pub fn has_page(&self, sid: SegmentId, pageidx: PageIdx) -> Result<bool, FjallStorageErr> {
-        self.pages_snapshot().contains(&PageKey::new(sid, pageidx))
+        self._pages().contains(&PageKey::new(sid, pageidx))
     }
 
     pub fn read_page(
@@ -470,20 +435,24 @@ impl<'a> ReadGuard<'a> {
         sid: SegmentId,
         pageidx: PageIdx,
     ) -> Result<Option<Page>, FjallStorageErr> {
-        self.pages_snapshot()
+        self._pages()
             .get_owned(PageKey::new(sid, pageidx))
             .or_into_ctx()
     }
 
-    pub fn page_count(&self, snapshot: &Snapshot) -> Result<PageCount, FjallStorageErr> {
-        if let Some(lsn) = snapshot.lsn() {
-            let commit = self
-                .get_commit(snapshot.vid(), lsn)?
-                .expect("no commit found for snapshot");
-            Ok(commit.page_count())
-        } else {
-            Ok(PageCount::ZERO)
-        }
+    pub fn page_count(
+        &self,
+        vid: &VolumeId,
+        lsn: LSN,
+    ) -> Result<Option<PageCount>, FjallStorageErr> {
+        Ok(self.get_commit(vid, lsn)?.map(|c| c.page_count()))
+    }
+
+    pub fn checkpoints(
+        &self,
+        vid: &VolumeId,
+    ) -> Result<Option<CachedCheckpoints>, FjallStorageErr> {
+        self._checkpoints().get(vid)
     }
 }
 
@@ -496,15 +465,19 @@ impl<'a> WriteBatch<'a> {
     fn open(storage: &'a FjallStorage) -> Self {
         Self { storage, batch: storage.keyspace.batch() }
     }
+    pub fn write_tag(&mut self, tag: &str, graft: VolumeId) {
+        self.batch
+            .insert_typed(&self.storage.tags, tag.into(), graft);
+    }
 
     pub fn write_commit(&mut self, commit: Commit) {
         self.batch
             .insert_typed(&self.storage.log, commit.vref(), commit);
     }
 
-    pub fn write_graft(&mut self, graft: GraftState) {
+    pub fn write_graft(&mut self, graft: Graft) {
         self.batch
-            .insert_typed(&self.storage.grafts, graft.name.clone(), graft);
+            .insert_typed(&self.storage.grafts, graft.local.clone(), graft);
     }
 
     pub fn write_page(&mut self, sid: SegmentId, pageidx: PageIdx, page: Page) {
@@ -535,90 +508,55 @@ impl<'a> ReadWriteGuard<'a> {
         self.read.storage
     }
 
-    pub fn open_graft(
-        self,
-        name: VolumeName,
-        remote_vid: Option<VolumeId>,
-    ) -> Result<GraftState, FjallStorageErr> {
-        if let Some(state) = self.read.grafts_snapshot().get(&name)? {
-            if let Some(expected) = remote_vid
-                && state.remote != expected
-            {
-                Err(LogicalErr::GraftRemoteMismatch { name, expected, actual: state.remote }.into())
-            } else {
-                Ok(state)
-            }
+    pub fn get_or_create_tag(self, tag: &str) -> Result<Graft, FjallStorageErr> {
+        if let Some(state) = self.read.get_tag(tag)? {
+            Ok(state)
         } else {
-            // create volume ids for the local and remote volume
-            let lvid = VolumeId::random();
-            let rvid = remote_vid.unwrap_or_else(VolumeId::random);
-
-            // create the graft
-            let volume = GraftState::new(name.clone(), lvid, rvid, None, None);
-            self.storage().grafts.insert(name, volume.clone())?;
-
-            tracing::debug!(
-                name = %volume.name,
-                local_vid = ?volume.local,
-                remote_vid = ?volume.remote,
-                "created graft"
-            );
-
-            Ok(volume)
+            self.storage().checkout_graft(tag, VolumeId::random())
         }
     }
 
     pub fn commit(
         self,
-        name: &VolumeName,
+        graft: &VolumeId,
         snapshot: Snapshot,
         page_count: PageCount,
         segment: SegmentIdx,
-    ) -> Result<VolumeRef, FjallStorageErr> {
-        let graft = self.read.graft(name)?;
-
+    ) -> Result<Snapshot, FjallStorageErr> {
+        let graft = self.read.graft(graft)?;
         let latest_snapshot = self.read.snapshot(&graft.local)?;
 
         // Verify that the commit was constructed using the latest snapshot for
         // the volume.
         if snapshot != latest_snapshot {
-            return Err(LogicalErr::ConcurrentWrite(snapshot.vid().clone()).into());
+            return Err(LogicalErr::GraftConcurrentWrite(graft.local).into());
         }
 
-        let commit_lsn = latest_snapshot
-            .lsn()
+        // the commit_lsn is the next lsn for the graft's local volume
+        let commit_lsn = self
+            .read
+            .latest_lsn(&graft.local)?
             .map(|lsn| lsn.next())
-            .unwrap_or_default();
+            .unwrap_or(LSN::FIRST);
 
-        let commit = Commit::new(snapshot.vid().clone(), commit_lsn, page_count)
+        tracing::debug!(vid=?graft.local, %commit_lsn, "local commit");
+
+        let commit = Commit::new(graft.local.clone(), commit_lsn, page_count)
             .with_segment_idx(Some(segment));
 
-        let vref = commit.vref();
-        tracing::debug!(%vref, "local commit");
-        self.read.storage.log.insert(vref.clone(), commit)?;
-        Ok(vref)
-    }
+        // write the commit to storage
+        self.read.storage.log.insert(commit.vref(), commit)?;
 
-    pub fn update_checkpoints(
-        self,
-        vid: VolumeId,
-        checkpoints: CachedCheckpoints,
-    ) -> Result<VolumeMeta, FjallStorageErr> {
-        let meta = self
-            .read
-            .volume_meta(&vid)?
-            .ok_or_else(|| LogicalErr::VolumeNotFound(vid.clone()))?
-            .with_checkpoints(checkpoints);
-        self.storage().volumes.insert(vid, meta.clone())?;
-        Ok(meta)
+        // open a new ReadGuard to read an updated graft snapshot
+        ReadGuard::open(self.storage()).snapshot(&graft.local)
     }
 
     pub fn remote_commit_prepare(
         self,
-        name: &VolumeName,
+        graft: &VolumeId,
         pending_commit: PendingCommit,
     ) -> Result<(), FjallStorageErr> {
-        let graft = self.read.graft(name)?;
+        let graft = self.read.graft(graft)?;
 
         assert!(
             graft.pending_commit().is_none(),
@@ -626,13 +564,17 @@ impl<'a> ReadWriteGuard<'a> {
         );
 
         // ensure LSN monotonicity
-        if let Some(sync) = graft.sync() {
-            assert!(sync.local < pending_commit.local_lsn);
+        if let Some(local_watermark) = graft.local_watermark() {
+            assert!(
+                local_watermark < pending_commit.local,
+                "BUG: local_watermark monotonicity violation"
+            );
         }
-        let latest_remote = self.read.snapshot(&graft.remote)?;
+        let latest_remote = self.read.latest_lsn(&graft.remote)?;
         assert_eq!(
-            latest_remote.lsn(),
-            pending_commit.commit_lsn.checked_prev()
+            latest_remote,
+            pending_commit.commit.checked_prev(),
+            "BUG: remote lsn monotonicity violation"
         );
 
         // remember to set the commit hash
@@ -640,21 +582,21 @@ impl<'a> ReadWriteGuard<'a> {
 
         // save the new pending commit
         let graft = graft.with_pending_commit(Some(pending_commit));
-        self.storage().grafts.insert(graft.name.clone(), graft)?;
+        self.storage().grafts.insert(graft.local.clone(), graft)?;
 
         Ok(())
     }
 
     pub fn remote_commit_success(
         self,
-        name: &VolumeName,
+        graft: &VolumeId,
         remote_commit: Commit,
     ) -> Result<(), FjallStorageErr> {
-        let graft = self.read.graft(name)?;
+        let graft = self.read.graft(graft)?;
 
         // verify the pending commit matches the remote commit
         let pending_commit = graft.pending_commit.unwrap();
-        assert_eq!(remote_commit.lsn(), pending_commit.commit_lsn);
+        assert_eq!(remote_commit.lsn(), pending_commit.commit);
         assert_eq!(
             remote_commit.commit_hash(),
             Some(&pending_commit.commit_hash)
@@ -662,12 +604,12 @@ impl<'a> ReadWriteGuard<'a> {
 
         // fail if we somehow already know about this commit locally
         assert!(
-            !self.read.log_snapshot().contains(&remote_commit.vref())?,
+            !self.read._log().contains(&remote_commit.vref())?,
             "BUG: remote commit already exists"
         );
 
         // build a new graft with the updated sync points and no pending_commit
-        let new_graft = GraftState {
+        let new_graft = Graft {
             sync: Some(pending_commit.into()),
             pending_commit: None,
             ..graft
@@ -679,37 +621,37 @@ impl<'a> ReadWriteGuard<'a> {
         batch.commit()
     }
 
-    pub fn drop_pending_commit(self, name: &VolumeName) -> Result<(), FjallStorageErr> {
-        let graft = self.read.graft(name)?;
+    pub fn drop_pending_commit(self, graft: &VolumeId) -> Result<(), FjallStorageErr> {
+        let graft = self.read.graft(graft)?;
         self.storage()
             .grafts
-            .insert(graft.name.clone(), graft.with_pending_commit(None))
+            .insert(graft.local.clone(), graft.with_pending_commit(None))
     }
 
-    pub fn sync_remote_to_local(self, name: VolumeName) -> Result<(), FjallStorageErr> {
-        let graft = self.read.graft(&name)?;
+    pub fn sync_remote_to_local(self, graft: VolumeId) -> Result<(), FjallStorageErr> {
+        let graft = self.read.graft(&graft)?;
 
         // check to see if we have any changes to sync
-        let latest_remote = self.read.snapshot(&graft.remote).or_into_ctx()?;
-        let Some(remote_changes) = graft.remote_changes(&latest_remote) else {
+        let latest_remote = self.read.latest_lsn(&graft.remote).or_into_ctx()?;
+        let Some(remote_changes) = graft.remote_changes(latest_remote) else {
             // nothing to sync
             return Ok(());
         };
 
         // check for divergence
-        let latest_local = self.read.snapshot(&graft.local).or_into_ctx()?;
-        if graft.local_changes(&latest_local).is_some() {
+        let latest_local = self.read.latest_lsn(&graft.local).or_into_ctx()?;
+        if graft.local_changes(latest_local).is_some() {
             // the remote and local volumes have diverged
-            let status = graft.status(&latest_local, &latest_remote);
-            tracing::debug!("graft {name} has diverged; status=`{status}`");
-            return Err(LogicalErr::GraftDiverged(name).into());
+            let status = graft.status(latest_local, latest_remote);
+            tracing::debug!("graft {} has diverged; status=`{status}`", graft.local);
+            return Err(LogicalErr::GraftDiverged(graft.local).into());
         }
 
         tracing::debug!(
             sync = ?graft.sync(),
             lsns = %remote_changes.to_string(),
-            remote = ?latest_remote.vid(),
-            local = ?latest_local.vid(),
+            remote = ?graft.remote,
+            local = ?graft.local,
             "syncing commits from remote to local volume"
         );
 
@@ -720,14 +662,14 @@ impl<'a> ReadWriteGuard<'a> {
         // note: this iterator must return new local lsns in reverse as the
         // commits iterator returns commits from newest to oldest
         let num_commits = remote_changes.len();
-        let local_first = latest_local.lsn().map_or(LSN::FIRST, |l| l.next());
+        let local_first = latest_local.map_or(LSN::FIRST, |l| l.next());
         let local_last = local_first
             .checked_add(num_commits - 1)
             .expect("LSN overflow");
         let mut new_local_lsns = (local_first..=local_last).iter().rev();
 
         // iterate missing remote commits, and commit them to the local volume
-        let search = SearchPath::new(graft.remote.clone(), remote_changes);
+        let search = Snapshot::new(graft.remote.clone(), remote_changes);
         let mut batch = self.storage().batch();
         let mut commits = self.read.commits(&search);
         while let Some(commit) = commits.try_next().or_into_ctx()? {
@@ -735,11 +677,7 @@ impl<'a> ReadWriteGuard<'a> {
                 .next()
                 .expect("BUG: storage has more commits than expected");
             // map the remote commit into the local volume
-            batch.write_commit(
-                commit
-                    .with_vid(latest_local.vid().clone())
-                    .with_lsn(next_lsn),
-            );
+            batch.write_commit(commit.with_vid(graft.local.clone()).with_lsn(next_lsn));
         }
 
         assert!(
@@ -748,9 +686,10 @@ impl<'a> ReadWriteGuard<'a> {
         );
 
         // update the sync point
-        batch.write_graft(
-            graft.with_sync(Some(SyncPoint { local: local_last, remote: remote_lsn })),
-        );
+        batch.write_graft(graft.with_sync(Some(SyncPoint {
+            local_watermark: Some(local_last),
+            remote: remote_lsn,
+        })));
 
         // commit the batch
         batch.commit()

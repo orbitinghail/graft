@@ -13,37 +13,14 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 
 # Working on SQLite v2
 
-- PRIORITY: allow specifying a remote vid when opening a volume
 - add remote information and full volume id to graft_status
-- implement rest of the pragmas
+- implement all outstanding pragmas
 - default `just run sqlite shell` to use a shared remote on the filesystem
 - consider adding a read oracle (do some perf testing)
 - port tests
 - write first draft of antithesis tests
 
-# Explicit volume version control
-
-TLDR;
-
-- GraftRefs are mutable named pointers to Grafts
-- Grafts represent a local volume grafted to a remote at a particular remote LSN.
-- Remove parent/fork concept, forks will be more expensive (copy commit log), but still pretty cheap, checkpoints become much simpler.
-- Snapshots will be constructed explicitly from two LSN ranges (from the local and remote volume). the graft will track this
-- local commits are unchanged (advance local volume)
-- successful remote commits will advance the base local LSN
-  -> we need to writeback the new segment during the commit process
-- eventually GC will truncate the prefix of the local volume when no relevant snapshots are open
-- when divergence happens, the user will need to create a new graft starting from the most recent remote lsn, leaving the old graft to be gc'ed (no refs pointing at it)
-
-## Terms
-
-A GraftRef is a mutable name that points at a Graft. It can be changed to point at a different Graft.
-
-A Graft is a local staging Volume grafted to a Remote volume.
-It allows changes to be pushed and pulled between the local
-and remote volume. A Graft's ID is the Local Volume ID. There is a 1-1 relationship between a graft and a local volume.
-
-## graft operations will be explicit, with opt-in autosync
+# New and improved pragmas
 
 `pragma graft_status`
 show the local and remote volume status in a git like manner.
@@ -100,61 +77,3 @@ returns the new local graft vid
 
 `pragma graft_checkout_empty`
 same as graft checkout but creates an empty remote
-
-## Sync process over time
-
-```
--> Checkout remote R at LSN 5
-remote = R:1-5
-trunk = R:5
-sync = _
-local = L:0
-
--> Make 3 local changes
-remote = R:1-5
-trunk = R:5
-sync = _
-local = L:1-3
-
--> Push
-remote = R:1-6
-trunk = R:6
-sync = L:3
-local = L:1-3
-
--> Make 2 local changes
-remote = R:1-6
-trunk = R:6
-sync = L:3
-local = L:1-5
-
--> GC
-remote = R:1-6
-trunk = R:6
-sync = L:3
-local = L:4-5
-
--> Make 2 local changes
-remote = R:1-6
-trunk = R:6
-sync = L:3
-local = L:4-7
-
--> Remote has 2 changes
-remote = R:1-8
-trunk = R:6
-sync = L:3
-local = L:4-7
-
--> Reset to remote by creating new graft L'
-remote = R:1-8
-trunk = R:8
-sync = _
-local = L':0
-
-/> Alternatively, we could push to a new remote R'
-remote = R':1
-trunk = R':1
-sync = L:7
-local = L:4-7
-```

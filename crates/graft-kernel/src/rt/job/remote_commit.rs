@@ -2,7 +2,6 @@ use std::{
     collections::BTreeMap,
     fmt::Debug,
     ops::{Bound, RangeInclusive},
-    time::SystemTime,
 };
 
 use bytes::Bytes;
@@ -12,7 +11,6 @@ use graft_core::{
     commit::{Commit, SegmentIdx},
     commit_hash::CommitHash,
     lsn::LSN,
-    volume_control::VolumeControl,
     volume_ref::VolumeRef,
 };
 use smallvec::SmallVec;
@@ -24,19 +22,18 @@ use crate::{
     graft::PendingCommit,
     local::fjall_storage::FjallStorage,
     remote::{Remote, segment::SegmentBuilder},
-    search_path::SearchPath,
-    volume_name::VolumeName,
+    snapshot::Snapshot,
 };
 
 /// Commits a Graft's local changes into its remote.
 pub struct Opts {
-    pub name: VolumeName,
+    pub graft: VolumeId,
 }
 
 impl Debug for Opts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RemoteCommit")
-            .field("name", &self.name.to_string())
+            .field("graft", &self.graft)
             .finish()
     }
 }
@@ -46,7 +43,7 @@ pub async fn run(
     remote: &Remote,
     opts: Opts,
 ) -> culprit::Result<(), KernelErr> {
-    let Some(plan) = plan_commit(storage, &opts.name)? else {
+    let Some(plan) = plan_commit(storage, &opts.graft)? else {
         // nothing to commit
         return Ok(());
     };
@@ -58,27 +55,15 @@ pub async fn run(
         .await
         .or_into_ctx()?;
 
-    // if this is the first commit to the remote volume, create the control
-    if plan.commit_ref.lsn() == LSN::FIRST {
-        remote
-            .put_control(VolumeControl {
-                vid: plan.commit_ref.vid.clone(),
-                parent: None,
-                created_at: SystemTime::now(),
-            })
-            .await
-            .or_into_ctx()?;
-    }
-
     // make final preparations before pushing to the remote.
     // these preparations include checking preconditions and setting
     // pending_commit on the Graft
     storage
         .remote_commit_prepare(
-            &opts.name,
+            &opts.graft,
             PendingCommit {
-                local_lsn: *plan.lsns.end(),
-                commit_lsn: plan.commit_ref.lsn,
+                local: *plan.lsns.end(),
+                commit: plan.commit_ref.lsn,
                 commit_hash: commit_hash.clone(),
             },
         )
@@ -93,21 +78,21 @@ pub async fn run(
     .with_segment_idx(Some(segment_idx));
 
     // issue the remote commit!
-    let result = remote.put_commit(commit.clone()).await;
+    let result = remote.put_commit(&commit).await;
 
     match result {
         Ok(()) => {
             storage
-                .remote_commit_success(&opts.name, commit)
+                .remote_commit_success(&opts.graft, commit)
                 .or_into_ctx()?;
             Ok(())
         }
         Err(err) if err.ctx().is_already_exists() => {
-            storage.drop_pending_commit(&opts.name).or_into_ctx()?;
+            storage.drop_pending_commit(&opts.graft).or_into_ctx()?;
             // TODO: mark rejected status somewhere or put it in a log
             tracing::warn!(
                 "remote commit rejected for graft {}, commit {} already exists",
-                opts.name,
+                opts.graft,
                 plan.commit_ref
             );
             Ok(())
@@ -131,53 +116,58 @@ struct CommitPlan {
 
 fn plan_commit(
     storage: &FjallStorage,
-    name: &VolumeName,
+    graft: &VolumeId,
 ) -> culprit::Result<Option<CommitPlan>, KernelErr> {
     let reader = storage.read();
-    let handle = reader.graft(name).or_into_ctx()?;
-    if handle.pending_commit().is_some() {
-        return Err(LogicalErr::GraftNeedsRecovery(name.clone()).into());
+    let graft = reader.graft(graft).or_into_ctx()?;
+
+    if graft.pending_commit().is_some() {
+        return Err(LogicalErr::GraftNeedsRecovery(graft.local).into());
     }
 
-    let latest_local = reader.snapshot(&handle.local).or_into_ctx()?;
-    let page_count = reader.page_count(&latest_local).or_into_ctx()?;
-    let latest_remote = reader.snapshot(&handle.remote).or_into_ctx()?;
+    let Some(latest_local) = reader.latest_lsn(&graft.local).or_into_ctx()? else {
+        // nothing to push
+        return Ok(None);
+    };
+    let latest_remote = reader.latest_lsn(&graft.remote).or_into_ctx()?;
 
-    let Some(sync) = handle.sync() else {
+    let page_count = reader
+        .page_count(&graft.local, latest_local)
+        .or_into_ctx()?
+        .expect("BUG: no page count for local volume");
+
+    let Some(sync) = graft.sync() else {
         // this is the first time we are pushing this graft to the remote
-        assert_eq!(latest_remote.lsn(), None, "BUG: remote should be empty");
-        let Some(latest_local_lsn) = latest_local.lsn() else {
-            return Ok(None);
-        };
+        assert_eq!(latest_remote, None, "BUG: remote should be empty");
         return Ok(Some(CommitPlan {
-            local_vid: handle.local.clone(),
-            lsns: LSN::FIRST..=latest_local_lsn,
-            commit_ref: VolumeRef::new(handle.remote, LSN::FIRST),
+            local_vid: graft.local.clone(),
+            lsns: LSN::FIRST..=latest_local,
+            commit_ref: VolumeRef::new(graft.remote, LSN::FIRST),
             page_count,
         }));
     };
 
     // check for divergence
-    if handle.remote_changes(&latest_remote).is_some() {
+    if graft.remote_changes(latest_remote).is_some() {
         // the remote and local volumes have diverged
-        let status = handle.status(&latest_local, &latest_remote);
-        tracing::debug!("graft {name} has diverged; status=`{status}`");
-        return Err(LogicalErr::GraftDiverged(name.clone()).into());
+        let status = graft.status(Some(latest_local), latest_remote);
+        tracing::debug!("graft {} has diverged; status=`{status}`", graft.local);
+        return Err(LogicalErr::GraftDiverged(graft.local).into());
     }
 
     // calculate which LSNs we need to sync
-    let Some(local_lsns) = handle.local_changes(&latest_local) else {
+    let Some(local_lsns) = graft.local_changes(Some(latest_local)) else {
         // nothing to push
         return Ok(None);
     };
 
-    // calculate the commit result
+    // calculate the commit lsn
     let commit_lsn = sync.remote.next();
 
     Ok(Some(CommitPlan {
-        local_vid: handle.local.clone(),
+        local_vid: graft.local.clone(),
         lsns: local_lsns,
-        commit_ref: VolumeRef::new(handle.remote.clone(), commit_lsn),
+        commit_ref: VolumeRef::new(graft.remote.clone(), commit_lsn),
         page_count,
     }))
 }
@@ -188,9 +178,9 @@ fn build_segment(
 ) -> culprit::Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), KernelErr> {
     let reader = storage.read();
 
-    // built a search path which only matches the LSNs we want to
+    // built a snapshot which only matches the LSNs we want to
     // include in the segment
-    let segment_path = SearchPath::new(plan.local_vid.clone(), plan.lsns.clone());
+    let segment_path = Snapshot::new(plan.local_vid.clone(), plan.lsns.clone());
 
     // collect all of the segment pages, only keeping the newest (first) page
     // for each unique pageidx
@@ -234,18 +224,22 @@ fn build_segment(
         plan.page_count,
     );
 
-    // TODO: we may want to writeback the segment into storage if we expect to
-    // be resetting the local volume to the remote anytime soon (or otherwise
-    // querying the remote volume)
+    let sid = SegmentId::random();
 
+    let mut batch = storage.batch();
     for (pageidx, page) in pages {
         commithash_builder.write_page(pageidx, &page);
-        segment_builder.write(pageidx, page);
+        segment_builder.write(pageidx, &page);
+
+        // we immediately cache the new segment's pages into storage, as new
+        // Snapshots will read from the new commits rather than the local
+        // commits.
+        batch.write_page(sid.clone(), pageidx, page);
     }
 
     let commit_hash = commithash_builder.build();
     let (frames, chunks) = segment_builder.finish();
-    let idx = SegmentIdx::new(SegmentId::random(), graft.into()).with_frames(frames);
+    let idx = SegmentIdx::new(sid, graft.into()).with_frames(frames);
 
     Ok((commit_hash, idx, chunks))
 }

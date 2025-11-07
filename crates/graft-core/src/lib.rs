@@ -8,9 +8,6 @@ pub mod pageset;
 
 pub mod checkpoints;
 pub mod commit;
-pub mod volume_control;
-pub mod volume_fork;
-pub mod volume_meta;
 pub mod volume_ref;
 
 pub mod bilrost_util;

@@ -26,3 +26,4 @@ enum_dispatch = { workspace = true }
 parking_lot = { workspace = true }
 tryiter = { workspace = true }
 bytes = { workspace = true }
+bytestring = { workspace = true }

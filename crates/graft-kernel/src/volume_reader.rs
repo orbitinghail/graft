@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
 use culprit::{Culprit, ResultExt};
-use graft_core::{PageCount, PageIdx, page::Page};
+use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
 
 use crate::{
     KernelErr, page_status::PageStatus, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
-    volume_name::VolumeName, volume_writer::VolumeWriter,
+    volume_writer::VolumeWriter,
 };
 
 /// A type which can read from a Volume
@@ -18,14 +18,14 @@ pub trait VolumeRead {
 
 #[derive(Debug, Clone)]
 pub struct VolumeReader {
-    name: VolumeName,
     runtime: RuntimeHandle,
+    graft: VolumeId,
     snapshot: Snapshot,
 }
 
 impl VolumeReader {
-    pub(crate) fn new(name: VolumeName, runtime: RuntimeHandle, snapshot: Snapshot) -> Self {
-        Self { name, runtime, snapshot }
+    pub(crate) fn new(runtime: RuntimeHandle, graft: VolumeId, snapshot: Snapshot) -> Self {
+        Self { runtime, graft, snapshot }
     }
 }
 
@@ -35,8 +35,8 @@ impl TryFrom<VolumeReader> for VolumeWriter {
     fn try_from(reader: VolumeReader) -> Result<Self, Self::Error> {
         let page_count = reader.page_count()?;
         Ok(Self::new(
-            reader.name,
             reader.runtime,
+            reader.graft,
             reader.snapshot,
             page_count,
         ))
@@ -49,11 +49,17 @@ impl VolumeRead for VolumeReader {
     }
 
     fn page_count(&self) -> culprit::Result<PageCount, KernelErr> {
-        self.runtime
-            .storage()
-            .read()
-            .page_count(&self.snapshot)
-            .or_into_ctx()
+        if let Some((vid, lsn)) = self.snapshot.head() {
+            Ok(self
+                .runtime
+                .storage()
+                .read()
+                .page_count(vid, lsn)
+                .or_into_ctx()?
+                .expect("BUG: missing page count for snapshot"))
+        } else {
+            Ok(PageCount::ZERO)
+        }
     }
 
     fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr> {

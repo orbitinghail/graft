@@ -8,7 +8,9 @@ use graft_core::{
 use itertools::Itertools;
 use tryiter::TryIteratorExt;
 
-use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote, rt::job::Job};
+use crate::{
+    KernelErr, local::fjall_storage::FjallStorage, remote::Remote, rt::job::Job, snapshot::Snapshot,
+};
 
 const HYDRATE_CONCURRENCY: usize = 5;
 
@@ -50,16 +52,27 @@ fn get_outstanding_frames(
     opts: Opts,
 ) -> Result<Vec<(SegmentId, SegmentRangeRef)>, KernelErr> {
     let reader = storage.read();
-    let snapshot = reader.snapshot_at(&opts.vid, opts.max_lsn).or_into_ctx()?;
 
-    let mut outstanding_frames: Vec<(SegmentId, SegmentRangeRef)> = vec![];
+    let Some(latest_lsn) = reader.latest_lsn(&opts.vid).or_into_ctx()? else {
+        // volume is empty, nothing to hydrate
+        return Ok(vec![]);
+    };
+
+    let target_lsn = opts.max_lsn.unwrap_or(latest_lsn);
+    let Some(mut page_count) = reader.page_count(&opts.vid, target_lsn).or_into_ctx()? else {
+        // volume is empty, nothing to hydrate
+        return Ok(vec![]);
+    };
+
+    // build a snapshot to search for commits
+    let snapshot = Snapshot::new(opts.vid.clone(), LSN::FIRST..=target_lsn);
 
     // the set of pages we are searching for.
     // we remove pages from this set as we iterate through commits.
-    let mut pages = PageSet::from_range(reader.page_count(&snapshot).or_into_ctx()?.pageidxs());
+    let mut pages = PageSet::from_range(page_count.pageidxs());
 
-    let mut page_count = reader.page_count(&snapshot).or_into_ctx()?;
-    let mut commits = reader.commits(snapshot.search_path());
+    let mut outstanding_frames = vec![];
+    let mut commits = reader.commits(&snapshot);
     while !pages.is_empty()
         && let Some(commit) = commits.try_next().or_into_ctx()?
     {

@@ -1,11 +1,8 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
+use bytestring::ByteString;
 use culprit::{Culprit, ResultExt};
-use graft_kernel::{
-    KernelErr, LogicalErr,
-    rt::runtime_handle::RuntimeHandle,
-    volume_name::{VolumeName, VolumeNameErr},
-};
+use graft_kernel::{KernelErr, LogicalErr, rt::runtime_handle::RuntimeHandle};
 use graft_tracing::TracingConsumer;
 use parking_lot::Mutex;
 use sqlite_plugin::{
@@ -51,13 +48,6 @@ pub enum ErrCtx {
     FmtErr(#[from] std::fmt::Error),
 }
 
-impl From<VolumeNameErr> for ErrCtx {
-    #[inline]
-    fn from(value: VolumeNameErr) -> Self {
-        ErrCtx::Kernel(value.into())
-    }
-}
-
 impl ErrCtx {
     #[inline]
     fn wrap<T>(cb: impl FnOnce() -> culprit::Result<T, ErrCtx>) -> VfsResult<T> {
@@ -90,11 +80,11 @@ impl ErrCtx {
             KernelErr::Remote(_) => SQLITE_IOERR,
             KernelErr::Logical(err) => match err {
                 LogicalErr::VolumeNotFound(_) | LogicalErr::GraftNotFound(_) => SQLITE_IOERR,
-                LogicalErr::ConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
+                LogicalErr::GraftConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
                 LogicalErr::GraftNeedsRecovery(_)
                 | LogicalErr::GraftDiverged(_)
                 | LogicalErr::GraftRemoteMismatch { .. }
-                | LogicalErr::InvalidVolumeName(_) => SQLITE_INTERNAL,
+                | LogicalErr::TagNotFound(_) => SQLITE_INTERNAL,
             },
         }
     }
@@ -108,7 +98,7 @@ impl<T> From<ErrCtx> for culprit::Result<T, ErrCtx> {
 
 pub struct GraftVfs {
     runtime: RuntimeHandle,
-    locks: Mutex<HashMap<VolumeName, Arc<Mutex<()>>>>,
+    locks: Mutex<HashMap<ByteString, Arc<Mutex<()>>>>,
 }
 
 impl GraftVfs {
@@ -180,7 +170,7 @@ impl Vfs for GraftVfs {
 
     fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         tracing::trace!("access: path={path:?}; flags={flags:?}");
-        ErrCtx::wrap(move || self.runtime.volume_exists(path).or_into_ctx())
+        ErrCtx::wrap(move || self.runtime.tag_exists(path).or_into_ctx())
     }
 
     fn open(&self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle> {
@@ -190,17 +180,14 @@ impl Vfs for GraftVfs {
             if opts.kind() == OpenKind::MainDb
                 && let Some(path) = path
             {
-                // TODO: parse query string to see if a remote VID is requested
-                let remote_vid = None;
-
-                // try to open a volume handle
-                let handle = self.runtime.open_volume(path, remote_vid).or_into_ctx()?;
+                // open a tag handle
+                let handle = self.runtime.get_or_create_tag(path).or_into_ctx()?;
 
                 // get or create a reserved lock for this Volume
                 let reserved_lock = self
                     .locks
                     .lock()
-                    .entry(handle.name().clone())
+                    .entry(handle.tag().clone())
                     .or_default()
                     .clone();
 
@@ -229,7 +216,7 @@ impl Vfs for GraftVfs {
                     // retrieve a reference to the reserved lock for the volume
                     let mut locks = self.locks.lock();
                     let reserved_lock = locks
-                        .get(handle.name())
+                        .get(handle.tag())
                         .expect("reserved lock missing from lock manager");
 
                     // clean up the lock if this was the last reference
@@ -237,7 +224,7 @@ impl Vfs for GraftVfs {
                     // preventing any concurrent opens from incrementing the
                     // reference count
                     if Arc::strong_count(reserved_lock) == 1 {
-                        locks.remove(handle.name());
+                        locks.remove(handle.tag());
                     }
 
                     Ok(())

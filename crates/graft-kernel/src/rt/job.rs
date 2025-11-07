@@ -4,9 +4,7 @@ use culprit::{Culprit, ResultExt};
 use graft_core::{SegmentId, VolumeId, commit::SegmentRangeRef, lsn::LSN};
 use tryiter::TryIteratorExt;
 
-use crate::{
-    KernelErr, local::fjall_storage::FjallStorage, remote::Remote, volume_name::VolumeName,
-};
+use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote};
 
 mod fetch_segment;
 mod hydrate_volume;
@@ -54,16 +52,16 @@ impl Job {
         Job::PullVolume(pull_volume::Opts { vid, max_lsn })
     }
 
-    pub fn remote_commit(name: VolumeName) -> Self {
-        Job::RemoteCommit(remote_commit::Opts { name })
+    pub fn remote_commit(graft: VolumeId) -> Self {
+        Job::RemoteCommit(remote_commit::Opts { graft })
     }
 
-    pub fn recover_pending_commit(name: VolumeName) -> Self {
-        Job::RecoverPendingCommit(recover_pending_commit::Opts { name })
+    pub fn recover_pending_commit(graft: VolumeId) -> Self {
+        Job::RecoverPendingCommit(recover_pending_commit::Opts { graft })
     }
 
-    pub fn sync_remote_to_local(name: VolumeName) -> Self {
-        Job::SyncRemoteToLocal(sync_remote_to_local::Opts { name })
+    pub fn sync_remote_to_local(graft: VolumeId) -> Self {
+        Job::SyncRemoteToLocal(sync_remote_to_local::Opts { graft })
     }
 
     pub fn hydrate_volume(vid: VolumeId, max_lsn: Option<LSN>) -> Self {
@@ -78,27 +76,25 @@ impl Job {
     pub fn collect(storage: &FjallStorage) -> Result<Vec<Self>, Culprit<KernelErr>> {
         let mut jobs = vec![];
         let reader = storage.read();
-        let mut volumes = reader.grafts();
-        while let Some(volume) = volumes.try_next().or_into_ctx()? {
-            let name = volume.name.clone();
-
-            if volume.pending_commit().is_some() {
-                jobs.push(Self::recover_pending_commit(name));
+        let mut grafts = reader.iter_grafts();
+        while let Some(graft) = grafts.try_next().or_into_ctx()? {
+            if graft.pending_commit().is_some() {
+                jobs.push(Self::recover_pending_commit(graft.local));
             } else {
-                let local_snapshot = reader.snapshot(&volume.local).or_into_ctx()?;
-                let local_changes = volume.local_changes(&local_snapshot).is_some();
-                let remote_snapshot = reader.snapshot(&volume.remote).or_into_ctx()?;
-                let remote_changes = volume.remote_changes(&remote_snapshot).is_some();
+                let latest_local = reader.latest_lsn(&graft.local).or_into_ctx()?;
+                let latest_remote = reader.latest_lsn(&graft.remote).or_into_ctx()?;
+                let local_changes = graft.local_changes(latest_local).is_some();
+                let remote_changes = graft.remote_changes(latest_remote).is_some();
 
                 if remote_changes && local_changes {
                     todo!("user needs to intervene")
                 } else if remote_changes {
-                    jobs.push(Self::sync_remote_to_local(name))
+                    jobs.push(Self::sync_remote_to_local(graft.local))
                 } else if local_changes {
-                    jobs.push(Self::remote_commit(name));
+                    jobs.push(Self::remote_commit(graft.local));
                 } else {
-                    jobs.push(Self::pull_volume(volume.remote.clone(), None));
-                    jobs.push(Self::sync_remote_to_local(name))
+                    jobs.push(Self::pull_volume(graft.remote, None));
+                    jobs.push(Self::sync_remote_to_local(graft.local))
                 }
             }
         }

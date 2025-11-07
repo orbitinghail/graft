@@ -1,4 +1,9 @@
-use std::{fmt::Debug, mem, sync::Arc};
+use std::{
+    fmt::Debug,
+    hash::{BuildHasher, RandomState},
+    mem,
+    sync::Arc,
+};
 
 use bytes::BytesMut;
 use culprit::{Culprit, Result, ResultExt};
@@ -8,8 +13,8 @@ use graft_core::{
     page_count::PageCount,
 };
 use graft_kernel::{
-    graft::Graft,
     snapshot::Snapshot,
+    tag_handle::TagHandle,
     volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
     volume_writer::{VolumeWrite, VolumeWriter},
 };
@@ -58,7 +63,7 @@ impl Debug for VolFileState {
 }
 
 pub struct VolFile {
-    handle: Graft,
+    handle: TagHandle,
     opts: OpenOpts,
 
     reserved: Arc<Mutex<()>>,
@@ -69,14 +74,14 @@ pub struct VolFile {
 impl Debug for VolFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VolFile")
-            .field("handle", self.handle.name())
+            .field("handle", &self.handle.tag())
             .field("state", &self.state)
             .finish()
     }
 }
 
 impl VolFile {
-    pub fn new(handle: Graft, opts: OpenOpts, reserved: Arc<Mutex<()>>) -> Self {
+    pub fn new(handle: TagHandle, opts: OpenOpts, reserved: Arc<Mutex<()>>) -> Self {
         Self {
             handle,
             opts,
@@ -113,15 +118,19 @@ impl VolFile {
         }
     }
 
-    pub fn handle(&self) -> &Graft {
+    pub fn handle(&self) -> &TagHandle {
         &self.handle
+    }
+
+    pub fn handle_mut(&mut self) -> &mut TagHandle {
+        &mut self.handle
     }
 
     pub fn opts(&self) -> OpenOpts {
         self.opts
     }
 
-    pub fn close(self) -> Graft {
+    pub fn close(self) -> TagHandle {
         self.handle
     }
 }
@@ -234,8 +243,7 @@ impl VfsFile for VolFile {
                     // Unlocked request after handling the error
 
                     // Commit the writer, downgrading to a reader
-                    let vref = writer.commit().or_into_ctx()?;
-                    let reader = self.handle.reader_at(Some(vref.lsn)).or_into_ctx()?;
+                    let reader = writer.commit().or_into_ctx()?;
                     self.state = VolFileState::Shared { reader };
 
                     // release the reserved lock
@@ -320,13 +328,13 @@ impl VfsFile for VolFile {
             // find the location of the file change counter within the out buffer
             let fcc_offset = FILE_CHANGE_COUNTER_OFFSET - local_offset.as_usize();
 
-            // use the snapshot LSN as the change counter (or 0 if empty).
-            // truncate it to a u32 which means it will wrap
+            // compute the file change counter by hashing the snapshot
             let snapshot = self.snapshot_or_latest()?;
-            let change_counter = snapshot.lsn().map_or(0, |l| l.to_u64() as u32);
+            let hash = RandomState::new().hash_one(snapshot);
+            let change_counter = &hash.to_be_bytes()[..4];
 
             // write the latest change counter to the buffer
-            data[fcc_offset..fcc_offset + 4].copy_from_slice(&change_counter.to_be_bytes());
+            data[fcc_offset..fcc_offset + 4].copy_from_slice(&change_counter);
         }
 
         Ok(data.len())

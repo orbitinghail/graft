@@ -1,6 +1,7 @@
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 
 use futures::{Stream, StreamExt};
+use graft_core::VolumeId;
 use tokio::time::Instant;
 
 use crate::{
@@ -8,7 +9,6 @@ use crate::{
     local::fjall_storage::FjallStorage,
     remote::Remote,
     rt::{job::Job, rpc::Rpc},
-    volume_name::VolumeName,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -18,7 +18,7 @@ pub struct RuntimeFatalErr;
 pub enum Event {
     Rpc(Rpc),
     Tick(Instant),
-    Commits(HashSet<VolumeName>),
+    Commits(HashSet<VolumeId>),
 }
 
 pub struct Runtime<S> {

@@ -1,12 +1,11 @@
-use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use culprit::ResultExt;
-use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentIdx, page::Page, pageset::PageSet};
+use graft_core::{PageIdx, SegmentId, commit::SegmentIdx, page::Page, pageset::PageSet};
 use tokio::task::JoinHandle;
 
 use crate::{
     KernelErr,
-    graft::Graft,
     page_status::PageStatus,
     remote::Remote,
     rt::{
@@ -14,7 +13,7 @@ use crate::{
         runtime::{Event, Runtime, RuntimeFatalErr},
     },
     snapshot::Snapshot,
-    volume_name::VolumeName,
+    tag_handle::TagHandle,
 };
 
 use tokio::sync::mpsc;
@@ -74,22 +73,13 @@ impl RuntimeHandle {
         &self.inner.rpc
     }
 
-    pub fn volume_exists<S: Deref<Target = str>>(&self, name: S) -> Result<bool> {
-        let name: VolumeName = VolumeName::from_str(&name)?;
-        self.storage().read().graft_exists(&name).or_into_ctx()
+    pub fn tag_exists(&self, name: &str) -> Result<bool> {
+        self.storage().read().tag_exists(name).or_into_ctx()
     }
 
-    pub fn open_volume<S: Deref<Target = str>>(
-        &self,
-        name: S,
-        remote_vid: Option<VolumeId>,
-    ) -> Result<Graft> {
-        let name: VolumeName = name.parse().expect("invalid Volume name");
-        // make sure the graft exists
-        self.storage()
-            .open_graft(name.clone(), remote_vid)
-            .or_into_ctx()?;
-        Ok(Graft::new(self.clone(), name))
+    pub fn get_or_create_tag(&self, tag: &str) -> Result<TagHandle> {
+        let graft = self.storage().get_or_create_tag(tag).or_into_ctx()?;
+        Ok(TagHandle::new(self.clone(), tag.into(), graft.local))
     }
 
     pub(crate) fn storage(&self) -> &FjallStorage {
@@ -144,7 +134,7 @@ impl RuntimeHandle {
                 Ok(PageStatus::Pending(commit.lsn()))
             }
         } else {
-            Ok(PageStatus::Empty(snapshot.lsn()))
+            Ok(PageStatus::Empty(snapshot.head().map(|(_, lsn)| lsn)))
         }
     }
 }
@@ -173,11 +163,13 @@ mod tests {
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
         let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
 
-        let volume = runtime.open_volume("leader", None).unwrap();
-        let remote_vid = volume.status().unwrap().remote.vid().clone();
+        let handle = runtime.get_or_create_tag("leader").unwrap();
+        let remote_vid = handle.remote().unwrap();
+
+        assert_eq!(handle.status().unwrap().to_string(), "_ r_",);
 
         // sanity check volume writer semantics
-        let mut writer = volume.writer().unwrap();
+        let mut writer = handle.writer().unwrap();
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i);
@@ -186,8 +178,11 @@ mod tests {
         }
         writer.commit().unwrap();
 
+        assert_eq!(handle.status().unwrap().to_string(), "1 r_",);
+
         // sanity check volume reader semantics
-        let reader = volume.reader().unwrap();
+        let reader = handle.reader().unwrap();
+        tracing::debug!("got snapshot {:?}", reader.snapshot());
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i);
@@ -202,7 +197,8 @@ mod tests {
         let runtime_2 = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
 
         // open the same graft in the second runtime
-        let volume_2 = runtime_2.open_volume("follower", Some(remote_vid)).unwrap();
+        let mut handle_2 = runtime_2.get_or_create_tag("follower").unwrap();
+        handle_2.checkout(Some(remote_vid)).unwrap();
 
         // let both runtimes run for a little while
         tokio_rt.block_on(async {
@@ -212,11 +208,11 @@ mod tests {
             tracing::info!("remote tree\n{tree}")
         });
 
-        assert_eq!(volume.status().unwrap().to_string(), "1 r1",);
-        assert_eq!(volume_2.status().unwrap().to_string(), "1 r1",);
+        assert_eq!(handle.status().unwrap().to_string(), "1 r1",);
+        assert_eq!(handle_2.status().unwrap().to_string(), "1 r1",);
 
         // sanity check volume reader semantics in the second runtime
-        let reader_2 = volume_2.reader().unwrap();
+        let reader_2 = handle_2.reader().unwrap();
         let task = tokio_rt.spawn_blocking(move || {
             for i in [1u8, 2, 5, 9] {
                 let pageidx = PageIdx::must_new(i as u32);
@@ -229,7 +225,7 @@ mod tests {
         tokio_rt.block_on(task).unwrap();
 
         // now write to the second volume, and sync back to the first
-        let mut writer_2 = volume_2.writer().unwrap();
+        let mut writer_2 = handle_2.writer().unwrap();
         for i in [3u8, 4, 5, 7] {
             let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i + 10);
@@ -246,11 +242,11 @@ mod tests {
             tracing::info!("remote tree\n{tree}")
         });
 
-        assert_eq!(volume.status().unwrap().to_string(), "2 r2",);
-        assert_eq!(volume_2.status().unwrap().to_string(), "2 r2",);
+        assert_eq!(handle.status().unwrap().to_string(), "2 r2",);
+        assert_eq!(handle_2.status().unwrap().to_string(), "2 r2",);
 
         // sanity check volume reader semantics in the first runtime
-        let reader = volume.reader().unwrap();
+        let reader = handle.reader().unwrap();
         let task = tokio_rt.spawn_blocking(move || {
             for i in [3u8, 4, 5, 7] {
                 let pageidx = PageIdx::must_new(i as u32);
