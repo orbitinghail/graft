@@ -6,7 +6,7 @@ use graft_kernel::{
     graft::AheadStatus, page_status::PageStatus, rt::runtime_handle::RuntimeHandle,
     volume_reader::VolumeRead,
 };
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use sqlite_plugin::{
     vars::SQLITE_ERROR,
     vfs::{Pragma, PragmaErr},
@@ -23,6 +23,12 @@ pub enum GraftPragma {
 
     /// `pragma graft_fetch;`
     Fetch,
+
+    /// `pragma graft_pull;`
+    Pull,
+
+    /// `pragma graft_push;`
+    Push,
 
     /// `pragma graft_pages;`
     Pages,
@@ -45,6 +51,8 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "status" => Ok(GraftPragma::Status),
                 "snapshot" => Ok(GraftPragma::Snapshot),
                 "fetch" => Ok(GraftPragma::Fetch),
+                "pull" => Ok(GraftPragma::Pull),
+                "push" => Ok(GraftPragma::Push),
                 "pages" => Ok(GraftPragma::Pages),
                 "hydrate" => Ok(GraftPragma::Hydrate),
                 "version" => Ok(GraftPragma::Version),
@@ -72,23 +80,10 @@ impl GraftPragma {
                 Ok(Some(format!("{snapshot:?}")))
             }
 
-            GraftPragma::Fetch => {
-                let pre = file.handle().status().or_into_ctx()?;
-                file.handle().fetch().or_into_ctx()?;
-                let post = file.handle().status().or_into_ctx()?;
+            GraftPragma::Fetch => Ok(Some(fetch_or_pull(file, false)?)),
+            GraftPragma::Pull => Ok(Some(fetch_or_pull(file, true)?)),
 
-                if let Some(diff) =
-                    AheadStatus::new(post.remote_status.head, pre.remote_status.head).changes()
-                {
-                    Ok(Some(format!(
-                        "Pulled LSNs {} into remote Volume {}",
-                        diff.to_string(),
-                        post.remote
-                    )))
-                } else {
-                    Ok(Some(format!("No changes to remote Volume {}", post.remote)))
-                }
-            }
+            GraftPragma::Push => Ok(Some(push(file)?)),
 
             GraftPragma::Pages => Ok(Some(format_graft_pages(file)?)),
 
@@ -212,4 +207,75 @@ fn format_graft_pages(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     }
 
     Ok(f)
+}
+
+fn fetch_or_pull(file: &mut VolFile, pull: bool) -> Result<String, Culprit<ErrCtx>> {
+    let pre = file.handle().status().or_into_ctx()?;
+    if pull {
+        file.handle().pull().or_into_ctx()?;
+    } else {
+        file.handle().fetch().or_into_ctx()?;
+    }
+    let post = file.handle().status().or_into_ctx()?;
+
+    let mut f = String::new();
+
+    if let Some(diff) = AheadStatus::new(post.remote_status.head, pre.remote_status.head).changes()
+    {
+        writeln!(
+            &mut f,
+            "Pulled LSNs {} into remote Volume {}",
+            diff.to_string(),
+            post.remote
+        )?;
+    } else {
+        writeln!(&mut f, "No changes to remote Volume {}", post.remote)?;
+    }
+
+    if pull {
+        if let Some(diff) =
+            AheadStatus::new(post.local_status.head, pre.local_status.head).changes()
+        {
+            writeln!(
+                &mut f,
+                "Pulled LSNs {} into local Volume {}",
+                diff.to_string(),
+                post.remote
+            )?;
+        } else {
+            writeln!(&mut f, "No changes to local Volume {}", post.remote)?;
+        }
+    }
+
+    Ok(f)
+}
+
+fn push(file: &mut VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let pre = file.handle().status().or_into_ctx()?;
+    if let Some(changes) = pre.local_status.changes()
+        && !changes.is_empty()
+    {
+        file.handle().push().or_into_ctx()?;
+        let post = file.handle().status().or_into_ctx()?;
+
+        let pushed = AheadStatus::new(post.local_status.base, pre.local_status.base).changes();
+
+        Ok(formatdoc!(
+            "
+                Pushed LSNs {} from local Volume {}
+                to remote Volume {} @ {}
+            ",
+            pushed
+                .map(|lsns| lsns.to_string())
+                .unwrap_or("unknown".into()),
+            post.local,
+            post.remote,
+            post.remote_status
+                .base
+                .map(|l| l.to_string())
+                .unwrap_or("unknown".into())
+        ))
+    } else {
+        Ok("Everything up-to-date".to_string())
+    }
 }

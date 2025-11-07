@@ -8,7 +8,7 @@ use crate::{
     err::KernelErr,
     local::fjall_storage::FjallStorage,
     remote::Remote,
-    rt::{job::Job, rpc::Rpc},
+    rt::{job::Job, rpc::RpcWrapper},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -16,7 +16,7 @@ use crate::{
 pub struct RuntimeFatalErr;
 
 pub enum Event {
-    Rpc(Rpc),
+    Rpc(RpcWrapper),
     Tick(Instant),
     Commits(HashSet<VolumeId>),
 }
@@ -51,7 +51,7 @@ impl<S: Stream<Item = Event>> Runtime<S> {
     async fn run(&mut self) -> culprit::Result<(), KernelErr> {
         while let Some(event) = self.events.next().await {
             match event {
-                Event::Rpc(rpc) => rpc.run(&self.storage, &self.remote).await?,
+                Event::Rpc(rpc) => rpc.run(&self.storage, &self.remote).await,
                 Event::Tick(_instant) => {
                     for job in Job::collect(&self.storage)? {
                         job.run(&self.storage, &self.remote).await?

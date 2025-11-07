@@ -23,13 +23,13 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 # New and improved pragmas
 
 [x] `pragma graft_status`
-[ ] `pragma graft_fetch`
+[x] `pragma graft_fetch`
 fetch the remote volume without pulling in changes
 
-[ ] `pragma graft_pull`
+[x] `pragma graft_pull`
 fetch + pull changes from the remote vid into the local vid
 
-[ ] `pragma graft_push`
+[x] `pragma graft_push`
 push local changes to the remote
 
 [ ] `pragma graft_autosync = on|off`

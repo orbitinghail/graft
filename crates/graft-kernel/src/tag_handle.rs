@@ -105,4 +105,15 @@ impl TagHandle {
     pub fn fetch(&self) -> Result<()> {
         self.runtime.rpc().fetch_volume(self.remote()?)
     }
+
+    /// Pulls any new changes into the remote volume and then immediately
+    /// attempts to sync them into to the local volume.
+    pub fn pull(&self) -> Result<()> {
+        self.runtime.rpc().pull_graft(self.graft.clone())
+    }
+
+    /// Pushes any local changes to the remote volume.
+    pub fn push(&self) -> Result<()> {
+        self.runtime.rpc().push_graft(self.graft.clone())
+    }
 }
