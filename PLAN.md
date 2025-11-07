@@ -87,7 +87,7 @@ push local changes to the remote
 
 `pragma graft_autosync = on|off`
 
-enables/disables autosync for this named volume
+enables/disables autosync for this graft
 
 `pragma graft_checkout [= remote_vid[:LSN]]`
 if remote_vid is specified, this pragma creates a new graft starting from the remote vid, possibly at a specified LSN.

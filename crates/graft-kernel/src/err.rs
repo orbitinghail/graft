@@ -14,7 +14,7 @@ pub enum KernelErr {
     Remote(#[from] RemoteErr),
 
     #[error(transparent)]
-    Volume(#[from] VolumeErr),
+    Logical(#[from] LogicalErr),
 }
 
 impl KernelErr {
@@ -30,7 +30,7 @@ impl KernelErr {
 impl From<FjallStorageErr> for KernelErr {
     fn from(value: FjallStorageErr) -> Self {
         match value {
-            FjallStorageErr::VolumeErr(verr) => KernelErr::Volume(verr),
+            FjallStorageErr::VolumeErr(verr) => KernelErr::Logical(verr),
             other => KernelErr::Storage(other),
         }
     }
@@ -39,12 +39,12 @@ impl From<FjallStorageErr> for KernelErr {
 impl From<VolumeNameErr> for KernelErr {
     #[inline]
     fn from(value: VolumeNameErr) -> Self {
-        KernelErr::Volume(VolumeErr::InvalidVolumeName(value))
+        KernelErr::Logical(LogicalErr::InvalidVolumeName(value))
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum VolumeErr {
+pub enum LogicalErr {
     #[error("Unknown Volume {0}")]
     VolumeNotFound(VolumeId),
 
@@ -54,19 +54,19 @@ pub enum VolumeErr {
     #[error("Invalid Volume Name")]
     InvalidVolumeName(#[from] VolumeNameErr),
 
-    #[error("Named Volume `{0}` not found")]
-    NamedVolumeNotFound(VolumeName),
+    #[error("Graft `{0}` not found")]
+    GraftNotFound(VolumeName),
 
-    #[error("Named Volume `{0}` has a pending commit and needs recovery")]
-    NamedVolumeNeedsRecovery(VolumeName),
+    #[error("Graft `{0}` has a pending commit and needs recovery")]
+    GraftNeedsRecovery(VolumeName),
 
-    #[error("Named Volume `{0}` has diverged from the remote")]
-    NamedVolumeDiverged(VolumeName),
+    #[error("Graft `{0}` has diverged from the remote")]
+    GraftDiverged(VolumeName),
 
     #[error(
-        "Named Volume `{name}` has a different remote Volume than expected; expected={expected}, actual={actual}"
+        "Graft `{name}` has a different remote Volume than expected; expected={expected}, actual={actual}"
     )]
-    NamedVolumeRemoteMismatch {
+    GraftRemoteMismatch {
         name: VolumeName,
         expected: VolumeId,
         actual: VolumeId,

@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use culprit::{Culprit, ResultExt};
 use graft_kernel::{
-    KernelErr, VolumeErr,
+    KernelErr, LogicalErr,
     rt::runtime_handle::RuntimeHandle,
     volume_name::{VolumeName, VolumeNameErr},
 };
@@ -88,13 +88,13 @@ impl ErrCtx {
         match err {
             KernelErr::Storage(_) => SQLITE_IOERR,
             KernelErr::Remote(_) => SQLITE_IOERR,
-            KernelErr::Volume(err) => match err {
-                VolumeErr::VolumeNotFound(_) | VolumeErr::NamedVolumeNotFound(_) => SQLITE_IOERR,
-                VolumeErr::ConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
-                VolumeErr::NamedVolumeNeedsRecovery(_)
-                | VolumeErr::NamedVolumeDiverged(_)
-                | VolumeErr::NamedVolumeRemoteMismatch { .. }
-                | VolumeErr::InvalidVolumeName(_) => SQLITE_INTERNAL,
+            KernelErr::Logical(err) => match err {
+                LogicalErr::VolumeNotFound(_) | LogicalErr::GraftNotFound(_) => SQLITE_IOERR,
+                LogicalErr::ConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
+                LogicalErr::GraftNeedsRecovery(_)
+                | LogicalErr::GraftDiverged(_)
+                | LogicalErr::GraftRemoteMismatch { .. }
+                | LogicalErr::InvalidVolumeName(_) => SQLITE_INTERNAL,
             },
         }
     }

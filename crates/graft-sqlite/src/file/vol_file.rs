@@ -8,7 +8,7 @@ use graft_core::{
     page_count::PageCount,
 };
 use graft_kernel::{
-    named_volume::NamedVolume,
+    graft::Graft,
     snapshot::Snapshot,
     volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
     volume_writer::{VolumeWrite, VolumeWriter},
@@ -58,7 +58,7 @@ impl Debug for VolFileState {
 }
 
 pub struct VolFile {
-    handle: NamedVolume,
+    handle: Graft,
     opts: OpenOpts,
 
     reserved: Arc<Mutex<()>>,
@@ -76,7 +76,7 @@ impl Debug for VolFile {
 }
 
 impl VolFile {
-    pub fn new(handle: NamedVolume, opts: OpenOpts, reserved: Arc<Mutex<()>>) -> Self {
+    pub fn new(handle: Graft, opts: OpenOpts, reserved: Arc<Mutex<()>>) -> Self {
         Self {
             handle,
             opts,
@@ -113,7 +113,7 @@ impl VolFile {
         }
     }
 
-    pub fn handle(&self) -> &NamedVolume {
+    pub fn handle(&self) -> &Graft {
         &self.handle
     }
 
@@ -121,7 +121,7 @@ impl VolFile {
         self.opts
     }
 
-    pub fn close(self) -> NamedVolume {
+    pub fn close(self) -> Graft {
         self.handle
     }
 }

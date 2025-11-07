@@ -20,15 +20,15 @@ use splinter_rs::{PartitionRead, Splinter};
 use tryiter::TryIteratorExt;
 
 use crate::{
-    KernelErr, VolumeErr,
+    KernelErr, LogicalErr,
+    graft::PendingCommit,
     local::fjall_storage::FjallStorage,
-    named_volume::PendingCommit,
     remote::{Remote, segment::SegmentBuilder},
     search_path::SearchPath,
     volume_name::VolumeName,
 };
 
-/// Commits a Named Volume's local changes into its remote.
+/// Commits a Graft's local changes into its remote.
 pub struct Opts {
     pub name: VolumeName,
 }
@@ -72,7 +72,7 @@ pub async fn run(
 
     // make final preparations before pushing to the remote.
     // these preparations include checking preconditions and setting
-    // pending_commit on the NamedVolume
+    // pending_commit on the Graft
     storage
         .remote_commit_prepare(
             &opts.name,
@@ -106,7 +106,7 @@ pub async fn run(
             storage.drop_pending_commit(&opts.name).or_into_ctx()?;
             // TODO: mark rejected status somewhere or put it in a log
             tracing::warn!(
-                "remote commit rejected for named volume {}, commit {} already exists",
+                "remote commit rejected for graft {}, commit {} already exists",
                 opts.name,
                 plan.commit_ref
             );
@@ -134,9 +134,9 @@ fn plan_commit(
     name: &VolumeName,
 ) -> culprit::Result<Option<CommitPlan>, KernelErr> {
     let reader = storage.read();
-    let handle = reader.named_volume(name).or_into_ctx()?;
+    let handle = reader.graft(name).or_into_ctx()?;
     if handle.pending_commit().is_some() {
-        return Err(VolumeErr::NamedVolumeNeedsRecovery(name.clone()).into());
+        return Err(LogicalErr::GraftNeedsRecovery(name.clone()).into());
     }
 
     let latest_local = reader.snapshot(&handle.local).or_into_ctx()?;
@@ -144,7 +144,7 @@ fn plan_commit(
     let latest_remote = reader.snapshot(&handle.remote).or_into_ctx()?;
 
     let Some(sync) = handle.sync() else {
-        // this is the first time we are pushing this named volume to the remote
+        // this is the first time we are pushing this graft to the remote
         assert_eq!(latest_remote.lsn(), None, "BUG: remote should be empty");
         let Some(latest_local_lsn) = latest_local.lsn() else {
             return Ok(None);
@@ -161,8 +161,8 @@ fn plan_commit(
     if handle.remote_changes(&latest_remote).is_some() {
         // the remote and local volumes have diverged
         let status = handle.status(&latest_local, &latest_remote);
-        tracing::debug!("named volume {name} has diverged; status=`{status}`");
-        return Err(VolumeErr::NamedVolumeDiverged(name.clone()).into());
+        tracing::debug!("graft {name} has diverged; status=`{status}`");
+        return Err(LogicalErr::GraftDiverged(name.clone()).into());
     }
 
     // calculate which LSNs we need to sync

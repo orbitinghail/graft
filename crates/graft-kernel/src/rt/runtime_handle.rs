@@ -6,7 +6,7 @@ use tokio::task::JoinHandle;
 
 use crate::{
     KernelErr,
-    named_volume::NamedVolume,
+    graft::Graft,
     page_status::PageStatus,
     remote::Remote,
     rt::{
@@ -76,23 +76,20 @@ impl RuntimeHandle {
 
     pub fn volume_exists<S: Deref<Target = str>>(&self, name: S) -> Result<bool> {
         let name: VolumeName = VolumeName::from_str(&name)?;
-        self.storage()
-            .read()
-            .named_volume_exists(&name)
-            .or_into_ctx()
+        self.storage().read().graft_exists(&name).or_into_ctx()
     }
 
     pub fn open_volume<S: Deref<Target = str>>(
         &self,
         name: S,
         remote_vid: Option<VolumeId>,
-    ) -> Result<NamedVolume> {
+    ) -> Result<Graft> {
         let name: VolumeName = name.parse().expect("invalid Volume name");
-        // make sure the named volume exists
+        // make sure the graft exists
         self.storage()
-            .open_named_volume(name.clone(), remote_vid)
+            .open_graft(name.clone(), remote_vid)
             .or_into_ctx()?;
-        Ok(NamedVolume::new(self.clone(), name))
+        Ok(Graft::new(self.clone(), name))
     }
 
     pub(crate) fn storage(&self) -> &FjallStorage {
@@ -204,7 +201,7 @@ mod tests {
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
         let runtime_2 = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage);
 
-        // open the same named volume in the second runtime
+        // open the same graft in the second runtime
         let volume_2 = runtime_2.open_volume("follower", Some(remote_vid)).unwrap();
 
         // let both runtimes run for a little while

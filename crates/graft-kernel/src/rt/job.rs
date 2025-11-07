@@ -19,10 +19,10 @@ pub enum Job {
     /// Pulls commits and metadata from a remote.
     PullVolume(pull_volume::Opts),
 
-    /// Commits a Named Volume's local changes into its remote.
+    /// Commits a Graft's local changes into its remote.
     RemoteCommit(remote_commit::Opts),
 
-    /// Commits a Named Volume's local changes into its remote.
+    /// Commits a Graft's local changes into its remote.
     RecoverPendingCommit(recover_pending_commit::Opts),
 
     /// Fast-forwards the local volume to include any remote commits. Fails if
@@ -74,11 +74,11 @@ impl Job {
         Job::FetchSegment(fetch_segment::Opts { sid, frame })
     }
 
-    /// Inspects all named volumes to compute a list of outstanding jobs.
+    /// Inspects all grafts to compute a list of outstanding jobs.
     pub fn collect(storage: &FjallStorage) -> Result<Vec<Self>, Culprit<KernelErr>> {
         let mut jobs = vec![];
         let reader = storage.read();
-        let mut volumes = reader.named_volumes();
+        let mut volumes = reader.grafts();
         while let Some(volume) = volumes.try_next().or_into_ctx()? {
             let name = volume.name.clone();
 

@@ -3,7 +3,7 @@ use bytes::Bytes;
 use culprit::ResultExt;
 use graft_core::{commit::Commit, page::Page, volume_meta::VolumeMeta};
 
-use crate::{local::fjall_storage::fjall_repr::FjallRepr, named_volume::NamedVolumeState};
+use crate::{graft::GraftState, local::fjall_storage::fjall_repr::FjallRepr};
 
 use super::fjall_repr::DecodeErr;
 
@@ -47,7 +47,7 @@ macro_rules! impl_fjallrepr_for_bilrost {
     };
 }
 
-impl_fjallrepr_for_bilrost!(NamedVolumeState, VolumeMeta, Commit);
+impl_fjallrepr_for_bilrost!(GraftState, VolumeMeta, Commit);
 
 #[cfg(test)]
 mod tests {
@@ -71,15 +71,15 @@ mod tests {
 
     #[graft_test::test]
     fn test_volume_handle() {
-        test_roundtrip(NamedVolumeState::new(
+        test_roundtrip(GraftState::new(
             VolumeName::new("test-handle").unwrap(),
             VolumeId::random(),
             VolumeId::random(),
             None,
             None,
         ));
-        test_empty_default::<NamedVolumeState>();
-        test_invalid::<NamedVolumeState>(&b"abc".repeat(123));
+        test_empty_default::<GraftState>();
+        test_invalid::<GraftState>(&b"abc".repeat(123));
     }
 
     #[graft_test::test]

@@ -49,20 +49,20 @@ impl From<PendingCommit> for SyncPoint {
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
-pub struct NamedVolumeState {
+pub struct GraftState {
     /// The Volume name
     #[bilrost(1)]
     pub name: VolumeName,
 
-    /// The local Volume backing this Named Volume
+    /// The local Volume backing this Graft
     #[bilrost(2)]
     pub local: VolumeId,
 
-    /// The remote Volume backing this Named Volume.
+    /// The remote Volume backing this Graft.
     #[bilrost(3)]
     pub remote: VolumeId,
 
-    /// The most recent successful sync point for this Named Volume
+    /// The most recent successful sync point for this Graft
     #[bilrost(4)]
     pub sync: Option<SyncPoint>,
 
@@ -74,7 +74,7 @@ pub struct NamedVolumeState {
     pub pending_commit: Option<PendingCommit>,
 }
 
-impl NamedVolumeState {
+impl GraftState {
     pub fn new(
         name: VolumeName,
         local: VolumeId,
@@ -125,7 +125,7 @@ impl NamedVolumeState {
         .changes()
     }
 
-    pub fn status(&self, latest_local: &Snapshot, latest_remote: &Snapshot) -> NamedVolumeStatus {
+    pub fn status(&self, latest_local: &Snapshot, latest_remote: &Snapshot) -> GraftStatus {
         assert_eq!(
             &self.local,
             latest_local.vid(),
@@ -136,7 +136,7 @@ impl NamedVolumeState {
             latest_remote.vid(),
             "BUG: remote snapshot out of sync"
         );
-        NamedVolumeStatus {
+        GraftStatus {
             local: latest_local.clone(),
             remote: latest_remote.clone(),
             sync: self.sync.clone(),
@@ -144,12 +144,12 @@ impl NamedVolumeState {
     }
 }
 
-pub struct NamedVolume {
+pub struct Graft {
     runtime: RuntimeHandle,
     name: VolumeName,
 }
 
-impl NamedVolume {
+impl Graft {
     pub(crate) fn new(runtime: RuntimeHandle, name: VolumeName) -> Self {
         Self { runtime, name }
     }
@@ -158,17 +158,17 @@ impl NamedVolume {
         &self.name
     }
 
-    pub fn state(&self) -> Result<NamedVolumeState> {
+    pub fn state(&self) -> Result<GraftState> {
         self.runtime
             .storage()
             .read()
-            .named_volume(&self.name)
+            .graft(&self.name)
             .or_into_ctx()
     }
 
-    pub fn status(&self) -> Result<NamedVolumeStatus> {
+    pub fn status(&self) -> Result<GraftStatus> {
         let reader = self.runtime.storage().read();
-        let state = reader.named_volume(&self.name).or_into_ctx()?;
+        let state = reader.graft(&self.name).or_into_ctx()?;
         let latest_local = reader.snapshot(&state.local).or_into_ctx()?;
         let latest_remote = reader.snapshot(&state.remote).or_into_ctx()?;
         Ok(state.status(&latest_local, &latest_remote))
@@ -177,7 +177,7 @@ impl NamedVolume {
     #[inline]
     pub fn page_count(&self) -> Result<PageCount> {
         let reader = self.runtime.storage().read();
-        let state = reader.named_volume(&self.name).or_into_ctx()?;
+        let state = reader.graft(&self.name).or_into_ctx()?;
         let snapshot = reader.snapshot(&state.local).or_into_ctx()?;
         reader.page_count(&snapshot).or_into_ctx()
     }
@@ -189,7 +189,7 @@ impl NamedVolume {
 
     pub fn snapshot_at(&self, lsn: Option<LSN>) -> Result<Snapshot> {
         let reader = self.runtime.storage().read();
-        let state = reader.named_volume(&self.name).or_into_ctx()?;
+        let state = reader.graft(&self.name).or_into_ctx()?;
         reader.snapshot_at(&state.local, lsn).or_into_ctx()
     }
 
@@ -259,13 +259,13 @@ impl Display for AheadStatus {
 }
 
 #[derive(Debug)]
-pub struct NamedVolumeStatus {
+pub struct GraftStatus {
     pub local: Snapshot,
     pub remote: Snapshot,
     pub sync: Option<SyncPoint>,
 }
 
-impl NamedVolumeStatus {
+impl GraftStatus {
     pub fn sync(&self) -> Option<&SyncPoint> {
         self.sync.as_ref()
     }
@@ -282,7 +282,7 @@ impl NamedVolumeStatus {
 ///  - `123+3 r130`: local is 3 commits ahead
 ///  - `123 r130+3`: remote is 3 commits ahead
 ///  - `123+2 r130+3`: local and remote have diverged
-impl Display for NamedVolumeStatus {
+impl Display for GraftStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let local = AheadStatus {
             head: self.local.lsn(),

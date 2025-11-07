@@ -16,7 +16,7 @@ pub enum VolumeNameErr {
     InvalidUtf8(#[from] std::str::Utf8Error),
 }
 
-/// The name of a `NamedVolume`. `VolumeName`s are human readable, but must
+/// The name of a `Graft`. `VolumeName`s are human readable, but must
 /// conform to the regex: `^[-_a-zA-Z0-9]{0,128}$`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
