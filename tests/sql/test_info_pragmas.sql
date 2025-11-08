@@ -1,10 +1,10 @@
 -- initialize two connections to the same database
 .connection 0
-.open file:Gonv3h382yN51uu51uyaj9?vfs=graft
+.open "file:main?vfs=graft"
 pragma graft_status;
 
 .connection 1
-.open file:Gonv3h382yN51uu51uyaj9?vfs=graft
+.open "file:main?vfs=graft"
 pragma graft_status;
 
 -- initialize the db on connection 0
@@ -17,14 +17,14 @@ pragma graft_status;
 pragma graft_status;
 pragma graft_snapshot;
 pragma graft_pages;
-pragma graft_pull;
+pragma graft_version;
 
 -- check pragmas on connection 1
 .connection 1
 pragma graft_status;
 pragma graft_snapshot;
 pragma graft_pages;
-pragma graft_pull;
+pragma graft_version;
 
 -- open a snapshot on connection 1
 begin;
@@ -38,13 +38,11 @@ pragma graft_snapshot;
 .connection 1
 
 -- check that connection 1 pragmas can't see the new snapshot
-pragma graft_status;
 pragma graft_snapshot;
 pragma graft_pages;
 
 -- close the snapshot and check that we can see the latest snapshot
 commit;
 
-pragma graft_status;
 pragma graft_snapshot;
 pragma graft_pages;

@@ -58,11 +58,7 @@ impl TagHandle {
     }
 
     pub fn status(&self) -> Result<GraftStatus> {
-        let reader = self.runtime.storage().read();
-        let state = reader.graft(&self.graft).or_into_ctx()?;
-        let latest_local = reader.latest_lsn(&state.local).or_into_ctx()?;
-        let latest_remote = reader.latest_lsn(&state.remote).or_into_ctx()?;
-        Ok(state.status(latest_local, latest_remote))
+        self.runtime.graft_status(&self.graft)
     }
 
     #[inline]

@@ -1,4 +1,4 @@
-.open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+.open "file:main?vfs=graft"
 
 .databases
 .vfsinfo

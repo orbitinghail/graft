@@ -1,23 +1,22 @@
-.open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+.open "file:main?vfs=graft"
 
 .databases
-main: GontkHa6QVLHYnkyk16wUP r/w
+main: main r/w
 .vfsinfo
 vfs.zName      = "graft"
 vfs.iVersion   = 3
-vfs.szOsFile   = 192
+vfs.szOsFile   = 248
 vfs.mxPathname = 512
 pragma graft_status;
-+-----------------------------------+
-|           Graft Status            |
-+-----------------------------------+
-| Graft Status                      |
-| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
-| Volume ID: GontkHa6QVLHYnkyk16wUP |
-| Current snapshot: None            |
-| Autosync: false                   |
-| Volume status: Ok                 |
-+-----------------------------------+
++---------------------------------------------------------+
+|                       On tag main                       |
++---------------------------------------------------------+
+| On tag main                                             |
+| Local Volume 5rMJhmfWNM-2e8FSEPeTY97s (_) is grafted to |
+| remote Volume 5rMJhmfWNM-2dhso1hdo1Ryc (_).             |
+|                                                         |
+| The local Volume is up to date with the remote Volume.  |
++---------------------------------------------------------+
 
 CREATE TABLE t1(a, b);
 INSERT INTO t1 VALUES(1, 2);
@@ -50,16 +49,17 @@ SELECT * FROM t1;
 COMMIT;
 
 pragma graft_status;
-+-----------------------------------+
-|           Graft Status            |
-+-----------------------------------+
-| Graft Status                      |
-| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
-| Volume ID: GontkHa6QVLHYnkyk16wUP |
-| Current snapshot: Snapshot[4;2]   |
-| Autosync: false                   |
-| Volume status: Ok                 |
-+-----------------------------------+
++-----------------------------------------------------------+
+|                        On tag main                        |
++-----------------------------------------------------------+
+| On tag main                                               |
+| Local Volume 5rMJhmfWNM-2e8FSEPeTY97s (4) is grafted to   |
+| remote Volume 5rMJhmfWNM-2dhso1hdo1Ryc (_).               |
+|                                                           |
+| The local Volume is 4 commits ahead of the remote Volume. |
+|   (use 'pragma graft_push' to push changes)               |
+|                                                           |
++-----------------------------------------------------------+
 
 vacuum;
 drop table t1;

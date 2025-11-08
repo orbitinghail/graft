@@ -6,15 +6,22 @@ use graft_kernel::{
     graft::AheadStatus, page_status::PageStatus, rt::runtime_handle::RuntimeHandle,
     volume_reader::VolumeRead,
 };
-use indoc::{formatdoc, indoc};
+use indoc::{formatdoc, indoc, writedoc};
 use sqlite_plugin::{
     vars::SQLITE_ERROR,
     vfs::{Pragma, PragmaErr},
 };
+use tryiter::TryIteratorExt;
 
 use crate::{file::vol_file::VolFile, vfs::ErrCtx};
 
 pub enum GraftPragma {
+    /// `pragma graft_list;`
+    List,
+
+    /// `pragma graft_tags;`
+    Tags,
+
     /// `pragma graft_checkout [= remote_vid];`
     Checkout { remote: Option<VolumeId> },
 
@@ -51,6 +58,8 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
             && prefix == "graft"
         {
             return match suffix {
+                "list" => Ok(GraftPragma::List),
+                "tags" => Ok(GraftPragma::Tags),
                 "new" => Ok(GraftPragma::Checkout { remote: Some(VolumeId::random()) }),
                 "checkout" => {
                     let remote =
@@ -86,10 +95,13 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
 impl GraftPragma {
     pub fn eval(
         self,
-        _runtime: &RuntimeHandle,
+        runtime: &RuntimeHandle,
         file: &mut VolFile,
     ) -> Result<Option<String>, Culprit<ErrCtx>> {
         match self {
+            GraftPragma::List => Ok(Some(format_grafts(runtime)?)),
+            GraftPragma::Tags => Ok(Some(format_tags(runtime)?)),
+
             GraftPragma::Checkout { remote } => {
                 file.handle_mut().checkout(remote).or_into_ctx()?;
                 let remote = file.handle().remote().or_into_ctx()?;
@@ -302,4 +314,45 @@ fn push(file: &mut VolFile) -> Result<String, Culprit<ErrCtx>> {
     } else {
         Ok("Everything up-to-date".to_string())
     }
+}
+
+fn format_tags(runtime: &RuntimeHandle) -> Result<String, Culprit<ErrCtx>> {
+    let mut f = String::new();
+    let mut tags = runtime.iter_tags();
+    while let Some((tag, graft)) = tags.try_next().or_into_ctx()? {
+        let handle = runtime.get_or_create_tag(&tag).or_into_ctx()?;
+        let status = handle.status().or_into_ctx()?;
+        let remote = handle.remote().or_into_ctx()?;
+
+        writedoc!(
+            &mut f,
+            "
+                Tag: {tag}
+                  Graft: {graft}
+                    Remote: {remote}
+                    Status: {status}
+            ",
+        )?;
+    }
+    Ok(f)
+}
+
+fn format_grafts(runtime: &RuntimeHandle) -> Result<String, Culprit<ErrCtx>> {
+    let mut f = String::new();
+    let mut grafts = runtime.iter_grafts();
+    while let Some(graft) = grafts.try_next().or_into_ctx()? {
+        let status = runtime.graft_status(&graft.local).or_into_ctx()?;
+        let local = graft.local;
+        let remote = graft.remote;
+
+        writedoc!(
+            &mut f,
+            "
+                Graft: {local}
+                  Remote: {remote}
+                  Status: {status}
+            ",
+        )?;
+    }
+    Ok(f)
 }

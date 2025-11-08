@@ -1,11 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
+use bytestring::ByteString;
 use culprit::ResultExt;
-use graft_core::{PageIdx, SegmentId, commit::SegmentIdx, page::Page, pageset::PageSet};
+use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentIdx, page::Page, pageset::PageSet};
 use tokio::task::JoinHandle;
+use tryiter::TryIteratorExt;
 
 use crate::{
     KernelErr,
+    graft::{Graft, GraftStatus},
     page_status::PageStatus,
     remote::Remote,
     rt::{
@@ -74,6 +77,13 @@ impl RuntimeHandle {
         &self.inner.rpc
     }
 
+    pub fn iter_tags(&self) -> impl Iterator<Item = Result<(ByteString, VolumeId)>> {
+        self.storage()
+            .read()
+            .iter_tags()
+            .map_err(|err| err.map_ctx(KernelErr::from))
+    }
+
     pub fn tag_exists(&self, name: &str) -> Result<bool> {
         self.storage().read().tag_exists(name).or_into_ctx()
     }
@@ -81,6 +91,21 @@ impl RuntimeHandle {
     pub fn get_or_create_tag(&self, tag: &str) -> Result<TagHandle> {
         let graft = self.storage().get_or_create_tag(tag).or_into_ctx()?;
         Ok(TagHandle::new(self.clone(), tag.into(), graft.local))
+    }
+
+    pub fn iter_grafts(&self) -> impl Iterator<Item = Result<Graft>> {
+        self.storage()
+            .read()
+            .iter_grafts()
+            .map_err(|err| err.map_ctx(KernelErr::from))
+    }
+
+    pub fn graft_status(&self, graft: &VolumeId) -> Result<GraftStatus> {
+        let reader = self.storage().read();
+        let state = reader.graft(&graft).or_into_ctx()?;
+        let latest_local = reader.latest_lsn(&state.local).or_into_ctx()?;
+        let latest_remote = reader.latest_lsn(&state.remote).or_into_ctx()?;
+        Ok(state.status(latest_local, latest_remote))
     }
 
     pub(crate) fn storage(&self) -> &FjallStorage {

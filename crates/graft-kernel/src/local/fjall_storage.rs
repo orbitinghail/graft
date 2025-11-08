@@ -304,6 +304,12 @@ impl<'a> ReadGuard<'a> {
         self.storage.pages.snapshot_at(self.seqno)
     }
 
+    pub fn iter_tags(
+        &self,
+    ) -> impl Iterator<Item = Result<(ByteString, VolumeId), FjallStorageErr>> + use<> {
+        self._tags().range(..)
+    }
+
     pub fn tag_exists(&self, name: &str) -> Result<bool, FjallStorageErr> {
         self._tags().contains(name)
     }
@@ -321,7 +327,7 @@ impl<'a> ReadGuard<'a> {
         Ok(self._log().first(vid)?.map(|(vref, _)| vref.lsn))
     }
 
-    pub fn iter_grafts(&self) -> impl Iterator<Item = Result<Graft, FjallStorageErr>> {
+    pub fn iter_grafts(&self) -> impl Iterator<Item = Result<Graft, FjallStorageErr>> + use<> {
         self._grafts().values()
     }
 

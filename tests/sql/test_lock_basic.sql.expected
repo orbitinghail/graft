@@ -1,31 +1,29 @@
 -- initialize two connections to the same database
 .connection 0
-.open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+.open "file:main?vfs=graft"
 pragma graft_status;
-+-----------------------------------+
-|           Graft Status            |
-+-----------------------------------+
-| Graft Status                      |
-| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
-| Volume ID: GontkHa6QVLHYnkyk16wUP |
-| Current snapshot: None            |
-| Autosync: false                   |
-| Volume status: Ok                 |
-+-----------------------------------+
++---------------------------------------------------------+
+|                       On tag main                       |
++---------------------------------------------------------+
+| On tag main                                             |
+| Local Volume 5rMJhmhEB6-2e1PhMFKvSreD (_) is grafted to |
+| remote Volume 5rMJhmhEB6-2dYbdtKh7zbgo (_).             |
+|                                                         |
+| The local Volume is up to date with the remote Volume.  |
++---------------------------------------------------------+
 
 .connection 1
-.open file:GontkHa6QVLHYnkyk16wUP?vfs=graft
+.open "file:main?vfs=graft"
 pragma graft_status;
-+-----------------------------------+
-|           Graft Status            |
-+-----------------------------------+
-| Graft Status                      |
-| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
-| Volume ID: GontkHa6QVLHYnkyk16wUP |
-| Current snapshot: None            |
-| Autosync: false                   |
-| Volume status: Ok                 |
-+-----------------------------------+
++---------------------------------------------------------+
+|                       On tag main                       |
++---------------------------------------------------------+
+| On tag main                                             |
+| Local Volume 5rMJhmhEB6-2e1PhMFKvSreD (_) is grafted to |
+| remote Volume 5rMJhmhEB6-2dYbdtKh7zbgo (_).             |
+|                                                         |
+| The local Volume is up to date with the remote Volume.  |
++---------------------------------------------------------+
 
 -- load the sample dataset
 .read datasets/simple.sql
@@ -132,27 +130,29 @@ select * from t;
 
 -- check metadata
 pragma graft_status;
-+-----------------------------------+
-|           Graft Status            |
-+-----------------------------------+
-| Graft Status                      |
-| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
-| Volume ID: GontkHa6QVLHYnkyk16wUP |
-| Current snapshot: Snapshot[3;2]   |
-| Autosync: false                   |
-| Volume status: Ok                 |
-+-----------------------------------+
++-----------------------------------------------------------+
+|                        On tag main                        |
++-----------------------------------------------------------+
+| On tag main                                               |
+| Local Volume 5rMJhmhEB6-2e1PhMFKvSreD (4) is grafted to   |
+| remote Volume 5rMJhmhEB6-2dYbdtKh7zbgo (_).               |
+|                                                           |
+| The local Volume is 4 commits ahead of the remote Volume. |
+|   (use 'pragma graft_push' to push changes)               |
+|                                                           |
++-----------------------------------------------------------+
 .connection 0
 pragma graft_status;
-+-----------------------------------+
-|           Graft Status            |
-+-----------------------------------+
-| Graft Status                      |
-| Client ID: QiAaT13YZ7eaoi5HHq8hKM |
-| Volume ID: GontkHa6QVLHYnkyk16wUP |
-| Current snapshot: Snapshot[3;2]   |
-| Autosync: false                   |
-| Volume status: Ok                 |
-+-----------------------------------+
++-----------------------------------------------------------+
+|                        On tag main                        |
++-----------------------------------------------------------+
+| On tag main                                               |
+| Local Volume 5rMJhmhEB6-2e1PhMFKvSreD (4) is grafted to   |
+| remote Volume 5rMJhmhEB6-2dYbdtKh7zbgo (_).               |
+|                                                           |
+| The local Volume is 4 commits ahead of the remote Volume. |
+|   (use 'pragma graft_push' to push changes)               |
+|                                                           |
++-----------------------------------------------------------+
 
 SQLite Exit Code = 1
