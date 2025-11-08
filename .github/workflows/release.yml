@@ -157,8 +157,7 @@ jobs:
           CRATES=(
             graft-tracing
             graft-core
-            graft-proto
-            graft-client
+            graft-kernel
             graft-sqlite
           )
           for crate in "${CRATES[@]}"; do

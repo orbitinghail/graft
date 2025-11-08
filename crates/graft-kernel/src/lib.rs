@@ -13,12 +13,13 @@ pub mod rt {
 
 pub mod changeset;
 pub mod err;
-pub mod named_volume;
+pub mod graft;
+pub mod oracle;
+pub mod page_status;
 pub mod remote;
-pub mod search_path;
 pub mod snapshot;
-pub mod volume_name;
+pub mod tag_handle;
 pub mod volume_reader;
 pub mod volume_writer;
 
-pub use err::{GraftErr, VolumeErr};
+pub use err::{KernelErr, LogicalErr};

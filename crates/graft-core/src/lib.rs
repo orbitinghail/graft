@@ -1,16 +1,13 @@
 pub mod commit_hash;
 pub mod gid;
-pub mod graft;
 pub mod lsn;
 pub mod page;
 pub mod page_count;
-pub mod page_idx;
+pub mod pageidx;
+pub mod pageset;
 
 pub mod checkpoints;
 pub mod commit;
-pub mod volume_control;
-pub mod volume_fork;
-pub mod volume_meta;
 pub mod volume_ref;
 
 pub mod bilrost_util;
@@ -23,7 +20,7 @@ pub mod zerocopy_ext;
 pub use commit_hash::{CommitHashBuilder, CommitHashParseErr};
 pub use gid::{ClientId, SegmentId, VolumeId};
 pub use page_count::PageCount;
-pub use page_idx::PageIdx;
+pub use pageidx::PageIdx;
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;

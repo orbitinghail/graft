@@ -1,0 +1,201 @@
+-- initialize two connections to the same database
+.connection 0
+.open "file:main?vfs=graft"
+pragma graft_switch="5rMJhorqTw-2dcMpAG9SgLPw:5rMJhorrQK-2dv4hJLznFMj8";
++----------------------------------------------------------------------------------------+
+| Switched to Graft 5rMJhorqTw-2dcMpAG9SgLPw with remote Volume 5rMJhorrQK-2dv4hJLznFMj8 |
++----------------------------------------------------------------------------------------+
+| Switched to Graft 5rMJhorqTw-2dcMpAG9SgLPw with remote Volume 5rMJhorrQK-2dv4hJLznFMj8 |
++----------------------------------------------------------------------------------------+
+pragma graft_status;
++---------------------------------------------------------+
+|                       On tag main                       |
++---------------------------------------------------------+
+| On tag main                                             |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (_) is grafted to |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).             |
+|                                                         |
+| The local Volume is up to date with the remote Volume.  |
++---------------------------------------------------------+
+
+.connection 1
+.open "file:main?vfs=graft"
+pragma graft_status;
++---------------------------------------------------------+
+|                       On tag main                       |
++---------------------------------------------------------+
+| On tag main                                             |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (_) is grafted to |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).             |
+|                                                         |
+| The local Volume is up to date with the remote Volume.  |
++---------------------------------------------------------+
+
+-- initialize the db on connection 0
+.connection 0
+.echo off
+
+-- check pragmas
+pragma graft_status;
++-----------------------------------------------------------+
+|                        On tag main                        |
++-----------------------------------------------------------+
+| On tag main                                               |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (6) is grafted to   |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).               |
+|                                                           |
+| The local Volume is 6 commits ahead of the remote Volume. |
+|   (use 'pragma graft_push' to push changes)               |
++-----------------------------------------------------------+
+pragma graft_snapshot;
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
++---------------------------------+
+pragma graft_pages;
++-------------------------------+
+|   pageno   | lsn    | state   |
++-------------------------------+
+| pageno   | lsn    | state     |
+| 1        | 6      | available |
+| 2        | 6      | available |
+| 3        | 6      | available |
+| 4        | 6      | available |
+| 5        | 6      | available |
+| 6        | 6      | available |
+| 7        | 6      | available |
+| 8        | 6      | available |
+| 9        | 6      | available |
+| 10       | 6      | available |
+| 11       | 6      | available |
+| 12       | 6      | available |
+| 13       | 6      | available |
+| 14       | 6      | available |
++-------------------------------+
+
+-- check pragmas on connection 1
+.connection 1
+pragma graft_status;
++-----------------------------------------------------------+
+|                        On tag main                        |
++-----------------------------------------------------------+
+| On tag main                                               |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (6) is grafted to   |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).               |
+|                                                           |
+| The local Volume is 6 commits ahead of the remote Volume. |
+|   (use 'pragma graft_push' to push changes)               |
++-----------------------------------------------------------+
+pragma graft_snapshot;
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
++---------------------------------+
+pragma graft_pages;
++-------------------------------+
+|   pageno   | lsn    | state   |
++-------------------------------+
+| pageno   | lsn    | state     |
+| 1        | 6      | available |
+| 2        | 6      | available |
+| 3        | 6      | available |
+| 4        | 6      | available |
+| 5        | 6      | available |
+| 6        | 6      | available |
+| 7        | 6      | available |
+| 8        | 6      | available |
+| 9        | 6      | available |
+| 10       | 6      | available |
+| 11       | 6      | available |
+| 12       | 6      | available |
+| 13       | 6      | available |
+| 14       | 6      | available |
++-------------------------------+
+
+-- open a snapshot on connection 1
+begin;
+select count(*) from ledger;
++----------+
+| count(*) |
++----------+
+| 1000     |
++----------+
+pragma graft_snapshot;
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
++---------------------------------+
+
+-- switch to connection 0, write something, check snapshot, switch back
+.connection 0
+INSERT INTO ledger (account_id, amount) VALUES (1, -10), (2, 10);
+pragma graft_snapshot;
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=7]]) |
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=7]]) |
++---------------------------------+
+.connection 1
+
+-- check that connection 1 pragmas can't see the new snapshot
+pragma graft_snapshot;
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
++---------------------------------+
+pragma graft_pages;
++-------------------------------+
+|   pageno   | lsn    | state   |
++-------------------------------+
+| pageno   | lsn    | state     |
+| 1        | 6      | available |
+| 2        | 6      | available |
+| 3        | 6      | available |
+| 4        | 6      | available |
+| 5        | 6      | available |
+| 6        | 6      | available |
+| 7        | 6      | available |
+| 8        | 6      | available |
+| 9        | 6      | available |
+| 10       | 6      | available |
+| 11       | 6      | available |
+| 12       | 6      | available |
+| 13       | 6      | available |
+| 14       | 6      | available |
++-------------------------------+
+
+-- close the snapshot and check that we can see the latest snapshot
+commit;
+
+pragma graft_snapshot;
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=7]]) |
++---------------------------------+
+| Snapshot([2dcMpAG9SgLPw[..=7]]) |
++---------------------------------+
+pragma graft_pages;
++-------------------------------+
+|   pageno   | lsn    | state   |
++-------------------------------+
+| pageno   | lsn    | state     |
+| 1        | 6      | available |
+| 2        | 6      | available |
+| 3        | 6      | available |
+| 4        | 7      | available |
+| 5        | 6      | available |
+| 6        | 7      | available |
+| 7        | 6      | available |
+| 8        | 6      | available |
+| 9        | 6      | available |
+| 10       | 6      | available |
+| 11       | 7      | available |
+| 12       | 6      | available |
+| 13       | 7      | available |
+| 14       | 6      | available |
++-------------------------------+
+
+SQLite Exit Code = 0

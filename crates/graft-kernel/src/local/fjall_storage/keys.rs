@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use bytestring::ByteString;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
 use graft_core::{
@@ -8,41 +9,40 @@ use graft_core::{
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
 
 use crate::{
-    local::fjall_storage::fjall_repr::{DecodeErr, FjallRepr},
+    local::fjall_storage::fjall_repr::{DecodeErr, FjallRepr, FjallReprRef},
     proxy_to_fjall_repr,
-    volume_name::VolumeName,
 };
 
 pub trait FjallKeyPrefix {
     type Prefix: AsRef<[u8]>;
 }
 
-impl FjallRepr for VolumeName {
+impl FjallReprRef for VolumeId {
     #[inline]
     fn as_slice(&self) -> impl AsRef<[u8]> {
         self.as_bytes()
-    }
-
-    #[inline]
-    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-        VolumeName::try_from(Bytes::from(slice)).or_into_ctx()
-    }
-
-    #[inline]
-    fn into_slice(self) -> Slice {
-        Bytes::from(self).into()
     }
 }
 
 impl FjallRepr for VolumeId {
     #[inline]
-    fn as_slice(&self) -> impl AsRef<[u8]> {
-        self.as_bytes()
-    }
-
-    #[inline]
     fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
         VolumeId::try_from(Bytes::from(slice)).or_into_ctx()
+    }
+}
+
+impl FjallReprRef for ByteString {
+    #[inline]
+    fn as_slice(&self) -> impl AsRef<[u8]> {
+        self
+    }
+}
+
+impl FjallRepr for ByteString {
+    #[inline]
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
+        let bytes: Bytes = slice.into();
+        ByteString::try_from(bytes).or_into_ctx()
     }
 }
 
@@ -149,17 +149,9 @@ mod tests {
     use super::*;
 
     #[graft_test::test]
-    fn test_volume_name() {
-        test_roundtrip(VolumeName::new("test-volume").unwrap());
-        test_invalid::<VolumeName>(b"bad id");
-        test_invalid::<VolumeName>(b"");
-        test_invalid::<VolumeName>(&b"a".repeat(crate::volume_name::MAX_VOLUME_NAME_LEN + 1));
-    }
-
-    #[graft_test::test]
     fn test_volume_id() {
         test_roundtrip(VolumeId::random());
-        test_roundtrip(VolumeId::EMPTY);
+        test_roundtrip(VolumeId::ZERO);
         test_invalid::<VolumeId>(b"");
         test_invalid::<VolumeId>(b"asdf");
         test_invalid::<VolumeId>(SegmentId::random().as_bytes());
@@ -182,8 +174,8 @@ mod tests {
         test_invalid::<VolumeRef>(b"");
 
         // CommitKeys must naturally sort in descending order by LSN
-        let vid1: VolumeId = "GonvRDHqjHwNsCpPBET3Ly".parse().unwrap();
-        let vid2: VolumeId = "GonvRDHruDyBB6s6RmuiSZ".parse().unwrap();
+        let vid1: VolumeId = "5rMJhdYXJ3-2e64STQSCVT8X".parse().unwrap();
+        let vid2: VolumeId = "5rMJhdYYXB-2e2iX9AHva3xQ".parse().unwrap();
         test_serialized_order(&[
             VolumeRef::new(vid1.clone(), lsn!(4)),
             VolumeRef::new(vid1.clone(), lsn!(3)),
@@ -211,8 +203,8 @@ mod tests {
         test_invalid::<PageKey>(b"");
 
         // PageKeys must naturally sort in ascending order by page index
-        let sid1: SegmentId = "LkykngWAEj8KaTkYeg5ZBY".parse().unwrap();
-        let sid2: SegmentId = "LkykngWBbT1v8zGaRpdbpK".parse().unwrap();
+        let sid1: SegmentId = "74ggYyz4aX-33cEC1Bm7Gekh".parse().unwrap();
+        let sid2: SegmentId = "74ggYyz7mA-33d6VHh4ENsxq".parse().unwrap();
         test_serialized_order(&[
             PageKey::new(sid1.clone(), pageidx!(1)),
             PageKey::new(sid1.clone(), pageidx!(2)),

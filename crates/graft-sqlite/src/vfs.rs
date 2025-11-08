@@ -1,25 +1,8 @@
-// TODO: remove this once the vfs is implemented
-#![allow(unused)]
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    io::ErrorKind,
-    sync::Arc,
-};
-
+use bytestring::ByteString;
 use culprit::{Culprit, ResultExt};
-use graft_client::{
-    ClientErr,
-    runtime::{
-        runtime::Runtime,
-        storage::{
-            StorageErr,
-            volume_state::{SyncDirection, VolumeConfig},
-        },
-    },
-};
-use graft_core::{VolumeId, gid::GidParseErr};
+use graft_kernel::{KernelErr, LogicalErr, rt::runtime_handle::RuntimeHandle};
 use graft_tracing::TracingConsumer;
 use parking_lot::Mutex;
 use sqlite_plugin::{
@@ -27,12 +10,11 @@ use sqlite_plugin::{
     logger::{SqliteLogLevel, SqliteLogger},
     vars::{
         self, SQLITE_BUSY, SQLITE_BUSY_SNAPSHOT, SQLITE_CANTOPEN, SQLITE_INTERNAL, SQLITE_IOERR,
-        SQLITE_IOERR_ACCESS, SQLITE_NOTFOUND, SQLITE_READONLY,
+        SQLITE_NOTFOUND,
     },
-    vfs::{Pragma, PragmaErr, SqliteErr, Vfs, VfsHandle, VfsResult},
+    vfs::{Pragma, PragmaErr, SqliteErr, Vfs, VfsResult},
 };
 use thiserror::Error;
-use tryiter::TryIteratorExt;
 
 use crate::{
     file::{FileHandle, VfsFile, mem_file::MemFile, vol_file::VolFile},
@@ -41,11 +23,8 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum ErrCtx {
-    #[error("Graft client error: {0}")]
-    Client(#[from] ClientErr),
-
-    #[error("Failed to parse VolumeId: {0}")]
-    GidParseErr(#[from] GidParseErr),
+    #[error("Graft kernel error: {0}")]
+    Kernel(#[from] KernelErr),
 
     #[error("Unknown Pragma")]
     UnknownPragma,
@@ -71,16 +50,10 @@ pub enum ErrCtx {
 
 impl ErrCtx {
     #[inline]
-    fn wrap<T>(mut cb: impl FnOnce() -> culprit::Result<T, ErrCtx>) -> VfsResult<T> {
+    fn wrap<T>(cb: impl FnOnce() -> culprit::Result<T, ErrCtx>) -> VfsResult<T> {
         match cb() {
             Ok(t) => Ok(t),
-            Err(err) => {
-                let code = err.ctx().sqlite_err();
-                if code == SQLITE_INTERNAL {
-                    tracing::error!("{}", err);
-                }
-                Err(code)
-            }
+            Err(err) => Err(err.ctx().sqlite_err()),
         }
     }
 
@@ -90,42 +63,24 @@ impl ErrCtx {
             ErrCtx::CantOpen => SQLITE_CANTOPEN,
             ErrCtx::Busy => SQLITE_BUSY,
             ErrCtx::BusySnapshot => SQLITE_BUSY_SNAPSHOT,
-            ErrCtx::Client(err) => Self::map_client_err(err),
+            ErrCtx::Kernel(err) => Self::map_kernel_err(err),
             _ => SQLITE_INTERNAL,
         }
     }
 
-    fn map_client_err(err: &ClientErr) -> SqliteErr {
+    fn map_kernel_err(err: &KernelErr) -> SqliteErr {
         match err {
-            ClientErr::GraftErr(err) => {
-                if err.code().is_client() {
-                    SQLITE_INTERNAL
-                } else {
-                    SQLITE_IOERR
-                }
-            }
-            ClientErr::HttpErr(_) => SQLITE_IOERR,
-            ClientErr::StorageErr(store_err) => match store_err {
-                StorageErr::ConcurrentWrite => SQLITE_BUSY_SNAPSHOT,
-                StorageErr::FjallErr(err) => match Self::extract_ioerr(err) {
-                    Some(_) => SQLITE_IOERR,
-                    None => SQLITE_INTERNAL,
-                },
-                StorageErr::IoErr(err) => SQLITE_IOERR,
-                _ => SQLITE_INTERNAL,
+            KernelErr::Storage(_) => SQLITE_IOERR,
+            KernelErr::Remote(_) => SQLITE_IOERR,
+            KernelErr::Logical(err) => match err {
+                LogicalErr::VolumeNotFound(_) | LogicalErr::GraftNotFound(_) => SQLITE_IOERR,
+                LogicalErr::GraftConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
+                LogicalErr::GraftNeedsRecovery(_)
+                | LogicalErr::GraftDiverged(_)
+                | LogicalErr::GraftRemoteMismatch { .. }
+                | LogicalErr::TagNotFound(_) => SQLITE_INTERNAL,
             },
-            ClientErr::IoErr(kind) => SQLITE_IOERR,
-            _ => SQLITE_INTERNAL,
         }
-    }
-
-    fn extract_ioerr<'a>(
-        mut err: &'a (dyn std::error::Error + 'static),
-    ) -> Option<&'a std::io::Error> {
-        while let Some(source) = err.source() {
-            err = source;
-        }
-        err.downcast_ref::<std::io::Error>()
     }
 }
 
@@ -136,12 +91,12 @@ impl<T> From<ErrCtx> for culprit::Result<T, ErrCtx> {
 }
 
 pub struct GraftVfs {
-    runtime: Runtime,
-    locks: Mutex<HashMap<VolumeId, Arc<Mutex<()>>>>,
+    runtime: RuntimeHandle,
+    locks: Mutex<HashMap<ByteString, Arc<Mutex<()>>>>,
 }
 
 impl GraftVfs {
-    pub fn new(runtime: Runtime) -> Self {
+    pub fn new(runtime: RuntimeHandle) -> Self {
         Self { runtime, locks: Default::default() }
     }
 }
@@ -185,22 +140,7 @@ impl Vfs for GraftVfs {
 
         let writer = Writer(Arc::new(Mutex::new(logger)));
         let make_writer = move || writer.clone();
-        graft_tracing::init_tracing_with_writer(
-            TracingConsumer::Tool,
-            Some(self.runtime.cid().short()),
-            make_writer,
-        );
-    }
-
-    fn canonical_path<'a>(
-        &self,
-        path: std::borrow::Cow<'a, str>,
-    ) -> VfsResult<std::borrow::Cow<'a, str>> {
-        if path == "random" {
-            Ok(VolumeId::random().pretty().into())
-        } else {
-            Ok(path)
-        }
+        graft_tracing::init_tracing_with_writer(TracingConsumer::Tool, make_writer);
     }
 
     fn pragma(
@@ -214,7 +154,7 @@ impl Vfs for GraftVfs {
                 Ok(val) => Ok(val),
                 Err(err) => Err(PragmaErr::Fail(
                     err.ctx().sqlite_err(),
-                    Some(format!("{err:?}")),
+                    Some(format!("{err}")),
                 )),
             }
         } else {
@@ -224,31 +164,27 @@ impl Vfs for GraftVfs {
 
     fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         tracing::trace!("access: path={path:?}; flags={flags:?}");
-        ErrCtx::wrap(move || {
-            if let Ok(vid) = path.parse::<VolumeId>() {
-                Ok(self.runtime.volume_exists(vid).or_into_ctx()?)
-            } else {
-                Ok(false)
-            }
-        })
+        ErrCtx::wrap(move || self.runtime.tag_exists(path).or_into_ctx())
     }
 
     fn open(&self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle> {
         tracing::trace!("open: path={path:?}, opts={opts:?}");
         ErrCtx::wrap(move || {
-            // we only open a Volume for main database files named after a Volume ID
+            // we only open a Volume for main database files
             if opts.kind() == OpenKind::MainDb
                 && let Some(path) = path
             {
-                let vid: VolumeId = path.parse()?;
+                // open a tag handle
+                let handle = self.runtime.get_or_create_tag(path).or_into_ctx()?;
 
                 // get or create a reserved lock for this Volume
-                let reserved_lock = self.locks.lock().entry(vid.clone()).or_default().clone();
+                let reserved_lock = self
+                    .locks
+                    .lock()
+                    .entry(handle.tag().clone())
+                    .or_default()
+                    .clone();
 
-                let handle = self
-                    .runtime
-                    .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
-                    .or_into_ctx()?;
                 return Ok(VolFile::new(handle, opts, reserved_lock).into());
             }
 
@@ -264,20 +200,17 @@ impl Vfs for GraftVfs {
                 FileHandle::MemFile(_) => Ok(()),
                 FileHandle::VolFile(vol_file) => {
                     if vol_file.opts().delete_on_close() {
+                        // TODO: delete volume on close if requested
                         // TODO: do we want to actually delete volumes? or mark them for deletion?
-                        self.runtime
-                            .update_volume_config(vol_file.vid(), |conf| {
-                                conf.with_sync(SyncDirection::Disabled)
-                            })
-                            .or_into_ctx()?;
                     }
 
                     // close and drop the vol_file
                     let handle = vol_file.close();
 
+                    // retrieve a reference to the reserved lock for the volume
                     let mut locks = self.locks.lock();
                     let reserved_lock = locks
-                        .get(handle.vid())
+                        .get(handle.tag())
                         .expect("reserved lock missing from lock manager");
 
                     // clean up the lock if this was the last reference
@@ -285,7 +218,7 @@ impl Vfs for GraftVfs {
                     // preventing any concurrent opens from incrementing the
                     // reference count
                     if Arc::strong_count(reserved_lock) == 1 {
-                        locks.remove(handle.vid());
+                        locks.remove(handle.tag());
                     }
 
                     Ok(())
@@ -297,12 +230,8 @@ impl Vfs for GraftVfs {
     fn delete(&self, path: &str) -> VfsResult<()> {
         tracing::trace!("delete: path={path:?}");
         ErrCtx::wrap(|| {
-            if let Ok(vid) = path.parse() {
-                // TODO: do we want to actually delete volumes? or mark them for deletion?
-                self.runtime
-                    .update_volume_config(&vid, |conf| conf.with_sync(SyncDirection::Disabled))
-                    .or_into_ctx()?;
-            }
+            // TODO: delete volume
+            // TODO: do we want to actually delete volumes? or mark them for deletion?
             Ok(())
         })
     }

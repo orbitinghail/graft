@@ -36,31 +36,34 @@ pub enum TracingConsumer {
 }
 
 /// Initializes tracing with stdout as the output.
-pub fn init_tracing(consumer: TracingConsumer, process_id: Option<String>) {
-    init_tracing_with_writer(consumer, process_id, std::io::stdout);
+pub fn init_tracing(consumer: TracingConsumer) {
+    init_tracing_with_writer(consumer, std::io::stdout);
 }
 
 /// Initializes tracing with a custom writer for output.
 ///
 /// # Parameters
 /// * `consumer` - The type of application consuming the tracing output
-/// * `process_id` - Optional identifier for the process, randomly generated if None
 /// * `writer` - Custom writer implementation for tracing output
 ///
 /// # Type Parameters
 /// * `W` - Writer type that implements the [`tracing_subscriber::fmt::MakeWriter`] trait
-pub fn init_tracing_with_writer<W>(consumer: TracingConsumer, process_id: Option<String>, writer: W)
+pub fn init_tracing_with_writer<W>(consumer: TracingConsumer, writer: W)
 where
     W: for<'writer> MakeWriter<'writer> + 'static + Send + Sync,
 {
     static INIT: Once = Once::new();
     INIT.call_once(move || {
-        let process_id = process_id
-            .unwrap_or_else(|| bs58::encode(rand::random::<u64>().to_le_bytes()).into_string());
-
         let antithesis = running_in_antithesis();
         let testing = consumer == TracingConsumer::Test;
+
+        // determine if color output should be enabled
         let color = !antithesis && !std::env::var("NO_COLOR").is_ok_and(|s| !s.is_empty());
+
+        // allow a log prefix to be injected from the environment
+        let prefix = std::env::var("GRAFT_LOG_PREFIX")
+            .ok()
+            .and_then(|s| (!s.trim().is_empty()).then_some(s.trim().to_string()));
 
         let default_level = match consumer {
             TracingConsumer::Test => LevelFilter::INFO,
@@ -79,18 +82,10 @@ where
             span_events = FmtSpan::NEW | FmtSpan::CLOSE;
             filter = filter
                 .add_directive("graft_kernel=debug".parse().unwrap())
-                .add_directive("graft_client=trace".parse().unwrap())
                 .add_directive("graft_core=trace".parse().unwrap())
-                .add_directive("graft_server=trace".parse().unwrap())
                 .add_directive("graft_test=trace".parse().unwrap())
                 .add_directive("graft_sqlite=debug".parse().unwrap())
         }
-
-        let prefix = if antithesis || testing {
-            Some(process_id)
-        } else {
-            None
-        };
 
         let time = if antithesis {
             TimeFormat::None

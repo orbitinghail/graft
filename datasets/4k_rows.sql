@@ -16,4 +16,3 @@ insert into t select null from t;
 insert into t select null from t;
 insert into t select null from t;
 COMMIT;
-

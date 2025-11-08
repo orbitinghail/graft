@@ -36,11 +36,9 @@ fi
 RELEASE_CRATES=(
     graft-tracing
     graft-core
-    graft-proto
-    graft-client
+    graft-kernel
     graft-sqlite
     graft-sqlite-extension
-    graft-server
 )
 
 # verify that HEAD == origin/main

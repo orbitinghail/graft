@@ -53,68 +53,9 @@ When Claude is executing in a `.kosho` worktree (identifiable by `.kosho` in the
 
 This ensures that all changes are made within the isolated feature branch worktree and don't accidentally modify the main repository.
 
-## Working in Graft-Kernel vs Legacy Architecture
+## Architecture
 
-**⚠️ Important Context:**
-
-This repository is transitioning from a legacy client/server architecture to a new direct-storage architecture (RFC 0001). The work is happening in two parallel development tracks:
-
-### When Working on `graft-kernel` Crate:
-
-- **Focus**: Code correctness, following existing patterns, implementing the new direct-storage architecture
-- **Architecture**: Direct object storage access, eliminates metastore and pagestore
-- **Design Doc**: See `docs/src/content/docs/docs/rfcs/0001-direct-storage-architecture.mdx`
-- **Key Components**:
-  - Local Fjall storage with partitioned keyspaces (handles, volumes, log, pages)
-  - Direct object storage interface with Control/CheckpointSet/Commit/Segment files
-  - Volume handles managing local-remote synchronization
-  - CBE64 encoding for LSN ordering
-
-### When Working on Legacy Components:
-
-- **Components**: `graft-client`, `graft-server`, metastore/pagestore services
-- **Architecture**: Traditional client-server with separate metastore and pagestore
-- **Status**: Maintained for compatibility but being phased out
-
-## Core Architecture (Legacy)
-
-**Distributed Storage Model:**
-
-- **Metastore**: Manages volume metadata, commits, and sync operations
-- **Pagestore**: Stores actual page data in object storage with local caching
-- **Client**: Local runtime with volume handles, networking, and sync logic
-
-**Key Abstractions:**
-
-- **Volume**: Logical database container with unique VID identifier
-- **Page**: Fundamental 4KB storage unit, immutable once written
-- **Commit**: Versioned snapshot of volume state with LSN ordering
-- **GID (Global ID)**: Universal identifiers for volumes, segments, clients (graft-core/src/gid.rs)
-- **LSN (Log Sequence Number)**: Monotonic version numbers for ordering (graft-core/src/lsn.rs)
-
-**Storage Hierarchy:**
-
-```
-SQLite Database (VFS layer)
-├── Graft Volume (logical container)
-├── Local Storage (Fjall LSM-tree partitions)
-├── Network Layer (metastore/pagestore clients)
-└── Object Storage Backend (S3, etc.)
-```
-
-**Local Storage (Fjall):**
-
-- Uses partitioned LSM-tree storage via `fjall` crate
-- Key partitions: pages, commits, volume state, metadata
-- Values use custom serialization via `FjallRepr` trait (graft-kernel/src/local/fjall_storage/fjall_repr.rs)
-
-**SQLite Integration:**
-
-- Custom VFS implementation in `graft-sqlite` crate
-- Maps SQLite page operations to Graft volume operations
-- Extension (`graft-sqlite-extension`) provides loadable SQLite module
-
-This architecture enables distributed, versioned SQLite databases with lazy replication and strong consistency guarantees.
+For detailed architecture documentation, see `docs/src/content/docs/docs/rfcs/0001-direct-storage-architecture.mdx`.
 
 ## Coding Guidelines
 

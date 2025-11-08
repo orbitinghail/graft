@@ -1,26 +1,22 @@
 use std::{
-    borrow::Cow,
     fmt::Debug,
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{BuildHasher, RandomState},
     mem,
     sync::Arc,
 };
 
 use bytes::BytesMut;
 use culprit::{Culprit, Result, ResultExt};
-use graft_client::{
-    oracle::LeapOracle,
-    runtime::{
-        storage::snapshot::Snapshot,
-        volume_handle::VolumeHandle,
-        volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
-        volume_writer::{VolumeWrite, VolumeWriter},
-    },
-};
 use graft_core::{
-    PageIdx, VolumeId,
+    PageIdx,
     page::{PAGESIZE, Page},
     page_count::PageCount,
+};
+use graft_kernel::{
+    snapshot::Snapshot,
+    tag_handle::TagHandle,
+    volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
+    volume_writer::{VolumeWrite, VolumeWriter},
 };
 use parking_lot::{Mutex, MutexGuard};
 use sqlite_plugin::flags::{LockLevel, OpenOpts};
@@ -33,7 +29,6 @@ use super::VfsFile;
 const FILE_CHANGE_COUNTER_OFFSET: usize = 24;
 const VERSION_VALID_FOR_NUMBER_OFFSET: usize = 92;
 
-#[derive(Debug)]
 enum VolFileState {
     Idle,
     Shared { reader: VolumeReader },
@@ -52,76 +47,90 @@ impl VolFileState {
     }
 }
 
+impl Debug for VolFileState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VolFileState::Idle => f.write_str("Idle"),
+            VolFileState::Shared { reader } => {
+                f.debug_tuple("Shared").field(reader.snapshot()).finish()
+            }
+            VolFileState::Reserved { writer } => {
+                f.debug_tuple("Reserved").field(writer.snapshot()).finish()
+            }
+            VolFileState::Committing => f.write_str("Committing"),
+        }
+    }
+}
+
 pub struct VolFile {
-    handle: VolumeHandle,
+    handle: TagHandle,
     opts: OpenOpts,
 
     reserved: Arc<Mutex<()>>,
     state: VolFileState,
-    oracle: Box<LeapOracle>,
+    // oracle: Box<LeapOracle>,
 }
 
 impl Debug for VolFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.handle.vid().pretty())
+        f.debug_struct("VolFile")
+            .field("handle", &self.handle.tag())
+            .field("state", &self.state)
+            .finish()
     }
 }
 
 impl VolFile {
-    pub fn new(handle: VolumeHandle, opts: OpenOpts, reserved: Arc<Mutex<()>>) -> Self {
+    pub fn new(handle: TagHandle, opts: OpenOpts, reserved: Arc<Mutex<()>>) -> Self {
         Self {
             handle,
             opts,
             reserved,
             state: VolFileState::Idle,
-            oracle: Default::default(),
+            // oracle: Default::default(),
         }
     }
 
-    pub fn snapshot_or_latest(&self) -> Result<Option<Snapshot>, ErrCtx> {
+    pub fn snapshot_or_latest(&self) -> Result<Snapshot, ErrCtx> {
         match &self.state {
             VolFileState::Idle => self.handle.snapshot().or_into_ctx(),
-            VolFileState::Shared { reader, .. } => Ok(reader.snapshot().cloned()),
-            VolFileState::Reserved { writer, .. } => Ok(writer.snapshot().cloned()),
+            VolFileState::Shared { reader } => Ok(reader.snapshot().clone()),
+            VolFileState::Reserved { writer } => Ok(writer.snapshot().clone()),
+            VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
+        }
+    }
+
+    pub fn page_count(&self) -> Result<PageCount, ErrCtx> {
+        match &self.state {
+            VolFileState::Idle => self.handle.page_count().or_into_ctx(),
+            VolFileState::Shared { reader } => reader.page_count().or_into_ctx(),
+            VolFileState::Reserved { writer } => writer.page_count().or_into_ctx(),
             VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
         }
     }
 
     pub fn reader(&self) -> Result<VolumeReadRef<'_>, ErrCtx> {
         match &self.state {
-            VolFileState::Idle => Ok(VolumeReadRef::Reader(Cow::Owned(
-                self.handle.reader().or_into_ctx()?,
-            ))),
-            VolFileState::Shared { reader, .. } => Ok(VolumeReadRef::Reader(Cow::Borrowed(reader))),
-            VolFileState::Reserved { writer, .. } => Ok(VolumeReadRef::Writer(writer)),
+            VolFileState::Idle => self.handle().reader().map(|r| r.into()).or_into_ctx(),
+            VolFileState::Shared { reader } => Ok(reader.into()),
+            VolFileState::Reserved { writer } => Ok(writer.into()),
             VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
         }
     }
 
-    /// Pull all of the pages accessible in the current snapshot or latest
-    pub fn pull(&mut self) -> Result<(), ErrCtx> {
-        let mut oracle = self.oracle.as_ref().clone();
-        let reader = self.reader()?;
-        let pages = reader.snapshot().map(|s| s.pages()).unwrap_or_default();
-        for pageidx in pages.iter() {
-            reader.read(&mut oracle, pageidx).or_into_ctx()?;
-        }
-        Ok(())
-    }
-
-    pub fn vid(&self) -> &VolumeId {
-        self.handle.vid()
-    }
-
-    pub fn handle(&self) -> &VolumeHandle {
+    pub fn handle(&self) -> &TagHandle {
         &self.handle
+    }
+
+    pub fn handle_mut(&mut self) -> &mut TagHandle {
+        &mut self.handle
     }
 
     pub fn opts(&self) -> OpenOpts {
         self.opts
     }
 
-    pub fn close(self) -> VolumeHandle {
+    pub fn close(self) -> TagHandle {
         self.handle
     }
 }
@@ -170,28 +179,23 @@ impl VfsFile for VolFile {
                         return Err(Culprit::new(ErrCtx::Busy));
                     };
 
-                    // upgrade the reader to a writer if possible
-                    let latest_snapshot = self.handle.snapshot().or_into_ctx()?;
-
-                    // check to see if the local LSN has changed since the transaction started.
-                    // We can ignore checking the remote lsn because:
-                    //  -> if the remote lsn changes due to a Pull, the local LSN will also change
-                    //  -> if the remote lsn changes due to a Push, the logical state will not change
-                    let writer = if reader.snapshot().map(|s| s.local())
-                        != latest_snapshot.as_ref().map(|s| s.local())
+                    // check to see if the snapshot is latest. if it
+                    // has changed we can immediately reject the lock upgrade
+                    if !self
+                        .handle
+                        .is_latest_snapshot(reader.snapshot())
+                        .or_into_ctx()?
                     {
-                        // if a read occurred in this transaction, we can't
-                        // upgrade to a reserved state
                         return Err(Culprit::new_with_note(
                             ErrCtx::BusySnapshot,
                             "unable to lock: Shared -> Reserved: snapshot changed",
                         ));
-                    } else {
-                        // The snapshot has not changed
-                        self.handle.writer_at(latest_snapshot)
-                    };
+                    }
 
-                    self.state = VolFileState::Reserved { writer };
+                    // convert the reader into a writer
+                    self.state = VolFileState::Reserved {
+                        writer: VolumeWriter::try_from(reader.clone()).or_into_ctx()?,
+                    };
 
                     // Explicitly leak the reserved lock
                     // SAFETY: we depend on SQLite to release the lock when it's done
@@ -277,18 +281,12 @@ impl VfsFile for VolFile {
 
     fn file_size(&mut self) -> Result<usize, ErrCtx> {
         let pages = match &self.state {
-            VolFileState::Idle => self
-                .handle
-                .snapshot()
-                .or_into_ctx()?
-                .map_or(PageCount::ZERO, |snapshot| snapshot.pages()),
-            VolFileState::Shared { reader, .. } => {
-                reader.snapshot().map_or(PageCount::ZERO, |s| s.pages())
-            }
-            VolFileState::Reserved { writer, .. } => writer.pages(),
+            VolFileState::Idle => self.handle.page_count().or_into_ctx()?,
+            VolFileState::Shared { reader, .. } => reader.page_count().or_into_ctx()?,
+            VolFileState::Reserved { writer, .. } => writer.page_count().or_into_ctx()?,
             VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
         };
-        Ok((PAGESIZE * pages.to_usize()).as_usize())
+        Ok(PAGESIZE.as_usize() * pages.to_usize())
     }
 
     fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, ErrCtx> {
@@ -313,15 +311,11 @@ impl VfsFile for VolFile {
                 self.handle
                     .reader()
                     .or_into_ctx()?
-                    .read(self.oracle.as_mut(), page_idx)
+                    .read_page(page_idx)
                     .or_into_ctx()?
             }
-            VolFileState::Shared { reader } => {
-                reader.read(self.oracle.as_mut(), page_idx).or_into_ctx()?
-            }
-            VolFileState::Reserved { writer } => {
-                writer.read(self.oracle.as_mut(), page_idx).or_into_ctx()?
-            }
+            VolFileState::Shared { reader } => reader.read_page(page_idx).or_into_ctx()?,
+            VolFileState::Reserved { writer } => writer.read_page(page_idx).or_into_ctx()?,
             VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
         };
 
@@ -337,14 +331,13 @@ impl VfsFile for VolFile {
             // find the location of the file change counter within the out buffer
             let fcc_offset = FILE_CHANGE_COUNTER_OFFSET - local_offset.as_usize();
 
-            // we derive the change counter from the snapshot via hashing
+            // compute the file change counter by hashing the snapshot
             let snapshot = self.snapshot_or_latest()?;
-            let mut hasher = DefaultHasher::new();
-            snapshot.hash(&mut hasher);
-            let change_counter = hasher.finish() as u32;
+            let hash = RandomState::new().hash_one(snapshot);
+            let change_counter = &hash.to_be_bytes()[..4];
 
             // write the latest change counter to the buffer
-            data[fcc_offset..fcc_offset + 4].copy_from_slice(&change_counter.to_be_bytes());
+            data[fcc_offset..fcc_offset + 4].copy_from_slice(change_counter);
         }
 
         Ok(data.len())
@@ -368,7 +361,7 @@ impl VfsFile for VolFile {
             .try_into()
             .expect("size too large");
 
-        writer.truncate(pages);
+        writer.truncate(pages).or_into_ctx()?;
         Ok(())
     }
 
@@ -395,7 +388,7 @@ impl VfsFile for VolFile {
         // if this is a write to the first page, and the write only changes the
         // file change counter and the version valid for number, we can ignore this write
         if page_idx == PageIdx::FIRST && data.len() == PAGESIZE && local_offset == 0 {
-            let existing: Page = writer.read(self.oracle.as_mut(), page_idx).or_into_ctx()?;
+            let existing: Page = writer.read_page(page_idx).or_into_ctx()?;
 
             debug_assert_eq!(data.len(), existing.len(), "page size mismatch");
 
@@ -426,17 +419,14 @@ impl VfsFile for VolFile {
         } else {
             // writing a partial page
             // we need to read and then update the page
-            let mut page: BytesMut = writer
-                .read(self.oracle.as_mut(), page_idx)
-                .or_into_ctx()?
-                .into();
+            let mut page: BytesMut = writer.read_page(page_idx).or_into_ctx()?.into();
             // SAFETY: we already verified that the write does not cross a page boundary
             let range = local_offset.as_usize()..(local_offset + data.len()).as_usize();
             page[range].copy_from_slice(data);
             page.try_into().expect("we did not change the page size")
         };
 
-        writer.write(page_idx, page);
+        writer.write_page(page_idx, page).or_into_ctx()?;
         Ok(data.len())
     }
 }

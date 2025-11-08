@@ -1,5 +1,0 @@
-beta_dashboard: 1
-experiments:
-- new_nav
-- async_hooks
-use_edge_cache: 0

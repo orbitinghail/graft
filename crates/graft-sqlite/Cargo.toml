@@ -15,14 +15,16 @@ workspace = true
 
 [dependencies]
 graft-core = { path = "../graft-core", version = "0.1.5" }
-graft-client = { path = "../graft-client", version = "0.1.5" }
+graft-kernel = { path = "../graft-kernel", version = "0.1.5" }
 graft-tracing = { path = "../graft-tracing", version = "0.1.5" }
 
-sqlite-plugin = { workspace = true }
-tracing = { workspace = true }
-culprit = { workspace = true }
-thiserror = { workspace = true }
-enum_dispatch = { workspace = true }
-parking_lot = { workspace = true }
-tryiter = { workspace = true }
 bytes = { workspace = true }
+bytestring = { workspace = true }
+culprit = { workspace = true }
+enum_dispatch = { workspace = true }
+indoc = { workspace = true }
+parking_lot = { workspace = true }
+sqlite-plugin = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tryiter = { workspace = true }

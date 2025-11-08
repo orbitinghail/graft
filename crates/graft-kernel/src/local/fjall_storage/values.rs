@@ -1,13 +1,16 @@
 use bilrost::{Message, OwnedMessage};
 use bytes::Bytes;
 use culprit::ResultExt;
-use graft_core::{commit::Commit, page::Page, volume_meta::VolumeMeta};
+use graft_core::{checkpoints::CachedCheckpoints, commit::Commit, page::Page};
 
-use crate::{local::fjall_storage::fjall_repr::FjallRepr, named_volume::NamedVolumeState};
+use crate::{
+    graft::Graft,
+    local::fjall_storage::fjall_repr::{FjallRepr, FjallReprRef},
+};
 
 use super::fjall_repr::DecodeErr;
 
-impl FjallRepr for Page {
+impl FjallReprRef for Page {
     #[inline]
     fn as_slice(&self) -> impl AsRef<[u8]> {
         self
@@ -17,7 +20,9 @@ impl FjallRepr for Page {
     fn into_slice(self) -> fjall::Slice {
         self.into_bytes().into()
     }
+}
 
+impl FjallRepr for Page {
     #[inline]
     fn try_from_slice(slice: fjall::Slice) -> culprit::Result<Self, DecodeErr> {
         Page::try_from(Bytes::from(slice)).or_into_ctx()
@@ -27,15 +32,10 @@ impl FjallRepr for Page {
 macro_rules! impl_fjallrepr_for_bilrost {
     ($($ty:ty),+) => {
         $(
-            impl FjallRepr for $ty {
+            impl FjallReprRef for $ty {
                 #[inline]
                 fn as_slice(&self) -> impl AsRef<[u8]> {
                     self.encode_to_bytes()
-                }
-
-                #[inline]
-                fn try_from_slice(slice: fjall::Slice) -> culprit::Result<Self, DecodeErr> {
-                    <$ty>::decode(Bytes::from(slice)).or_into_ctx()
                 }
 
                 #[inline]
@@ -43,24 +43,30 @@ macro_rules! impl_fjallrepr_for_bilrost {
                     self.encode_to_bytes().into()
                 }
             }
+
+            impl FjallRepr for $ty {
+                #[inline]
+                fn try_from_slice(slice: fjall::Slice) -> culprit::Result<Self, DecodeErr> {
+                    <$ty>::decode(Bytes::from(slice)).or_into_ctx()
+                }
+            }
         )+
     };
 }
 
-impl_fjallrepr_for_bilrost!(NamedVolumeState, VolumeMeta, Commit);
+impl_fjallrepr_for_bilrost!(Graft, CachedCheckpoints, Commit);
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use graft_core::checkpoints::{CachedCheckpoints, Checkpoints};
+    use graft_core::checkpoints::Checkpoints;
     use graft_core::lsn;
-    use graft_core::{PageCount, VolumeId, page::PAGESIZE, volume_ref::VolumeRef};
+    use graft_core::{PageCount, VolumeId, page::PAGESIZE};
 
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_empty_default, test_invalid, test_roundtrip,
     };
-    use crate::volume_name::VolumeName;
 
     #[graft_test::test]
     fn test_page() {
@@ -71,26 +77,24 @@ mod tests {
 
     #[graft_test::test]
     fn test_volume_handle() {
-        test_roundtrip(NamedVolumeState::new(
-            VolumeName::new("test-handle").unwrap(),
+        test_roundtrip(Graft::new(
             VolumeId::random(),
             VolumeId::random(),
             None,
             None,
         ));
-        test_empty_default::<NamedVolumeState>();
-        test_invalid::<NamedVolumeState>(&b"abc".repeat(123));
+        test_empty_default::<Graft>();
+        test_invalid::<Graft>(&b"abc".repeat(123));
     }
 
     #[graft_test::test]
     fn test_volume_meta() {
-        test_roundtrip(VolumeMeta::new(
-            VolumeId::random(),
-            Some(VolumeRef::new(VolumeId::random(), lsn!(123))),
-            CachedCheckpoints::new(Checkpoints::from([lsn!(123)].as_slice()), Some("asdf")),
+        test_roundtrip(CachedCheckpoints::new(
+            Checkpoints::from([lsn!(123)].as_slice()),
+            Some("asdf"),
         ));
-        test_empty_default::<VolumeMeta>();
-        test_invalid::<VolumeMeta>(&b"abc".repeat(123));
+        test_empty_default::<CachedCheckpoints>();
+        test_invalid::<CachedCheckpoints>(&b"abc".repeat(123));
     }
 
     #[graft_test::test]

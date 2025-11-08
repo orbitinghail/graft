@@ -7,16 +7,6 @@ use crate::{
 
 use crossbeam::channel::RecvTimeoutError;
 use culprit::{Culprit, ResultExt};
-use graft_client::{
-    oracle::LeapOracle,
-    runtime::{
-        storage::{
-            snapshot::Snapshot,
-            volume_state::{SyncDirection, VolumeConfig},
-        },
-        volume_reader::VolumeRead,
-    },
-};
 use graft_core::{VolumeId, page_idx::PageIdxRangeExt};
 use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
 use rand::{Rng, distr::uniform::SampleRange, seq::IndexedRandom};

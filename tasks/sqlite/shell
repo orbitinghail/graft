@@ -6,13 +6,12 @@ USAGE=$(
 Usage: $0 [OPTIONS]
 
 Options:
-  -v<VID>            Use the specified Volume ID (default: GontkHa6QVLMYnkyk16wUP).
-  --random-vid       Generate and use a random VID.
-  --random-cid       Generate and use a random client ID and temporary data directory.
-  --release          Build/run in release mode.
-  --trace            Enable trace-level logging (RUST_LOG=trace).
-  --fly              Use Fly-hosted MetaStore and PageStore services.
-  --gdb              Run sqlite3 under gdb debugger.
+  --client ID   Specify an ID to identify this client. Default = "default"
+  --release     Build/run in release mode.
+  --trace       Enable trace-level logging (RUST_LOG=trace).
+  --log PATH    Output logs to a file
+  --gdb         Run sqlite3 under gdb debugger.
+  --autosync    Enable automatic background sync.
 EOF
 )
 
@@ -20,44 +19,42 @@ GIT_ROOT="$(git rev-parse --show-toplevel)"
 
 TARGET="debug"
 BUILD_FLAGS=""
-VID="GontkHa6QVLMYnkyk16wUP"
 
 GDB=${GDB:-0}
 export RUST_LOG=${RUST_LOG:-warn}
 
+CLIENT_ID="default"
+DATA_ROOT="${GIT_ROOT}/.graft"
+
 # parse flags
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -v*)
-            VID="${1:2}"
+        --client)
             shift
-            ;;
-        --random-vid)
-            VID="random"
-            shift
-            ;;
-        --random-cid)
-            export GRAFT_CLIENT_ID="$(just run tool cid)"
-            export GRAFT_DATA_DIR="$(mktemp -d)"
+            CLIENT_ID="$1"
             shift
             ;;
         --release)
+            shift
             TARGET="release"
             BUILD_FLAGS="--release"
-            shift
             ;;
         --trace)
-            RUST_LOG="trace"
             shift
+            export RUST_LOG="trace"
             ;;
-        --fly)
-            export GRAFT_METASTORE="https://graft-metastore.fly.dev"
-            export GRAFT_PAGESTORE="https://graft-pagestore.fly.dev"
+        --log)
+            shift
+            export GRAFT_LOG_FILE="$1"
             shift
             ;;
         --gdb)
-            GDB=1
             shift
+            export GDB=1
+            ;;
+        --autosync)
+            shift
+            export GRAFT_AUTOSYNC=1
             ;;
         *)
             echo "Unknown option: $1"
@@ -66,6 +63,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+export GRAFT_REMOTE__TYPE="fs"
+export GRAFT_REMOTE__ROOT="${DATA_ROOT}/remote"
+export GRAFT_DATA_DIR="${DATA_ROOT}/clients/${CLIENT_ID}"
+
+mkdir -p "${GRAFT_REMOTE__ROOT}" "${GRAFT_DATA_DIR}"
 
 cargo build ${BUILD_FLAGS} --features precept/disabled --package graft-sqlite-extension
 
@@ -84,18 +87,7 @@ ARGS=(
     -table
     -cmd '.log stderr'
     -cmd ".load '${LIB_PATH}'"
-    -cmd ".open 'file:${VID}?vfs=graft'"
+    -cmd ".open 'file:main?vfs=graft'"
 )
 
-if [ "${GDB}" == 1 ]; then
-    GDB_ARGS=(
-        --eval-command="set breakpoint pending on"
-        --eval-command="break rust_panic"
-        -ex run
-        --args sqlite3
-        "${ARGS[@]}"
-    )
-    exec rust-gdb "${GDB_ARGS[@]}"
-else
-    exec just run sqlite bin "${ARGS[@]}"
-fi
+exec just run sqlite bin "${ARGS[@]}"

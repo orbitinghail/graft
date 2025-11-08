@@ -14,10 +14,11 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 graft-core = { path = "../graft-core", version = "0.1.5" }
-graft-client = { path = "../graft-client", version = "0.1.5" }
+graft-kernel = { path = "../graft-kernel", version = "0.1.5" }
 graft-sqlite = { path = "../graft-sqlite", version = "0.1.5" }
 graft-tracing = { path = "../graft-tracing", version = "0.1.5" }
 
+tokio = { workspace = true }
 tracing = { workspace = true }
 platform-dirs = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

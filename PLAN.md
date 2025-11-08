@@ -7,6 +7,12 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 - [x] structured logging
 - [x] RecoverPendingCommit job
 - [x] RuntimeHandle::read_page
-- [ ] Runtime::create_volume_from_remote
+- [x] Runtime::create_volume_from_remote
 - [ ] comprehensive tests
 - [ ] libgraft SQLite
+
+# Working on SQLite v2
+
+- [ ] consider adding a read oracle (do some perf testing)
+- [ ] port tests
+- [ ] write first draft of antithesis tests

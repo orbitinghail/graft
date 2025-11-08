@@ -1,21 +1,25 @@
 use culprit::{Result, ResultExt};
-use graft_core::{PageCount, PageIdx, commit::SegmentIdx, page::Page};
+use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
 
 use crate::{
-    GraftErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_name::VolumeName,
-    volume_reader::VolumeRead,
+    KernelErr,
+    page_status::PageStatus,
+    rt::runtime_handle::RuntimeHandle,
+    snapshot::Snapshot,
+    volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
 };
 
 /// A type which can write to a Volume
 pub trait VolumeWrite {
-    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr>;
-    fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr>;
-    fn commit(self) -> Result<(), GraftErr>;
+    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), KernelErr>;
+    fn truncate(&mut self, page_count: PageCount) -> Result<(), KernelErr>;
+    fn commit(self) -> Result<VolumeReader, KernelErr>;
 }
 
+#[derive(Debug)]
 pub struct VolumeWriter {
-    name: VolumeName,
     runtime: RuntimeHandle,
+    graft: VolumeId,
     snapshot: Snapshot,
     page_count: PageCount,
     segment: SegmentIdx,
@@ -23,15 +27,15 @@ pub struct VolumeWriter {
 
 impl VolumeWriter {
     pub(crate) fn new(
-        name: VolumeName,
         runtime: RuntimeHandle,
+        graft: VolumeId,
         snapshot: Snapshot,
         page_count: PageCount,
     ) -> Self {
         let segment = runtime.create_staged_segment();
         Self {
-            name,
             runtime,
+            graft,
             snapshot,
             page_count,
             segment,
@@ -40,11 +44,15 @@ impl VolumeWriter {
 }
 
 impl VolumeRead for VolumeWriter {
-    fn page_count(&self) -> Result<PageCount, GraftErr> {
+    fn snapshot(&self) -> &Snapshot {
+        &self.snapshot
+    }
+
+    fn page_count(&self) -> Result<PageCount, KernelErr> {
         Ok(self.page_count)
     }
 
-    fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr> {
+    fn read_page(&self, pageidx: PageIdx) -> Result<Page, KernelErr> {
         if !self.page_count.contains(pageidx) {
             Ok(Page::EMPTY)
         } else if self.segment.contains(pageidx) {
@@ -59,10 +67,18 @@ impl VolumeRead for VolumeWriter {
             self.runtime.read_page(&self.snapshot, pageidx)
         }
     }
+
+    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, KernelErr> {
+        if self.segment.contains(pageidx) {
+            Ok(PageStatus::Dirty)
+        } else {
+            self.runtime.page_status(&self.snapshot, pageidx)
+        }
+    }
 }
 
 impl VolumeWrite for VolumeWriter {
-    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr> {
+    fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), KernelErr> {
         self.page_count = self.page_count.max(pageidx.pages());
         self.segment.insert(pageidx);
         self.runtime
@@ -71,7 +87,7 @@ impl VolumeWrite for VolumeWriter {
             .or_into_ctx()
     }
 
-    fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr> {
+    fn truncate(&mut self, page_count: PageCount) -> Result<(), KernelErr> {
         let start = page_count
             .last_pageidx()
             .unwrap_or_default()
@@ -84,10 +100,23 @@ impl VolumeWrite for VolumeWriter {
             .or_into_ctx()
     }
 
-    fn commit(self) -> Result<(), GraftErr> {
-        self.runtime
+    fn commit(self) -> Result<VolumeReader, KernelErr> {
+        let snapshot = self
+            .runtime
             .storage()
-            .commit(self.name, self.snapshot, self.page_count, self.segment)
-            .or_into_ctx()
+            .commit(
+                self.graft.clone(),
+                self.snapshot,
+                self.page_count,
+                self.segment,
+            )
+            .or_into_ctx()?;
+        Ok(VolumeReader::new(self.runtime, self.graft, snapshot))
+    }
+}
+
+impl<'a> From<&'a VolumeWriter> for VolumeReadRef<'a> {
+    fn from(writer: &'a VolumeWriter) -> Self {
+        VolumeReadRef::Writer(writer)
     }
 }

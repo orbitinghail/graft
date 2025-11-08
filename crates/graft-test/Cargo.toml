@@ -12,10 +12,7 @@ rust-version = { workspace = true }
 workspace = true
 
 [dependencies]
-graft-client = { path = "../graft-client" }
-graft-server = { path = "../graft-server" }
 graft-core = { path = "../graft-core", features = ["testutil"] }
-graft-proto = { path = "../graft-proto" }
 graft-tracing = { path = "../graft-tracing" }
 graft-test-macro = { path = "../graft-test-macro" }
 graft-sqlite = { path = "../graft-sqlite" }
@@ -28,7 +25,7 @@ crossbeam = { workspace = true }
 file-lock = { workspace = true }
 url = { workspace = true }
 ureq = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full", "test-util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

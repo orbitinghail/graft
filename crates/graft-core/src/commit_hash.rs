@@ -8,7 +8,7 @@ use crate::{
     lsn::LSN,
     page::Page,
     page_count::PageCount,
-    page_idx::PageIdx,
+    pageidx::PageIdx,
     zerocopy_ext::{self, ZerocopyErr},
 };
 
@@ -199,7 +199,7 @@ mod tests {
 
     #[graft_test::test]
     fn test_commit_hash_builder_table() {
-        let vid: VolumeId = "GonvVp7KLK1dzdCoW4fexb".parse().unwrap();
+        let vid: VolumeId = "5rMJhdVrxb-2e7iyEK3dXuE3".parse().unwrap();
 
         struct TestCase {
             name: &'static str,
@@ -217,7 +217,7 @@ mod tests {
                 lsn: lsn!(1),
                 page_count: PageCount::ZERO,
                 pages: vec![],
-                expected_hash: "5Y7HQDXjtXGVidxGKKMsNKsR4neyfE6koFbzzxMNkkaR",
+                expected_hash: "5ZU76xna9tCCFQp8kHzPMiuBeXmGxXLvvEcMqXdqN5Lr",
             },
             TestCase {
                 name: "single_page",
@@ -225,7 +225,7 @@ mod tests {
                 lsn: lsn!(42),
                 page_count: PageCount::new(1),
                 pages: vec![(pageidx!(1), Page::test_filled(0xAA))],
-                expected_hash: "5YMM6MxCBpxRRLFGVdRUDftL6CfwmQi8HQ6kWuRsecBJ",
+                expected_hash: "5ZA94cxQJNcq1tMhAc2asEMFxf3fNtgD5SnCRqVcABZz",
             },
             TestCase {
                 name: "multiple_pages",
@@ -236,7 +236,7 @@ mod tests {
                     (pageidx!(1), Page::test_filled(0x11)),
                     (pageidx!(2), Page::test_filled(0x22)),
                 ],
-                expected_hash: "5WhCPL8GRAoeFLFjp3GbuYoHa1vyt3BH79Nsscr2te6m",
+                expected_hash: "5Y2x9i3fpWRgraMDgZyStfFGb2SHE37u8wsRni9dWsX8",
             },
         ];
 

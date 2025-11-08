@@ -13,12 +13,12 @@ use graft_core::{
     checkpoints::{CachedCheckpoints, Checkpoints},
     commit::Commit,
     lsn::LSN,
-    volume_control::VolumeControl,
 };
 use object_store::{
     GetOptions, GetRange, ObjectStore, PutOptions, PutPayload, aws::S3ConditionalPut,
     local::LocalFileSystem, memory::InMemory, path::Path, prefix::PrefixStore,
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod segment;
@@ -26,15 +26,6 @@ pub mod segment;
 const FETCH_COMMITS_CONCURRENCY: usize = 5;
 
 enum RemotePath<'a> {
-    /// Control files are stored at `/volumes/{vid}/control`
-    Control(&'a VolumeId),
-
-    /// Forks are stored at `/volumes/{vid}/forks/{fork_vid}`
-    /// Forks point from the parent to the child.
-    ///
-    /// TODO: Implement Forks!
-    // Fork(&'a VolumeId),
-
     /// `CheckpointSets` are stored at `/volumes/{vid}/checkpoints`
     CheckpointSet(&'a VolumeId),
 
@@ -48,17 +39,16 @@ enum RemotePath<'a> {
 impl RemotePath<'_> {
     fn build(self) -> object_store::path::Path {
         match self {
-            Self::Control(vid) => Path::from_iter(["volumes", &vid.pretty(), "control"]),
-            // TODO: Implement Forks!
-            // Self::Fork(fork) => Path::from_iter([&vid, "forks", &fork.pretty()]),
-            Self::CheckpointSet(vid) => Path::from_iter(["volumes", &vid.pretty(), "checkpoints"]),
+            Self::CheckpointSet(vid) => {
+                Path::from_iter(["volumes", &vid.serialize(), "checkpoints"])
+            }
             Self::Commit(vid, lsn) => Path::from_iter([
                 "volumes",
-                &vid.pretty(),
+                &vid.serialize(),
                 "log",
                 &CBE64::from(lsn).to_string(),
             ]),
-            Self::Segment(sid) => Path::from_iter(["segments", &sid.pretty()]),
+            Self::Segment(sid) => Path::from_iter(["segments", &sid.serialize()]),
         }
     }
 }
@@ -100,7 +90,8 @@ impl RemoteErr {
 
 pub type Result<T> = culprit::Result<T, RemoteErr>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum RemoteConfig {
     /// In memory object store
     #[default]
@@ -150,33 +141,6 @@ impl Remote {
         };
 
         Ok(Self { store })
-    }
-
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn get_control(&self, vid: &VolumeId) -> Result<VolumeControl> {
-        let path = RemotePath::Control(vid).build();
-        let result = self.store.get(&path).await?;
-        let bytes = result.bytes().await?;
-        Ok(VolumeControl::decode(bytes)?)
-    }
-
-    /// Atomically write a volume control to the remote, returning
-    /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
-    #[tracing::instrument(level = "debug", skip(self, control), fields(vid = ?control.vid(), parent = ?control.parent()))]
-    pub async fn put_control(&self, control: VolumeControl) -> Result<()> {
-        let path = RemotePath::Control(&control.vid).build();
-        let payload = PutPayload::from_bytes(control.encode_to_bytes());
-        self.store
-            .put_opts(
-                &path,
-                payload,
-                PutOptions {
-                    mode: object_store::PutMode::Create,
-                    ..PutOptions::default()
-                },
-            )
-            .await?;
-        Ok(())
     }
 
     /// Fetches checkpoints for the specified volume. If `etag` is not `None`
@@ -243,7 +207,7 @@ impl Remote {
     /// Atomically write a commit to the remote, returning
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
     #[tracing::instrument(level = "debug", skip(self, commit), fields(lsn = %commit.lsn()))]
-    pub async fn put_commit(&self, commit: Commit) -> Result<()> {
+    pub async fn put_commit(&self, commit: &Commit) -> Result<()> {
         let path = RemotePath::Commit(commit.vid(), commit.lsn()).build();
         let payload = PutPayload::from_bytes(commit.encode_to_bytes());
         self.store

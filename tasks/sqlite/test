@@ -62,8 +62,8 @@ for TEST in ${TESTS}; do
     echo "Running test: ${TEST}"
     EXPECTED="${TEST}.expected"
 
-    export GRAFT_CONFIG="${GIT_ROOT}/tests/sql/graft_config.toml"
     export GRAFT_DATA_DIR="$(mktemp -d)"
+    export GRAFT_REMOTE__TYPE="memory"
 
     # We add the exit code to the output since SQLite returns the number of
     # errors encountered while executing, and some of the tests want to trigger
@@ -83,7 +83,9 @@ for TEST in ${TESTS}; do
         echo "Updating expected output for: ${TEST}"
         echo "${OUTPUT}" >"${EXPECTED}"
     elif [ -f "${EXPECTED}" ]; then
+        set +e
         DIFF=$(echo "${OUTPUT}" | diff --color=always --palette="${DIFF_PALETTE}" -u --label "Expected Output" "${EXPECTED}" --label "Actual output" -)
+        set -e
         if [ -n "${DIFF}" ]; then
             echo "TEST FAILURE: Diff between actual and expected output for: ${TEST}"
             echo "${DIFF}"

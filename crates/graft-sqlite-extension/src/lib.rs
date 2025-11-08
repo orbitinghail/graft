@@ -1,14 +1,17 @@
 use std::{
-    borrow::Cow, error::Error, ffi::c_void, fs::OpenOptions, path::PathBuf, sync::Mutex,
-    time::Duration,
+    borrow::Cow,
+    ffi::c_void,
+    fmt::Display,
+    fs::OpenOptions,
+    future::pending,
+    path::PathBuf,
+    sync::{Arc, Mutex},
 };
 
 use config::{Config, FileFormat};
-use graft_client::{
-    ClientPair, MetastoreClient, NetClient, PagestoreClient,
-    runtime::{runtime::Runtime, storage::Storage},
+use graft_kernel::{
+    local::fjall_storage::FjallStorage, remote::RemoteConfig, rt::runtime_handle::RuntimeHandle,
 };
-use graft_core::ClientId;
 use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{TracingConsumer, init_tracing_with_writer};
 use serde::Deserialize;
@@ -16,15 +19,6 @@ use sqlite_plugin::{
     vars,
     vfs::{RegisterOpts, SqliteErr},
 };
-use url::Url;
-
-fn default_metastore() -> Url {
-    "http://127.0.0.1:3001".parse().unwrap()
-}
-
-fn default_pagestore() -> Url {
-    "http://127.0.0.1:3000".parse().unwrap()
-}
 
 fn default_data_dir() -> PathBuf {
     platform_dirs::AppDirs::new(Some("graft"), true)
@@ -32,50 +26,37 @@ fn default_data_dir() -> PathBuf {
         .data_dir
 }
 
-fn default_autosync() -> bool {
-    true
-}
-
 #[derive(Debug, Deserialize)]
 struct ExtensionConfig {
-    #[serde(default = "default_metastore")]
-    metastore: Url,
-
-    #[serde(default = "default_pagestore")]
-    pagestore: Url,
+    remote: RemoteConfig,
 
     #[serde(default = "default_data_dir")]
     data_dir: PathBuf,
 
-    #[serde(default = "default_autosync")]
-    autosync: bool,
-
-    #[serde(default = "ClientId::random")]
-    client_id: ClientId,
-
     log_file: Option<PathBuf>,
-
-    token: Option<String>,
 
     #[serde(default = "bool::default")]
     make_default: bool,
+
+    #[serde(default = "bool::default")]
+    autosync: bool,
 }
 
-pub fn setup_log_file(path: PathBuf, cid: &ClientId) {
+pub fn setup_log_file(path: PathBuf) {
     let file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
         .expect("failed to open log file");
 
-    init_tracing_with_writer(TracingConsumer::Tool, Some(cid.short()), Mutex::new(file));
+    init_tracing_with_writer(TracingConsumer::Tool, Mutex::new(file));
     tracing::info!("Log file opened");
 }
 
 struct InitErr(SqliteErr, Cow<'static, str>);
 
-impl<E: Error> From<E> for InitErr {
-    fn from(err: E) -> Self {
+impl<T: Display> From<T> for InitErr {
+    fn from(err: T) -> Self {
         InitErr(vars::SQLITE_INTERNAL, err.to_string().into())
     }
 }
@@ -99,6 +80,27 @@ fn write_err_msg(
     Ok(())
 }
 
+fn get_or_create_tokio_rt() -> Result<tokio::runtime::Handle, InitErr> {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        return Ok(handle);
+    }
+
+    // spin up a tokio current_thread runtime in a new thread
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let handle = rt.handle().clone();
+
+    std::thread::Builder::new()
+        .name("graft-runtime".to_string())
+        .spawn(move || {
+            // run the tokio runtime forever on this thread
+            rt.block_on(pending::<()>())
+        })?;
+
+    Ok(handle)
+}
+
 fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
     let files = [
         // load from the user's application dir first
@@ -120,26 +122,24 @@ fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
 
     let config = Config::builder()
         .add_source(files)
-        .add_source(config::Environment::with_prefix("GRAFT"))
+        .add_source(
+            config::Environment::with_prefix("GRAFT")
+                .prefix_separator("_")
+                .separator("__"),
+        )
         .build()?;
 
     let config: ExtensionConfig = config.try_deserialize()?;
 
     if let Some(path) = config.log_file {
-        setup_log_file(path, &config.client_id);
+        setup_log_file(path);
     }
 
-    let client = NetClient::new(config.token);
-    let metastore_client = MetastoreClient::new(config.metastore, client.clone());
-    let pagestore_client = PagestoreClient::new(config.pagestore, client);
-    let clients = ClientPair::new(metastore_client, pagestore_client);
+    let tokio_handle = get_or_create_tokio_rt()?;
 
-    let storage = Storage::open(config.data_dir).unwrap();
-    let runtime = Runtime::new(config.client_id, clients, storage);
-
-    runtime
-        .start_sync_task(Duration::from_secs(1), 8, config.autosync, "graft-sync")
-        .map_err(|c| c.into_err())?;
+    let remote = Arc::new(config.remote.build()?);
+    let storage = Arc::new(FjallStorage::open(config.data_dir)?);
+    let runtime = RuntimeHandle::spawn(&tokio_handle, remote, storage, config.autosync);
 
     Ok((
         RegisterOpts { make_default: config.make_default },

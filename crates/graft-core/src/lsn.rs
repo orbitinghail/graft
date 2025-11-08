@@ -104,6 +104,11 @@ impl LSN {
     }
 
     #[inline]
+    pub fn checked_add(&self, n: u64) -> Option<Self> {
+        Some(Self(self.0.checked_add(n)?))
+    }
+
+    #[inline]
     pub fn checked_next(&self) -> Option<Self> {
         Some(Self(self.0.checked_add(1)?))
     }

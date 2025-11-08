@@ -60,7 +60,6 @@ test:
     cargo nextest run
     cargo test --doc
     just run sqlite test
-    just run fuse test
 
 metastore-tag:
     @echo {{METASTORE_ANTITHESIS_TAG}}
