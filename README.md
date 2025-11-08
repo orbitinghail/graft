@@ -10,7 +10,7 @@
 </p>
 
 > [!IMPORTANT]
-> Graft is currently going through a large architecture rewrite. If you are an existing user of Graft please switch to the [v1 branch](tree/v1). The following readme and all of the docs are also in the process of being rewritten.
+> Graft is currently going through a large architecture rewrite. If you are an existing user of Graft please switch to the [v1 branch](/tree/v1). The following readme and all of the docs are also in the process of being rewritten.
 
 **Graft** is an open-source transactional storage engine designed for efficient data synchronization at the edge. It supports lazy, partial replication with strong consistency, ensuring applications replicate only the data they need.
 
