@@ -16,8 +16,3 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 - [ ] consider adding a read oracle (do some perf testing)
 - [ ] port tests
 - [ ] write first draft of antithesis tests
-
-# Checkout local vs remote
-
-- [ ] need a way to checkout a specific local graft
-- this will also allow sql tests to be deterministic

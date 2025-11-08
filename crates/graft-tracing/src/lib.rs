@@ -82,9 +82,7 @@ where
             span_events = FmtSpan::NEW | FmtSpan::CLOSE;
             filter = filter
                 .add_directive("graft_kernel=debug".parse().unwrap())
-                .add_directive("graft_client=trace".parse().unwrap())
                 .add_directive("graft_core=trace".parse().unwrap())
-                .add_directive("graft_server=trace".parse().unwrap())
                 .add_directive("graft_test=trace".parse().unwrap())
                 .add_directive("graft_sqlite=debug".parse().unwrap())
         }

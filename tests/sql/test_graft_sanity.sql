@@ -1,4 +1,5 @@
 .open "file:main?vfs=graft"
+pragma graft_switch="5rMJhorqTw-2dcMpAG9SgLPw:5rMJhorrQK-2dv4hJLznFMj8";
 
 .databases
 .vfsinfo

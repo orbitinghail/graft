@@ -1,6 +1,7 @@
 -- initialize two connections to the same database
 .connection 0
 .open "file:main?vfs=graft"
+pragma graft_switch="5rMJhorqTw-2dcMpAG9SgLPw:5rMJhorrQK-2dv4hJLznFMj8";
 pragma graft_status;
 
 .connection 1
@@ -14,12 +15,14 @@ pragma graft_status;
 .connection 0
 begin immediate;
 .connection 1
+-- EXPECT ERROR: database is locked
 begin immediate;
 
 -- reset
 .connection 0
 rollback;
 .connection 1
+-- EXPECT ERROR: no transaction
 rollback;
 
 -- scenario: verify that upgrading is refused if a read snapshot is outdated
@@ -34,12 +37,14 @@ insert into t values(1);
 
 .connection 0
 -- try to upgrade the lock via performing a write; this should fail
+-- EXPECT ERROR: database is locked
 insert into t values(2);
 
 -- reset
 .connection 0
 rollback;
 .connection 1
+-- EXPECT ERROR: no transaction
 rollback;
 
 -- scenario: verify that we can commit a write tx while another tx holds a read lock

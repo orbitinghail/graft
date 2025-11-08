@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 /// A `Snapshot` represents a logical view of a Volume, possibly made
 /// up of LSN ranges from multiple physical Volumes.
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash)]
 pub struct Snapshot {
     path: SmallVec<[VolumeRangeRef; 1]>,
 }

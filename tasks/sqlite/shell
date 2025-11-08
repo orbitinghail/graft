@@ -9,6 +9,7 @@ Options:
   --client ID   Specify an ID to identify this client. Default = "default"
   --release     Build/run in release mode.
   --trace       Enable trace-level logging (RUST_LOG=trace).
+  --log PATH    Output logs to a file
   --gdb         Run sqlite3 under gdb debugger.
   --autosync    Enable automatic background sync.
 EOF
@@ -34,21 +35,26 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --release)
+            shift
             TARGET="release"
             BUILD_FLAGS="--release"
-            shift
             ;;
         --trace)
-            RUST_LOG="trace"
+            shift
+            export RUST_LOG="trace"
+            ;;
+        --log)
+            shift
+            export GRAFT_LOG_FILE="$1"
             shift
             ;;
         --gdb)
-            export GDB=1
             shift
+            export GDB=1
             ;;
         --autosync)
-            export GRAFT_AUTOSYNC=1
             shift
+            export GRAFT_AUTOSYNC=1
             ;;
         *)
             echo "Unknown option: $1"
@@ -81,7 +87,7 @@ ARGS=(
     -table
     -cmd '.log stderr'
     -cmd ".load '${LIB_PATH}'"
-    -cmd ".open 'file:default?vfs=graft'"
+    -cmd ".open 'file:main?vfs=graft'"
 )
 
 exec just run sqlite bin "${ARGS[@]}"

@@ -17,7 +17,7 @@ pub enum KernelErr {
 impl From<FjallStorageErr> for KernelErr {
     fn from(value: FjallStorageErr) -> Self {
         match value {
-            FjallStorageErr::VolumeErr(verr) => KernelErr::Logical(verr),
+            FjallStorageErr::LogicalErr(verr) => KernelErr::Logical(verr),
             other => KernelErr::Storage(other),
         }
     }
@@ -44,10 +44,10 @@ pub enum LogicalErr {
     GraftDiverged(VolumeId),
 
     #[error(
-        "Graft `{vid}` has a different remote Volume than expected; expected={expected}, actual={actual}"
+        "Graft `{graft}` has a different remote Volume than expected; expected={expected}, actual={actual}"
     )]
     GraftRemoteMismatch {
-        vid: VolumeId,
+        graft: VolumeId,
         expected: VolumeId,
         actual: VolumeId,
     },

@@ -1,4 +1,4 @@
-use std::{fmt::Write, str::FromStr};
+use std::fmt::Write;
 
 use culprit::{Culprit, ResultExt};
 use graft_core::{VolumeId, lsn::LSNRangeExt};
@@ -22,8 +22,14 @@ pub enum GraftPragma {
     /// `pragma graft_tags;`
     Tags,
 
-    /// `pragma graft_checkout [= remote_vid];`
-    Checkout { remote: Option<VolumeId> },
+    /// `pragma graft_switch = "local_vid[:remote]";`
+    Switch {
+        graft: VolumeId,
+        remote: Option<VolumeId>,
+    },
+
+    /// `pragma graft_clone [= "remote_vid"];`
+    Clone { remote: Option<VolumeId> },
 
     /// `pragma graft_status;`
     Status,
@@ -60,19 +66,32 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
             return match suffix {
                 "list" => Ok(GraftPragma::List),
                 "tags" => Ok(GraftPragma::Tags),
-                "new" => Ok(GraftPragma::Checkout { remote: Some(VolumeId::random()) }),
-                "checkout" => {
+                "clone" => {
+                    if let Some(arg) = p.arg {
+                        let remote = arg
+                            .parse::<VolumeId>()
+                            .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
+                        Ok(GraftPragma::Clone { remote: Some(remote) })
+                    } else {
+                        Ok(GraftPragma::Clone { remote: None })
+                    }
+                }
+                "new" => Ok(GraftPragma::Switch { graft: VolumeId::random(), remote: None }),
+                "switch" => {
+                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
+                    let (prefix, suffix) = arg.split_once(":").unwrap_or((&arg, ""));
+                    let graft = prefix
+                        .parse::<VolumeId>()
+                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
                     let remote =
-                        p.arg
-                            .map(|s| VolumeId::from_str(s))
-                            .transpose()
-                            .map_err(|err| {
-                                PragmaErr::Fail(
-                                    SQLITE_ERROR,
-                                    Some(format!("failed to parse VolumeID: {}", err)),
-                                )
-                            })?;
-                    Ok(GraftPragma::Checkout { remote })
+                        if !suffix.is_empty() {
+                            Some(suffix.parse::<VolumeId>().map_err(|err| {
+                                PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string()))
+                            })?)
+                        } else {
+                            None
+                        };
+                    Ok(GraftPragma::Switch { graft, remote })
                 }
                 "status" => Ok(GraftPragma::Status),
                 "snapshot" => Ok(GraftPragma::Snapshot),
@@ -99,16 +118,27 @@ impl GraftPragma {
         file: &mut VolFile,
     ) -> Result<Option<String>, Culprit<ErrCtx>> {
         match self {
-            GraftPragma::List => Ok(Some(format_grafts(runtime)?)),
+            GraftPragma::List => Ok(Some(format_grafts(runtime, file.handle().graft())?)),
             GraftPragma::Tags => Ok(Some(format_tags(runtime)?)),
 
-            GraftPragma::Checkout { remote } => {
-                file.handle_mut().checkout(remote).or_into_ctx()?;
+            GraftPragma::Clone { remote } => {
+                file.handle_mut().clone_remote(remote).or_into_ctx()?;
                 let remote = file.handle().remote().or_into_ctx()?;
                 Ok(Some(format!(
                     "Created new Graft {} with remote Volume {}",
                     file.handle().graft(),
                     remote,
+                )))
+            }
+
+            GraftPragma::Switch { graft, remote } => {
+                let graft = file
+                    .handle_mut()
+                    .switch_graft(graft, remote)
+                    .or_into_ctx()?;
+                Ok(Some(format!(
+                    "Switched to Graft {} with remote Volume {}",
+                    graft.local, graft.remote,
                 )))
             }
 
@@ -174,7 +204,7 @@ fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
 
     match (local_changes, remote_changes) {
         (Some(local), Some(remote)) => {
-            writeln!(
+            write!(
                 &mut f,
                 indoc! {"
                     The local and remote Volumes have diverged, and have {} and {}
@@ -185,7 +215,7 @@ fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
             )?;
         }
         (Some(local), None) => {
-            writeln!(
+            write!(
                 &mut f,
                 indoc! {"
                     The local Volume is {} {} ahead of the remote Volume.
@@ -207,7 +237,7 @@ fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
             )?;
         }
         (None, None) => {
-            writeln!(
+            write!(
                 &mut f,
                 "The local Volume is up to date with the remote Volume."
             )?;
@@ -337,7 +367,10 @@ fn format_tags(runtime: &RuntimeHandle) -> Result<String, Culprit<ErrCtx>> {
     Ok(f)
 }
 
-fn format_grafts(runtime: &RuntimeHandle) -> Result<String, Culprit<ErrCtx>> {
+fn format_grafts(
+    runtime: &RuntimeHandle,
+    current_graft: &VolumeId,
+) -> Result<String, Culprit<ErrCtx>> {
     let mut f = String::new();
     let mut grafts = runtime.iter_grafts();
     while let Some(graft) = grafts.try_next().or_into_ctx()? {
@@ -348,10 +381,15 @@ fn format_grafts(runtime: &RuntimeHandle) -> Result<String, Culprit<ErrCtx>> {
         writedoc!(
             &mut f,
             "
-                Graft: {local}
+                Graft: {local}{}
                   Remote: {remote}
                   Status: {status}
             ",
+            if &local == current_graft {
+                " (current)"
+            } else {
+                ""
+            }
         )?;
     }
     Ok(f)

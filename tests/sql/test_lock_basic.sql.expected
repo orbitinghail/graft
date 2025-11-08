@@ -1,13 +1,19 @@
 -- initialize two connections to the same database
 .connection 0
 .open "file:main?vfs=graft"
+pragma graft_switch="5rMJhorqTw-2dcMpAG9SgLPw:5rMJhorrQK-2dv4hJLznFMj8";
++----------------------------------------------------------------------------------------+
+| Switched to Graft 5rMJhorqTw-2dcMpAG9SgLPw with remote Volume 5rMJhorrQK-2dv4hJLznFMj8 |
++----------------------------------------------------------------------------------------+
+| Switched to Graft 5rMJhorqTw-2dcMpAG9SgLPw with remote Volume 5rMJhorrQK-2dv4hJLznFMj8 |
++----------------------------------------------------------------------------------------+
 pragma graft_status;
 +---------------------------------------------------------+
 |                       On tag main                       |
 +---------------------------------------------------------+
 | On tag main                                             |
-| Local Volume 5rMJhmhEB6-2e1PhMFKvSreD (_) is grafted to |
-| remote Volume 5rMJhmhEB6-2dYbdtKh7zbgo (_).             |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (_) is grafted to |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).             |
 |                                                         |
 | The local Volume is up to date with the remote Volume.  |
 +---------------------------------------------------------+
@@ -19,8 +25,8 @@ pragma graft_status;
 |                       On tag main                       |
 +---------------------------------------------------------+
 | On tag main                                             |
-| Local Volume 5rMJhmhEB6-2e1PhMFKvSreD (_) is grafted to |
-| remote Volume 5rMJhmhEB6-2dYbdtKh7zbgo (_).             |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (_) is grafted to |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).             |
 |                                                         |
 | The local Volume is up to date with the remote Volume.  |
 +---------------------------------------------------------+
@@ -39,15 +45,17 @@ COMMIT;
 .connection 0
 begin immediate;
 .connection 1
-Runtime error near line 17: database is locked (5)
+-- EXPECT ERROR: database is locked
+Runtime error near line 19: database is locked (5)
 begin immediate;
 
 -- reset
 .connection 0
 rollback;
 .connection 1
+-- EXPECT ERROR: no transaction
 (1) statement aborts at 1: [rollback;] cannot rollback - no transaction is active
-Runtime error near line 23: cannot rollback - no transaction is active
+Runtime error near line 26: cannot rollback - no transaction is active
 rollback;
 
 -- scenario: verify that upgrading is refused if a read snapshot is outdated
@@ -67,15 +75,17 @@ insert into t values(1);
 
 .connection 0
 -- try to upgrade the lock via performing a write; this should fail
-Runtime error near line 37: database is locked (5)
+-- EXPECT ERROR: database is locked
+Runtime error near line 41: database is locked (5)
 insert into t values(2);
 
 -- reset
 .connection 0
 rollback;
 .connection 1
+-- EXPECT ERROR: no transaction
 (1) statement aborts at 1: [rollback;] cannot rollback - no transaction is active
-Runtime error near line 43: cannot rollback - no transaction is active
+Runtime error near line 48: cannot rollback - no transaction is active
 rollback;
 
 -- scenario: verify that we can commit a write tx while another tx holds a read lock
@@ -134,12 +144,11 @@ pragma graft_status;
 |                        On tag main                        |
 +-----------------------------------------------------------+
 | On tag main                                               |
-| Local Volume 5rMJhmhEB6-2e1PhMFKvSreD (4) is grafted to   |
-| remote Volume 5rMJhmhEB6-2dYbdtKh7zbgo (_).               |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (4) is grafted to   |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).               |
 |                                                           |
 | The local Volume is 4 commits ahead of the remote Volume. |
 |   (use 'pragma graft_push' to push changes)               |
-|                                                           |
 +-----------------------------------------------------------+
 .connection 0
 pragma graft_status;
@@ -147,12 +156,11 @@ pragma graft_status;
 |                        On tag main                        |
 +-----------------------------------------------------------+
 | On tag main                                               |
-| Local Volume 5rMJhmhEB6-2e1PhMFKvSreD (4) is grafted to   |
-| remote Volume 5rMJhmhEB6-2dYbdtKh7zbgo (_).               |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (4) is grafted to   |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).               |
 |                                                           |
 | The local Volume is 4 commits ahead of the remote Volume. |
 |   (use 'pragma graft_push' to push changes)               |
-|                                                           |
 +-----------------------------------------------------------+
 
 SQLite Exit Code = 1

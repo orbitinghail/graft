@@ -51,7 +51,7 @@ pub enum FjallStorageErr {
     BatchPreconditionErr,
 
     #[error(transparent)]
-    VolumeErr(#[from] LogicalErr),
+    LogicalErr(#[from] LogicalErr),
 }
 
 pub struct FjallStorage {
@@ -181,23 +181,20 @@ impl FjallStorage {
         Ok(())
     }
 
-    pub fn checkout_graft(&self, tag: &str, remote: VolumeId) -> Result<Graft, FjallStorageErr> {
-        let local = VolumeId::random();
-        let graft = Graft::new(local.clone(), remote, None, None);
+    /// Switch a tag to point at the specified graft, creating it if it doesn't exist
+    pub fn switch_graft(
+        &self,
+        tag: &str,
+        graft_vid: VolumeId,
+        remote: Option<VolumeId>,
+    ) -> Result<Graft, FjallStorageErr> {
+        self.read_write().switch_graft(tag, graft_vid, remote)
+    }
 
-        let mut batch = self.batch();
-        batch.write_tag(tag, local);
-        batch.write_graft(graft.clone());
-        batch.commit()?;
-
-        tracing::debug!(
-            tag,
-            local_vid = ?graft.local,
-            remote_vid = ?graft.remote,
-            "checkout graft"
-        );
-
-        Ok(graft)
+    /// Clone the specified remote into a new graft. Assign the resulting
+    /// graft to the specified tag.
+    pub fn clone_remote(&self, tag: &str, remote: VolumeId) -> Result<Graft, FjallStorageErr> {
+        self.read_write().new_graft(tag, VolumeId::random(), remote)
     }
 
     pub fn get_or_create_tag(&self, tag: &str) -> Result<Graft, FjallStorageErr> {
@@ -335,6 +332,42 @@ impl<'a> ReadGuard<'a> {
         self._grafts()
             .get(vid)?
             .ok_or_else(|| LogicalErr::GraftNotFound(vid.clone()).into())
+    }
+
+    /// Check if the provided Snapshot is logically equal to the latest snapshot
+    /// for the specified Graft.
+    pub fn is_latest_snapshot(
+        &self,
+        graft: &VolumeId,
+        snapshot: &Snapshot,
+    ) -> Result<bool, FjallStorageErr> {
+        let graft = self.graft(graft)?;
+        let latest_local = self.latest_lsn(&graft.local)?;
+
+        // The complexity here is that the snapshot may have been taken before
+        // we pushed commits to a remote. When this happens, the snapshot will
+        // be physically different but logically equivalent. We can use the
+        // relationship setup by the SyncPoint to handle this case.
+        Ok(match snapshot.head() {
+            Some((vid, lsn)) if vid == &graft.local => Some(lsn) == latest_local,
+
+            Some((vid, lsn)) if vid == &graft.remote => {
+                if let Some(sync) = graft.sync {
+                    lsn == sync.remote && sync.local_watermark == latest_local
+                } else {
+                    // if graft has no sync point, then a snapshot should not
+                    // include a remote layer, thus this snapshot is from
+                    // another graft
+                    false
+                }
+            }
+
+            // Snapshot from another graft
+            Some(_) => false,
+
+            // Snapshot is empty
+            None => latest_local.is_none() && graft.sync().is_none(),
+        })
     }
 
     /// Load the most recent Snapshot for a Graft.
@@ -514,11 +547,71 @@ impl<'a> ReadWriteGuard<'a> {
         self.read.storage
     }
 
+    /// Creates a new graft with the specified local and remote VolumeId's and
+    /// assigns the result to the specified tag.
+    pub fn new_graft(
+        self,
+        tag: &str,
+        local: VolumeId,
+        remote: VolumeId,
+    ) -> Result<Graft, FjallStorageErr> {
+        // if the remote exists, set the sync point to start from the latest
+        // remote lsn
+        let sync = if let Some(latest_remote) = self.read.latest_lsn(&remote)? {
+            Some(SyncPoint {
+                remote: latest_remote,
+                local_watermark: None,
+            })
+        } else {
+            None
+        };
+
+        let graft = Graft::new(local.clone(), remote, sync, None);
+
+        let mut batch = self.storage().batch();
+        batch.write_tag(tag, local);
+        batch.write_graft(graft.clone());
+        batch.commit()?;
+
+        tracing::debug!(
+            tag,
+            local_vid = ?graft.local,
+            remote_vid = ?graft.remote,
+            "clone graft"
+        );
+
+        Ok(graft)
+    }
+
     pub fn get_or_create_tag(self, tag: &str) -> Result<Graft, FjallStorageErr> {
         if let Some(state) = self.read.get_tag(tag)? {
             Ok(state)
         } else {
-            self.storage().checkout_graft(tag, VolumeId::random())
+            self.new_graft(tag, VolumeId::random(), VolumeId::random())
+        }
+    }
+
+    pub fn switch_graft(
+        self,
+        tag: &str,
+        graft_vid: VolumeId,
+        remote: Option<VolumeId>,
+    ) -> Result<Graft, FjallStorageErr> {
+        if let Some(graft) = self.read._grafts().get(&graft_vid)? {
+            if let Some(remote) = remote
+                && graft.remote != remote
+            {
+                return Err(LogicalErr::GraftRemoteMismatch {
+                    graft: graft.local,
+                    expected: remote,
+                    actual: graft.remote,
+                }
+                .into());
+            }
+            self.storage().tags.insert(tag.into(), graft_vid)?;
+            Ok(graft)
+        } else {
+            self.new_graft(tag, graft_vid, remote.unwrap_or_else(VolumeId::random))
         }
     }
 
@@ -529,14 +622,13 @@ impl<'a> ReadWriteGuard<'a> {
         page_count: PageCount,
         segment: SegmentIdx,
     ) -> Result<Snapshot, FjallStorageErr> {
-        let graft = self.read.graft(graft)?;
-        let latest_snapshot = self.read.snapshot(&graft.local)?;
-
         // Verify that the commit was constructed using the latest snapshot for
         // the volume.
-        if snapshot != latest_snapshot {
-            return Err(LogicalErr::GraftConcurrentWrite(graft.local).into());
+        if !self.read.is_latest_snapshot(graft, &snapshot)? {
+            return Err(LogicalErr::GraftConcurrentWrite(graft.clone()).into());
         }
+
+        let graft = self.read.graft(graft)?;
 
         // the commit_lsn is the next lsn for the graft's local volume
         let commit_lsn = self
@@ -613,8 +705,8 @@ impl<'a> ReadWriteGuard<'a> {
             "BUG: remote commit already exists"
         );
 
-        // build a new graft with the updated sync points and no pending_commit
-        let new_graft = Graft {
+        // update the graft with the new sync points and no pending_commit
+        let updated_graft = Graft {
             sync: Some(pending_commit.into()),
             pending_commit: None,
             ..graft
@@ -622,7 +714,7 @@ impl<'a> ReadWriteGuard<'a> {
 
         let mut batch = self.storage().batch();
         batch.write_commit(remote_commit);
-        batch.write_graft(new_graft);
+        batch.write_graft(updated_graft);
         batch.commit()
     }
 

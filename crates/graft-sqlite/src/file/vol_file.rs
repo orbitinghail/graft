@@ -179,10 +179,13 @@ impl VfsFile for VolFile {
                         return Err(Culprit::new(ErrCtx::Busy));
                     };
 
-                    // compare the latest snapshot to the reader snapshot, if it
+                    // check to see if the snapshot is latest. if it
                     // has changed we can immediately reject the lock upgrade
-                    let latest_snapshot = self.handle.snapshot().or_into_ctx()?;
-                    if reader.snapshot() != &latest_snapshot {
+                    if !self
+                        .handle
+                        .is_latest_snapshot(reader.snapshot())
+                        .or_into_ctx()?
+                    {
                         return Err(Culprit::new_with_note(
                             ErrCtx::BusySnapshot,
                             "unable to lock: Shared -> Reserved: snapshot changed",

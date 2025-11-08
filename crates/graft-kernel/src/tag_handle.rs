@@ -32,14 +32,26 @@ impl TagHandle {
         &self.graft
     }
 
-    /// Checkout a new graft starting at the specified remote. If remote is not
-    /// specified, will checkout a new Graft for the current remote.
-    pub fn checkout(&mut self, remote: Option<VolumeId>) -> Result<()> {
+    /// Switch to the specified Graft, creating it if it doesn't exist
+    /// An optional remote volume id may be specified
+    pub fn switch_graft(&mut self, graft: VolumeId, remote: Option<VolumeId>) -> Result<Graft> {
+        let graft = self
+            .runtime
+            .storage()
+            .switch_graft(&self.tag, graft, remote)
+            .or_into_ctx()?;
+        self.graft = graft.local.clone();
+        Ok(graft)
+    }
+
+    /// Clone the specified remote into a new graft. If remote is not
+    /// specified, will reuse the current remote.
+    pub fn clone_remote(&mut self, remote: Option<VolumeId>) -> Result<()> {
         let remote = remote.map_or_else(|| self.remote(), Ok)?;
         let graft = self
             .runtime
             .storage()
-            .checkout_graft(&self.tag, remote)
+            .clone_remote(&self.tag, remote)
             .or_into_ctx()?;
         self.graft = graft.local;
         Ok(())
@@ -64,6 +76,15 @@ impl TagHandle {
     #[inline]
     pub fn page_count(&self) -> Result<PageCount> {
         self.reader()?.page_count()
+    }
+
+    #[inline]
+    pub fn is_latest_snapshot(&self, snapshot: &Snapshot) -> Result<bool> {
+        self.runtime
+            .storage()
+            .read()
+            .is_latest_snapshot(&self.graft, snapshot)
+            .or_into_ctx()
     }
 
     #[inline]

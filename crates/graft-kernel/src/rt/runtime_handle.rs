@@ -224,7 +224,7 @@ mod tests {
 
         // open the same graft in the second runtime
         let mut handle_2 = runtime_2.get_or_create_tag("follower").unwrap();
-        handle_2.checkout(Some(remote_vid)).unwrap();
+        handle_2.clone_remote(Some(remote_vid)).unwrap();
 
         // let both runtimes run for a little while
         tokio_rt.block_on(async {

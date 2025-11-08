@@ -1,13 +1,19 @@
 -- initialize two connections to the same database
 .connection 0
 .open "file:main?vfs=graft"
+pragma graft_switch="5rMJhorqTw-2dcMpAG9SgLPw:5rMJhorrQK-2dv4hJLznFMj8";
++----------------------------------------------------------------------------------------+
+| Switched to Graft 5rMJhorqTw-2dcMpAG9SgLPw with remote Volume 5rMJhorrQK-2dv4hJLznFMj8 |
++----------------------------------------------------------------------------------------+
+| Switched to Graft 5rMJhorqTw-2dcMpAG9SgLPw with remote Volume 5rMJhorrQK-2dv4hJLznFMj8 |
++----------------------------------------------------------------------------------------+
 pragma graft_status;
 +---------------------------------------------------------+
 |                       On tag main                       |
 +---------------------------------------------------------+
 | On tag main                                             |
-| Local Volume 5rMJhmiTxT-2eBpzdjux3Yek (_) is grafted to |
-| remote Volume 5rMJhmiTxT-2e5jGjvCxYhxg (_).             |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (_) is grafted to |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).             |
 |                                                         |
 | The local Volume is up to date with the remote Volume.  |
 +---------------------------------------------------------+
@@ -19,8 +25,8 @@ pragma graft_status;
 |                       On tag main                       |
 +---------------------------------------------------------+
 | On tag main                                             |
-| Local Volume 5rMJhmiTxT-2eBpzdjux3Yek (_) is grafted to |
-| remote Volume 5rMJhmiTxT-2e5jGjvCxYhxg (_).             |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (_) is grafted to |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).             |
 |                                                         |
 | The local Volume is up to date with the remote Volume.  |
 +---------------------------------------------------------+
@@ -35,18 +41,17 @@ pragma graft_status;
 |                        On tag main                        |
 +-----------------------------------------------------------+
 | On tag main                                               |
-| Local Volume 5rMJhmiTxT-2eBpzdjux3Yek (6) is grafted to   |
-| remote Volume 5rMJhmiTxT-2e5jGjvCxYhxg (_).               |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (6) is grafted to   |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).               |
 |                                                           |
 | The local Volume is 6 commits ahead of the remote Volume. |
 |   (use 'pragma graft_push' to push changes)               |
-|                                                           |
 +-----------------------------------------------------------+
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=6]]) |
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=6]]) |
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
 pragma graft_pages;
 +-------------------------------+
@@ -82,18 +87,17 @@ pragma graft_status;
 |                        On tag main                        |
 +-----------------------------------------------------------+
 | On tag main                                               |
-| Local Volume 5rMJhmiTxT-2eBpzdjux3Yek (6) is grafted to   |
-| remote Volume 5rMJhmiTxT-2e5jGjvCxYhxg (_).               |
+| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (6) is grafted to   |
+| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).               |
 |                                                           |
 | The local Volume is 6 commits ahead of the remote Volume. |
 |   (use 'pragma graft_push' to push changes)               |
-|                                                           |
 +-----------------------------------------------------------+
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=6]]) |
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=6]]) |
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
 pragma graft_pages;
 +-------------------------------+
@@ -132,9 +136,9 @@ select count(*) from ledger;
 +----------+
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=6]]) |
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=6]]) |
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
 
 -- switch to connection 0, write something, check snapshot, switch back
@@ -142,18 +146,18 @@ pragma graft_snapshot;
 INSERT INTO ledger (account_id, amount) VALUES (1, -10), (2, 10);
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=7]]) |
+| Snapshot([2dcMpAG9SgLPw[..=7]]) |
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=7]]) |
+| Snapshot([2dcMpAG9SgLPw[..=7]]) |
 +---------------------------------+
 .connection 1
 
 -- check that connection 1 pragmas can't see the new snapshot
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=6]]) |
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=6]]) |
+| Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
 pragma graft_pages;
 +-------------------------------+
@@ -181,9 +185,9 @@ commit;
 
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=7]]) |
+| Snapshot([2dcMpAG9SgLPw[..=7]]) |
 +---------------------------------+
-| Snapshot([2eBpzdjux3Yek[..=7]]) |
+| Snapshot([2dcMpAG9SgLPw[..=7]]) |
 +---------------------------------+
 pragma graft_pages;
 +-------------------------------+
