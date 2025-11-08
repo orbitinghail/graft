@@ -9,9 +9,6 @@
 !/LICENSE-MIT
 !/README.md
 
-!/deploy/metastore/metastore.toml
-!/deploy/pagestore/pagestore.toml
-
 !/tests/antithesis/libvoidstar.so
 !/tests/antithesis/workloads
 !/tests/antithesis/fjall

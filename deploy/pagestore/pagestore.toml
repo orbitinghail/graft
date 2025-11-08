@@ -1,9 +1,0 @@
-catalog_update_concurrency = 128
-download_concurrency = 128
-write_concurrency = 128
-metastore = "https://graft-metastore.fly.dev"
-
-[objectstore]
-type = "s3_compatible"
-bucket = "graft-primary"
-prefix = "pagestore"

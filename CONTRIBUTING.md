@@ -71,23 +71,16 @@ The easiest way to ensure everything works is to run the tests. This can be done
 # Test the whole workspace or an individual crate
 # cargo nextest run [-p <crate>] [-- <filter for a specific test name>]
 cargo nextest run
-cargo nextest run -p splinter
-cargo nextest run client_sync_sanity
+cargo nextest run -p graft-kernel
+cargo nextest run runtime_sanity
 
 # Run SQLite tests
 just run sqlite test
 ```
 
-Next, if you'd like to run Graft locally run the following commands in different terminals:
+Next, if you'd like to run Graft locally you can use `just run sqlite shell` to spin up a SQLite shell.
 
 ```bash
-# first, start a local Graft Metastore
-cargo run --bin metastore
-
-# next, in another terminal, run a local Graft pagestore
-cargo run --bin pagestore
-
-# finally, you can open up a SQLite shell connected to 127.0.0.1
 just run sqlite shell
 ```
 
