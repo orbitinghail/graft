@@ -73,12 +73,6 @@ pragma graft_pages;
 | 13       | 6      | available |
 | 14       | 6      | available |
 +-------------------------------+
-pragma graft_version;
-+----------------------+
-| Graft Version: 0.1.5 |
-+----------------------+
-| Graft Version: 0.1.5 |
-+----------------------+
 
 -- check pragmas on connection 1
 .connection 1
@@ -119,12 +113,6 @@ pragma graft_pages;
 | 13       | 6      | available |
 | 14       | 6      | available |
 +-------------------------------+
-pragma graft_version;
-+----------------------+
-| Graft Version: 0.1.5 |
-+----------------------+
-| Graft Version: 0.1.5 |
-+----------------------+
 
 -- open a snapshot on connection 1
 begin;

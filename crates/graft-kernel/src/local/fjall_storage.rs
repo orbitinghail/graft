@@ -547,7 +547,7 @@ impl<'a> ReadWriteGuard<'a> {
         self.read.storage
     }
 
-    /// Creates a new graft with the specified local and remote VolumeId's and
+    /// Creates a new graft with the specified local and remote `VolumeId`'s and
     /// assigns the result to the specified tag.
     pub fn new_graft(
         self,
@@ -557,14 +557,13 @@ impl<'a> ReadWriteGuard<'a> {
     ) -> Result<Graft, FjallStorageErr> {
         // if the remote exists, set the sync point to start from the latest
         // remote lsn
-        let sync = if let Some(latest_remote) = self.read.latest_lsn(&remote)? {
-            Some(SyncPoint {
+        let sync = self
+            .read
+            .latest_lsn(&remote)?
+            .map(|latest_remote| SyncPoint {
                 remote: latest_remote,
                 local_watermark: None,
-            })
-        } else {
-            None
-        };
+            });
 
         let graft = Graft::new(local.clone(), remote, sync, None);
 

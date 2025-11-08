@@ -102,7 +102,7 @@ impl RuntimeHandle {
 
     pub fn graft_status(&self, graft: &VolumeId) -> Result<GraftStatus> {
         let reader = self.storage().read();
-        let state = reader.graft(&graft).or_into_ctx()?;
+        let state = reader.graft(graft).or_into_ctx()?;
         let latest_local = reader.latest_lsn(&state.local).or_into_ctx()?;
         let latest_remote = reader.latest_lsn(&state.remote).or_into_ctx()?;
         Ok(state.status(latest_local, latest_remote))

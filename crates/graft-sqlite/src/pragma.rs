@@ -79,7 +79,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "new" => Ok(GraftPragma::Switch { graft: VolumeId::random(), remote: None }),
                 "switch" => {
                     let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
-                    let (prefix, suffix) = arg.split_once(":").unwrap_or((&arg, ""));
+                    let (prefix, suffix) = arg.split_once(":").unwrap_or((arg, ""));
                     let graft = prefix
                         .parse::<VolumeId>()
                         .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
