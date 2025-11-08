@@ -5,8 +5,8 @@ description: Configuring the Graft MetaStore and PageStore
 
 Graft can be configured by environment variables or configuration files. The default production config files are located at [`deploy/metastore/metastore.toml`] and [`deploy/pagestore/pagestore.toml`]. Both binaries search for their configuration file in their current working directory.
 
-[`deploy/metastore/metastore.toml`]: https://github.com/orbitinghail/graft/blob/main/deploy/metastore/metastore.toml
-[`deploy/pagestore/pagestore.toml`]: https://github.com/orbitinghail/graft/blob/main/deploy/pagestore/pagestore.toml
+[`deploy/metastore/metastore.toml`]: https://github.com/orbitinghail/graft/blob/v1/deploy/metastore/metastore.toml
+[`deploy/pagestore/pagestore.toml`]: https://github.com/orbitinghail/graft/blob/v1/deploy/pagestore/pagestore.toml
 
 ## Object Storage
 
