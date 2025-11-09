@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 
 use culprit::{Culprit, ResultExt};
-use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
+use graft_core::{PageCount, PageIdx, VolumeId, page::Page, pageset::PageSet};
 
 use crate::{
-    KernelErr, page_status::PageStatus, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot,
-    volume_writer::VolumeWriter,
+    KernelErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_writer::VolumeWriter,
 };
 
 /// A type which can read from a Volume
@@ -13,7 +12,7 @@ pub trait VolumeRead {
     fn snapshot(&self) -> &Snapshot;
     fn page_count(&self) -> culprit::Result<PageCount, KernelErr>;
     fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr>;
-    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, KernelErr>;
+    fn missing_pages(&self) -> culprit::Result<PageSet, KernelErr>;
 }
 
 #[derive(Debug, Clone)]
@@ -66,8 +65,8 @@ impl VolumeRead for VolumeReader {
         self.runtime.read_page(&self.snapshot, pageidx)
     }
 
-    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, KernelErr> {
-        self.runtime.page_status(&self.snapshot, pageidx)
+    fn missing_pages(&self) -> culprit::Result<PageSet, KernelErr> {
+        self.runtime.missing_pages(&self.snapshot)
     }
 }
 
@@ -110,10 +109,10 @@ impl VolumeRead for VolumeReadRef<'_> {
         }
     }
 
-    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, KernelErr> {
+    fn missing_pages(&self) -> culprit::Result<PageSet, KernelErr> {
         match self {
-            VolumeReadRef::Reader(reader) => reader.page_status(pageidx),
-            VolumeReadRef::Writer(writer) => writer.page_status(pageidx),
+            VolumeReadRef::Reader(reader) => reader.missing_pages(),
+            VolumeReadRef::Writer(writer) => writer.missing_pages(),
         }
     }
 }

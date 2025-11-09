@@ -53,26 +53,12 @@ pragma graft_snapshot;
 +---------------------------------+
 | Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-pragma graft_pages;
-+-------------------------------+
-|   pageno   | lsn    | state   |
-+-------------------------------+
-| pageno   | lsn    | state     |
-| 1        | 6      | available |
-| 2        | 6      | available |
-| 3        | 6      | available |
-| 4        | 6      | available |
-| 5        | 6      | available |
-| 6        | 6      | available |
-| 7        | 6      | available |
-| 8        | 6      | available |
-| 9        | 6      | available |
-| 10       | 6      | available |
-| 11       | 6      | available |
-| 12       | 6      | available |
-| 13       | 6      | available |
-| 14       | 6      | available |
-+-------------------------------+
+pragma graft_missing;
++-------------------+
+| No missing pages. |
++-------------------+
+| No missing pages. |
++-------------------+
 
 -- check pragmas on connection 1
 .connection 1
@@ -93,26 +79,12 @@ pragma graft_snapshot;
 +---------------------------------+
 | Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-pragma graft_pages;
-+-------------------------------+
-|   pageno   | lsn    | state   |
-+-------------------------------+
-| pageno   | lsn    | state     |
-| 1        | 6      | available |
-| 2        | 6      | available |
-| 3        | 6      | available |
-| 4        | 6      | available |
-| 5        | 6      | available |
-| 6        | 6      | available |
-| 7        | 6      | available |
-| 8        | 6      | available |
-| 9        | 6      | available |
-| 10       | 6      | available |
-| 11       | 6      | available |
-| 12       | 6      | available |
-| 13       | 6      | available |
-| 14       | 6      | available |
-+-------------------------------+
+pragma graft_missing;
++-------------------+
+| No missing pages. |
++-------------------+
+| No missing pages. |
++-------------------+
 
 -- open a snapshot on connection 1
 begin;
@@ -147,26 +119,12 @@ pragma graft_snapshot;
 +---------------------------------+
 | Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-pragma graft_pages;
-+-------------------------------+
-|   pageno   | lsn    | state   |
-+-------------------------------+
-| pageno   | lsn    | state     |
-| 1        | 6      | available |
-| 2        | 6      | available |
-| 3        | 6      | available |
-| 4        | 6      | available |
-| 5        | 6      | available |
-| 6        | 6      | available |
-| 7        | 6      | available |
-| 8        | 6      | available |
-| 9        | 6      | available |
-| 10       | 6      | available |
-| 11       | 6      | available |
-| 12       | 6      | available |
-| 13       | 6      | available |
-| 14       | 6      | available |
-+-------------------------------+
+pragma graft_missing;
++-------------------+
+| No missing pages. |
++-------------------+
+| No missing pages. |
++-------------------+
 
 -- close the snapshot and check that we can see the latest snapshot
 commit;
@@ -177,25 +135,11 @@ pragma graft_snapshot;
 +---------------------------------+
 | Snapshot([2dcMpAG9SgLPw[..=7]]) |
 +---------------------------------+
-pragma graft_pages;
-+-------------------------------+
-|   pageno   | lsn    | state   |
-+-------------------------------+
-| pageno   | lsn    | state     |
-| 1        | 6      | available |
-| 2        | 6      | available |
-| 3        | 6      | available |
-| 4        | 7      | available |
-| 5        | 6      | available |
-| 6        | 7      | available |
-| 7        | 6      | available |
-| 8        | 6      | available |
-| 9        | 6      | available |
-| 10       | 6      | available |
-| 11       | 7      | available |
-| 12       | 6      | available |
-| 13       | 7      | available |
-| 14       | 6      | available |
-+-------------------------------+
+pragma graft_missing;
++-------------------+
+| No missing pages. |
++-------------------+
+| No missing pages. |
++-------------------+
 
 SQLite Exit Code = 0

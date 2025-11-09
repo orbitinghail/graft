@@ -169,7 +169,11 @@ impl SegmentIdx {
             .map(|(bytes, pages)| {
                 let pages = pages.start().to_u32()..=pages.end().to_u32();
                 let graft = (Splinter::from(pages) & self.pageset.splinter()).into();
-                SegmentRangeRef { bytes, pageset: graft }
+                SegmentRangeRef {
+                    sid: self.sid.clone(),
+                    bytes,
+                    pageset: graft,
+                }
             })
     }
 
@@ -225,6 +229,7 @@ impl SegmentFrameIdx {
 /// `SegmentFrames`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SegmentRangeRef {
+    pub sid: SegmentId,
     pub bytes: Range<usize>,
     pub pageset: PageSet,
 }
@@ -232,8 +237,10 @@ pub struct SegmentRangeRef {
 impl std::fmt::Debug for SegmentRangeRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SegmentRangeRef")
+            .field("sid", &self.sid)
             .field("bytes", &self.bytes)
-            .finish_non_exhaustive()
+            .field("pages", &self.pageset.cardinality())
+            .finish()
     }
 }
 
@@ -246,6 +253,10 @@ impl SegmentRangeRef {
     /// Attempt to coalesce two frame refs together.
     /// Returns the two frame refs unmodified if coalescing is impossible.
     pub fn coalesce(self, other: Self) -> Result<Self, (Self, Self)> {
+        if self.sid != other.sid {
+            return Err((self, other));
+        }
+
         let (left, right) = if self.bytes.end == other.bytes.start {
             (self, other)
         } else if other.bytes.end == self.bytes.start {
@@ -257,6 +268,7 @@ impl SegmentRangeRef {
         let left_splinter: Splinter = left.pageset.into();
         let right_splinter: Splinter = right.pageset.into();
         Ok(Self {
+            sid: left.sid,
             bytes: left.bytes.start..right.bytes.end,
             pageset: (left_splinter | right_splinter).into(),
         })
@@ -286,17 +298,15 @@ mod tests {
             last_pageidx: pageidx!(25),
         });
 
-        let segment_idx = SegmentIdx {
-            sid: SegmentId::random(),
-            pageset,
-            frames,
-        };
+        let sid = SegmentId::random();
+        let segment_idx = SegmentIdx { sid: sid.clone(), pageset, frames };
 
         let tests = [
             (pageidx!(4), None),
             (
                 pageidx!(5),
                 Some(SegmentRangeRef {
+                    sid: sid.clone(),
                     bytes: 0..100,
                     pageset: PageSet::from_range(pageidx!(5)..=pageidx!(10)),
                 }),
@@ -304,6 +314,7 @@ mod tests {
             (
                 pageidx!(10),
                 Some(SegmentRangeRef {
+                    sid: sid.clone(),
                     bytes: 0..100,
                     pageset: PageSet::from_range(pageidx!(5)..=pageidx!(10)),
                 }),
@@ -311,6 +322,7 @@ mod tests {
             (
                 pageidx!(11),
                 Some(SegmentRangeRef {
+                    sid: sid.clone(),
                     bytes: 100..300,
                     pageset: PageSet::from_range(pageidx!(11)..=pageidx!(20)),
                 }),
@@ -318,6 +330,7 @@ mod tests {
             (
                 pageidx!(20),
                 Some(SegmentRangeRef {
+                    sid: sid.clone(),
                     bytes: 100..300,
                     pageset: PageSet::from_range(pageidx!(11)..=pageidx!(20)),
                 }),
@@ -325,6 +338,7 @@ mod tests {
             (
                 pageidx!(25),
                 Some(SegmentRangeRef {
+                    sid: sid.clone(),
                     bytes: 300..450,
                     pageset: PageSet::from_range(pageidx!(21)..=pageidx!(25)),
                 }),
@@ -355,12 +369,15 @@ mod tests {
 
     #[test]
     fn test_segment_range_ref_coalesce_adjacent() {
+        let sid = SegmentId::random();
         // Test coalescing two adjacent ranges (first before second)
         let frame1 = SegmentRangeRef {
+            sid: sid.clone(),
             bytes: 0..100,
             pageset: PageSet::from_range(pageidx!(5)..=pageidx!(10)),
         };
         let frame2 = SegmentRangeRef {
+            sid: sid.clone(),
             bytes: 100..200,
             pageset: PageSet::from_range(pageidx!(11)..=pageidx!(20)),
         };
@@ -383,14 +400,38 @@ mod tests {
 
     #[test]
     fn test_segment_range_ref_coalesce_non_adjacent() {
+        let sid = SegmentId::random();
         // Test that non-adjacent ranges cannot be coalesced
         let frame1 = SegmentRangeRef {
+            sid: sid.clone(),
             bytes: 0..100,
             pageset: PageSet::from_range(pageidx!(5)..=pageidx!(10)),
         };
         let frame2 = SegmentRangeRef {
+            sid: sid.clone(),
             bytes: 150..250,
             pageset: PageSet::from_range(pageidx!(20)..=pageidx!(30)),
+        };
+
+        let result = frame1.clone().coalesce(frame2.clone());
+        assert!(result.is_err());
+        let (f1, f2) = result.unwrap_err();
+        assert_eq!(f1, frame1);
+        assert_eq!(f2, frame2);
+    }
+
+    #[test]
+    fn test_segment_range_ref_coalesce_diff_segment() {
+        // Test that adjacent ranges from different segments don't combine
+        let frame1 = SegmentRangeRef {
+            sid: SegmentId::random(),
+            bytes: 0..100,
+            pageset: PageSet::from_range(pageidx!(5)..=pageidx!(10)),
+        };
+        let frame2 = SegmentRangeRef {
+            sid: SegmentId::random(),
+            bytes: 100..200,
+            pageset: PageSet::from_range(pageidx!(11)..=pageidx!(20)),
         };
 
         let result = frame1.clone().coalesce(frame2.clone());

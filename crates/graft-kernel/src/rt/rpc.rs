@@ -1,5 +1,5 @@
 use culprit::ResultExt;
-use graft_core::{SegmentId, VolumeId, commit::SegmentRangeRef, lsn::LSN};
+use graft_core::{VolumeId, commit::SegmentRangeRef, lsn::LSN};
 use tokio::{
     runtime::Handle,
     sync::{mpsc, oneshot},
@@ -23,23 +23,11 @@ impl RpcWrapper {
 
 #[derive(Debug)]
 pub enum Rpc {
-    FetchSegmentRange {
-        sid: SegmentId,
-        range: SegmentRangeRef,
-    },
-    HydrateVolume {
-        vid: VolumeId,
-        max_lsn: Option<LSN>,
-    },
-    FetchVolume {
-        vid: VolumeId,
-    },
-    PullGraft {
-        graft: VolumeId,
-    },
-    PushGraft {
-        graft: VolumeId,
-    },
+    FetchSegmentRange { range: SegmentRangeRef },
+    HydrateVolume { vid: VolumeId, max_lsn: Option<LSN> },
+    FetchVolume { vid: VolumeId },
+    PullGraft { graft: VolumeId },
+    PushGraft { graft: VolumeId },
 }
 
 impl Rpc {
@@ -49,8 +37,8 @@ impl Rpc {
         remote: &Remote,
     ) -> culprit::Result<(), KernelErr> {
         match self {
-            Rpc::FetchSegmentRange { sid, range } => {
-                Job::fetch_segment(sid, range).run(storage, remote).await
+            Rpc::FetchSegmentRange { range } => {
+                Job::fetch_segment(range).run(storage, remote).await
             }
             Rpc::HydrateVolume { vid, max_lsn } => {
                 Job::hydrate_volume(vid, max_lsn).run(storage, remote).await
@@ -80,8 +68,8 @@ impl RpcHandle {
         Self { tx }
     }
 
-    pub fn fetch_segment_range(&self, sid: SegmentId, range: SegmentRangeRef) -> Result<()> {
-        self.rpc(Rpc::FetchSegmentRange { sid, range })
+    pub fn fetch_segment_range(&self, range: SegmentRangeRef) -> Result<()> {
+        self.rpc(Rpc::FetchSegmentRange { range })
     }
 
     pub fn hydrate_volume(&self, vid: VolumeId, max_lsn: Option<LSN>) -> Result<()> {

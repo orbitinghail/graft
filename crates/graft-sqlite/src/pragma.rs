@@ -3,8 +3,7 @@ use std::fmt::Write;
 use culprit::{Culprit, ResultExt};
 use graft_core::{VolumeId, lsn::LSNRangeExt};
 use graft_kernel::{
-    graft::AheadStatus, page_status::PageStatus, rt::runtime_handle::RuntimeHandle,
-    volume_reader::VolumeRead,
+    graft::AheadStatus, rt::runtime_handle::RuntimeHandle, volume_reader::VolumeRead,
 };
 use indoc::{formatdoc, indoc, writedoc};
 use sqlite_plugin::{
@@ -46,8 +45,8 @@ pub enum GraftPragma {
     /// `pragma graft_push;`
     Push,
 
-    /// `pragma graft_pages;`
-    Pages,
+    /// `pragma graft_missing;`
+    MissingPages,
 
     /// `pragma graft_hydrate;`
     Hydrate,
@@ -98,7 +97,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "fetch" => Ok(GraftPragma::Fetch),
                 "pull" => Ok(GraftPragma::Pull),
                 "push" => Ok(GraftPragma::Push),
-                "pages" => Ok(GraftPragma::Pages),
+                "missing" => Ok(GraftPragma::MissingPages),
                 "hydrate" => Ok(GraftPragma::Hydrate),
                 "version" => Ok(GraftPragma::Version),
                 _ => Err(PragmaErr::Fail(
@@ -154,7 +153,7 @@ impl GraftPragma {
 
             GraftPragma::Push => Ok(Some(push(file)?)),
 
-            GraftPragma::Pages => Ok(Some(format_graft_pages(file)?)),
+            GraftPragma::MissingPages => Ok(Some(format_graft_missing_pages(file)?)),
 
             GraftPragma::Hydrate => {
                 file.handle().hydrate().or_into_ctx()?;
@@ -175,11 +174,8 @@ impl GraftPragma {
 }
 
 macro_rules! pluralize {
-    (1, $s:literal) => {
-        $s
-    };
     ($n:expr, $s:literal) => {
-        concat!($s, "s")
+        if $n == 1 { $s } else { concat!($s, "s") }
     };
 }
 
@@ -247,35 +243,21 @@ fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     Ok(f)
 }
 
-fn format_graft_pages(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
-    let mut f = format!("{:<8} | {:<6} | state\n", "pageno", "lsn");
-    let reader = file.reader()?;
-    let pages = reader.page_count().or_into_ctx()?;
-
-    for pageidx in pages.iter() {
-        write!(&mut f, "{:<8} | ", pageidx.to_u32())?;
-        match reader.page_status(pageidx).or_into_ctx()? {
-            PageStatus::Pending(lsn) => {
-                writeln!(&mut f, "{lsn:<6} | pending")?;
-            }
-            PageStatus::Empty(lsn) => {
-                writeln!(
-                    &mut f,
-                    "{} | empty",
-                    match lsn {
-                        Some(lsn) => format!("{lsn:<6}"),
-                        None => format!("{:<6}", "_"),
-                    }
-                )?;
-            }
-            PageStatus::Available(lsn) => {
-                writeln!(&mut f, "{lsn:<6} | available")?;
-            }
-            PageStatus::Dirty => writeln!(&mut f, "{:<6} | dirty", "_")?,
-        }
+fn format_graft_missing_pages(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let missing_pages = file.reader()?.missing_pages().or_into_ctx()?;
+    if missing_pages.is_empty() {
+        Ok("No missing pages.".to_string())
+    } else {
+        let num_missing = missing_pages.cardinality();
+        Ok(formatdoc!(
+            "
+                Missing {} {} from the remote volume.
+                  (use 'pragma graft_hydrate' to fetch missing pages)
+            ",
+            num_missing,
+            pluralize!(num_missing, "page")
+        ))
     }
-
-    Ok(f)
 }
 
 fn fetch_or_pull(file: &mut VolFile, pull: bool) -> Result<String, Culprit<ErrCtx>> {

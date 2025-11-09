@@ -1,7 +1,6 @@
-use std::{collections::HashSet, pin::Pin, sync::Arc};
+use std::{pin::Pin, sync::Arc};
 
 use futures::{Stream, StreamExt};
-use graft_core::VolumeId;
 use tokio::time::Instant;
 
 use crate::{
@@ -18,7 +17,6 @@ pub struct RuntimeFatalErr;
 pub enum Event {
     Rpc(RpcWrapper),
     Tick(Instant),
-    Commits(HashSet<VolumeId>),
 }
 
 pub struct Runtime<S> {
@@ -61,14 +59,6 @@ impl<S: Stream<Item = Event>> Runtime<S> {
                 Event::Tick(_instant) => {
                     if self.autosync {
                         for job in Job::collect(&self.storage)? {
-                            job.run(&self.storage, &self.remote).await?
-                        }
-                    }
-                }
-                Event::Commits(commits) => {
-                    if self.autosync {
-                        let jobs = commits.into_iter().map(Job::remote_commit);
-                        for job in jobs {
                             job.run(&self.storage, &self.remote).await?
                         }
                     }

@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use culprit::{Culprit, ResultExt};
-use graft_core::{SegmentId, VolumeId, commit::SegmentRangeRef, lsn::LSN};
+use graft_core::{VolumeId, commit::SegmentRangeRef, lsn::LSN};
 use tryiter::TryIteratorExt;
 
 use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote};
@@ -68,8 +68,8 @@ impl Job {
         Job::HydrateVolume(hydrate_volume::Opts { vid, max_lsn })
     }
 
-    pub fn fetch_segment(sid: SegmentId, frame: SegmentRangeRef) -> Self {
-        Job::FetchSegment(fetch_segment::Opts { sid, frame })
+    pub fn fetch_segment(range: SegmentRangeRef) -> Self {
+        Job::FetchSegment(fetch_segment::Opts { range })
     }
 
     /// Inspects all grafts to compute a list of outstanding jobs.

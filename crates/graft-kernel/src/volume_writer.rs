@@ -1,9 +1,8 @@
 use culprit::{Result, ResultExt};
-use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
+use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page, pageset::PageSet};
 
 use crate::{
     KernelErr,
-    page_status::PageStatus,
     rt::runtime_handle::RuntimeHandle,
     snapshot::Snapshot,
     volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
@@ -68,12 +67,11 @@ impl VolumeRead for VolumeWriter {
         }
     }
 
-    fn page_status(&self, pageidx: PageIdx) -> culprit::Result<PageStatus, KernelErr> {
-        if self.segment.contains(pageidx) {
-            Ok(PageStatus::Dirty)
-        } else {
-            self.runtime.page_status(&self.snapshot, pageidx)
-        }
+    fn missing_pages(&self) -> culprit::Result<PageSet, KernelErr> {
+        let mut missing = self.runtime.missing_pages(&self.snapshot)?;
+        // remove any pages in our dirty segment from missing
+        missing -= self.segment.pageset();
+        Ok(missing)
     }
 }
 

@@ -11,11 +11,9 @@ pub mod rt {
     mod runtime;
 }
 
-pub mod changeset;
 pub mod err;
 pub mod graft;
 pub mod oracle;
-pub mod page_status;
 pub mod remote;
 pub mod snapshot;
 pub mod tag_handle;

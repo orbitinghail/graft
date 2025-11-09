@@ -1,12 +1,9 @@
-use std::{fmt::Debug, ops::Bound};
+use std::fmt::Debug;
 
 use culprit::{Result, ResultExt};
 use futures::{StreamExt, TryStreamExt};
-use graft_core::{
-    PageIdx, SegmentId, VolumeId, commit::SegmentRangeRef, lsn::LSN, pageset::PageSet,
-};
+use graft_core::{VolumeId, lsn::LSN};
 use itertools::Itertools;
-use tryiter::TryIteratorExt;
 
 use crate::{
     KernelErr, local::fjall_storage::FjallStorage, remote::Remote, rt::job::Job, snapshot::Snapshot,
@@ -38,74 +35,22 @@ impl Debug for Opts {
 }
 
 pub async fn run(storage: &FjallStorage, remote: &Remote, opts: Opts) -> Result<(), KernelErr> {
-    let outstanding_frames = get_outstanding_frames(storage, opts)?;
-    futures::stream::iter(outstanding_frames)
-        .map(Ok)
-        .try_for_each_concurrent(HYDRATE_CONCURRENCY, |(sid, frame)| {
-            Job::fetch_segment(sid, frame).run(storage, remote)
-        })
-        .await
-}
-
-fn get_outstanding_frames(
-    storage: &FjallStorage,
-    opts: Opts,
-) -> Result<Vec<(SegmentId, SegmentRangeRef)>, KernelErr> {
-    let reader = storage.read();
-
-    let Some(latest_lsn) = reader.latest_lsn(&opts.vid).or_into_ctx()? else {
-        // volume is empty, nothing to hydrate
-        return Ok(vec![]);
-    };
-
-    let target_lsn = opts.max_lsn.unwrap_or(latest_lsn);
-    let Some(mut page_count) = reader.page_count(&opts.vid, target_lsn).or_into_ctx()? else {
-        // volume is empty, nothing to hydrate
-        return Ok(vec![]);
-    };
-
     // build a snapshot to search for commits
-    let snapshot = Snapshot::new(opts.vid, LSN::FIRST..=target_lsn);
+    let snapshot = Snapshot::new(opts.vid, LSN::FIRST..=opts.max_lsn.unwrap_or(LSN::LAST));
 
-    // the set of pages we are searching for.
-    // we remove pages from this set as we iterate through commits.
-    let mut pages = PageSet::from_range(page_count.pageidxs());
-
-    let mut outstanding_frames = vec![];
-    let mut commits = reader.commits(&snapshot);
-    while !pages.is_empty()
-        && let Some(commit) = commits.try_next().or_into_ctx()?
-    {
-        // if we encounter a smaller commit on our travels, we need to shrink
-        // the page_count to ensure that truncation is respected
-        page_count = page_count.min(commit.page_count);
-
-        if let Some(idx) = commit.segment_idx {
-            // figure out which pages to ignore from this commit
-            let truncate_start = match page_count.last_pageidx() {
-                Some(pi) => {
-                    if pi == PageIdx::LAST {
-                        Bound::Excluded(PageIdx::LAST)
-                    } else {
-                        Bound::Included(pi)
-                    }
-                }
-                None => Bound::Unbounded,
-            };
-
-            let mut commit_pages = idx.pageset.clone();
-            // ignore pages we don't want
-            commit_pages.remove_page_range((truncate_start, Bound::Unbounded));
-
-            // figure out which pages we need from this commit
-            let outstanding = pages.cut(&commit_pages);
-            let frames = idx.iter_frames(|pages| outstanding.contains(*pages.start()));
-            // combine adjacent frames if possible to reduce the number of remote requests
-            for frame in frames.coalesce(|a, b| a.coalesce(b)) {
-                outstanding_frames.push((idx.sid.clone(), frame));
-            }
-        }
-    }
-
-    Ok(outstanding_frames)
+    let missing_frames = storage
+        .read()
+        .find_missing_frames(&snapshot)
+        .or_into_ctx()?;
+    futures::stream::iter(
+        missing_frames
+            .into_iter()
+            // coalesce adjacent frames to minimize requests
+            .coalesce(|a, b| a.coalesce(b)),
+    )
+    .map(Ok)
+    .try_for_each_concurrent(HYDRATE_CONCURRENCY, |frame| {
+        Job::fetch_segment(frame).run(storage, remote)
+    })
+    .await
 }

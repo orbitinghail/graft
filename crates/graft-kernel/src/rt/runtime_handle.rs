@@ -9,7 +9,6 @@ use tryiter::TryIteratorExt;
 use crate::{
     KernelErr,
     graft::{Graft, GraftStatus},
-    page_status::PageStatus,
     remote::Remote,
     rt::{
         rpc::RpcHandle,
@@ -58,8 +57,7 @@ impl RuntimeHandle {
         let rx = ReceiverStream::new(rx).map(Event::Rpc);
         let ticks =
             IntervalStream::new(tokio::time::interval(Duration::from_secs(1))).map(Event::Tick);
-        let commits = storage.subscribe_commits().map(Event::Commits);
-        let events = Box::pin(rx.merge(ticks).merge(commits));
+        let events = Box::pin(rx.merge(ticks));
 
         let runtime = Runtime::new(remote, storage.clone(), events, autosync);
         let handle = tokio_rt.spawn(runtime.start());
@@ -133,7 +131,7 @@ impl RuntimeHandle {
                 .frame_for_pageidx(pageidx)
                 .expect("BUG: no frame for pageidx");
 
-            self.inner.rpc.fetch_segment_range(idx.sid.clone(), frame)?;
+            self.inner.rpc.fetch_segment_range(frame)?;
 
             // now that we've fetched the segment, read the page again using a
             // fresh storage reader
@@ -148,20 +146,19 @@ impl RuntimeHandle {
         }
     }
 
-    pub(crate) fn page_status(&self, snapshot: &Snapshot, pageidx: PageIdx) -> Result<PageStatus> {
-        let reader = self.storage().read();
-        if let Some(commit) = reader.search_page(snapshot, pageidx).or_into_ctx()? {
-            let idx = commit
-                .segment_idx()
-                .expect("BUG: commit claims to contain pageidx");
-            if reader.has_page(idx.sid().clone(), pageidx).or_into_ctx()? {
-                Ok(PageStatus::Available(commit.lsn()))
-            } else {
-                Ok(PageStatus::Pending(commit.lsn()))
-            }
-        } else {
-            Ok(PageStatus::Empty(snapshot.head().map(|(_, lsn)| lsn)))
-        }
+    pub(crate) fn missing_pages(&self, snapshot: &Snapshot) -> Result<PageSet> {
+        let missing_frames = self
+            .storage()
+            .read()
+            .find_missing_frames(snapshot)
+            .or_into_ctx()?;
+        // merge missing_frames into a single PageSet
+        Ok(missing_frames
+            .into_iter()
+            .fold(PageSet::EMPTY, |mut pageset, frame| {
+                pageset |= frame.pageset;
+                pageset
+            }))
     }
 }
 
