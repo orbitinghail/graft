@@ -252,6 +252,7 @@ impl SegmentRangeRef {
 
     /// Attempt to coalesce two frame refs together.
     /// Returns the two frame refs unmodified if coalescing is impossible.
+    #[allow(clippy::result_large_err)]
     pub fn coalesce(self, other: Self) -> Result<Self, (Self, Self)> {
         if self.sid != other.sid {
             return Err((self, other));

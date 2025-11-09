@@ -201,9 +201,8 @@ impl FjallStorage {
         page_count: PageCount,
         segment: SegmentIdx,
     ) -> Result<Snapshot, FjallStorageErr> {
-        Ok(self
-            .read_write()
-            .commit(&graft, snapshot, page_count, segment)?)
+        self.read_write()
+            .commit(&graft, snapshot, page_count, segment)
     }
 
     /// Verify we are ready to make a remote commit and update the graft
@@ -495,7 +494,7 @@ impl<'a> ReadGuard<'a> {
         let pages_reader = self._pages();
 
         let mut missing_frames = vec![];
-        let mut commits = self.commits(&snapshot);
+        let mut commits = self.commits(snapshot);
         while !pages.is_empty()
             && let Some(commit) = commits.try_next()?
         {
@@ -522,10 +521,10 @@ impl<'a> ReadGuard<'a> {
                 // since we always download entire segment frames, if we are missing
                 // the first page, we are missing all the pages (in the frame)
                 for frame in frames {
-                    if let Some(first_page) = frame.pageset.first() {
-                        if !pages_reader.contains(&PageKey::new(frame.sid.clone(), first_page))? {
-                            missing_frames.push(frame);
-                        }
+                    if let Some(first_page) = frame.pageset.first()
+                        && !pages_reader.contains(&PageKey::new(frame.sid.clone(), first_page))?
+                    {
+                        missing_frames.push(frame);
                     }
                 }
             }

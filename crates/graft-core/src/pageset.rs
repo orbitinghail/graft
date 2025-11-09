@@ -82,7 +82,7 @@ impl PageSet {
         self.splinter.contains_any(r)
     }
 
-    /// Truncates the PageSet to the specified number of pages.
+    /// Truncates the `PageSet` to the specified number of pages.
     pub fn truncate(&mut self, page_count: PageCount) {
         if page_count == PageCount::ZERO {
             self.splinter = CowSplinter::Owned(Splinter::EMPTY);
