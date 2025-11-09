@@ -53,12 +53,13 @@ pragma graft_snapshot;
 +---------------------------------+
 | Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-pragma graft_missing;
-+-------------------+
-| No missing pages. |
-+-------------------+
-| No missing pages. |
-+-------------------+
+pragma graft_audit;
++----------------------------------------------+
+|      No missing pages. Volume checksum:      |
++----------------------------------------------+
+| No missing pages. Volume checksum:           |
+| 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
++----------------------------------------------+
 
 -- check pragmas on connection 1
 .connection 1
@@ -79,12 +80,13 @@ pragma graft_snapshot;
 +---------------------------------+
 | Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-pragma graft_missing;
-+-------------------+
-| No missing pages. |
-+-------------------+
-| No missing pages. |
-+-------------------+
+pragma graft_audit;
++----------------------------------------------+
+|      No missing pages. Volume checksum:      |
++----------------------------------------------+
+| No missing pages. Volume checksum:           |
+| 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
++----------------------------------------------+
 
 -- open a snapshot on connection 1
 begin;
@@ -119,12 +121,13 @@ pragma graft_snapshot;
 +---------------------------------+
 | Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
-pragma graft_missing;
-+-------------------+
-| No missing pages. |
-+-------------------+
-| No missing pages. |
-+-------------------+
+pragma graft_audit;
++----------------------------------------------+
+|      No missing pages. Volume checksum:      |
++----------------------------------------------+
+| No missing pages. Volume checksum:           |
+| 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
++----------------------------------------------+
 
 -- close the snapshot and check that we can see the latest snapshot
 commit;
@@ -135,11 +138,12 @@ pragma graft_snapshot;
 +---------------------------------+
 | Snapshot([2dcMpAG9SgLPw[..=7]]) |
 +---------------------------------+
-pragma graft_missing;
-+-------------------+
-| No missing pages. |
-+-------------------+
-| No missing pages. |
-+-------------------+
+pragma graft_audit;
++----------------------------------------------+
+|      No missing pages. Volume checksum:      |
++----------------------------------------------+
+| No missing pages. Volume checksum:           |
+| 84sLYe1cUrBCQ46mMmVqeLG1rWsdkB7ebujsXFgZ1sPk |
++----------------------------------------------+
 
 SQLite Exit Code = 0

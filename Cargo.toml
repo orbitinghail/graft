@@ -81,6 +81,7 @@ tracing-subscriber = "0.3.20"
 tryiter = "0.6.0"
 ureq = { version = "3.1.2", default-features = false, features = [ "rustls", "brotli", ] }
 url = "2.5.7"
+xxhash-rust = "0.8.15"
 zerocopy = { version = "0.8.27", features = ["derive"] }
 zstd = "0.13.3"
 

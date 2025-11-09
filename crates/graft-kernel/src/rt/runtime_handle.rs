@@ -2,7 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use bytestring::ByteString;
 use culprit::ResultExt;
-use graft_core::{PageIdx, SegmentId, VolumeId, commit::SegmentIdx, page::Page, pageset::PageSet};
+use graft_core::{
+    PageIdx, SegmentId, VolumeId, checksum::Checksum, commit::SegmentIdx, page::Page,
+    pageset::PageSet,
+};
 use tokio::task::JoinHandle;
 use tryiter::TryIteratorExt;
 
@@ -146,7 +149,11 @@ impl RuntimeHandle {
         }
     }
 
-    pub(crate) fn missing_pages(&self, snapshot: &Snapshot) -> Result<PageSet> {
+    pub fn checksum(&self, snapshot: &Snapshot) -> Result<Checksum> {
+        self.storage().read().checksum(snapshot).or_into_ctx()
+    }
+
+    pub fn missing_pages(&self, snapshot: &Snapshot) -> Result<PageSet> {
         let missing_frames = self
             .storage()
             .read()

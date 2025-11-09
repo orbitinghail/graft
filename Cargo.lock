@@ -1137,6 +1137,7 @@ dependencies = [
  "splinter-rs",
  "static_assertions",
  "thiserror 2.0.17",
+ "xxhash-rust",
  "zerocopy",
 ]
 
@@ -1191,11 +1192,13 @@ dependencies = [
  "graft-kernel",
  "graft-tracing",
  "indoc",
+ "itertools 0.14.0",
  "parking_lot",
  "sqlite-plugin",
  "thiserror 2.0.17",
  "tracing",
  "tryiter",
+ "zerocopy",
 ]
 
 [[package]]

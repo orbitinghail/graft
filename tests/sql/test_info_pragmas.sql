@@ -17,13 +17,13 @@ pragma graft_status;
 -- check pragmas
 pragma graft_status;
 pragma graft_snapshot;
-pragma graft_missing;
+pragma graft_audit;
 
 -- check pragmas on connection 1
 .connection 1
 pragma graft_status;
 pragma graft_snapshot;
-pragma graft_missing;
+pragma graft_audit;
 
 -- open a snapshot on connection 1
 begin;
@@ -38,10 +38,10 @@ pragma graft_snapshot;
 
 -- check that connection 1 pragmas can't see the new snapshot
 pragma graft_snapshot;
-pragma graft_missing;
+pragma graft_audit;
 
 -- close the snapshot and check that we can see the latest snapshot
 commit;
 
 pragma graft_snapshot;
-pragma graft_missing;
+pragma graft_audit;

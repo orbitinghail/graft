@@ -1,18 +1,20 @@
 use std::fmt::Write;
 
 use culprit::{Culprit, ResultExt};
-use graft_core::{VolumeId, lsn::LSNRangeExt};
+use graft_core::{PageIdx, VolumeId, lsn::LSNRangeExt};
 use graft_kernel::{
     graft::AheadStatus, rt::runtime_handle::RuntimeHandle, volume_reader::VolumeRead,
 };
 use indoc::{formatdoc, indoc, writedoc};
+use itertools::Itertools;
 use sqlite_plugin::{
     vars::SQLITE_ERROR,
     vfs::{Pragma, PragmaErr},
 };
 use tryiter::TryIteratorExt;
+use zerocopy::FromBytes;
 
-use crate::{file::vol_file::VolFile, vfs::ErrCtx};
+use crate::{dbg::SqliteHeader, file::vol_file::VolFile, vfs::ErrCtx};
 
 pub enum GraftPragma {
     /// `pragma graft_list;`
@@ -45,14 +47,17 @@ pub enum GraftPragma {
     /// `pragma graft_push;`
     Push,
 
-    /// `pragma graft_missing;`
-    MissingPages,
+    /// `pragma graft_audit;`
+    Audit,
 
     /// `pragma graft_hydrate;`
     Hydrate,
 
     /// `pragma graft_version;`
     Version,
+
+    /// `pragma graft_dump_header;`
+    DumpSqliteHeader,
 }
 
 impl TryFrom<&Pragma<'_>> for GraftPragma {
@@ -97,9 +102,10 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "fetch" => Ok(GraftPragma::Fetch),
                 "pull" => Ok(GraftPragma::Pull),
                 "push" => Ok(GraftPragma::Push),
-                "missing" => Ok(GraftPragma::MissingPages),
+                "audit" => Ok(GraftPragma::Audit),
                 "hydrate" => Ok(GraftPragma::Hydrate),
                 "version" => Ok(GraftPragma::Version),
+                "dump_header" => Ok(GraftPragma::DumpSqliteHeader),
                 _ => Err(PragmaErr::Fail(
                     SQLITE_ERROR,
                     Some(format!("invalid graft pragma `{}`", p.name)),
@@ -153,7 +159,7 @@ impl GraftPragma {
 
             GraftPragma::Push => Ok(Some(push(file)?)),
 
-            GraftPragma::MissingPages => Ok(Some(format_graft_missing_pages(file)?)),
+            GraftPragma::Audit => Ok(Some(format_graft_audit(runtime, file)?)),
 
             GraftPragma::Hydrate => {
                 file.handle().hydrate().or_into_ctx()?;
@@ -168,6 +174,18 @@ impl GraftPragma {
                     writeln!(&mut out, "\nGit Commit: {sha}")?;
                 }
                 Ok(Some(out))
+            }
+
+            GraftPragma::DumpSqliteHeader => {
+                let page = file
+                    .handle()
+                    .reader()
+                    .or_into_ctx()?
+                    .read_page(PageIdx::FIRST)
+                    .or_into_ctx()?;
+                let header = SqliteHeader::read_from_bytes(&page[..100])
+                    .expect("failed to parse SQLite header");
+                Ok(Some(format!("{header:#?}")))
             }
         }
     }
@@ -243,19 +261,37 @@ fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     Ok(f)
 }
 
-fn format_graft_missing_pages(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
-    let missing_pages = file.reader()?.missing_pages().or_into_ctx()?;
+fn format_graft_audit(runtime: &RuntimeHandle, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let snapshot = file.snapshot_or_latest()?;
+    let missing_pages = runtime.missing_pages(&snapshot).or_into_ctx()?;
     if missing_pages.is_empty() {
-        Ok("No missing pages.".to_string())
+        let checksum = runtime.checksum(&snapshot).or_into_ctx()?;
+        Ok(formatdoc!(
+            "
+                No missing pages. Volume checksum:
+                {checksum}
+            "
+        ))
     } else {
         let num_missing = missing_pages.cardinality();
+        let rows = missing_pages
+            .iter()
+            .chunks(10)
+            .into_iter()
+            .map(|mut chunk| chunk.join(", "))
+            .join("\n");
+
         Ok(formatdoc!(
             "
                 Missing {} {} from the remote volume.
                   (use 'pragma graft_hydrate' to fetch missing pages)
+
+                Missing pages:
+                {}
             ",
             num_missing,
-            pluralize!(num_missing, "page")
+            pluralize!(num_missing, "page"),
+            rows,
         ))
     }
 }

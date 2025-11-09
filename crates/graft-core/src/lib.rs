@@ -1,3 +1,4 @@
+pub mod checksum;
 pub mod commit_hash;
 pub mod gid;
 pub mod lsn;

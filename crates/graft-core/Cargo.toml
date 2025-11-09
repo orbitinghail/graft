@@ -32,6 +32,7 @@ assert_matches = { workspace = true }
 bilrost = { workspace = true, features = ["bytestring", "smallvec"] }
 smallvec = { workspace = true }
 range-set-blaze = { workspace = true }
+xxhash-rust = { workspace = true }
 
 [dev-dependencies]
 graft-test = { path = "../graft-test" }

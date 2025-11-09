@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    hash::{BuildHasher, RandomState},
+    hash::{DefaultHasher, Hash, Hasher},
     mem,
     sync::Arc,
 };
@@ -15,7 +15,7 @@ use graft_core::{
 use graft_kernel::{
     snapshot::Snapshot,
     tag_handle::TagHandle,
-    volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
+    volume_reader::{VolumeRead, VolumeReader},
     volume_writer::{VolumeWrite, VolumeWriter},
 };
 use parking_lot::{Mutex, MutexGuard};
@@ -105,15 +105,6 @@ impl VolFile {
             VolFileState::Idle => self.handle.page_count().or_into_ctx(),
             VolFileState::Shared { reader } => reader.page_count().or_into_ctx(),
             VolFileState::Reserved { writer } => writer.page_count().or_into_ctx(),
-            VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
-        }
-    }
-
-    pub fn reader(&self) -> Result<VolumeReadRef<'_>, ErrCtx> {
-        match &self.state {
-            VolFileState::Idle => self.handle().reader().map(|r| r.into()).or_into_ctx(),
-            VolFileState::Shared { reader } => Ok(reader.into()),
-            VolFileState::Reserved { writer } => Ok(writer.into()),
             VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
         }
     }
@@ -331,10 +322,20 @@ impl VfsFile for VolFile {
             // find the location of the file change counter within the out buffer
             let fcc_offset = FILE_CHANGE_COUNTER_OFFSET - local_offset.as_usize();
 
-            // compute the file change counter by hashing the snapshot
+            // compute the file change counter by hashing the snapshot.
+            // IMPORTANT: we use DefaultHasher which has a fixed seed/secret of
+            // 0 to ensure that the same snapshot gives the same result
             let snapshot = self.snapshot_or_latest()?;
-            let hash = RandomState::new().hash_one(snapshot);
+            let mut hasher = DefaultHasher::new();
+            snapshot.hash(&mut hasher);
+            let hash = hasher.finish();
             let change_counter = &hash.to_be_bytes()[..4];
+
+            tracing::trace!(
+                fcc_old=?&data[fcc_offset..fcc_offset+4],
+                fcc_new=?change_counter,
+                "reading fcc"
+            );
 
             // write the latest change counter to the buffer
             data[fcc_offset..fcc_offset + 4].copy_from_slice(change_counter);
@@ -405,9 +406,17 @@ impl VfsFile for VolFile {
                 // suffix (96, end]
                 data[vvf.end..]             == existing[vvf.end..];
 
+            tracing::trace!(
+                fcc=?&existing[fcc.clone()],
+                fcc_new=?&data[fcc],
+                vvf=?&existing[vvf.clone()],
+                vvf_new=?&data[vvf],
+                "writing to header"
+            );
+
             if unchanged {
                 tracing::trace!(
-                    "ignoring write to header page, file change counter and version valid for number unchanged"
+                    "ignoring write to header page, as only file change counter and version valid for number changed"
                 );
                 return Ok(data.len());
             }

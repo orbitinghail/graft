@@ -1,11 +1,11 @@
 use culprit::{Result, ResultExt};
-use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page, pageset::PageSet};
+use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
 
 use crate::{
     KernelErr,
     rt::runtime_handle::RuntimeHandle,
     snapshot::Snapshot,
-    volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
+    volume_reader::{VolumeRead, VolumeReader},
 };
 
 /// A type which can write to a Volume
@@ -66,13 +66,6 @@ impl VolumeRead for VolumeWriter {
             self.runtime.read_page(&self.snapshot, pageidx)
         }
     }
-
-    fn missing_pages(&self) -> culprit::Result<PageSet, KernelErr> {
-        let mut missing = self.runtime.missing_pages(&self.snapshot)?;
-        // remove any pages in our dirty segment from missing
-        missing -= self.segment.pageset();
-        Ok(missing)
-    }
 }
 
 impl VolumeWrite for VolumeWriter {
@@ -110,11 +103,5 @@ impl VolumeWrite for VolumeWriter {
             )
             .or_into_ctx()?;
         Ok(VolumeReader::new(self.runtime, self.graft, snapshot))
-    }
-}
-
-impl<'a> From<&'a VolumeWriter> for VolumeReadRef<'a> {
-    fn from(writer: &'a VolumeWriter) -> Self {
-        VolumeReadRef::Writer(writer)
     }
 }

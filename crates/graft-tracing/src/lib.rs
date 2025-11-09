@@ -59,6 +59,7 @@ where
 
         // determine if color output should be enabled
         let color = !antithesis && !std::env::var("NO_COLOR").is_ok_and(|s| !s.is_empty());
+        let no_time = std::env::var("NO_TIME").is_ok_and(|s| !s.is_empty());
 
         // allow a log prefix to be injected from the environment
         let prefix = std::env::var("GRAFT_LOG_PREFIX")
@@ -87,7 +88,7 @@ where
                 .add_directive("graft_sqlite=debug".parse().unwrap())
         }
 
-        let time = if antithesis {
+        let time = if antithesis || no_time {
             TimeFormat::None
         } else if consumer == TracingConsumer::Server {
             TimeFormat::Long(SystemTime)

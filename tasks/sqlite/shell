@@ -8,7 +8,7 @@ Usage: $0 [OPTIONS]
 Options:
   --client ID   Specify an ID to identify this client. Default = "default"
   --release     Build/run in release mode.
-  --trace       Enable trace-level logging (RUST_LOG=trace).
+  --trace       Enable trace-level logging for graft.
   --log PATH    Output logs to a file
   --gdb         Run sqlite3 under gdb debugger.
   --autosync    Enable automatic background sync.
@@ -41,11 +41,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --trace)
             shift
-            export RUST_LOG="trace"
+            export RUST_LOG="graft_sqlite=trace,graft_kernel=trace"
             ;;
         --log)
             shift
             export GRAFT_LOG_FILE="$1"
+            export NO_COLOR=1
             shift
             ;;
         --gdb)

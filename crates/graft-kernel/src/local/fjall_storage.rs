@@ -5,6 +5,7 @@ use fjall::{Batch, Instant, PartitionCreateOptions};
 use graft_core::{
     PageCount, PageIdx, SegmentId, VolumeId,
     checkpoints::CachedCheckpoints,
+    checksum::{Checksum, ChecksumBuilder},
     commit::{Commit, SegmentIdx, SegmentRangeRef},
     commit_hash::CommitHash,
     lsn::{LSN, LSNRangeExt, LSNSet},
@@ -478,6 +479,50 @@ impl<'a> ReadGuard<'a> {
         vid: &VolumeId,
     ) -> Result<Option<CachedCheckpoints>, FjallStorageErr> {
         self._checkpoints().get(vid)
+    }
+
+    pub fn checksum(&self, snapshot: &Snapshot) -> Result<Checksum, FjallStorageErr> {
+        // the checksum builder
+        let mut builder = ChecksumBuilder::new();
+
+        // the set of pages we are searching for.
+        // we remove pages from this set as we iterate through commits.
+        let mut pages = PageSet::FULL;
+
+        // we keep track of the smallest page count as we iterate through commits
+        let mut page_count = PageCount::MAX;
+
+        let pages_reader = self._pages();
+
+        let mut commits = self.commits(snapshot);
+        while !pages.is_empty()
+            && let Some(commit) = commits.try_next()?
+        {
+            // if we encounter a smaller commit on our travels, we need to shrink
+            // the page_count to ensure that truncation is respected
+            if commit.page_count < page_count {
+                page_count = commit.page_count;
+                pages.truncate(page_count);
+            }
+
+            if let Some(idx) = commit.segment_idx {
+                let mut commit_pages = idx.pageset.clone();
+
+                // truncate any pages in this commit that extend beyond the page count
+                commit_pages.truncate(page_count);
+
+                // figure out which pages we need from this commit
+                let outstanding = pages.cut(&commit_pages);
+
+                for pageidx in outstanding.iter() {
+                    if let Some(page) = pages_reader.get(&PageKey::new(idx.sid.clone(), pageidx))? {
+                        builder.write(&page);
+                    }
+                }
+            }
+        }
+
+        Ok(builder.build())
     }
 
     pub fn find_missing_frames(

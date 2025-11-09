@@ -1,7 +1,5 @@
-use std::borrow::Cow;
-
 use culprit::{Culprit, ResultExt};
-use graft_core::{PageCount, PageIdx, VolumeId, page::Page, pageset::PageSet};
+use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
 
 use crate::{
     KernelErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_writer::VolumeWriter,
@@ -12,7 +10,6 @@ pub trait VolumeRead {
     fn snapshot(&self) -> &Snapshot;
     fn page_count(&self) -> culprit::Result<PageCount, KernelErr>;
     fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr>;
-    fn missing_pages(&self) -> culprit::Result<PageSet, KernelErr>;
 }
 
 #[derive(Debug, Clone)]
@@ -63,56 +60,5 @@ impl VolumeRead for VolumeReader {
 
     fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr> {
         self.runtime.read_page(&self.snapshot, pageidx)
-    }
-
-    fn missing_pages(&self) -> culprit::Result<PageSet, KernelErr> {
-        self.runtime.missing_pages(&self.snapshot)
-    }
-}
-
-impl From<VolumeReader> for VolumeReadRef<'_> {
-    fn from(reader: VolumeReader) -> Self {
-        VolumeReadRef::Reader(Cow::Owned(reader))
-    }
-}
-
-impl<'a> From<&'a VolumeReader> for VolumeReadRef<'a> {
-    fn from(reader: &'a VolumeReader) -> Self {
-        VolumeReadRef::Reader(Cow::Borrowed(reader))
-    }
-}
-
-pub enum VolumeReadRef<'a> {
-    Reader(Cow<'a, VolumeReader>),
-    Writer(&'a VolumeWriter),
-}
-
-impl VolumeRead for VolumeReadRef<'_> {
-    fn snapshot(&self) -> &Snapshot {
-        match self {
-            VolumeReadRef::Reader(reader) => reader.snapshot(),
-            VolumeReadRef::Writer(writer) => writer.snapshot(),
-        }
-    }
-
-    fn page_count(&self) -> culprit::Result<PageCount, KernelErr> {
-        match self {
-            VolumeReadRef::Reader(reader) => reader.page_count(),
-            VolumeReadRef::Writer(writer) => writer.page_count(),
-        }
-    }
-
-    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr> {
-        match self {
-            VolumeReadRef::Reader(reader) => reader.read_page(pageidx),
-            VolumeReadRef::Writer(writer) => writer.read_page(pageidx),
-        }
-    }
-
-    fn missing_pages(&self) -> culprit::Result<PageSet, KernelErr> {
-        match self {
-            VolumeReadRef::Reader(reader) => reader.missing_pages(),
-            VolumeReadRef::Writer(writer) => writer.missing_pages(),
-        }
     }
 }

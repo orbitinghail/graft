@@ -39,6 +39,7 @@ if [ ! -f "${SQLITE_BIN}" ]; then
       -O2 -g -fno-omit-frame-pointer -DNDEBUG \
       -DSQLITE_ENABLE_DBSTAT_VTAB \
       -DSQLITE_ENABLE_BYTECODE_VTAB \
+      -DSQLITE_ENABLE_DBPAGE_VTAB \
       -DSQLITE_ENABLE_FTS4 \
       -DSQLITE_ENABLE_FTS5 \
       -DSQLITE_ENABLE_MATH_FUNCTIONS \

@@ -23,8 +23,10 @@ bytestring = { workspace = true }
 culprit = { workspace = true }
 enum_dispatch = { workspace = true }
 indoc = { workspace = true }
+itertools = { workspace = true }
 parking_lot = { workspace = true }
 sqlite-plugin = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tryiter = { workspace = true }
+zerocopy = { workspace = true }

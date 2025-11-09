@@ -4,7 +4,9 @@ use thiserror::Error;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::{
-    VolumeId, derive_zerocopy_encoding,
+    VolumeId,
+    cbe::CBE64,
+    derive_zerocopy_encoding,
     lsn::LSN,
     page::Page,
     page_count::PageCount,
@@ -78,7 +80,7 @@ impl CommitHash {
     };
 
     #[cfg(any(test, feature = "testutil"))]
-    pub fn random() -> Self {
+    pub fn testonly_random() -> Self {
         Self {
             prefix: CommitHashPrefix::Value,
             hash: rand::random(),
@@ -145,7 +147,7 @@ impl CommitHashBuilder {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&COMMIT_HASH_MAGIC);
         hasher.update(vid.as_bytes());
-        hasher.update(&lsn.to_u64().to_be_bytes());
+        hasher.update(CBE64::from(lsn).as_bytes());
         hasher.update(&volume_pages.to_u32().to_be_bytes());
         Self { hasher, last_pageidx: None }
     }
@@ -191,7 +193,9 @@ mod tests {
             hash: Option<CommitHash>,
         }
 
-        let msg = TestMsg { hash: Some(CommitHash::random()) };
+        let msg = TestMsg {
+            hash: Some(CommitHash::testonly_random()),
+        };
         let b = msg.encode_to_bytes();
         let decoded: TestMsg = TestMsg::decode(b).unwrap();
         assert_eq!(decoded, msg, "Decoded message does not match original");
@@ -217,7 +221,7 @@ mod tests {
                 lsn: lsn!(1),
                 page_count: PageCount::ZERO,
                 pages: vec![],
-                expected_hash: "5ZU76xna9tCCFQp8kHzPMiuBeXmGxXLvvEcMqXdqN5Lr",
+                expected_hash: "5YbaAZvwrzRck5WQPwaKqo5SirMns1WGPwxvkoc16Jn6",
             },
             TestCase {
                 name: "single_page",
@@ -225,7 +229,7 @@ mod tests {
                 lsn: lsn!(42),
                 page_count: PageCount::new(1),
                 pages: vec![(pageidx!(1), Page::test_filled(0xAA))],
-                expected_hash: "5ZA94cxQJNcq1tMhAc2asEMFxf3fNtgD5SnCRqVcABZz",
+                expected_hash: "5XqotAhgdkC8NBdv5eS4jZFM1LCeugjLQHpwSDEgfz8n",
             },
             TestCase {
                 name: "multiple_pages",
@@ -236,7 +240,7 @@ mod tests {
                     (pageidx!(1), Page::test_filled(0x11)),
                     (pageidx!(2), Page::test_filled(0x22)),
                 ],
-                expected_hash: "5Y2x9i3fpWRgraMDgZyStfFGb2SHE37u8wsRni9dWsX8",
+                expected_hash: "5XYzfp5hcQLw3TejqZPT1GcXz2XV7fXFGYYhJ1KLUjNw",
             },
         ];
 
