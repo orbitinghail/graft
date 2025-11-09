@@ -1,11 +1,11 @@
 use zerocopy::{BE, FromBytes, Immutable, KnownLayout, U16, U32};
 
-/// The header of a SQLite database file.
+/// The header of a `SQLite` database file.
 /// Used for easy debugging. See `pragma graft_dbg_hdr` for an example.
 #[derive(Clone, Debug, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct SqliteHeader {
-    /// The header string: "SQLite format 3\000"
+    /// The header string: "`SQLite` format 3\000"
     magic: [u8; 16],
     /// The database page size in bytes. Must be a power of two between 512 and 32768 inclusive, or the value 1 representing a page size of 65536.
     page_size: U16<BE>,
@@ -39,16 +39,16 @@ pub struct SqliteHeader {
     largest_root_btree_page: U32<BE>,
     /// The database text encoding. A value of 1 means UTF-8. A value of 2 means UTF-16le. A value of 3 means UTF-16be.
     database_text_encoding: U32<BE>,
-    /// The "user version" as read and set by the user_version pragma.
+    /// The "user version" as read and set by the `user_version` pragma.
     user_version: U32<BE>,
     /// True (non-zero) for incremental-vacuum mode. False (zero) otherwise.
     incremental_vacuum_mode: U32<BE>,
-    /// The "Application ID" set by PRAGMA application_id.
+    /// The "Application ID" set by PRAGMA `application_id`.
     application_id: U32<BE>,
     /// Reserved for expansion. Must be zero.
     reserved: [u8; 20],
     /// The version-valid-for number.
     version_valid_for_number: U32<BE>,
-    /// SQLITE_VERSION_NUMBER
+    /// `SQLITE_VERSION_NUMBER`
     sqlite_version_number: U32<BE>,
 }

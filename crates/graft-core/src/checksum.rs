@@ -28,8 +28,8 @@ impl Display for Checksum {
 /// ## How It Works
 ///
 /// The checksum combines four values:
-/// - **sum**: Wrapping sum of xxh3_128 hashes (order-independent via commutativity)
-/// - **xor**: XOR of xxh3_128 hashes (order-independent via commutativity)
+/// - **sum**: Wrapping sum of `xxh3_128` hashes (order-independent via commutativity)
+/// - **xor**: XOR of `xxh3_128` hashes (order-independent via commutativity)
 /// - **count**: Number of elements added
 /// - **bytes**: Total byte length of all elements
 ///
