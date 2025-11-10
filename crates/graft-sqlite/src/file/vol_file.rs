@@ -331,12 +331,6 @@ impl VfsFile for VolFile {
             let hash = hasher.finish();
             let change_counter = &hash.to_be_bytes()[..4];
 
-            tracing::trace!(
-                fcc_old=?&data[fcc_offset..fcc_offset+4],
-                fcc_new=?change_counter,
-                "reading fcc"
-            );
-
             // write the latest change counter to the buffer
             data[fcc_offset..fcc_offset + 4].copy_from_slice(change_counter);
         }
@@ -405,14 +399,6 @@ impl VfsFile for VolFile {
                 data[fcc.end..vvf.start]    == existing[fcc.end..vvf.start] &&
                 // suffix (96, end]
                 data[vvf.end..]             == existing[vvf.end..];
-
-            tracing::trace!(
-                fcc=?&existing[fcc.clone()],
-                fcc_new=?&data[fcc],
-                vvf=?&existing[vvf.clone()],
-                vvf_new=?&data[vvf],
-                "writing to header"
-            );
 
             if unchanged {
                 tracing::trace!(
