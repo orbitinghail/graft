@@ -45,6 +45,9 @@ pub enum ErrCtx {
     InvalidVolumeState,
 
     #[error(transparent)]
+    IoErr(#[from] std::io::Error),
+
+    #[error(transparent)]
     FmtErr(#[from] std::fmt::Error),
 }
 

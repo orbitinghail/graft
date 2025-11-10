@@ -1,12 +1,17 @@
-use std::fmt::Write;
+use std::{fmt::Write, fs::File, io::Read, path::PathBuf};
 
+use bytes::{Bytes, BytesMut};
 use culprit::{Culprit, ResultExt};
-use graft_core::{PageIdx, VolumeId, lsn::LSNRangeExt};
+use graft_core::{
+    PageCount, PageIdx, VolumeId,
+    lsn::LSNRangeExt,
+    page::{PAGESIZE, Page},
+};
 use graft_kernel::{
-    graft::AheadStatus, rt::runtime_handle::RuntimeHandle, volume_reader::VolumeRead,
+    graft::AheadStatus, rt::runtime_handle::RuntimeHandle, tag_handle::TagHandle,
+    volume_reader::VolumeRead, volume_writer::VolumeWrite,
 };
 use indoc::{formatdoc, indoc, writedoc};
-use itertools::Itertools;
 use sqlite_plugin::{
     vars::SQLITE_ERROR,
     vfs::{Pragma, PragmaErr},
@@ -55,6 +60,9 @@ pub enum GraftPragma {
 
     /// `pragma graft_version;`
     Version,
+
+    /// `pragma graft_import = "PATH";`
+    Import(PathBuf),
 
     /// `pragma graft_dump_header;`
     DumpSqliteHeader,
@@ -105,6 +113,11 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "audit" => Ok(GraftPragma::Audit),
                 "hydrate" => Ok(GraftPragma::Hydrate),
                 "version" => Ok(GraftPragma::Version),
+                "import" => {
+                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
+                    let path = PathBuf::from(arg);
+                    Ok(GraftPragma::Import(path))
+                }
                 "dump_header" => Ok(GraftPragma::DumpSqliteHeader),
                 _ => Err(PragmaErr::Fail(
                     SQLITE_ERROR,
@@ -175,6 +188,8 @@ impl GraftPragma {
                 }
                 Ok(Some(out))
             }
+
+            GraftPragma::Import(path) => graft_import(file.handle(), path).map(Some),
 
             GraftPragma::DumpSqliteHeader => {
                 let page = file
@@ -273,25 +288,16 @@ fn format_graft_audit(runtime: &RuntimeHandle, file: &VolFile) -> Result<String,
             "
         ))
     } else {
-        let num_missing = missing_pages.cardinality();
-        let rows = missing_pages
-            .iter()
-            .chunks(10)
-            .into_iter()
-            .map(|mut chunk| chunk.join(", "))
-            .join("\n");
-
+        let missing = missing_pages.cardinality();
+        let pages = file.page_count().or_into_ctx()?.to_usize();
+        let have = pages - missing;
+        let pct = (have as f64) / (pages as f64) * 100.0;
         Ok(formatdoc!(
             "
-                Missing {} {} from the remote volume.
+                Cached {have} of {pages} {} ({pct:.02}%) from the remote volume.
                   (use 'pragma graft_hydrate' to fetch missing pages)
-
-                Missing pages:
-                {}
             ",
-            num_missing,
-            pluralize!(num_missing, "page"),
-            rows,
+            pluralize!(pages, "page"),
         ))
     }
 }
@@ -411,4 +417,60 @@ fn format_grafts(
         )?;
     }
     Ok(f)
+}
+
+fn graft_import(handle: &TagHandle, path: PathBuf) -> Result<String, Culprit<ErrCtx>> {
+    let mut writer = handle.writer().or_into_ctx()?;
+    if writer.page_count().or_into_ctx()? > PageCount::ZERO {
+        return Ok("Refusing to import into a non-empty database.".into());
+    }
+
+    let mut file = File::open(&path)?;
+
+    // Read and write the file in chunks of 64 pages (256KB)
+    const CHUNK_PAGES: usize = 64;
+    const CHUNK_SIZE: usize = CHUNK_PAGES * PAGESIZE.as_usize();
+
+    let mut buffer = vec![0u8; CHUNK_SIZE];
+    let mut page_idx = PageIdx::FIRST;
+    let mut total_pages = 0;
+
+    loop {
+        let bytes_read = file.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break; // EOF
+        }
+
+        // Process each page in the chunk
+        for chunk in buffer[..bytes_read].chunks(PAGESIZE.as_usize()) {
+            let page = if chunk.len() == PAGESIZE.as_usize() {
+                // SAFETY: we just checked that chunk.len() == PAGESIZE
+                unsafe { Page::from_bytes_unchecked(Bytes::copy_from_slice(chunk)) }
+            } else {
+                // Partial page at the end of the file - pad with zeros
+                let mut bytes = BytesMut::from(chunk);
+                bytes.resize(PAGESIZE.as_usize(), 0);
+                // SAFETY: chunk has just been resized to PAGESIZE
+                unsafe { Page::from_bytes_unchecked(bytes.freeze()) }
+            };
+
+            writer.write_page(page_idx, page).or_into_ctx()?;
+            page_idx = page_idx.saturating_next();
+            total_pages += 1;
+        }
+    }
+
+    let reader = writer.commit().or_into_ctx()?;
+    let page_count = reader.page_count().or_into_ctx()?;
+    assert_eq!(
+        page_count.to_usize(),
+        total_pages,
+        "page count after import does not match expected page count"
+    );
+
+    Ok(format!(
+        "imported {} {}",
+        total_pages,
+        pluralize!(total_pages, "page")
+    ))
 }
