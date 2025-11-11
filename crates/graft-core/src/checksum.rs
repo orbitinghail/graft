@@ -95,7 +95,7 @@ impl ChecksumBuilder {
     pub fn write<B: AsRef<[u8]>>(&mut self, data: &B) {
         let hash = xxhash_rust::xxh3::xxh3_128(data.as_ref());
         self.checksum.sum = self.checksum.sum.wrapping_add(hash);
-        self.checksum.xor = self.checksum.xor ^ hash;
+        self.checksum.xor ^= hash;
         self.checksum.count = self.checksum.count.wrapping_add(1);
         self.checksum.bytes = self
             .checksum
@@ -106,7 +106,7 @@ impl ChecksumBuilder {
     /// Merges another `ChecksumBuilder` into this one, and returns the result
     pub const fn merge(mut self, b: Self) -> Self {
         self.checksum.sum = self.checksum.sum.wrapping_add(b.checksum.sum);
-        self.checksum.xor = self.checksum.xor ^ b.checksum.xor;
+        self.checksum.xor ^= b.checksum.xor;
         self.checksum.count = self.checksum.count.wrapping_add(b.checksum.count);
         self.checksum.bytes = self.checksum.bytes.wrapping_add(b.checksum.bytes);
         self
