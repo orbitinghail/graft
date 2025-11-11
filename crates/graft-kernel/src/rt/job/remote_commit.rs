@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fmt::Debug,
-    ops::{Bound, RangeInclusive},
-};
+use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive};
 
 use bytes::Bytes;
 use culprit::ResultExt;
@@ -14,7 +10,7 @@ use graft_core::{
     volume_ref::VolumeRef,
 };
 use smallvec::SmallVec;
-use splinter_rs::{PartitionRead, Splinter};
+use splinter_rs::{Optimizable, PartitionRead, Splinter};
 use tryiter::TryIteratorExt;
 
 use crate::{
@@ -186,7 +182,7 @@ fn build_segment(
     // for each unique pageidx
     let mut page_count = plan.page_count;
     let mut pages = BTreeMap::new();
-    let mut graft = Splinter::default();
+    let mut pageset = Splinter::default();
     let mut commits = reader.commits(&segment_path);
     while let Some(commit) = commits.try_next().or_into_ctx()? {
         // if we encounter a smaller commit on our travels, we need to shrink
@@ -195,15 +191,14 @@ fn build_segment(
 
         if let Some(idx) = commit.segment_idx {
             let mut commit_pages = idx.pageset;
-            // remove any pages we dont want
-            commit_pages.remove_page_range((
-                page_count
-                    .last_pageidx()
-                    .map_or(Bound::Unbounded, Bound::Excluded),
-                Bound::Unbounded,
-            ));
+
+            // truncate any pages in this commit that extend beyond the page count
+            if commit_pages.last().map(|idx| idx.pages()) > Some(page_count) {
+                commit_pages.truncate(page_count);
+            }
+
             // figure out which pages we haven't seen
-            let outstanding = Splinter::from(commit_pages) - &graft;
+            let outstanding = Splinter::from(commit_pages) - &pageset;
             // load all of the outstanding pages
             for pageidx in outstanding.iter() {
                 // SAFETY: outstanding is built from a Graft of already valid PageIdxs
@@ -212,10 +207,13 @@ fn build_segment(
                 let page = reader.read_page(idx.sid.clone(), pageidx).or_into_ctx()?;
                 pages.insert(pageidx, page.expect("BUG: missing page"));
             }
-            // update the graft accordingly
-            graft |= outstanding;
+            // update the pageset accordingly
+            pageset |= outstanding;
         }
     }
+
+    // optimize the pageset
+    pageset.optimize();
 
     let mut segment_builder = SegmentBuilder::new();
     let mut commithash_builder = CommitHashBuilder::new(
@@ -239,7 +237,7 @@ fn build_segment(
 
     let commit_hash = commithash_builder.build();
     let (frames, chunks) = segment_builder.finish();
-    let idx = SegmentIdx::new(sid, graft.into()).with_frames(frames);
+    let idx = SegmentIdx::new(sid, pageset.into()).with_frames(frames);
 
     batch.commit().or_into_ctx()?;
 

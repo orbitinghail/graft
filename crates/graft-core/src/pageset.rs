@@ -55,6 +55,15 @@ impl PageSet {
     }
 
     #[inline]
+    pub fn last(&self) -> Option<PageIdx> {
+        self.splinter
+            .last()
+            // SAFETY: The PageSet type verifies that `0` is not contained by the
+            // Splinter at creation time.
+            .map(|n| unsafe { PageIdx::new_unchecked(n) })
+    }
+
+    #[inline]
     pub fn insert(&mut self, pageidx: PageIdx) -> bool {
         self.splinter.insert(pageidx.to_u32())
     }

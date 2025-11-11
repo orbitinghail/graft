@@ -17,6 +17,17 @@ pragma graft_status;
 |                                                         |
 | The local Volume is up to date with the remote Volume.  |
 +---------------------------------------------------------+
+pragma graft_info;
++----------------------------------+
+| Graft: 5rMJhorqTw-2dcMpAG9SgLPw  |
++----------------------------------+
+| Graft: 5rMJhorqTw-2dcMpAG9SgLPw  |
+| Remote: 5rMJhorrQK-2dv4hJLznFMj8 |
+| Last sync: Never synced          |
+| Snapshot: Snapshot([])           |
+| Snapshot pages: 0                |
+| Snapshot size: 0 B               |
++----------------------------------+
 
 .connection 1
 .open "file:main?vfs=graft"
@@ -30,6 +41,17 @@ pragma graft_status;
 |                                                         |
 | The local Volume is up to date with the remote Volume.  |
 +---------------------------------------------------------+
+pragma graft_info;
++----------------------------------+
+| Graft: 5rMJhorqTw-2dcMpAG9SgLPw  |
++----------------------------------+
+| Graft: 5rMJhorqTw-2dcMpAG9SgLPw  |
+| Remote: 5rMJhorrQK-2dv4hJLznFMj8 |
+| Last sync: Never synced          |
+| Snapshot: Snapshot([])           |
+| Snapshot pages: 0                |
+| Snapshot size: 0 B               |
++----------------------------------+
 
 -- initialize the db on connection 0
 .connection 0
@@ -54,12 +76,23 @@ pragma graft_snapshot;
 | Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
 pragma graft_audit;
-+----------------------------------------------+
-|      No missing pages. Volume checksum:      |
-+----------------------------------------------+
-| No missing pages. Volume checksum:           |
-| 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
-+----------------------------------------------+
++--------------------------------------------------------+
+|  Cached 14 of 14 pages (100%) from the remote volume.  |
++--------------------------------------------------------+
+| Cached 14 of 14 pages (100%) from the remote volume.   |
+| Checksum: 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
++--------------------------------------------------------+
+pragma graft_info;
++-------------------------------------------+
+|      Graft: 5rMJhorqTw-2dcMpAG9SgLPw      |
++-------------------------------------------+
+| Graft: 5rMJhorqTw-2dcMpAG9SgLPw           |
+| Remote: 5rMJhorrQK-2dv4hJLznFMj8          |
+| Last sync: Never synced                   |
+| Snapshot: Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot pages: 14                        |
+| Snapshot size: 56 KB                      |
++-------------------------------------------+
 
 -- check pragmas on connection 1
 .connection 1
@@ -81,12 +114,23 @@ pragma graft_snapshot;
 | Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
 pragma graft_audit;
-+----------------------------------------------+
-|      No missing pages. Volume checksum:      |
-+----------------------------------------------+
-| No missing pages. Volume checksum:           |
-| 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
-+----------------------------------------------+
++--------------------------------------------------------+
+|  Cached 14 of 14 pages (100%) from the remote volume.  |
++--------------------------------------------------------+
+| Cached 14 of 14 pages (100%) from the remote volume.   |
+| Checksum: 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
++--------------------------------------------------------+
+pragma graft_info;
++-------------------------------------------+
+|      Graft: 5rMJhorqTw-2dcMpAG9SgLPw      |
++-------------------------------------------+
+| Graft: 5rMJhorqTw-2dcMpAG9SgLPw           |
+| Remote: 5rMJhorrQK-2dv4hJLznFMj8          |
+| Last sync: Never synced                   |
+| Snapshot: Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot pages: 14                        |
+| Snapshot size: 56 KB                      |
++-------------------------------------------+
 
 -- open a snapshot on connection 1
 begin;
@@ -122,12 +166,23 @@ pragma graft_snapshot;
 | Snapshot([2dcMpAG9SgLPw[..=6]]) |
 +---------------------------------+
 pragma graft_audit;
-+----------------------------------------------+
-|      No missing pages. Volume checksum:      |
-+----------------------------------------------+
-| No missing pages. Volume checksum:           |
-| 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
-+----------------------------------------------+
++--------------------------------------------------------+
+|  Cached 14 of 14 pages (100%) from the remote volume.  |
++--------------------------------------------------------+
+| Cached 14 of 14 pages (100%) from the remote volume.   |
+| Checksum: 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
++--------------------------------------------------------+
+pragma graft_info;
++-------------------------------------------+
+|      Graft: 5rMJhorqTw-2dcMpAG9SgLPw      |
++-------------------------------------------+
+| Graft: 5rMJhorqTw-2dcMpAG9SgLPw           |
+| Remote: 5rMJhorrQK-2dv4hJLznFMj8          |
+| Last sync: Never synced                   |
+| Snapshot: Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot pages: 14                        |
+| Snapshot size: 56 KB                      |
++-------------------------------------------+
 
 -- close the snapshot and check that we can see the latest snapshot
 commit;
@@ -139,11 +194,22 @@ pragma graft_snapshot;
 | Snapshot([2dcMpAG9SgLPw[..=7]]) |
 +---------------------------------+
 pragma graft_audit;
-+----------------------------------------------+
-|      No missing pages. Volume checksum:      |
-+----------------------------------------------+
-| No missing pages. Volume checksum:           |
-| 84sLYe1cUrBCQ46mMmVqeLG1rWsdkB7ebujsXFgZ1sPk |
-+----------------------------------------------+
++--------------------------------------------------------+
+|  Cached 14 of 14 pages (100%) from the remote volume.  |
++--------------------------------------------------------+
+| Cached 14 of 14 pages (100%) from the remote volume.   |
+| Checksum: 84sLYe1cUrBCQ46mMmVqeLG1rWsdkB7ebujsXFgZ1sPk |
++--------------------------------------------------------+
+pragma graft_info;
++-------------------------------------------+
+|      Graft: 5rMJhorqTw-2dcMpAG9SgLPw      |
++-------------------------------------------+
+| Graft: 5rMJhorqTw-2dcMpAG9SgLPw           |
+| Remote: 5rMJhorrQK-2dv4hJLznFMj8          |
+| Last sync: Never synced                   |
+| Snapshot: Snapshot([2dcMpAG9SgLPw[..=7]]) |
+| Snapshot pages: 14                        |
+| Snapshot size: 56 KB                      |
++-------------------------------------------+
 
 SQLite Exit Code = 0

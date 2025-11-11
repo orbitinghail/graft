@@ -167,6 +167,10 @@ impl RuntimeHandle {
                 pageset
             }))
     }
+
+    pub fn fork(&self, snapshot: &Snapshot) -> Result<Graft> {
+        self.storage().fork_snapshot(snapshot).or_into_ctx()
+    }
 }
 
 #[cfg(test)]

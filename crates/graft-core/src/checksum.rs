@@ -1,14 +1,18 @@
-use std::fmt::Display;
+use std::{fmt::Display, iter::Sum};
 
 use zerocopy::{ByteEq, ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[derive(Clone, Debug, Default, IntoBytes, FromBytes, ByteEq, ByteHash, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct Checksum {
-    sum: u128,   // wrapping sum of 128-bit digests
-    xor: u128,   // xor of 128-bit digests
-    count: u128, // number of elements
-    bytes: u128, // total byte length (helps distinguish permutations with same digests)
+    /// wrapping sum of 128-bit digests
+    sum: u128,
+    /// xor of 128-bit digests
+    xor: u128,
+    /// number of elements
+    count: u128,
+    /// total byte length (helps distinguish permutations with same digests)
+    bytes: u128,
 }
 
 impl Display for Checksum {
@@ -91,22 +95,38 @@ impl ChecksumBuilder {
     pub fn write<B: AsRef<[u8]>>(&mut self, data: &B) {
         let hash = xxhash_rust::xxh3::xxh3_128(data.as_ref());
         self.checksum.sum = self.checksum.sum.wrapping_add(hash);
-        self.checksum.xor ^= hash;
-        self.checksum.count += 1;
+        self.checksum.xor = self.checksum.xor ^ hash;
+        self.checksum.count = self.checksum.count.wrapping_add(1);
         self.checksum.bytes = self
             .checksum
             .bytes
             .wrapping_add(data.as_ref().len() as u128);
     }
 
+    /// Merges another `ChecksumBuilder` into this one, and returns the result
+    pub const fn merge(mut self, b: Self) -> Self {
+        self.checksum.sum = self.checksum.sum.wrapping_add(b.checksum.sum);
+        self.checksum.xor = self.checksum.xor ^ b.checksum.xor;
+        self.checksum.count = self.checksum.count.wrapping_add(b.checksum.count);
+        self.checksum.bytes = self.checksum.bytes.wrapping_add(b.checksum.bytes);
+        self
+    }
+
     /// Consumes the builder and returns the final checksum.
-    pub fn build(self) -> Checksum {
+    pub const fn build(self) -> Checksum {
         self.checksum
+    }
+}
+
+impl Sum for ChecksumBuilder {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(ChecksumBuilder::new(), |a, b| a.merge(b))
     }
 }
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]
@@ -162,9 +182,7 @@ mod tests {
 
     #[test]
     fn test_empty_checksum() {
-        let builder = ChecksumBuilder::new();
-        let checksum = builder.build();
-
+        let checksum = ChecksumBuilder::new().build();
         assert_eq!(checksum.sum, 0);
         assert_eq!(checksum.xor, 0);
         assert_eq!(checksum.count, 0);
@@ -213,5 +231,31 @@ mod tests {
         let checksum2 = builder2.build();
 
         assert_ne!(checksum1, checksum2);
+    }
+
+    #[test]
+    fn test_merge() {
+        // generate some random data
+        let data = (0..1_000)
+            .map(|i| format!("random_data_{}", i))
+            .collect::<Vec<_>>();
+
+        // first build the checksum serially
+        let mut builder = ChecksumBuilder::new();
+        for item in &data {
+            builder.write(item);
+        }
+        let serial = builder.build();
+
+        // build the checksum via merge
+        let parallel = data
+            .iter()
+            .fold(ChecksumBuilder::new(), |mut builder, item| {
+                builder.write(&item);
+                builder
+            })
+            .build();
+
+        assert_eq!(serial, parallel);
     }
 }

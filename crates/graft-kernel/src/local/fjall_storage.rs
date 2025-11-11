@@ -1,7 +1,7 @@
 use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
 use bytestring::ByteString;
-use fjall::{Batch, Instant, PartitionCreateOptions};
+use fjall::{Batch, Instant, KvSeparationOptions, PartitionCreateOptions};
 use graft_core::{
     PageCount, PageIdx, SegmentId, VolumeId,
     checkpoints::CachedCheckpoints,
@@ -111,7 +111,7 @@ impl FjallStorage {
         let pages = TypedPartition::open(
             &keyspace,
             "pages",
-            PartitionCreateOptions::default().with_kv_separation(Default::default()),
+            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
 
         Ok(Self {
@@ -245,6 +245,23 @@ impl FjallStorage {
         checkpoints: CachedCheckpoints,
     ) -> Result<(), FjallStorageErr> {
         self.checkpoints.insert(vid, checkpoints)
+    }
+
+    pub fn fork_snapshot(&self, snapshot: &Snapshot) -> Result<Graft, FjallStorageErr> {
+        let graft = Graft::new(VolumeId::random(), VolumeId::random(), None, None);
+        let commits = self
+            .read()
+            .commits(snapshot)
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut lsn = LSN::FIRST.checked_add(commits.len() as u64).unwrap();
+        let mut batch = self.batch();
+        for commit in commits {
+            lsn = lsn.checked_prev().unwrap();
+            batch.write_commit(commit.with_vid(graft.local.clone()).with_lsn(lsn));
+        }
+        batch.write_graft(graft.clone());
+        batch.commit()?;
+        Ok(graft)
     }
 }
 
@@ -404,6 +421,51 @@ impl<'a> ReadGuard<'a> {
         })
     }
 
+    /// Produce an iterator of `SegmentIdx`s along with the pages we need from the segment.
+    /// Collectively provides full coverage of the pages visible to a snapshot.
+    pub fn iter_visible_pages(
+        &self,
+        snapshot: &Snapshot,
+    ) -> impl Iterator<Item = Result<(SegmentIdx, PageSet), FjallStorageErr>> {
+        // the set of pages we are searching for.
+        // we remove pages from this set as we iterate through commits.
+        let mut pages = PageSet::FULL;
+        // we keep track of the smallest page count as we iterate through commits
+        let mut page_count = PageCount::MAX;
+
+        self.commits(snapshot).try_filter_map(move |commit| {
+            // if we have found all pages, we are done
+            if pages.is_empty() {
+                return Ok(None);
+            }
+
+            // if we encounter a smaller commit on our travels, we need to shrink
+            // the page_count to ensure that truncation is respected
+            if commit.page_count < page_count {
+                page_count = commit.page_count;
+                pages.truncate(page_count);
+            }
+
+            if let Some(idx) = commit.segment_idx {
+                let mut commit_pages = idx.pageset.clone();
+
+                if commit_pages.last().map(|idx| idx.pages()) > Some(page_count) {
+                    // truncate any pages in this commit that extend beyond the page count
+                    commit_pages.truncate(page_count);
+                }
+
+                // figure out which pages we need from this commit
+                let outstanding = pages.cut(&commit_pages);
+
+                if !outstanding.is_empty() {
+                    return Ok(Some((idx, outstanding)));
+                }
+            }
+
+            Ok(None)
+        })
+    }
+
     /// Given a range of LSNs for a particular volume, returns the set of LSNs
     /// we have
     pub fn lsns(
@@ -482,46 +544,17 @@ impl<'a> ReadGuard<'a> {
     }
 
     pub fn checksum(&self, snapshot: &Snapshot) -> Result<Checksum, FjallStorageErr> {
-        // the checksum builder
+        let pages = self._pages();
         let mut builder = ChecksumBuilder::new();
-
-        // the set of pages we are searching for.
-        // we remove pages from this set as we iterate through commits.
-        let mut pages = PageSet::FULL;
-
-        // we keep track of the smallest page count as we iterate through commits
-        let mut page_count = PageCount::MAX;
-
-        let pages_reader = self._pages();
-
-        let mut commits = self.commits(snapshot);
-        while !pages.is_empty()
-            && let Some(commit) = commits.try_next()?
-        {
-            // if we encounter a smaller commit on our travels, we need to shrink
-            // the page_count to ensure that truncation is respected
-            if commit.page_count < page_count {
-                page_count = commit.page_count;
-                pages.truncate(page_count);
-            }
-
-            if let Some(idx) = commit.segment_idx {
-                let mut commit_pages = idx.pageset.clone();
-
-                // truncate any pages in this commit that extend beyond the page count
-                commit_pages.truncate(page_count);
-
-                // figure out which pages we need from this commit
-                let outstanding = pages.cut(&commit_pages);
-
-                for pageidx in outstanding.iter() {
-                    if let Some(page) = pages_reader.get(&PageKey::new(idx.sid.clone(), pageidx))? {
-                        builder.write(&page);
-                    }
+        let mut iter = self.iter_visible_pages(snapshot);
+        while let Some((idx, pageset)) = iter.try_next()? {
+            for pageidx in pageset.iter() {
+                let key = PageKey::new(idx.sid.clone(), pageidx);
+                if let Some(page) = pages.get(&key)? {
+                    builder.write(&page);
                 }
             }
         }
-
         Ok(builder.build())
     }
 
@@ -529,52 +562,24 @@ impl<'a> ReadGuard<'a> {
         &self,
         snapshot: &Snapshot,
     ) -> Result<Vec<SegmentRangeRef>, FjallStorageErr> {
-        // the set of pages we are searching for.
-        // we remove pages from this set as we iterate through commits.
-        let mut pages = PageSet::FULL;
-
-        // we keep track of the smallest page count as we iterate through commits
-        let mut page_count = PageCount::MAX;
-
-        let pages_reader = self._pages();
-
         let mut missing_frames = vec![];
-        let mut commits = self.commits(snapshot);
-        while !pages.is_empty()
-            && let Some(commit) = commits.try_next()?
-        {
-            // if we encounter a smaller commit on our travels, we need to shrink
-            // the page_count to ensure that truncation is respected
-            if commit.page_count < page_count {
-                page_count = commit.page_count;
-                pages.truncate(page_count);
-            }
+        let pages = self._pages();
+        let mut iter = self.iter_visible_pages(snapshot);
+        while let Some((idx, pageset)) = iter.try_next()? {
+            // find candidate frames (intersects with the visible pageset)
+            let frames = idx.iter_frames(|pages| pageset.contains_any(pages));
 
-            if let Some(idx) = commit.segment_idx {
-                let mut commit_pages = idx.pageset.clone();
-
-                // truncate any pages in this commit that extend beyond the page count
-                commit_pages.truncate(page_count);
-
-                // figure out which pages we need from this commit
-                let outstanding = pages.cut(&commit_pages);
-
-                // iterate frames that intersect with outstanding pages
-                let frames = idx.iter_frames(|pages| outstanding.contains_any(pages));
-
-                // finally, only include frames for which we are missing the first page.
-                // since we always download entire segment frames, if we are missing
-                // the first page, we are missing all the pages (in the frame)
-                for frame in frames {
-                    if let Some(first_page) = frame.pageset.first()
-                        && !pages_reader.contains(&PageKey::new(frame.sid.clone(), first_page))?
-                    {
-                        missing_frames.push(frame);
-                    }
+            // find frames for which we are missing the first page.
+            // since we always download entire segment frames, if we are missing
+            // the first page, we are missing all the pages (in the frame)
+            for frame in frames {
+                if let Some(first_page) = frame.pageset.first()
+                    && !pages.contains(&PageKey::new(frame.sid.clone(), first_page))?
+                {
+                    missing_frames.push(frame);
                 }
             }
         }
-
         Ok(missing_frames)
     }
 }

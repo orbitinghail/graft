@@ -12,6 +12,7 @@ Options:
   --log PATH    Output logs to a file
   --gdb         Run sqlite3 under gdb debugger.
   --autosync    Enable automatic background sync.
+  --s3 BUCKET   Connect to the provided S3 bucket.
 EOF
 )
 
@@ -25,6 +26,9 @@ export RUST_LOG=${RUST_LOG:-warn}
 
 CLIENT_ID="default"
 DATA_ROOT="${GIT_ROOT}/.graft"
+
+export GRAFT_REMOTE__TYPE="fs"
+export GRAFT_REMOTE__ROOT="${DATA_ROOT}/remote"
 
 # parse flags
 while [[ $# -gt 0 ]]; do
@@ -57,6 +61,12 @@ while [[ $# -gt 0 ]]; do
             shift
             export GRAFT_AUTOSYNC=1
             ;;
+        --s3)
+            shift
+            export GRAFT_REMOTE__TYPE="s3_compatible"
+            export GRAFT_REMOTE__BUCKET="${1}"
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
             echo "${USAGE}"
@@ -65,8 +75,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-export GRAFT_REMOTE__TYPE="fs"
-export GRAFT_REMOTE__ROOT="${DATA_ROOT}/remote"
 export GRAFT_DATA_DIR="${DATA_ROOT}/clients/${CLIENT_ID}"
 
 mkdir -p "${GRAFT_REMOTE__ROOT}" "${GRAFT_DATA_DIR}"

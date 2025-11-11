@@ -37,6 +37,12 @@ pub enum GraftPragma {
     /// `pragma graft_clone [= "remote_vid"];`
     Clone { remote: Option<VolumeId> },
 
+    /// `pragma graft_fork;`
+    Fork,
+
+    /// `pragma graft_info;`
+    Info,
+
     /// `pragma graft_status;`
     Status,
 
@@ -88,6 +94,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                         Ok(GraftPragma::Clone { remote: None })
                     }
                 }
+                "fork" => Ok(GraftPragma::Fork),
                 "new" => Ok(GraftPragma::Switch { graft: VolumeId::random(), remote: None }),
                 "switch" => {
                     let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
@@ -105,6 +112,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                         };
                     Ok(GraftPragma::Switch { graft, remote })
                 }
+                "info" => Ok(GraftPragma::Info),
                 "status" => Ok(GraftPragma::Status),
                 "snapshot" => Ok(GraftPragma::Snapshot),
                 "fetch" => Ok(GraftPragma::Fetch),
@@ -149,6 +157,20 @@ impl GraftPragma {
                 )))
             }
 
+            GraftPragma::Fork => {
+                let snapshot = file.snapshot_or_latest()?;
+                let missing = runtime.missing_pages(&snapshot).or_into_ctx()?;
+                if missing.is_empty() {
+                    let graft = runtime.fork(&snapshot).or_into_ctx()?;
+                    Ok(Some(format!(
+                        "Forked current snapshot into Graft: {}",
+                        graft.local,
+                    )))
+                } else {
+                    Ok(Some("ERROR: must hydrate volume before forking".into()))
+                }
+            }
+
             GraftPragma::Switch { graft, remote } => {
                 let graft = file
                     .handle_mut()
@@ -160,6 +182,7 @@ impl GraftPragma {
                 )))
             }
 
+            GraftPragma::Info => Ok(Some(format_graft_info(file)?)),
             GraftPragma::Status => Ok(Some(format_graft_status(file)?)),
 
             GraftPragma::Snapshot => {
@@ -210,6 +233,33 @@ macro_rules! pluralize {
     ($n:expr, $s:literal) => {
         if $n == 1 { $s } else { concat!($s, "s") }
     };
+}
+
+fn format_graft_info(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let state = file.handle().state().or_into_ctx()?;
+    let sync = state.sync().map_or_else(
+        || "Never synced".into(),
+        |sync| match sync.local_watermark {
+            Some(local) => format!("L{local} -> R{}", sync.remote),
+            None => format!("R{}", sync.remote),
+        },
+    );
+    let local = state.local;
+    let remote = state.remote;
+    let snapshot = file.snapshot_or_latest()?;
+    let page_count = file.page_count()?;
+    let vol_size = PAGESIZE * page_count.to_usize();
+
+    Ok(formatdoc!(
+        "
+            Graft: {local}
+            Remote: {remote}
+            Last sync: {sync}
+            Snapshot: {snapshot:?}
+            Snapshot pages: {page_count}
+            Snapshot size: {vol_size}
+        "
+    ))
 }
 
 fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
@@ -279,22 +329,23 @@ fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
 fn format_graft_audit(runtime: &RuntimeHandle, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     let snapshot = file.snapshot_or_latest()?;
     let missing_pages = runtime.missing_pages(&snapshot).or_into_ctx()?;
+    let pages = file.page_count().or_into_ctx()?.to_usize();
     if missing_pages.is_empty() {
         let checksum = runtime.checksum(&snapshot).or_into_ctx()?;
         Ok(formatdoc!(
             "
-                No missing pages. Volume checksum:
-                {checksum}
-            "
+                Cached {pages} of {pages} {} (100%%) from the remote volume.
+                Checksum: {checksum}
+            ",
+            pluralize!(pages, "page"),
         ))
     } else {
         let missing = missing_pages.cardinality();
-        let pages = file.page_count().or_into_ctx()?.to_usize();
         let have = pages - missing;
         let pct = (have as f64) / (pages as f64) * 100.0;
         Ok(formatdoc!(
             "
-                Cached {have} of {pages} {} ({pct:.02}%) from the remote volume.
+                Cached {have} of {pages} {} ({pct:.02}%%) from the remote volume.
                   (use 'pragma graft_hydrate' to fetch missing pages)
             ",
             pluralize!(pages, "page"),
