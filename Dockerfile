@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM rust:1.90-bookworm@sha256:8192a1c210289f3ebb95c62f0cd526427e9e28a5840d6362e95abe5a2e6831a5 AS base
+FROM --platform=$BUILDPLATFORM rust:1.91-bookworm@sha256:af8fc166ddc0b7aa469f695dbb57c6f859dd440162dab6130d7e4714cbbf8dca AS base
 
 # increment to force rebuild of all layers
 RUN echo "rebuild-deps: 1"
@@ -33,7 +33,7 @@ COPY . .
 RUN cargo build ${BUILDFLAGS}
 RUN mv ${TARGET_DIR} /artifacts
 
-FROM --platform=$BUILDPLATFORM gcr.io/distroless/cc-debian12:debug@sha256:88b74939473c7571715a40a4fbbd50ea2b5f14a4c0f80fcb4fdf213ca948bb2f AS runtime
+FROM --platform=$BUILDPLATFORM gcr.io/distroless/cc-debian12:debug@sha256:0a0d9b423154de754ee914ab1d3eefe8b394b08a8f21f96d75f8dec8e0d45df3 AS runtime
 ARG INSTRUMENTED
 COPY ./tests/antithesis/libvoidstar.so /usr/lib/libvoidstar.so
 COPY ./LICENSE-APACHE /LICENSE-APACHE
