@@ -95,6 +95,10 @@ impl Graft {
         self.sync().and_then(|s| s.local_watermark)
     }
 
+    pub fn remote_commit(&self) -> Option<LSN> {
+        self.sync().map(|s| s.remote)
+    }
+
     pub fn local_changes(&self, head: Option<LSN>) -> Option<RangeInclusive<LSN>> {
         AheadStatus { head, base: self.local_watermark() }.changes()
     }

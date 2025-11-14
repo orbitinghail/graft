@@ -13,6 +13,7 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 
 # Working on SQLite v2
 
+- [ ] tag handle should probably not cache the graft id - it's easy to get out of sync (see test_sync_and_reset)
 - [ ] how to recover from a remote volume disappearing? (or switching remotes)
       -> currently you need to hydrate before it goes away, then fork, then push
 - [ ] build a simple GC that simply drops orphan segments

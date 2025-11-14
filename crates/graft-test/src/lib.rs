@@ -1,16 +1,29 @@
 use std::{
+    ffi::CString,
     fmt::{Debug, Display},
-    sync::Once,
+    ops::{Deref, DerefMut},
+    sync::{Arc, Once},
+    thread::JoinHandle,
 };
 
 use graft_core::{
-    PageCount, PageIdx,
+    ClientId, PageCount, PageIdx, VolumeId,
     page::{PAGESIZE, Page},
     pageidx,
 };
+use graft_kernel::{
+    local::fjall_storage::FjallStorage,
+    remote::{Remote, RemoteConfig},
+    rt::runtime_handle::RuntimeHandle,
+    tag_handle::TagHandle,
+};
+use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{TracingConsumer, init_tracing_with_writer};
 use precept::dispatch::test::TestDispatch;
+use rusqlite::{Connection, OpenFlags, ToSql};
+use sqlite_plugin::vfs::{RegisterOpts, register_static};
 use thiserror::Error;
+use tokio::sync::Notify;
 use tracing_subscriber::fmt::TestWriter;
 
 pub use graft_test_macro::datatest;
@@ -29,126 +42,140 @@ pub fn setup_test() {
     });
 }
 
-// pub struct GraftBackend {
-//     shutdown_tx: oneshot::Sender<Duration>,
-//     result_rx: oneshot::Receiver<Result<(), Culprit<ShutdownErr>>>,
-//     handle: JoinHandle<()>,
-// }
+pub struct GraftTestRuntime {
+    thread: JoinHandle<()>,
+    runtime: RuntimeHandle,
+    remote: Arc<Remote>,
+    shutdown_tx: Arc<tokio::sync::Notify>,
 
-// pub fn start_graft_backend() -> (GraftBackend, ClientPair) {
-//     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-//     let (result_tx, result_rx) = oneshot::channel();
+    // set the first time a vfs is setup for this test runtime
+    vfs_id: Option<CString>,
+}
 
-//     let runtime = tokio::runtime::Builder::new_current_thread()
-//         .thread_name("graft-backend")
-//         .enable_all()
-//         .start_paused(true)
-//         .build()
-//         .expect("failed to construct tokio runtime");
+impl Deref for GraftTestRuntime {
+    type Target = RuntimeHandle;
 
-//     let net_client = NetClient::new_with_proxy(None, None);
+    fn deref(&self) -> &Self::Target {
+        &self.runtime
+    }
+}
 
-//     let mut supervisor = Supervisor::default();
-//     let metastore = runtime.block_on(run_metastore(net_client.clone(), &mut supervisor));
-//     let pagestore = runtime.block_on(run_pagestore(
-//         net_client,
-//         metastore.clone(),
-//         &mut supervisor,
-//     ));
+impl DerefMut for GraftTestRuntime {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.runtime
+    }
+}
 
-//     let builder = std::thread::Builder::new().name("graft-backend".to_string());
+impl GraftTestRuntime {
+    pub fn with_memory_remote() -> GraftTestRuntime {
+        let remote = Arc::new(RemoteConfig::Memory.build().unwrap());
+        Self::with_remote(remote)
+    }
 
-//     let handle = builder
-//         .spawn(move || {
-//             runtime.block_on(async {
-//                 // if the shutdown channel closes, try to shutdown the supervisor with a default timeout
-//                 let timeout = shutdown_rx.await.unwrap_or(Duration::from_secs(5));
-//                 let result = supervisor.shutdown(timeout).await;
-//                 let _ = result_tx.send(result);
-//             })
-//         })
-//         .expect("failed to spawn backend thread");
+    pub fn with_remote(remote: Arc<Remote>) -> GraftTestRuntime {
+        let thread_builder = std::thread::Builder::new().name("graft-runtime".to_string());
 
-//     (
-//         GraftBackend { shutdown_tx, result_rx, handle },
-//         ClientPair::new(metastore, pagestore),
-//     )
-// }
+        let tokio_rt = tokio::runtime::Builder::new_current_thread()
+            .start_paused(true)
+            .enable_all()
+            .build()
+            .unwrap();
 
-// impl GraftBackend {
-//     pub fn shutdown(self, timeout: Duration) -> Result<(), Culprit<ShutdownErr>> {
-//         self.shutdown_tx
-//             .send(timeout)
-//             .expect("shutdown channel closed");
+        let storage = Arc::new(FjallStorage::open_temporary().unwrap());
+        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage, false);
 
-//         self.handle.join().expect("backend thread panic");
+        let shutdown_tx = Arc::new(Notify::const_new());
+        let shutdown_rx = shutdown_tx.clone();
 
-//         self.result_rx
-//             .blocking_recv()
-//             .expect("result channel closed")
-//     }
-// }
+        let thread = thread_builder
+            .spawn(move || tokio_rt.block_on(async { shutdown_rx.notified().await }))
+            .expect("failed to spawn backend thread");
 
-// pub async fn run_metastore(net_client: NetClient, supervisor: &mut Supervisor) -> MetastoreClient {
-//     let obj_store = ObjectStoreConfig::Memory.build().unwrap();
-//     let vol_store = Arc::new(VolumeStore::new(obj_store));
-//     let catalog = VolumeCatalog::open_temporary().unwrap();
-//     let updater = VolumeCatalogUpdater::new(8);
-//     let state = Arc::new(MetastoreApiState::new(vol_store, catalog, updater));
-//     let router = build_router(Registry::default(), None, state, metastore_routes());
-//     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-//     let port = listener.local_addr().unwrap().port();
-//     let endpoint = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
-//     supervisor.spawn(ApiServerTask::new("metastore-api", listener, router));
-//     MetastoreClient::new(endpoint, net_client)
-// }
+        GraftTestRuntime {
+            thread,
+            runtime,
+            remote,
+            shutdown_tx,
+            vfs_id: None,
+        }
+    }
 
-// pub async fn run_pagestore(
-//     net_client: NetClient,
-//     metastore: MetastoreClient,
-//     supervisor: &mut Supervisor,
-// ) -> PagestoreClient {
-//     let mut registry = Registry::default();
-//     let obj_store = ObjectStoreConfig::Memory.build().unwrap();
-//     let cache = Arc::new(MemCache::default());
-//     let catalog = VolumeCatalog::open_temporary().unwrap();
-//     let loader = SegmentLoader::new(obj_store.clone(), cache.clone(), 8);
-//     let updater = VolumeCatalogUpdater::new(10);
+    pub fn spawn_peer(&self) -> GraftTestRuntime {
+        Self::with_remote(self.remote.clone())
+    }
 
-//     let (page_tx, page_rx) = mpsc::channel(128);
-//     let (store_tx, store_rx) = mpsc::channel(8);
+    pub fn open_sqlite(
+        &mut self,
+        dbname: &str,
+        remote: Option<VolumeId>,
+    ) -> (GraftSqliteConn, TagHandle) {
+        let vfs_id = self.vfs_id.get_or_insert_with(|| {
+            let vfs_id = CString::new(ClientId::random().serialize()).unwrap();
+            register_static(
+                vfs_id.clone(),
+                GraftVfs::new(self.runtime.clone()),
+                RegisterOpts { make_default: false },
+            )
+            .expect("failed to register vfs");
+            vfs_id
+        });
+        let mut handle = self.runtime.get_or_create_tag(dbname).unwrap();
+        handle.switch_graft(VolumeId::random(), remote).unwrap();
+        // setup vfs if needed
+        let conn = Connection::open_with_flags_and_vfs(
+            dbname,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+            vfs_id.as_c_str(),
+        )
+        .unwrap();
+        (GraftSqliteConn { conn }, handle)
+    }
 
-//     supervisor.spawn(SegmentWriterTask::new(
-//         registry.segment_writer(),
-//         page_rx,
-//         store_tx,
-//         Duration::from_secs(1),
-//     ));
+    pub fn shutdown(self) -> std::thread::Result<()> {
+        self.shutdown_tx.notify_one();
+        self.thread.join()
+    }
+}
 
-//     supervisor.spawn(SegmentUploaderTask::new(
-//         registry.segment_uploader(),
-//         store_rx,
-//         obj_store,
-//         cache,
-//     ));
+pub struct GraftSqliteConn {
+    conn: rusqlite::Connection,
+}
 
-//     let state = Arc::new(PagestoreApiState::new(
-//         page_tx,
-//         catalog.clone(),
-//         loader,
-//         metastore,
-//         updater,
-//         10,
-//     ));
-//     let router = build_router(registry, None, state, pagestore_routes());
+impl Deref for GraftSqliteConn {
+    type Target = rusqlite::Connection;
 
-//     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-//     let port = listener.local_addr().unwrap().port();
-//     let endpoint = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
-//     supervisor.spawn(ApiServerTask::new("pagestore-api", listener, router));
+    fn deref(&self) -> &Self::Target {
+        &self.conn
+    }
+}
 
-//     PagestoreClient::new(endpoint, net_client)
-// }
+impl DerefMut for GraftSqliteConn {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.conn
+    }
+}
+
+impl GraftSqliteConn {
+    pub fn graft_pragma(&self, suffix: &str) {
+        let pragma = format!("graft_{suffix}");
+        self.pragma_query(None, &pragma, |row| {
+            let output: String = row.get(0).unwrap();
+            tracing::debug!("{pragma} output: {output}");
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    pub fn graft_pragma_arg<T: ToSql>(&self, suffix: &str, arg: T) {
+        let pragma = format!("graft_{suffix}");
+        self.pragma(None, &pragma, arg, |row| {
+            let output: String = row.get(0).unwrap();
+            tracing::debug!("{pragma} output: {output}");
+            Ok(())
+        })
+        .unwrap();
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ticker {

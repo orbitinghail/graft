@@ -1232,6 +1232,7 @@ dependencies = [
  "enum_dispatch",
  "file-lock",
  "graft-core",
+ "graft-kernel",
  "graft-sqlite",
  "graft-test-macro",
  "graft-tracing",
