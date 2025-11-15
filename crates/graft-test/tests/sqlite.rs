@@ -37,12 +37,21 @@ fn test_sync_and_reset() {
     sqlite2.graft_pragma("push");
 
     // force reset node 2 to the latest remote
+    sqlite2.graft_pragma("fetch");
     sqlite2.graft_pragma("clone");
 
     // verify both nodes are now pointing at the same remote LSN
     // and they have no outstanding local changes
-    let status1 = handle1.status().unwrap();
-    let status2 = handle2.status().unwrap();
+    let status1 = runtime1
+        .get_or_create_tag("main")
+        .unwrap()
+        .status()
+        .unwrap();
+    let status2 = runtime2
+        .get_or_create_tag("main")
+        .unwrap()
+        .status()
+        .unwrap();
     assert_eq!(status1.remote, status2.remote);
     assert_eq!(status1.remote_status.base, status2.remote_status.base);
     assert_eq!(status1.local_status.changes(), None);
