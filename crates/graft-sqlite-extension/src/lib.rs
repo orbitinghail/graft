@@ -85,12 +85,14 @@ fn get_or_create_tokio_rt() -> Result<tokio::runtime::Handle, InitErr> {
         return Ok(handle);
     }
 
-    // spin up a tokio current_thread runtime in a new thread
-    let rt = tokio::runtime::Builder::new_current_thread()
+    // spin up a tokio runtime in a new thread
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .thread_name("graft-runtime-worker")
         .enable_all()
         .build()?;
     let handle = rt.handle().clone();
 
+    // tokio needs a top level "control" thread
     std::thread::Builder::new()
         .name("graft-runtime".to_string())
         .spawn(move || {

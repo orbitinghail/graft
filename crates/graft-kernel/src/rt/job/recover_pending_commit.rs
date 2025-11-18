@@ -53,7 +53,7 @@ pub async fn run(
         }
         Some(_) | None => {
             // the commit didn't make it, clear the pending commit.
-            // the pull_volume/sync_remote_to_local jobs will handle the new commit
+            // the fetch_volume/sync_remote_to_local jobs will handle the new commit
             storage.drop_pending_commit(&graft.local).or_into_ctx()?;
         }
     }

@@ -398,7 +398,7 @@ impl<'a> ReadGuard<'a> {
     }
 
     /// Retrieve a specific commit
-    fn get_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>, FjallStorageErr> {
+    pub fn get_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>, FjallStorageErr> {
         self._log().get_owned(VolumeRef::new(vid.clone(), lsn))
     }
 

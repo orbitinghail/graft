@@ -1,4 +1,7 @@
-use std::str::FromStr;
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
 use thiserror::Error;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
@@ -63,7 +66,7 @@ pub enum CommitHashPrefix {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, TryFromBytes, IntoBytes, Immutable, KnownLayout, Unaligned,
+    Clone, PartialEq, Eq, Default, TryFromBytes, IntoBytes, Immutable, KnownLayout, Unaligned,
 )]
 #[repr(C)]
 pub struct CommitHash {
@@ -122,6 +125,18 @@ impl FromStr for CommitHash {
         // parse from base58
         let bytes: [u8; COMMIT_HASH_SIZE] = bs58::decode(value.as_bytes()).into_array_const()?;
         bytes.try_into()
+    }
+}
+
+impl Debug for CommitHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CommitHash({})", self.pretty())
+    }
+}
+
+impl Display for CommitHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.pretty())
     }
 }
 

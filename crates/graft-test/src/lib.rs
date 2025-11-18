@@ -15,7 +15,6 @@ use graft_kernel::{
     local::fjall_storage::FjallStorage,
     remote::{Remote, RemoteConfig},
     rt::runtime_handle::RuntimeHandle,
-    tag_handle::TagHandle,
 };
 use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{TracingConsumer, init_tracing_with_writer};
@@ -104,11 +103,7 @@ impl GraftTestRuntime {
         Self::with_remote(self.remote.clone())
     }
 
-    pub fn open_sqlite(
-        &mut self,
-        dbname: &str,
-        remote: Option<VolumeId>,
-    ) -> (GraftSqliteConn, TagHandle) {
+    pub fn open_sqlite(&mut self, dbname: &str, remote: Option<VolumeId>) -> GraftSqliteConn {
         let vfs_id = self.vfs_id.get_or_insert_with(|| {
             let vfs_id = CString::new(ClientId::random().serialize()).unwrap();
             register_static(
@@ -119,8 +114,6 @@ impl GraftTestRuntime {
             .expect("failed to register vfs");
             vfs_id
         });
-        let mut handle = self.runtime.get_or_create_tag(dbname).unwrap();
-        handle.switch_graft(VolumeId::random(), remote).unwrap();
         // setup vfs if needed
         let conn = Connection::open_with_flags_and_vfs(
             dbname,
@@ -128,7 +121,11 @@ impl GraftTestRuntime {
             vfs_id.as_c_str(),
         )
         .unwrap();
-        (GraftSqliteConn { conn }, handle)
+        let conn = GraftSqliteConn { conn };
+        if let Some(remote) = remote {
+            conn.graft_pragma_arg("clone", remote.serialize());
+        }
+        conn
     }
 
     pub fn shutdown(self) -> std::thread::Result<()> {

@@ -6,9 +6,9 @@ fn test_sync_and_reset() {
     // create two nodes connected to the same remote
     let remote = VolumeId::random();
     let mut runtime1 = GraftTestRuntime::with_memory_remote();
-    let (sqlite1, handle1) = runtime1.open_sqlite("main", Some(remote.clone()));
+    let sqlite1 = runtime1.open_sqlite("main", Some(remote.clone()));
     let mut runtime2 = runtime1.spawn_peer();
-    let (sqlite2, handle2) = runtime2.open_sqlite("main", Some(remote.clone()));
+    let sqlite2 = runtime2.open_sqlite("main", Some(remote.clone()));
 
     // create two counter tables
     sqlite1
@@ -34,7 +34,8 @@ fn test_sync_and_reset() {
     sqlite1.graft_pragma("push");
 
     // attempt to push from node 2, which should detect the conflict
-    sqlite2.graft_pragma("push");
+    let result = sqlite2.pragma_query(None, "graft_push", |_| Ok(()));
+    assert!(result.is_err(), "push should fail due to divergence");
 
     // force reset node 2 to the latest remote
     sqlite2.graft_pragma("fetch");

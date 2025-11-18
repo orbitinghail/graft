@@ -18,6 +18,7 @@ use crate::{
     graft::PendingCommit,
     local::fjall_storage::FjallStorage,
     remote::{Remote, segment::SegmentBuilder},
+    rt::job::fetch_volume,
     snapshot::Snapshot,
 };
 
@@ -39,6 +40,10 @@ pub async fn run(
     remote: &Remote,
     opts: Opts,
 ) -> culprit::Result<(), KernelErr> {
+    // first, check if we need to recover from a pending commit
+    // we do this *before* plan since this may modify storage
+    attempt_recovery(storage, &opts.graft)?;
+
     let Some(plan) = plan_commit(storage, &opts.graft)? else {
         // nothing to commit
         return Ok(());
@@ -70,7 +75,7 @@ pub async fn run(
         plan.commit_ref.lsn(),
         plan.page_count,
     )
-    .with_commit_hash(Some(commit_hash))
+    .with_commit_hash(Some(commit_hash.clone()))
     .with_segment_idx(Some(segment_idx));
 
     // issue the remote commit!
@@ -84,14 +89,23 @@ pub async fn run(
             Ok(())
         }
         Err(err) if err.ctx().is_already_exists() => {
-            storage.drop_pending_commit(&opts.graft).or_into_ctx()?;
-            // TODO: mark rejected status somewhere or put it in a log
-            tracing::warn!(
-                "remote commit rejected for graft {}, commit {} already exists",
-                opts.graft,
-                plan.commit_ref
-            );
-            Ok(())
+            // The commit already exists on the remote. This could be because:
+            // 1. Someone (including us) pushed the same commit (idempotency)
+            // 2. Someone (including us) pushed a DIFFERENT commit (divergence)
+
+            // First fetch the remote volume
+            fetch_volume::run(
+                storage,
+                remote,
+                fetch_volume::Opts {
+                    vid: commit.vid.clone(),
+                    max_lsn: Some(commit.lsn),
+                },
+            )
+            .await?;
+
+            // Then attempt recovery
+            attempt_recovery(storage, &opts.graft)
         }
         Err(err) => {
             // if any other error occurs, we leave the pending_commit in place and fail the job.
@@ -118,6 +132,7 @@ fn plan_commit(
     let graft = reader.graft(graft).or_into_ctx()?;
 
     if graft.pending_commit().is_some() {
+        // this should have been handled earlier
         return Err(LogicalErr::GraftNeedsRecovery(graft.local).into());
     }
 
@@ -242,4 +257,48 @@ fn build_segment(
     batch.commit().or_into_ctx()?;
 
     Ok((commit_hash, idx, chunks))
+}
+
+/// Attempts to recover from a remote commit conflict by checking the remote
+/// for the commit we tried to push.
+fn attempt_recovery(storage: &FjallStorage, graft: &VolumeId) -> culprit::Result<(), KernelErr> {
+    let reader = storage.read();
+    let graft = reader.graft(graft).or_into_ctx()?;
+
+    if let Some(pending) = graft.pending_commit {
+        match storage
+            .read()
+            .get_commit(&graft.remote, pending.commit)
+            .or_into_ctx()?
+        {
+            Some(commit) if commit.commit_hash() == Some(&pending.commit_hash) => {
+                // It's the same commit. Recovery success!
+                storage
+                    .remote_commit_success(&graft.local, commit)
+                    .or_into_ctx()?;
+                Ok(())
+            }
+            Some(commit) => {
+                // Case 2: Divergence detected.
+                storage.drop_pending_commit(&graft.local).or_into_ctx()?;
+                tracing::warn!(
+                    "remote commit rejected for graft {}, commit {}/{} already exists with different hash: {:?}",
+                    graft.local,
+                    graft.remote,
+                    pending.commit,
+                    commit.commit_hash
+                );
+                Err(LogicalErr::GraftDiverged(graft.local).into())
+            }
+            None => {
+                // No commit found. Recovery unknown.
+                // We don't drop the pending commit, as we may need to wait for the
+                // commit to show up in the remote.
+                Err(LogicalErr::GraftNeedsRecovery(graft.local).into())
+            }
+        }
+    } else {
+        // recovery not needed
+        Ok(())
+    }
 }
