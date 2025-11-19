@@ -12,7 +12,7 @@ use std::{
 
 use config::{Config, FileFormat};
 use graft_kernel::{
-    local::fjall_storage::FjallStorage, remote::RemoteConfig, rt::runtime_handle::RuntimeHandle,
+    local::fjall_storage::FjallStorage, remote::RemoteConfig, rt::runtime::Runtime,
 };
 use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{TracingConsumer, init_tracing_with_writer};
@@ -145,7 +145,7 @@ fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
     let remote = Arc::new(config.remote.build()?);
     let storage = Arc::new(FjallStorage::open(config.data_dir)?);
     let autosync = config.autosync.map(|s| Duration::from_secs(s.get()));
-    let runtime = RuntimeHandle::new(tokio_handle, remote, storage, autosync);
+    let runtime = Runtime::new(tokio_handle, remote, storage, autosync);
 
     Ok((
         RegisterOpts { make_default: config.make_default },

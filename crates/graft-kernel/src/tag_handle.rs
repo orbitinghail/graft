@@ -4,7 +4,7 @@ use culprit::ResultExt;
 use crate::{
     KernelErr,
     graft::{Graft, GraftStatus},
-    rt::runtime_handle::RuntimeHandle,
+    rt::runtime::Runtime,
     snapshot::Snapshot,
     volume_reader::{VolumeRead, VolumeReader},
     volume_writer::VolumeWriter,
@@ -14,13 +14,13 @@ use graft_core::{PageCount, VolumeId};
 type Result<T> = culprit::Result<T, KernelErr>;
 
 pub struct TagHandle {
-    runtime: RuntimeHandle,
+    runtime: Runtime,
     tag: ByteString,
     graft: VolumeId,
 }
 
 impl TagHandle {
-    pub(crate) fn new(runtime: RuntimeHandle, tag: ByteString, graft: VolumeId) -> Self {
+    pub(crate) fn new(runtime: Runtime, tag: ByteString, graft: VolumeId) -> Self {
         Self { runtime, tag, graft }
     }
 

@@ -1,9 +1,7 @@
 use culprit::{Culprit, ResultExt};
 use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
 
-use crate::{
-    KernelErr, rt::runtime_handle::RuntimeHandle, snapshot::Snapshot, volume_writer::VolumeWriter,
-};
+use crate::{KernelErr, rt::runtime::Runtime, snapshot::Snapshot, volume_writer::VolumeWriter};
 
 /// A type which can read from a Volume
 pub trait VolumeRead {
@@ -14,13 +12,13 @@ pub trait VolumeRead {
 
 #[derive(Debug, Clone)]
 pub struct VolumeReader {
-    runtime: RuntimeHandle,
+    runtime: Runtime,
     graft: VolumeId,
     snapshot: Snapshot,
 }
 
 impl VolumeReader {
-    pub(crate) fn new(runtime: RuntimeHandle, graft: VolumeId, snapshot: Snapshot) -> Self {
+    pub(crate) fn new(runtime: Runtime, graft: VolumeId, snapshot: Snapshot) -> Self {
         Self { runtime, graft, snapshot }
     }
 }

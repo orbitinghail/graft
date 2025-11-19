@@ -3,7 +3,7 @@ use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
 
 use crate::{
     KernelErr,
-    rt::runtime_handle::RuntimeHandle,
+    rt::runtime::Runtime,
     snapshot::Snapshot,
     volume_reader::{VolumeRead, VolumeReader},
 };
@@ -17,7 +17,7 @@ pub trait VolumeWrite {
 
 #[derive(Debug)]
 pub struct VolumeWriter {
-    runtime: RuntimeHandle,
+    runtime: Runtime,
     graft: VolumeId,
     snapshot: Snapshot,
     page_count: PageCount,
@@ -26,7 +26,7 @@ pub struct VolumeWriter {
 
 impl VolumeWriter {
     pub(crate) fn new(
-        runtime: RuntimeHandle,
+        runtime: Runtime,
         graft: VolumeId,
         snapshot: Snapshot,
         page_count: PageCount,

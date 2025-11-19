@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use bytestring::ByteString;
 use culprit::{Culprit, ResultExt};
-use graft_kernel::{KernelErr, LogicalErr, rt::runtime_handle::RuntimeHandle};
+use graft_kernel::{KernelErr, LogicalErr, rt::runtime::Runtime};
 use graft_tracing::TracingConsumer;
 use parking_lot::Mutex;
 use sqlite_plugin::{
@@ -94,12 +94,12 @@ impl<T> From<ErrCtx> for culprit::Result<T, ErrCtx> {
 }
 
 pub struct GraftVfs {
-    runtime: RuntimeHandle,
+    runtime: Runtime,
     locks: Mutex<HashMap<ByteString, Arc<Mutex<()>>>>,
 }
 
 impl GraftVfs {
-    pub fn new(runtime: RuntimeHandle) -> Self {
+    pub fn new(runtime: Runtime) -> Self {
         Self { runtime, locks: Default::default() }
     }
 }

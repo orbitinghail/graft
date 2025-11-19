@@ -8,8 +8,8 @@ use graft_core::{
     page::{PAGESIZE, Page},
 };
 use graft_kernel::{
-    graft::AheadStatus, rt::runtime_handle::RuntimeHandle, tag_handle::TagHandle,
-    volume_reader::VolumeRead, volume_writer::VolumeWrite,
+    graft::AheadStatus, rt::runtime::Runtime, tag_handle::TagHandle, volume_reader::VolumeRead,
+    volume_writer::VolumeWrite,
 };
 use indoc::{formatdoc, indoc, writedoc};
 use sqlite_plugin::{
@@ -140,7 +140,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
 impl GraftPragma {
     pub fn eval(
         self,
-        runtime: &RuntimeHandle,
+        runtime: &Runtime,
         file: &mut VolFile,
     ) -> Result<Option<String>, Culprit<ErrCtx>> {
         match self {
@@ -326,7 +326,7 @@ fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     Ok(f)
 }
 
-fn format_graft_audit(runtime: &RuntimeHandle, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+fn format_graft_audit(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     let snapshot = file.snapshot_or_latest()?;
     let missing_pages = runtime.missing_pages(&snapshot).or_into_ctx()?;
     let pages = file.page_count().or_into_ctx()?.to_usize();
@@ -421,7 +421,7 @@ fn push(file: &mut VolFile) -> Result<String, Culprit<ErrCtx>> {
     }
 }
 
-fn format_tags(runtime: &RuntimeHandle) -> Result<String, Culprit<ErrCtx>> {
+fn format_tags(runtime: &Runtime) -> Result<String, Culprit<ErrCtx>> {
     let mut f = String::new();
     let mut tags = runtime.iter_tags();
     while let Some((tag, graft)) = tags.try_next().or_into_ctx()? {
@@ -442,10 +442,7 @@ fn format_tags(runtime: &RuntimeHandle) -> Result<String, Culprit<ErrCtx>> {
     Ok(f)
 }
 
-fn format_grafts(
-    runtime: &RuntimeHandle,
-    current_graft: &VolumeId,
-) -> Result<String, Culprit<ErrCtx>> {
+fn format_grafts(runtime: &Runtime, current_graft: &VolumeId) -> Result<String, Culprit<ErrCtx>> {
     let mut f = String::new();
     let mut grafts = runtime.iter_grafts();
     while let Some(graft) = grafts.try_next().or_into_ctx()? {

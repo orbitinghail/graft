@@ -13,12 +13,9 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 
 # Working on SQLite v2
 
-- [ ] rename RuntimeHandle to Runtime
 - [ ] tag handle should probably not cache the graft id - it's easy to get out of sync (see test_sync_and_reset)
 
 - [ ] build delete\* methods for managing tags and grafts
-- [x] BUG: graft push should fail if push fails due to divergence
-      graft_push output: Pushed LSNs unknown from local Volume 5rMJii2Nik-2dv7ZBHJUXDov to remote Volume 5rMJii2Ndd-2dodwccLe9PQf @ 1
 - [ ] how to recover from a remote volume disappearing? (or switching remotes)
       -> currently you need to hydrate before it goes away, then fork, then push
 - [ ] build a simple GC that simply drops orphan segments
@@ -27,3 +24,10 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 - [ ] consider adding a read oracle (do some perf testing)
 - [ ] port tests
 - [ ] write first draft of antithesis tests
+
+## done
+
+- [x] more robust sync
+- [x] rename RuntimeHandle to Runtime
+- [x] BUG: graft push should fail if push fails due to divergence
+      graft_push output: Pushed LSNs unknown from local Volume 5rMJii2Nik-2dv7ZBHJUXDov to remote Volume 5rMJii2Ndd-2dodwccLe9PQf @ 1

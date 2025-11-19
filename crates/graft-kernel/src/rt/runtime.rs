@@ -30,25 +30,25 @@ use crate::local::fjall_storage::FjallStorage;
 type Result<T> = culprit::Result<T, KernelErr>;
 
 #[derive(Clone, Debug)]
-pub struct RuntimeHandle {
-    inner: Arc<RuntimeHandleInner>,
+pub struct Runtime {
+    inner: Arc<RuntimeInner>,
 }
 
 #[derive(Debug)]
-struct RuntimeHandleInner {
+struct RuntimeInner {
     tokio: tokio::runtime::Handle,
     storage: Arc<FjallStorage>,
     remote: Arc<Remote>,
 }
 
-impl RuntimeHandle {
-    /// Create a Graft `RuntimeHandle` wrapping the provided Tokio runtime handle.
+impl Runtime {
+    /// Create a Graft `Runtime` wrapping the provided Tokio runtime handle.
     pub fn new(
         tokio_rt: tokio::runtime::Handle,
         remote: Arc<Remote>,
         storage: Arc<FjallStorage>,
         autosync: Option<Duration>,
-    ) -> RuntimeHandle {
+    ) -> Runtime {
         // spin up background tasks as needed
         if let Some(interval) = autosync {
             let _guard = tokio_rt.enter();
@@ -60,8 +60,8 @@ impl RuntimeHandle {
                 AutosyncTask::new(ticker),
             ));
         }
-        RuntimeHandle {
-            inner: Arc::new(RuntimeHandleInner { tokio: tokio_rt, storage, remote }),
+        Runtime {
+            inner: Arc::new(RuntimeInner { tokio: tokio_rt, storage, remote }),
         }
     }
 
@@ -204,8 +204,8 @@ mod tests {
     use tokio::time::sleep;
 
     use crate::{
-        local::fjall_storage::FjallStorage, remote::RemoteConfig,
-        rt::runtime_handle::RuntimeHandle, volume_reader::VolumeRead, volume_writer::VolumeWrite,
+        local::fjall_storage::FjallStorage, remote::RemoteConfig, rt::runtime::Runtime,
+        volume_reader::VolumeRead, volume_writer::VolumeWrite,
     };
 
     #[graft_test::test]
@@ -218,7 +218,7 @@ mod tests {
 
         let remote = Arc::new(RemoteConfig::Memory.build().unwrap());
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let runtime = RuntimeHandle::new(
+        let runtime = Runtime::new(
             tokio_rt.handle().clone(),
             remote.clone(),
             storage,
@@ -256,7 +256,7 @@ mod tests {
 
         // create a second runtime connected to the same remote
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let runtime_2 = RuntimeHandle::new(
+        let runtime_2 = Runtime::new(
             tokio_rt.handle().clone(),
             remote.clone(),
             storage,

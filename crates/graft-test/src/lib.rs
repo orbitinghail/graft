@@ -14,7 +14,7 @@ use graft_core::{
 use graft_kernel::{
     local::fjall_storage::FjallStorage,
     remote::{Remote, RemoteConfig},
-    rt::runtime_handle::RuntimeHandle,
+    rt::runtime::Runtime,
 };
 use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{TracingConsumer, init_tracing_with_writer};
@@ -43,7 +43,7 @@ pub fn setup_test() {
 
 pub struct GraftTestRuntime {
     thread: JoinHandle<()>,
-    runtime: RuntimeHandle,
+    runtime: Runtime,
     remote: Arc<Remote>,
     shutdown_tx: Arc<tokio::sync::Notify>,
 
@@ -52,7 +52,7 @@ pub struct GraftTestRuntime {
 }
 
 impl Deref for GraftTestRuntime {
-    type Target = RuntimeHandle;
+    type Target = Runtime;
 
     fn deref(&self) -> &Self::Target {
         &self.runtime
@@ -81,7 +81,7 @@ impl GraftTestRuntime {
             .unwrap();
 
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let runtime = RuntimeHandle::new(tokio_rt.handle().clone(), remote.clone(), storage, None);
+        let runtime = Runtime::new(tokio_rt.handle().clone(), remote.clone(), storage, None);
 
         let shutdown_tx = Arc::new(Notify::const_new());
         let shutdown_rx = shutdown_tx.clone();
