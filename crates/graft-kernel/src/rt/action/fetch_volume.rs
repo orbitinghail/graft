@@ -5,7 +5,7 @@ use graft_core::{
     lsn::{LSN, LSNRangeExt},
 };
 use itertools::{EitherOrBoth, Itertools};
-use range_set_blaze::{RangeOnce, SortedDisjoint};
+use range_set_blaze::RangeOnce;
 use tokio_stream::StreamExt;
 
 use crate::{

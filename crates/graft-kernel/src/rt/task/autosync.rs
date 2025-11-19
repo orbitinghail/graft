@@ -1,7 +1,8 @@
-use std::fmt::Debug;
+use std::{collections::HashSet, fmt::Debug};
 
 use culprit::ResultExt;
 use futures::stream::FuturesUnordered;
+use graft_core::VolumeId;
 use tokio::time::Interval;
 use tokio_stream::StreamExt;
 use tryiter::TryIteratorExt;
@@ -42,7 +43,15 @@ impl Task for AutosyncTask {
             // wait for the next tick
             self.ticker.tick().await;
 
-            let mut actions = FuturesUnordered::new();
+            enum Subtask {
+                Push { graft: VolumeId },
+                Pull { graft: VolumeId },
+            }
+
+            // a set of VolumeIDs to fetch
+            let mut fetches = HashSet::new();
+            // a set of actions to execute
+            let mut actions = vec![];
 
             // collect actions
             {
@@ -56,33 +65,45 @@ impl Task for AutosyncTask {
                     let local_changes = graft.local_changes(latest_local).is_some();
                     let remote_changes = graft.remote_changes(latest_remote).is_some();
 
-                    actions.push(async move {
-                        if remote_changes && local_changes {
-                            // graft has diverged and requires user/app intervention
-                            Ok(())
-                        } else if remote_changes {
-                            storage
-                                .sync_remote_to_local(graft.local)
-                                .or_into_culprit("syncing changes from remote")
-                        } else if local_changes {
-                            RemoteCommit { graft: graft.local }
-                                .run(storage, remote)
-                                .await
-                                .or_into_culprit("committing to remote")
-                        } else {
-                            FetchVolume { vid: graft.remote, max_lsn: None }
-                                .run(storage, remote)
-                                .await?;
-                            storage
-                                .sync_remote_to_local(graft.local)
-                                .or_into_culprit("refreshing remote")
-                        }
-                    });
+                    if remote_changes && local_changes {
+                        // graft has diverged and requires user/app intervention
+                    } else if remote_changes {
+                        actions.push(Subtask::Pull { graft: graft.local })
+                    } else if local_changes {
+                        actions.push(Subtask::Push { graft: graft.local })
+                    } else {
+                        fetches.insert(graft.remote);
+                        actions.push(Subtask::Pull { graft: graft.local });
+                    }
                 }
             }
 
-            // process actions
-            while let Some(result) = actions.next().await {
+            // execute all scheduled fetches
+            let mut futures: FuturesUnordered<_> = fetches
+                .into_iter()
+                .map(|vid| FetchVolume { vid, max_lsn: None }.run(storage, remote))
+                .collect();
+            while let Some(result) = futures.next().await {
+                if let Err(err) = result {
+                    tracing::error!("Autosync fetch failed: {:?}", err);
+                }
+            }
+
+            // execute all scheduled actions
+            let mut futures: FuturesUnordered<_> = actions
+                .into_iter()
+                .map(|action| async {
+                    match action {
+                        Subtask::Push { graft } => {
+                            RemoteCommit { graft }.run(storage, remote).await
+                        }
+                        Subtask::Pull { graft } => storage
+                            .sync_remote_to_local(graft)
+                            .or_into_culprit("syncing changes from remote"),
+                    }
+                })
+                .collect();
+            while let Some(result) = futures.next().await {
                 if let Err(err) = result {
                     tracing::error!("Autosync action failed: {:?}", err);
                 }

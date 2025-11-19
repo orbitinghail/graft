@@ -192,3 +192,9 @@ impl Display for GraftStatus {
         write!(f, "{} r{}", self.local_status, self.remote_status)
     }
 }
+
+impl GraftStatus {
+    pub fn has_diverged(&self) -> bool {
+        self.local_status.changes().is_some() && self.remote_status.changes().is_some()
+    }
+}
