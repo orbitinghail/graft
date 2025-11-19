@@ -81,7 +81,7 @@ impl GraftTestRuntime {
             .unwrap();
 
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage, false);
+        let runtime = RuntimeHandle::new(tokio_rt.handle().clone(), remote.clone(), storage, None);
 
         let shutdown_tx = Arc::new(Notify::const_new());
         let shutdown_rx = shutdown_tx.clone();

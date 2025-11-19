@@ -3,10 +3,14 @@ use std::{sync::Arc, time::Duration};
 use bytestring::ByteString;
 use culprit::ResultExt;
 use graft_core::{
-    PageIdx, SegmentId, VolumeId, checksum::Checksum, commit::SegmentIdx, page::Page,
+    PageIdx, SegmentId, VolumeId,
+    checksum::Checksum,
+    commit::{SegmentIdx, SegmentRangeRef},
+    lsn::LSN,
+    page::Page,
     pageset::PageSet,
 };
-use tokio::task::JoinHandle;
+use tracing::Instrument;
 use tryiter::TryIteratorExt;
 
 use crate::{
@@ -14,17 +18,11 @@ use crate::{
     graft::{Graft, GraftStatus},
     remote::Remote,
     rt::{
-        rpc::RpcHandle,
-        runtime::{Event, Runtime, RuntimeFatalErr},
+        action::{Action, FetchSegment, FetchVolume, HydrateVolume, RemoteCommit},
+        task::{autosync::AutosyncTask, supervise},
     },
     snapshot::Snapshot,
     tag_handle::TagHandle,
-};
-
-use tokio::sync::mpsc;
-use tokio_stream::{
-    StreamExt,
-    wrappers::{IntervalStream, ReceiverStream},
 };
 
 use crate::local::fjall_storage::FjallStorage;
@@ -38,44 +36,33 @@ pub struct RuntimeHandle {
 
 #[derive(Debug)]
 struct RuntimeHandleInner {
-    _handle: JoinHandle<std::result::Result<(), RuntimeFatalErr>>,
+    tokio: tokio::runtime::Handle,
     storage: Arc<FjallStorage>,
-    rpc: RpcHandle,
+    remote: Arc<Remote>,
 }
 
 impl RuntimeHandle {
-    /// Spawn the Graft Runtime into the provided Tokio Runtime.
-    /// Returns a `RuntimeHandle` which can be used to interact with the Graft Runtime.
-    pub fn spawn(
-        tokio_rt: &tokio::runtime::Handle,
+    /// Create a Graft `RuntimeHandle` wrapping the provided Tokio runtime handle.
+    pub fn new(
+        tokio_rt: tokio::runtime::Handle,
         remote: Arc<Remote>,
         storage: Arc<FjallStorage>,
-        autosync: bool,
+        autosync: Option<Duration>,
     ) -> RuntimeHandle {
-        let (tx, rx) = mpsc::channel(8);
-
-        // Make sure we have a runtime context while setting up streams
-        let _tokio_guard = tokio_rt.enter();
-
-        let rx = ReceiverStream::new(rx).map(Event::Rpc);
-        let ticks =
-            IntervalStream::new(tokio::time::interval(Duration::from_secs(1))).map(Event::Tick);
-        let events = Box::pin(rx.merge(ticks));
-
-        let runtime = Runtime::new(remote, storage.clone(), events, autosync);
-        let handle = tokio_rt.spawn(runtime.start());
-
-        RuntimeHandle {
-            inner: Arc::new(RuntimeHandleInner {
-                _handle: handle,
-                storage,
-                rpc: RpcHandle::new(tx),
-            }),
+        // spin up background tasks as needed
+        if let Some(interval) = autosync {
+            let _guard = tokio_rt.enter();
+            let mut ticker = tokio::time::interval(interval);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            tokio_rt.spawn(supervise(
+                storage.clone(),
+                remote.clone(),
+                AutosyncTask::new(ticker),
+            ));
         }
-    }
-
-    pub(crate) fn rpc(&self) -> &RpcHandle {
-        &self.inner.rpc
+        RuntimeHandle {
+            inner: Arc::new(RuntimeHandleInner { tokio: tokio_rt, storage, remote }),
+        }
     }
 
     pub fn iter_tags(&self) -> impl Iterator<Item = Result<(ByteString, VolumeId)>> {
@@ -134,7 +121,8 @@ impl RuntimeHandle {
                 .frame_for_pageidx(pageidx)
                 .expect("BUG: no frame for pageidx");
 
-            self.inner.rpc.fetch_segment_range(frame)?;
+            // fetch the segment frame containing the page
+            self.fetch_segment_range(frame)?;
 
             // now that we've fetched the segment, read the page again using a
             // fresh storage reader
@@ -171,6 +159,41 @@ impl RuntimeHandle {
     pub fn fork(&self, snapshot: &Snapshot) -> Result<Graft> {
         self.storage().fork_snapshot(snapshot).or_into_ctx()
     }
+
+    pub fn fetch_segment_range(&self, range: SegmentRangeRef) -> Result<()> {
+        self.run_action(FetchSegment { range })
+    }
+
+    pub fn hydrate_volume(&self, vid: VolumeId, max_lsn: Option<LSN>) -> Result<()> {
+        self.run_action(HydrateVolume { vid, max_lsn })
+    }
+
+    pub fn fetch_volume(&self, vid: VolumeId, max_lsn: Option<LSN>) -> Result<()> {
+        self.run_action(FetchVolume { vid, max_lsn })
+    }
+
+    pub fn pull_graft(&self, graft: VolumeId) -> Result<()> {
+        let graft = self.inner.storage.read().graft(&graft).or_into_ctx()?;
+        self.fetch_volume(graft.remote, None)?;
+        self.inner
+            .storage
+            .sync_remote_to_local(graft.local)
+            .or_into_ctx()
+    }
+
+    pub fn push_graft(&self, graft: VolumeId) -> Result<()> {
+        self.run_action(RemoteCommit { graft })
+    }
+
+    fn run_action<A: Action>(&self, action: A) -> Result<()> {
+        let span = tracing::debug_span!("Action::run", ?action);
+
+        self.inner.tokio.block_on(
+            action
+                .run(&self.inner.storage, &self.inner.remote)
+                .instrument(span),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -195,7 +218,12 @@ mod tests {
 
         let remote = Arc::new(RemoteConfig::Memory.build().unwrap());
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let runtime = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage, true);
+        let runtime = RuntimeHandle::new(
+            tokio_rt.handle().clone(),
+            remote.clone(),
+            storage,
+            Some(Duration::from_secs(1)),
+        );
 
         let handle = runtime.get_or_create_tag("leader").unwrap();
         let remote_vid = handle.remote().unwrap();
@@ -228,7 +256,12 @@ mod tests {
 
         // create a second runtime connected to the same remote
         let storage = Arc::new(FjallStorage::open_temporary().unwrap());
-        let runtime_2 = RuntimeHandle::spawn(tokio_rt.handle(), remote.clone(), storage, true);
+        let runtime_2 = RuntimeHandle::new(
+            tokio_rt.handle().clone(),
+            remote.clone(),
+            storage,
+            Some(Duration::from_secs(1)),
+        );
 
         // open the same graft in the second runtime
         let mut handle_2 = runtime_2.get_or_create_tag("follower").unwrap();

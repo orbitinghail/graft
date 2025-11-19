@@ -114,7 +114,7 @@ impl TagHandle {
     pub fn hydrate(&self) -> Result<()> {
         let state = self.state()?;
         if let Some(trunk) = state.sync().map(|s| s.remote) {
-            self.runtime.rpc().hydrate_volume(state.remote, Some(trunk))
+            self.runtime.hydrate_volume(state.remote, Some(trunk))
         } else {
             Ok(())
         }
@@ -124,17 +124,17 @@ impl TagHandle {
     /// those changes into the local volume. Either enable autosync or use
     /// `pull` to do that.
     pub fn fetch(&self) -> Result<()> {
-        self.runtime.rpc().fetch_volume(self.remote()?)
+        self.runtime.fetch_volume(self.remote()?, None)
     }
 
     /// Pulls any new changes into the remote volume and then immediately
     /// attempts to sync them into to the local volume.
     pub fn pull(&self) -> Result<()> {
-        self.runtime.rpc().pull_graft(self.graft.clone())
+        self.runtime.pull_graft(self.graft.clone())
     }
 
     /// Pushes any local changes to the remote volume.
     pub fn push(&self) -> Result<()> {
-        self.runtime.rpc().push_graft(self.graft.clone())
+        self.runtime.push_graft(self.graft.clone())
     }
 }

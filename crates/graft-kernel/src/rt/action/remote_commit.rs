@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive};
+use std::{collections::BTreeMap, ops::RangeInclusive};
 
 use bytes::Bytes;
 use culprit::ResultExt;
@@ -18,101 +18,87 @@ use crate::{
     graft::PendingCommit,
     local::fjall_storage::FjallStorage,
     remote::{Remote, segment::SegmentBuilder},
-    rt::job::fetch_volume,
+    rt::action::{Action, FetchVolume},
     snapshot::Snapshot,
 };
 
 /// Commits a Graft's local changes into its remote.
-pub struct Opts {
+#[derive(Debug)]
+pub struct RemoteCommit {
     pub graft: VolumeId,
 }
 
-impl Debug for Opts {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RemoteCommit")
-            .field("graft", &self.graft)
-            .finish()
-    }
-}
+impl Action for RemoteCommit {
+    async fn run(self, storage: &FjallStorage, remote: &Remote) -> culprit::Result<(), KernelErr> {
+        // first, check if we need to recover from a pending commit
+        // we do this *before* plan since this may modify storage
+        attempt_recovery(storage, &self.graft).or_into_culprit("attempting recovery")?;
 
-pub async fn run(
-    storage: &FjallStorage,
-    remote: &Remote,
-    opts: Opts,
-) -> culprit::Result<(), KernelErr> {
-    // first, check if we need to recover from a pending commit
-    // we do this *before* plan since this may modify storage
-    attempt_recovery(storage, &opts.graft)?;
+        let Some(plan) = plan_commit(storage, &self.graft)? else {
+            // nothing to commit
+            return Ok(());
+        };
 
-    let Some(plan) = plan_commit(storage, &opts.graft)? else {
-        // nothing to commit
-        return Ok(());
-    };
+        // build & upload segment
+        let (commit_hash, segment_idx, segment_chunks) = build_segment(storage, &plan)?;
+        remote
+            .put_segment(segment_idx.sid(), segment_chunks)
+            .await
+            .or_into_ctx()?;
 
-    // build & upload segment
-    let (commit_hash, segment_idx, segment_chunks) = build_segment(storage, &plan)?;
-    remote
-        .put_segment(segment_idx.sid(), segment_chunks)
-        .await
-        .or_into_ctx()?;
-
-    // make final preparations before pushing to the remote.
-    // these preparations include checking preconditions and setting
-    // pending_commit on the Graft
-    storage
-        .remote_commit_prepare(
-            &opts.graft,
-            PendingCommit {
-                local: *plan.lsns.end(),
-                commit: plan.commit_ref.lsn,
-                commit_hash: commit_hash.clone(),
-            },
-        )
-        .or_into_ctx()?;
-
-    let commit = Commit::new(
-        plan.commit_ref.vid().clone(),
-        plan.commit_ref.lsn(),
-        plan.page_count,
-    )
-    .with_commit_hash(Some(commit_hash.clone()))
-    .with_segment_idx(Some(segment_idx));
-
-    // issue the remote commit!
-    let result = remote.put_commit(&commit).await;
-
-    match result {
-        Ok(()) => {
-            storage
-                .remote_commit_success(&opts.graft, commit)
-                .or_into_ctx()?;
-            Ok(())
-        }
-        Err(err) if err.ctx().is_already_exists() => {
-            // The commit already exists on the remote. This could be because:
-            // 1. Someone (including us) pushed the same commit (idempotency)
-            // 2. Someone (including us) pushed a DIFFERENT commit (divergence)
-
-            // First fetch the remote volume
-            fetch_volume::run(
-                storage,
-                remote,
-                fetch_volume::Opts {
-                    vid: commit.vid.clone(),
-                    max_lsn: Some(commit.lsn),
+        // make final preparations before pushing to the remote.
+        // these preparations include checking preconditions and setting
+        // pending_commit on the Graft
+        storage
+            .remote_commit_prepare(
+                &self.graft,
+                PendingCommit {
+                    local: *plan.lsns.end(),
+                    commit: plan.commit_ref.lsn,
+                    commit_hash: commit_hash.clone(),
                 },
             )
-            .await?;
+            .or_into_ctx()?;
 
-            // Then attempt recovery
-            attempt_recovery(storage, &opts.graft)
-        }
-        Err(err) => {
-            // if any other error occurs, we leave the pending_commit in place and fail the job.
-            // this allows the `recover_pending_commit` job to run at a later
-            // point which will attempt to figure out if the commit was
-            // successful on the remote or not
-            Err(err).or_into_ctx()
+        let commit = Commit::new(
+            plan.commit_ref.vid().clone(),
+            plan.commit_ref.lsn(),
+            plan.page_count,
+        )
+        .with_commit_hash(Some(commit_hash.clone()))
+        .with_segment_idx(Some(segment_idx));
+
+        // issue the remote commit!
+        let result = remote.put_commit(&commit).await;
+
+        match result {
+            Ok(()) => {
+                storage
+                    .remote_commit_success(&self.graft, commit)
+                    .or_into_ctx()?;
+                Ok(())
+            }
+            Err(err) if err.ctx().is_already_exists() => {
+                // The commit already exists on the remote. This could be because:
+                // 1. Someone (including us) pushed the same commit (idempotency)
+                // 2. Someone (including us) pushed a DIFFERENT commit (divergence)
+                // To resolve this, refetch the remote and attempt recovery.
+                FetchVolume {
+                    vid: commit.vid.clone(),
+                    max_lsn: Some(commit.lsn),
+                }
+                .run(storage, remote)
+                .await?;
+                attempt_recovery(storage, &self.graft)
+                    .or_into_culprit("recovering from existing remote commit")
+            }
+            Err(err) => {
+                // if any other error occurs, we leave the pending_commit in place and fail the job.
+                // this allows the `recover_pending_commit` job to run at a later
+                // point which will attempt to figure out if the commit was
+                // successful on the remote or not
+                Err(err).or_into_ctx()
+            }
         }
     }
 }
@@ -266,6 +252,7 @@ fn attempt_recovery(storage: &FjallStorage, graft: &VolumeId) -> culprit::Result
     let graft = reader.graft(graft).or_into_ctx()?;
 
     if let Some(pending) = graft.pending_commit {
+        tracing::debug!(?pending, "got pending commit");
         match storage
             .read()
             .get_commit(&graft.remote, pending.commit)

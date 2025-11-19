@@ -4,8 +4,10 @@ use std::{
     fmt::Display,
     fs::OpenOptions,
     future::pending,
+    num::NonZero,
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use config::{Config, FileFormat};
@@ -38,8 +40,9 @@ struct ExtensionConfig {
     #[serde(default = "bool::default")]
     make_default: bool,
 
-    #[serde(default = "bool::default")]
-    autosync: bool,
+    /// if set, specifies the autosync interval in seconds
+    #[serde(default = "Option::default")]
+    autosync: Option<NonZero<u64>>,
 }
 
 pub fn setup_log_file(path: PathBuf) {
@@ -141,7 +144,8 @@ fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
 
     let remote = Arc::new(config.remote.build()?);
     let storage = Arc::new(FjallStorage::open(config.data_dir)?);
-    let runtime = RuntimeHandle::spawn(&tokio_handle, remote, storage, config.autosync);
+    let autosync = config.autosync.map(|s| Duration::from_secs(s.get()));
+    let runtime = RuntimeHandle::new(tokio_handle, remote, storage, autosync);
 
     Ok((
         RegisterOpts { make_default: config.make_default },

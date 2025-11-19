@@ -1,0 +1,23 @@
+use std::fmt::Debug;
+
+use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote};
+
+macro_rules! action {
+    ($mod:tt, $action:ident) => {
+        mod $mod;
+        pub use $mod::$action;
+    };
+}
+
+action!(fetch_segment, FetchSegment);
+action!(fetch_volume, FetchVolume);
+action!(hydrate_volume, HydrateVolume);
+action!(remote_commit, RemoteCommit);
+
+pub type Result<T> = culprit::Result<T, KernelErr>;
+
+/// A one-off async action.
+pub trait Action: Debug {
+    /// Run the action.
+    async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<()>;
+}
