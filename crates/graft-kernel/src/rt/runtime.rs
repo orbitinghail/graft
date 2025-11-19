@@ -77,8 +77,9 @@ impl Runtime {
     }
 
     pub fn get_or_create_tag(&self, tag: &str) -> Result<TagHandle> {
-        let graft = self.storage().get_or_create_tag(tag).or_into_ctx()?;
-        Ok(TagHandle::new(self.clone(), tag.into(), graft.local))
+        // make sure the graft exists
+        self.storage().get_or_create_tag(tag).or_into_ctx()?;
+        Ok(TagHandle::new(self.clone(), tag.into()))
     }
 
     pub fn iter_grafts(&self) -> impl Iterator<Item = Result<Graft>> {

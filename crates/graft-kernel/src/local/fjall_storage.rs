@@ -323,6 +323,10 @@ impl<'a> ReadGuard<'a> {
         }
     }
 
+    pub fn get_tag_graft_id(&self, name: &str) -> Result<Option<VolumeId>, FjallStorageErr> {
+        self._tags().get(name)
+    }
+
     /// Lookup the latest LSN for a volume
     pub fn latest_lsn(&self, vid: &VolumeId) -> Result<Option<LSN>, FjallStorageErr> {
         Ok(self._log().first(vid)?.map(|(vref, _)| vref.lsn))

@@ -144,16 +144,15 @@ impl GraftPragma {
         file: &mut VolFile,
     ) -> Result<Option<String>, Culprit<ErrCtx>> {
         match self {
-            GraftPragma::List => Ok(Some(format_grafts(runtime, file.handle().graft())?)),
+            GraftPragma::List => Ok(Some(format_grafts(runtime, file)?)),
             GraftPragma::Tags => Ok(Some(format_tags(runtime)?)),
 
             GraftPragma::Clone { remote } => {
                 file.handle_mut().clone_remote(remote).or_into_ctx()?;
                 let remote = file.handle().remote().or_into_ctx()?;
+                let graft = file.handle().graft().or_into_ctx()?;
                 Ok(Some(format!(
-                    "Created new Graft {} with remote Volume {}",
-                    file.handle().graft(),
-                    remote,
+                    "Created new Graft {graft} with remote Volume {remote}",
                 )))
             }
 
@@ -442,7 +441,8 @@ fn format_tags(runtime: &Runtime) -> Result<String, Culprit<ErrCtx>> {
     Ok(f)
 }
 
-fn format_grafts(runtime: &Runtime, current_graft: &VolumeId) -> Result<String, Culprit<ErrCtx>> {
+fn format_grafts(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let current_graft = file.handle().graft().or_into_ctx()?;
     let mut f = String::new();
     let mut grafts = runtime.iter_grafts();
     while let Some(graft) = grafts.try_next().or_into_ctx()? {
@@ -457,7 +457,7 @@ fn format_grafts(runtime: &Runtime, current_graft: &VolumeId) -> Result<String, 
                   Remote: {remote}
                   Status: {status}
             ",
-            if &local == current_graft {
+            if local == current_graft {
                 " (current)"
             } else {
                 ""
