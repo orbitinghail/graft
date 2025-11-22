@@ -30,7 +30,7 @@ Tag -> Graft -> Volume
 
 A **Volume** represents a sparse ordered set of pages over time. A volume is identified by a VolumeId and represents time as a LSN which is a particular sequence number in the Volume's commit log. Every unique (VolumeId, LSN) pair represents a consistent snapshot of the Volume.
 
-A **Graft** tracks the sync state between two volumes, one local and one remote. A Graft is identified by its local VolumeId. A Graft allows writes to be written optimistically to the local volume and asyncronously collapsed + synced to the remote volume. A graft also allows a remote volume to be fetched and the changes then pulled into the local volume.
+A **Graft** tracks the sync state between two volumes, one local and one remote. A Graft is identified by its local VolumeId. A Graft allows writes to be written optimistically to the local volume and asynchronously collapsed + synced to the remote volume. A graft also allows a remote volume to be fetched and the changes then pulled into the local volume.
 
 A **Tag** is a mutable string that points at a Graft (by its local VolumeId).
 
