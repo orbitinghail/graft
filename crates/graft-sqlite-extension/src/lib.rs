@@ -83,29 +83,6 @@ fn write_err_msg(
     Ok(())
 }
 
-fn get_or_create_tokio_rt() -> Result<tokio::runtime::Handle, InitErr> {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        return Ok(handle);
-    }
-
-    // spin up a tokio runtime in a new thread
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .thread_name("graft-runtime-worker")
-        .enable_all()
-        .build()?;
-    let handle = rt.handle().clone();
-
-    // tokio needs a top level "control" thread
-    std::thread::Builder::new()
-        .name("graft-runtime".to_string())
-        .spawn(move || {
-            // run the tokio runtime forever on this thread
-            rt.block_on(pending::<()>())
-        })?;
-
-    Ok(handle)
-}
-
 fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
     let files = [
         // load from the user's application dir first
@@ -140,7 +117,17 @@ fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
         setup_log_file(path);
     }
 
-    let tokio_handle = get_or_create_tokio_rt()?;
+    // spin up a tokio current thread runtime in a new thread
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let tokio_handle = rt.handle().clone();
+    std::thread::Builder::new()
+        .name("graft-runtime".to_string())
+        .spawn(move || {
+            // run the tokio event loop in this thread
+            rt.block_on(pending::<()>())
+        })?;
 
     let remote = Arc::new(config.remote.build()?);
     let storage = Arc::new(FjallStorage::open(config.data_dir)?);

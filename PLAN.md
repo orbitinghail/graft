@@ -4,29 +4,76 @@ A loose plan to implement Graft's new direct storage architecture as documented 
 
 [this RFC]: https://graft.rs/docs/rfcs/0001-direct-storage-architecture/
 
-- [x] structured logging
-- [x] RecoverPendingCommit job
-- [x] RuntimeHandle::read_page
-- [x] Runtime::create_volume_from_remote
-- [ ] comprehensive tests
-- [ ] libgraft SQLite
+- structured logging
+- RecoverPendingCommit job
+- RuntimeHandle::read_page
+- Runtime::create_volume_from_remote
+- comprehensive tests
+- libgraft SQLite
 
 # Working on SQLite v2
 
-- [ ] build delete\* methods for managing tags and grafts
-- [ ] how to recover from a remote volume disappearing? (or switching remotes)
-      -> currently you need to hydrate before it goes away, then fork, then push
-- [ ] build a simple GC that simply drops orphan segments
+- build delete\* methods for managing tags and grafts
+- how to recover from a remote volume disappearing? (or switching remotes)
+  - currently you need to hydrate before it goes away, then fork, then push
+- build a simple GC that simply drops orphan segments
   - pay special attention to in-progress VolumeWriters
   - make sure to run fjall gc when deleting pages
-- [ ] consider adding a read oracle (do some perf testing)
-- [ ] port tests
-- [ ] write first draft of antithesis tests
+- consider adding a read oracle (do some perf testing)
+- create some hello-world examples of using Graft without SQLite
+- port tests
+- write first draft of antithesis tests
 
-## done
+# The new taxonomy and actions
 
-- [x] more robust sync
-- [x] rename RuntimeHandle to Runtime
-- [x] BUG: graft push should fail if push fails due to divergence
-      graft_push output: Pushed LSNs unknown from local Volume 5rMJii2Nik-2dv7ZBHJUXDov to remote Volume 5rMJii2Ndd-2dodwccLe9PQf @ 1
-- [x] tag handle should probably not cache the graft id - it's easy to get out of sync (see test_sync_and_reset)
+Tag -> Graft -> Volume
+
+A **Volume** represents a sparse ordered set of pages over time. A volume is identified by a VolumeId and represents time as a LSN which is a particular sequence number in the Volume's commit log. Every unique (VolumeId, LSN) pair represents a consistent snapshot of the Volume.
+
+A **Graft** tracks the sync state between two volumes, one local and one remote. A Graft is identified by its local VolumeId. A Graft allows writes to be written optimistically to the local volume and asyncronously collapsed + synced to the remote volume. A graft also allows a remote volume to be fetched and the changes then pulled into the local volume.
+
+A **Tag** is a mutable string that points at a Graft (by its local VolumeId).
+
+**Decision**: remove TagHandle, move all methods to Runtime, and have apps interact with Tags and Grafts directly.
+
+- [ ] implement methods on Runtime
+- [ ] remove tag handle
+- [ ] fixup sqlite extension
+
+## Runtime actions
+
+### tags
+
+- iter tags along with their graft ids
+- tag exists
+- open tag -> open a tag by name, creating it if it doesn't exist
+- get tag -> retrieve a tag by name
+- update tag -> update a tag to point at a different graft
+- delete tag -> remove tag, but not underlying graft
+
+### grafts
+
+- iter grafts
+- graft exists
+- open graft -> open a graft specifying the local and remote volumes
+  -> if a graft already exists for the local volume, returns that graft
+  -> erroring if the remote is specified and doesn't match
+- get graft -> retrieve a graft by local id
+- delete graft -> removes a graft and it's local volume, doesn't touch the remote
+- pull graft -> fetches the remote and then syncs remote to local
+- push graft -> remote commit
+- graft status -> the status of a graft
+- graft snapshot -> the latest snapshot of a graft
+- graft reader -> a reader for a graft
+- graft writer -> a writer for a graft
+
+### volumes
+
+- fetch volume -> fetches changes for a volume up to a particular LSN (or latest)
+
+### snapshots
+
+- create graft from snapshot -> create a new graft from a snapshot
+- checksum snapshot
+- snapshot missing pages
+- hydrate snapshot -> fetches all pages for a snapshot

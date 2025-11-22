@@ -63,6 +63,7 @@ For detailed architecture documentation, see `docs/src/content/docs/docs/rfcs/00
 
 ## Commit Guidelines
 
+- **Never commit without being explicitly asked to**
 - When committing on behalf of the user just sign off with: `Co-Authored-By: Claude <noreply@anthropic.com>`
 - Never add `🤖 Generated with [Claude Code](https://claude.ai/code)` to any commit messages.
 
