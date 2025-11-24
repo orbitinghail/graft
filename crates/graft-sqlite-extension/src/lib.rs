@@ -83,36 +83,41 @@ fn write_err_msg(
     Ok(())
 }
 
-fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
-    let files = [
-        // load from the user's application dir first
+fn resolve_config() -> Result<ExtensionConfig, InitErr> {
+    // a priority ordered list of config paths, the first path found will be used
+    let paths = [
+        std::env::var("GRAFT_CONFIG").ok().map(|s| s.into()),
+        Some("graft.toml".into()),
         platform_dirs::AppDirs::new(Some("graft"), true)
-            .map(|app_dirs| app_dirs.config_dir.join("graft.toml"))
-            .map(|path| {
-                config::File::new(path.to_str().unwrap(), FileFormat::Toml).required(false)
-            }),
-        // then try to load from the current directory
-        Some(config::File::new("graft.toml", FileFormat::Toml).required(false)),
-        // then load from GRAFT_CONFIG
-        std::env::var("GRAFT_CONFIG")
-            .ok()
-            .map(|path| config::File::new(&path, FileFormat::Toml).required(true)),
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+            .map(|app_dirs| app_dirs.config_dir.join("graft.toml")),
+    ];
 
-    let config = Config::builder()
-        .add_source(files)
-        .add_source(
-            config::Environment::with_prefix("GRAFT")
-                .prefix_separator("_")
-                .separator("__"),
-        )
-        .build()?;
+    // find the first path that is Some and resolves to a file
+    let path = paths
+        .into_iter()
+        .flatten()
+        .find(|p: &PathBuf| p.is_file())
+        .and_then(|p| p.to_str().map(|s| s.to_string()));
 
-    let config: ExtensionConfig = config.try_deserialize()?;
+    // build the config
+    let mut config = Config::builder();
 
+    // add the config file if it exists
+    if let Some(path) = path {
+        config = config.add_source(config::File::new(&path, FileFormat::Toml).required(true));
+    }
+
+    config = config.add_source(
+        config::Environment::with_prefix("GRAFT")
+            .prefix_separator("_")
+            .separator("__"),
+    );
+
+    Ok(config.build()?.try_deserialize()?)
+}
+
+fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
+    let config = resolve_config()?;
     if let Some(path) = config.log_file {
         setup_log_file(path);
     }
