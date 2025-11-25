@@ -11,7 +11,7 @@ macro_rules! action {
 
 action!(fetch_segment, FetchSegment);
 action!(fetch_volume, FetchVolume);
-action!(hydrate_volume, HydrateVolume);
+action!(hydrate_snapshot, HydrateSnapshot);
 action!(remote_commit, RemoteCommit);
 
 pub type Result<T> = culprit::Result<T, KernelErr>;

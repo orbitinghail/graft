@@ -2,3 +2,5 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
   - workerd
+
+minimumReleaseAge: 4320

@@ -95,12 +95,8 @@ impl VolumeWrite for VolumeWriter {
         let snapshot = self
             .runtime
             .storage()
-            .commit(
-                self.graft.clone(),
-                self.snapshot,
-                self.page_count,
-                self.segment,
-            )
+            .read_write()
+            .commit(&self.graft, self.snapshot, self.page_count, self.segment)
             .or_into_ctx()?;
         Ok(VolumeReader::new(self.runtime, self.graft, snapshot))
     }

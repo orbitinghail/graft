@@ -1,4 +1,4 @@
-use culprit::{Culprit, ResultExt};
+use culprit::Culprit;
 use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
 
 use crate::{KernelErr, rt::runtime::Runtime, snapshot::Snapshot, volume_writer::VolumeWriter};
@@ -43,17 +43,7 @@ impl VolumeRead for VolumeReader {
     }
 
     fn page_count(&self) -> culprit::Result<PageCount, KernelErr> {
-        if let Some((vid, lsn)) = self.snapshot.head() {
-            Ok(self
-                .runtime
-                .storage()
-                .read()
-                .page_count(vid, lsn)
-                .or_into_ctx()?
-                .expect("BUG: missing page count for snapshot"))
-        } else {
-            Ok(PageCount::ZERO)
-        }
+        self.runtime.snapshot_pages(&self.snapshot)
     }
 
     fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr> {

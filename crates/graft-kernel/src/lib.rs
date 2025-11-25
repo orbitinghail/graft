@@ -14,7 +14,6 @@ pub mod graft;
 pub mod oracle;
 pub mod remote;
 pub mod snapshot;
-pub mod tag_handle;
 pub mod volume_reader;
 pub mod volume_writer;
 

@@ -8,8 +8,10 @@ use graft_core::{
     page::{PAGESIZE, Page},
 };
 use graft_kernel::{
-    graft::AheadStatus, rt::runtime::Runtime, tag_handle::TagHandle, volume_reader::VolumeRead,
-    volume_writer::VolumeWrite,
+    graft::AheadStatus,
+    rt::runtime::Runtime,
+    volume_reader::VolumeRead,
+    volume_writer::{VolumeWrite, VolumeWriter},
 };
 use indoc::{formatdoc, indoc, writedoc};
 use sqlite_plugin::{
@@ -137,6 +139,12 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
     }
 }
 
+macro_rules! pragma_err {
+    ($msg:expr) => {
+        Err(Culprit::new(ErrCtx::PragmaErr($msg.into())))
+    };
+}
+
 impl GraftPragma {
     pub fn eval(
         self,
@@ -148,33 +156,51 @@ impl GraftPragma {
             GraftPragma::Tags => Ok(Some(format_tags(runtime)?)),
 
             GraftPragma::Clone { remote } => {
-                file.handle_mut().clone_remote(remote).or_into_ctx()?;
-                let remote = file.handle().remote().or_into_ctx()?;
-                let graft = file.handle().graft().or_into_ctx()?;
+                if !file.is_idle() {
+                    return pragma_err!("cannot clone while there is an open transaction");
+                }
+
+                let remote = match remote {
+                    Some(remote) => remote,
+                    None => runtime.graft_get(&file.graft).or_into_ctx()?.remote,
+                };
+                let graft = runtime.graft_open(None, Some(remote)).or_into_ctx()?;
+                file.switch_graft(&graft.local)?;
+
                 Ok(Some(format!(
-                    "Created new Graft {graft} with remote Volume {remote}",
+                    "Created new Graft {} with remote Volume {}",
+                    graft.local, graft.remote
                 )))
             }
 
             GraftPragma::Fork => {
+                if !file.is_idle() {
+                    return pragma_err!("cannot fork while there is an open transaction");
+                }
+
                 let snapshot = file.snapshot_or_latest()?;
-                let missing = runtime.missing_pages(&snapshot).or_into_ctx()?;
+                let missing = runtime.snapshot_missing_pages(&snapshot).or_into_ctx()?;
                 if missing.is_empty() {
-                    let graft = runtime.fork(&snapshot).or_into_ctx()?;
+                    let graft = runtime.graft_from_snapshot(&snapshot).or_into_ctx()?;
+                    file.switch_graft(&graft.local)?;
+
                     Ok(Some(format!(
                         "Forked current snapshot into Graft: {}",
                         graft.local,
                     )))
                 } else {
-                    Ok(Some("ERROR: must hydrate volume before forking".into()))
+                    return pragma_err!("ERROR: must hydrate volume before forking");
                 }
             }
 
             GraftPragma::Switch { graft, remote } => {
-                let graft = file
-                    .handle_mut()
-                    .switch_graft(graft, remote)
-                    .or_into_ctx()?;
+                if !file.is_idle() {
+                    return pragma_err!("cannot switch while there is an open transaction");
+                }
+
+                let graft = runtime.graft_open(Some(graft), remote).or_into_ctx()?;
+                file.switch_graft(&graft.local)?;
+
                 Ok(Some(format!(
                     "Switched to Graft {} with remote Volume {}",
                     graft.local, graft.remote,
@@ -197,7 +223,8 @@ impl GraftPragma {
             GraftPragma::Audit => Ok(Some(format_graft_audit(runtime, file)?)),
 
             GraftPragma::Hydrate => {
-                file.handle().hydrate().or_into_ctx()?;
+                let snapshot = file.snapshot_or_latest()?;
+                runtime.snapshot_hydrate(snapshot).or_into_ctx()?;
                 Ok(None)
             }
 
@@ -211,15 +238,14 @@ impl GraftPragma {
                 Ok(Some(out))
             }
 
-            GraftPragma::Import(path) => graft_import(file.handle(), path).map(Some),
+            GraftPragma::Import(path) => {
+                let writer = runtime.graft_writer(file.graft.clone()).or_into_ctx()?;
+                graft_import(writer, path).map(Some)
+            }
 
             GraftPragma::DumpSqliteHeader => {
-                let page = file
-                    .handle()
-                    .reader()
-                    .or_into_ctx()?
-                    .read_page(PageIdx::FIRST)
-                    .or_into_ctx()?;
+                let reader = runtime.graft_reader(file.graft.clone()).or_into_ctx()?;
+                let page = reader.read_page(PageIdx::FIRST).or_into_ctx()?;
                 let header = SqliteHeader::read_from_bytes(&page[..100])
                     .expect("failed to parse SQLite header");
                 Ok(Some(format!("{header:#?}")))
@@ -327,10 +353,10 @@ fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
 
 fn format_graft_audit(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     let snapshot = file.snapshot_or_latest()?;
-    let missing_pages = runtime.missing_pages(&snapshot).or_into_ctx()?;
+    let missing_pages = runtime.snapshot_missing_pages(&snapshot).or_into_ctx()?;
     let pages = file.page_count().or_into_ctx()?.to_usize();
     if missing_pages.is_empty() {
-        let checksum = runtime.checksum(&snapshot).or_into_ctx()?;
+        let checksum = runtime.snapshot_checksum(&snapshot).or_into_ctx()?;
         Ok(formatdoc!(
             "
                 Cached {pages} of {pages} {} (100%%) from the remote volume.
@@ -422,9 +448,9 @@ fn push(file: &mut VolFile) -> Result<String, Culprit<ErrCtx>> {
 
 fn format_tags(runtime: &Runtime) -> Result<String, Culprit<ErrCtx>> {
     let mut f = String::new();
-    let mut tags = runtime.iter_tags();
+    let mut tags = runtime.tag_iter();
     while let Some((tag, graft)) = tags.try_next().or_into_ctx()? {
-        let handle = runtime.get_or_create_tag(&tag).or_into_ctx()?;
+        let handle = runtime.tag_open(&tag).or_into_ctx()?;
         let status = handle.status().or_into_ctx()?;
         let remote = handle.remote().or_into_ctx()?;
 
@@ -444,7 +470,7 @@ fn format_tags(runtime: &Runtime) -> Result<String, Culprit<ErrCtx>> {
 fn format_grafts(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     let current_graft = file.handle().graft().or_into_ctx()?;
     let mut f = String::new();
-    let mut grafts = runtime.iter_grafts();
+    let mut grafts = runtime.graft_iter();
     while let Some(graft) = grafts.try_next().or_into_ctx()? {
         let status = runtime.graft_status(&graft.local).or_into_ctx()?;
         let local = graft.local;
@@ -467,10 +493,9 @@ fn format_grafts(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<Er
     Ok(f)
 }
 
-fn graft_import(handle: &TagHandle, path: PathBuf) -> Result<String, Culprit<ErrCtx>> {
-    let mut writer = handle.writer().or_into_ctx()?;
+fn graft_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, Culprit<ErrCtx>> {
     if writer.page_count().or_into_ctx()? > PageCount::ZERO {
-        return Ok("Refusing to import into a non-empty database.".into());
+        return pragma_err!("Refusing to import into a non-empty database.");
     }
 
     let mut file = File::open(&path)?;

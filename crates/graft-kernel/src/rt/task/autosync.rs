@@ -98,6 +98,7 @@ impl Task for AutosyncTask {
                             RemoteCommit { graft }.run(storage, remote).await
                         }
                         Subtask::Pull { graft } => storage
+                            .read_write()
                             .sync_remote_to_local(graft)
                             .or_into_culprit("syncing changes from remote"),
                     }

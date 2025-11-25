@@ -8,13 +8,13 @@ use std::{
 use bytes::BytesMut;
 use culprit::{Culprit, Result, ResultExt};
 use graft_core::{
-    PageIdx,
+    PageIdx, VolumeId,
     page::{PAGESIZE, Page},
     page_count::PageCount,
 };
 use graft_kernel::{
+    rt::runtime::Runtime,
     snapshot::Snapshot,
-    tag_handle::TagHandle,
     volume_reader::{VolumeRead, VolumeReader},
     volume_writer::{VolumeWrite, VolumeWriter},
 };
@@ -63,37 +63,46 @@ impl Debug for VolFileState {
 }
 
 pub struct VolFile {
-    handle: TagHandle,
+    runtime: Runtime,
+    pub tag: String,
+    pub graft: VolumeId,
     opts: OpenOpts,
 
     reserved: Arc<Mutex<()>>,
     state: VolFileState,
-    // oracle: Box<LeapOracle>,
 }
 
 impl Debug for VolFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VolFile")
-            .field("handle", &self.handle.tag())
+            .field("tag", &self.tag)
+            .field("graft", &self.graft)
             .field("state", &self.state)
             .finish()
     }
 }
 
 impl VolFile {
-    pub fn new(handle: TagHandle, opts: OpenOpts, reserved: Arc<Mutex<()>>) -> Self {
+    pub fn new(
+        runtime: Runtime,
+        tag: String,
+        graft: VolumeId,
+        opts: OpenOpts,
+        reserved: Arc<Mutex<()>>,
+    ) -> Self {
         Self {
-            handle,
+            runtime,
+            tag,
+            graft,
             opts,
             reserved,
             state: VolFileState::Idle,
-            // oracle: Default::default(),
         }
     }
 
     pub fn snapshot_or_latest(&self) -> Result<Snapshot, ErrCtx> {
         match &self.state {
-            VolFileState::Idle => self.handle.snapshot().or_into_ctx(),
+            VolFileState::Idle => self.runtime.graft_snapshot(&self.graft).or_into_ctx(),
             VolFileState::Shared { reader } => Ok(reader.snapshot().clone()),
             VolFileState::Reserved { writer } => Ok(writer.snapshot().clone()),
             VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
@@ -102,27 +111,30 @@ impl VolFile {
 
     pub fn page_count(&self) -> Result<PageCount, ErrCtx> {
         match &self.state {
-            VolFileState::Idle => self.handle.page_count().or_into_ctx(),
+            VolFileState::Idle => {
+                let snapshot = self.runtime.graft_snapshot(&self.graft).or_into_ctx()?;
+                self.runtime.snapshot_pages(&snapshot).or_into_ctx()
+            }
             VolFileState::Shared { reader } => reader.page_count().or_into_ctx(),
             VolFileState::Reserved { writer } => writer.page_count().or_into_ctx(),
             VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
         }
     }
 
-    pub fn handle(&self) -> &TagHandle {
-        &self.handle
-    }
-
-    pub fn handle_mut(&mut self) -> &mut TagHandle {
-        &mut self.handle
+    pub fn is_idle(&self) -> bool {
+        matches!(self.state, VolFileState::Idle)
     }
 
     pub fn opts(&self) -> OpenOpts {
         self.opts
     }
 
-    pub fn close(self) -> TagHandle {
-        self.handle
+    pub fn switch_graft(&mut self, graft: &VolumeId) -> Result<(), ErrCtx> {
+        self.runtime
+            .tag_replace(&self.tag, graft.clone())
+            .or_into_ctx()?;
+        self.graft = graft.clone();
+        Ok(())
     }
 }
 
@@ -144,7 +156,10 @@ impl VfsFile for VolFile {
             LockLevel::Shared => {
                 if let VolFileState::Idle = self.state {
                     // Transition Idle -> Shared
-                    let reader = self.handle.reader().or_into_ctx()?;
+                    let reader = self
+                        .runtime
+                        .graft_reader(self.graft.clone())
+                        .or_into_ctx()?;
                     self.state = VolFileState::Shared { reader };
                 } else {
                     return Err(Culprit::new_with_note(
@@ -173,8 +188,8 @@ impl VfsFile for VolFile {
                     // check to see if the snapshot is latest. if it
                     // has changed we can immediately reject the lock upgrade
                     if !self
-                        .handle
-                        .is_latest_snapshot(reader.snapshot())
+                        .runtime
+                        .snapshot_is_latest(&self.graft, reader.snapshot())
                         .or_into_ctx()?
                     {
                         return Err(Culprit::new_with_note(
@@ -271,18 +286,12 @@ impl VfsFile for VolFile {
     }
 
     fn file_size(&mut self) -> Result<usize, ErrCtx> {
-        let pages = match &self.state {
-            VolFileState::Idle => self.handle.page_count().or_into_ctx()?,
-            VolFileState::Shared { reader, .. } => reader.page_count().or_into_ctx()?,
-            VolFileState::Reserved { writer, .. } => writer.page_count().or_into_ctx()?,
-            VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
-        };
-        Ok(PAGESIZE.as_usize() * pages.to_usize())
+        Ok(PAGESIZE.as_usize() * self.page_count()?.to_usize())
     }
 
     fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, ErrCtx> {
         // locate the page offset of the requested page
-        let page_idx: PageIdx = ((offset / PAGESIZE.as_usize()) + 1)
+        let pageidx: PageIdx = ((offset / PAGESIZE.as_usize()) + 1)
             .try_into()
             .expect("offset out of volume range");
         // local_offset is the offset *within* the requested page
@@ -299,14 +308,14 @@ impl VfsFile for VolFile {
                 // sqlite sometimes reads the database header without holding a
                 // lock, in this case we are expected to read from the latest
                 // snapshot
-                self.handle
-                    .reader()
-                    .or_into_ctx()?
-                    .read_page(page_idx)
-                    .or_into_ctx()?
+                let reader = self
+                    .runtime
+                    .graft_reader(self.graft.clone())
+                    .or_into_ctx()?;
+                reader.read_page(pageidx).or_into_ctx()?
             }
-            VolFileState::Shared { reader } => reader.read_page(page_idx).or_into_ctx()?,
-            VolFileState::Reserved { writer } => writer.read_page(page_idx).or_into_ctx()?,
+            VolFileState::Shared { reader } => reader.read_page(pageidx).or_into_ctx()?,
+            VolFileState::Reserved { writer } => writer.read_page(pageidx).or_into_ctx()?,
             VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
         };
 
@@ -315,7 +324,7 @@ impl VfsFile for VolFile {
 
         // check to see if SQLite is reading the file change counter, and if so,
         // overwrite it with a counter derived from the current snapshot
-        if page_idx == PageIdx::FIRST
+        if pageidx == PageIdx::FIRST
             && local_offset <= FILE_CHANGE_COUNTER_OFFSET
             && local_offset + data.len() >= FILE_CHANGE_COUNTER_OFFSET + 4
         {

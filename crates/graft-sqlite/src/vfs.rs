@@ -1,12 +1,11 @@
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, fmt::Debug, sync::Arc};
 
-use bytestring::ByteString;
 use culprit::{Culprit, ResultExt};
 use graft_kernel::{KernelErr, LogicalErr, rt::runtime::Runtime};
 use graft_tracing::TracingConsumer;
 use parking_lot::Mutex;
 use sqlite_plugin::{
-    flags::{AccessFlags, LockLevel, OpenKind, OpenOpts},
+    flags::{AccessFlags, CreateMode, LockLevel, OpenKind, OpenMode, OpenOpts},
     logger::{SqliteLogLevel, SqliteLogger},
     vars::{
         self, SQLITE_BUSY, SQLITE_BUSY_SNAPSHOT, SQLITE_CANTOPEN, SQLITE_INTERNAL, SQLITE_IOERR,
@@ -29,8 +28,11 @@ pub enum ErrCtx {
     #[error("Unknown Pragma")]
     UnknownPragma,
 
-    #[error("Cant open Volume")]
-    CantOpen,
+    #[error("Pragma error: {0}")]
+    PragmaErr(Cow<'static, str>),
+
+    #[error("Tag not found")]
+    TagNotFound,
 
     #[error("Transaction is busy")]
     Busy,
@@ -63,7 +65,7 @@ impl ErrCtx {
     fn sqlite_err(&self) -> SqliteErr {
         match self {
             ErrCtx::UnknownPragma => SQLITE_NOTFOUND,
-            ErrCtx::CantOpen => SQLITE_CANTOPEN,
+            ErrCtx::TagNotFound => SQLITE_CANTOPEN,
             ErrCtx::Busy => SQLITE_BUSY,
             ErrCtx::BusySnapshot => SQLITE_BUSY_SNAPSHOT,
             ErrCtx::Kernel(err) => Self::map_kernel_err(err),
@@ -80,8 +82,7 @@ impl ErrCtx {
                 LogicalErr::GraftConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
                 LogicalErr::GraftNeedsRecovery(_)
                 | LogicalErr::GraftDiverged(_)
-                | LogicalErr::GraftRemoteMismatch { .. }
-                | LogicalErr::TagNotFound(_) => SQLITE_INTERNAL,
+                | LogicalErr::GraftRemoteMismatch { .. } => SQLITE_INTERNAL,
             },
         }
     }
@@ -95,7 +96,8 @@ impl<T> From<ErrCtx> for culprit::Result<T, ErrCtx> {
 
 pub struct GraftVfs {
     runtime: Runtime,
-    locks: Mutex<HashMap<ByteString, Arc<Mutex<()>>>>,
+    // VolFile locks keyed by tag
+    locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl GraftVfs {
@@ -175,20 +177,45 @@ impl Vfs for GraftVfs {
         ErrCtx::wrap(move || {
             // we only open a Volume for main database files
             if opts.kind() == OpenKind::MainDb
-                && let Some(path) = path
+                && let Some(tag) = path
             {
-                // open a tag handle
-                let handle = self.runtime.get_or_create_tag(path).or_into_ctx()?;
+                let can_create = matches!(
+                    opts.mode(),
+                    OpenMode::ReadWrite {
+                        create: CreateMode::Create | CreateMode::MustCreate
+                    }
+                );
+
+                let graft = if can_create {
+                    // create the graft if needed
+                    if let Some(graft) = self.runtime.tag_get(tag).or_into_ctx()? {
+                        graft
+                    } else {
+                        let graft = self.runtime.graft_open(None, None).or_into_ctx()?;
+                        self.runtime
+                            .tag_replace(tag, graft.local.clone())
+                            .or_into_ctx()?;
+                        graft.local
+                    }
+                } else {
+                    // just get the existing graft
+                    self.runtime
+                        .tag_get(tag)
+                        .or_into_ctx()?
+                        .ok_or(ErrCtx::TagNotFound)?
+                };
 
                 // get or create a reserved lock for this Volume
-                let reserved_lock = self
-                    .locks
-                    .lock()
-                    .entry(handle.tag().clone())
-                    .or_default()
-                    .clone();
+                let reserved_lock = self.locks.lock().entry(tag.to_owned()).or_default().clone();
 
-                return Ok(VolFile::new(handle, opts, reserved_lock).into());
+                return Ok(VolFile::new(
+                    self.runtime.clone(),
+                    tag.to_owned(),
+                    graft,
+                    opts,
+                    reserved_lock,
+                )
+                .into());
             }
 
             // all other files use in-memory storage
@@ -207,13 +234,10 @@ impl Vfs for GraftVfs {
                         // TODO: do we want to actually delete volumes? or mark them for deletion?
                     }
 
-                    // close and drop the vol_file
-                    let handle = vol_file.close();
-
                     // retrieve a reference to the reserved lock for the volume
                     let mut locks = self.locks.lock();
                     let reserved_lock = locks
-                        .get(handle.tag())
+                        .get(&vol_file.tag)
                         .expect("reserved lock missing from lock manager");
 
                     // clean up the lock if this was the last reference
@@ -221,7 +245,7 @@ impl Vfs for GraftVfs {
                     // preventing any concurrent opens from incrementing the
                     // reference count
                     if Arc::strong_count(reserved_lock) == 1 {
-                        locks.remove(handle.tag());
+                        locks.remove(&vol_file.tag);
                     }
 
                     Ok(())

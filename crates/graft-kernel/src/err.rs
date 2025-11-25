@@ -1,5 +1,4 @@
 use crate::{local::fjall_storage::FjallStorageErr, remote::RemoteErr};
-use bytestring::ByteString;
 use graft_core::VolumeId;
 
 #[derive(Debug, thiserror::Error)]
@@ -27,9 +26,6 @@ impl From<FjallStorageErr> for KernelErr {
 pub enum LogicalErr {
     #[error("Unknown Volume {0}")]
     VolumeNotFound(VolumeId),
-
-    #[error("Tag `{0}` not found")]
-    TagNotFound(ByteString),
 
     #[error("Concurrent write to Graft {0}")]
     GraftConcurrentWrite(VolumeId),

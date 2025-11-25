@@ -50,6 +50,7 @@ impl Action for RemoteCommit {
         // these preparations include checking preconditions and setting
         // pending_commit on the Graft
         storage
+            .read_write()
             .remote_commit_prepare(
                 &self.graft,
                 PendingCommit {
@@ -74,6 +75,7 @@ impl Action for RemoteCommit {
         match result {
             Ok(()) => {
                 storage
+                    .read_write()
                     .remote_commit_success(&self.graft, commit)
                     .or_into_ctx()?;
                 Ok(())
@@ -261,13 +263,17 @@ fn attempt_recovery(storage: &FjallStorage, graft: &VolumeId) -> culprit::Result
             Some(commit) if commit.commit_hash() == Some(&pending.commit_hash) => {
                 // It's the same commit. Recovery success!
                 storage
+                    .read_write()
                     .remote_commit_success(&graft.local, commit)
                     .or_into_ctx()?;
                 Ok(())
             }
             Some(commit) => {
                 // Case 2: Divergence detected.
-                storage.drop_pending_commit(&graft.local).or_into_ctx()?;
+                storage
+                    .read_write()
+                    .drop_pending_commit(&graft.local)
+                    .or_into_ctx()?;
                 tracing::warn!(
                     "remote commit rejected for graft {}, commit {}/{} already exists with different hash: {:?}",
                     graft.local,

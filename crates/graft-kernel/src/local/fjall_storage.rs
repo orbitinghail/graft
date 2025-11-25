@@ -134,9 +134,9 @@ impl FjallStorage {
     }
 
     /// Open a read + write txn on storage.
-    /// The returned object holds a lock, any subsequent calls to `ReadWriteGuard`
+    /// The returned object holds a lock, any subsequent calls to `read_write`
     /// will block.
-    fn read_write(&self) -> ReadWriteGuard<'_> {
+    pub(crate) fn read_write(&self) -> ReadWriteGuard<'_> {
         ReadWriteGuard::open(self)
     }
 
@@ -172,71 +172,12 @@ impl FjallStorage {
         Ok(())
     }
 
-    /// Switch a tag to point at the specified graft, creating it if it doesn't exist
-    pub fn switch_graft(
-        &self,
-        tag: &str,
-        graft_vid: VolumeId,
-        remote: Option<VolumeId>,
-    ) -> Result<Graft, FjallStorageErr> {
-        self.read_write().switch_graft(tag, graft_vid, remote)
+    pub fn tag_delete(&self, tag: &str) -> Result<(), FjallStorageErr> {
+        self.tags.remove(tag.into())
     }
 
-    /// Clone the specified remote into a new graft. Assign the resulting
-    /// graft to the specified tag.
-    pub fn clone_remote(&self, tag: &str, remote: VolumeId) -> Result<Graft, FjallStorageErr> {
-        self.read_write().new_graft(tag, VolumeId::random(), remote)
-    }
-
-    pub fn get_or_create_tag(&self, tag: &str) -> Result<Graft, FjallStorageErr> {
-        self.read_write().get_or_create_tag(tag)
-    }
-
-    /// Attempt to execute a local commit to the specified Graft's local volume.
-    ///
-    /// Returns the resulting `VolumeRef` on success
-    pub fn commit(
-        &self,
-        graft: VolumeId,
-        snapshot: Snapshot,
-        page_count: PageCount,
-        segment: SegmentIdx,
-    ) -> Result<Snapshot, FjallStorageErr> {
-        self.read_write()
-            .commit(&graft, snapshot, page_count, segment)
-    }
-
-    /// Verify we are ready to make a remote commit and update the graft
-    /// with a `PendingCommit`
-    pub fn remote_commit_prepare(
-        &self,
-        graft: &VolumeId,
-        pending_commit: PendingCommit,
-    ) -> Result<(), FjallStorageErr> {
-        self.read_write()
-            .remote_commit_prepare(graft, pending_commit)
-    }
-
-    /// Finish the remote commit process by writing out an updated graft
-    /// and recording the remote commit locally
-    pub fn remote_commit_success(
-        &self,
-        graft: &VolumeId,
-        remote_commit: Commit,
-    ) -> Result<(), FjallStorageErr> {
-        self.read_write()
-            .remote_commit_success(graft, remote_commit)
-    }
-
-    /// Drop a pending commit without applying it. This should only be called
-    /// after receiving a rejection from the remote.
-    pub fn drop_pending_commit(&self, graft: &VolumeId) -> Result<(), FjallStorageErr> {
-        self.read_write().drop_pending_commit(graft)
-    }
-
-    /// Commit a batch with a precondition check.
-    pub fn sync_remote_to_local(&self, graft: VolumeId) -> Result<(), FjallStorageErr> {
-        self.read_write().sync_remote_to_local(graft)
+    pub fn graft_delete(&self, graft: &VolumeId) -> Result<(), FjallStorageErr> {
+        self.grafts.remove(graft.clone())
     }
 
     pub fn write_checkpoints(
@@ -247,7 +188,7 @@ impl FjallStorage {
         self.checkpoints.insert(vid, checkpoints)
     }
 
-    pub fn fork_snapshot(&self, snapshot: &Snapshot) -> Result<Graft, FjallStorageErr> {
+    pub fn graft_from_snapshot(&self, snapshot: &Snapshot) -> Result<Graft, FjallStorageErr> {
         let graft = Graft::new(VolumeId::random(), VolumeId::random(), None, None);
         let commits = self
             .read()
@@ -285,22 +226,27 @@ impl<'a> ReadGuard<'a> {
         Self { storage, seqno }
     }
 
+    #[inline]
     fn _tags(&self) -> TypedPartitionSnapshot<ByteString, VolumeId> {
         self.storage.tags.snapshot_at(self.seqno)
     }
 
+    #[inline]
     fn _grafts(&self) -> TypedPartitionSnapshot<VolumeId, Graft> {
         self.storage.grafts.snapshot_at(self.seqno)
     }
 
+    #[inline]
     fn _checkpoints(&self) -> TypedPartitionSnapshot<VolumeId, CachedCheckpoints> {
         self.storage.checkpoints.snapshot_at(self.seqno)
     }
 
+    #[inline]
     fn _log(&self) -> TypedPartitionSnapshot<VolumeRef, Commit> {
         self.storage.log.snapshot_at(self.seqno)
     }
 
+    #[inline]
     fn _pages(&self) -> TypedPartitionSnapshot<PageKey, Page> {
         self.storage.pages.snapshot_at(self.seqno)
     }
@@ -311,20 +257,12 @@ impl<'a> ReadGuard<'a> {
         self._tags().range(..)
     }
 
-    pub fn tag_exists(&self, name: &str) -> Result<bool, FjallStorageErr> {
-        self._tags().contains(name)
+    pub fn tag_exists(&self, tag: &str) -> Result<bool, FjallStorageErr> {
+        self._tags().contains(tag)
     }
 
-    pub fn get_tag(&self, name: &str) -> Result<Option<Graft>, FjallStorageErr> {
-        if let Some(vid) = self._tags().get(name)? {
-            self._grafts().get(&vid)
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn get_tag_graft_id(&self, name: &str) -> Result<Option<VolumeId>, FjallStorageErr> {
-        self._tags().get(name)
+    pub fn get_tag(&self, tag: &str) -> Result<Option<VolumeId>, FjallStorageErr> {
+        self._tags().get(tag)
     }
 
     /// Lookup the latest LSN for a volume
@@ -334,6 +272,10 @@ impl<'a> ReadGuard<'a> {
 
     pub fn iter_grafts(&self) -> impl Iterator<Item = Result<Graft, FjallStorageErr>> + use<> {
         self._grafts().values()
+    }
+
+    pub fn graft_exists(&self, graft: &VolumeId) -> Result<bool, FjallStorageErr> {
+        self._grafts().contains(graft)
     }
 
     pub fn graft(&self, vid: &VolumeId) -> Result<Graft, FjallStorageErr> {
@@ -597,6 +539,7 @@ impl<'a> WriteBatch<'a> {
     fn open(storage: &'a FjallStorage) -> Self {
         Self { storage, batch: storage.keyspace.batch() }
     }
+
     pub fn write_tag(&mut self, tag: &str, graft: VolumeId) {
         self.batch
             .insert_typed(&self.storage.tags, tag.into(), graft);
@@ -640,56 +583,29 @@ impl<'a> ReadWriteGuard<'a> {
         self.read.storage
     }
 
-    /// Creates a new graft with the specified local and remote `VolumeId`'s and
-    /// assigns the result to the specified tag.
-    pub fn new_graft(
-        self,
+    pub fn tag_replace(
+        &self,
         tag: &str,
-        local: VolumeId,
-        remote: VolumeId,
-    ) -> Result<Graft, FjallStorageErr> {
-        // if the remote exists, set the sync point to start from the latest
-        // remote lsn
-        let sync = self
-            .read
-            .latest_lsn(&remote)?
-            .map(|latest_remote| SyncPoint {
-                remote: latest_remote,
-                local_watermark: None,
-            });
-
-        let graft = Graft::new(local.clone(), remote, sync, None);
-
-        let mut batch = self.storage().batch();
-        batch.write_tag(tag, local);
-        batch.write_graft(graft.clone());
-        batch.commit()?;
-
-        tracing::debug!(
-            tag,
-            local_vid = ?graft.local,
-            remote_vid = ?graft.remote,
-            "clone graft"
-        );
-
-        Ok(graft)
+        graft: VolumeId,
+    ) -> Result<Option<VolumeId>, FjallStorageErr> {
+        let out = self.read.get_tag(tag)?;
+        self.storage().tags.insert(tag.into(), graft)?;
+        Ok(out)
     }
 
-    pub fn get_or_create_tag(self, tag: &str) -> Result<Graft, FjallStorageErr> {
-        if let Some(state) = self.read.get_tag(tag)? {
-            Ok(state)
-        } else {
-            self.new_graft(tag, VolumeId::random(), VolumeId::random())
-        }
-    }
-
-    pub fn switch_graft(
+    /// opens a graft. if either the graft's VolumeId or the remote's VolumeId
+    /// are missing, they will be randomly generated. If the graft already
+    /// exists, this function will fail if its remote doesn't match.
+    pub fn graft_open(
         self,
-        tag: &str,
-        graft_vid: VolumeId,
+        graft: Option<VolumeId>,
         remote: Option<VolumeId>,
     ) -> Result<Graft, FjallStorageErr> {
-        if let Some(graft) = self.read._grafts().get(&graft_vid)? {
+        // generate the local graft vid if it's not specified
+        let local = graft.unwrap_or_else(VolumeId::random);
+
+        // lookup the graft if specified
+        if let Some(graft) = self.read._grafts().get(&local)? {
             if let Some(remote) = remote
                 && graft.remote != remote
             {
@@ -700,13 +616,38 @@ impl<'a> ReadWriteGuard<'a> {
                 }
                 .into());
             }
-            self.storage().tags.insert(tag.into(), graft_vid)?;
-            Ok(graft)
-        } else {
-            self.new_graft(tag, graft_vid, remote.unwrap_or_else(VolumeId::random))
+            return Ok(graft);
         }
+
+        // determine the remote vid
+        let remote = remote.unwrap_or_else(VolumeId::random);
+
+        // if the remote exists, set the sync point to start from the latest
+        // remote lsn
+        let sync = self
+            .read
+            .latest_lsn(&remote)?
+            .map(|latest_remote| SyncPoint {
+                remote: latest_remote,
+                local_watermark: None,
+            });
+
+        // create the new graft
+        let graft = Graft::new(local.clone(), remote, sync, None);
+        self.storage().grafts.insert(local, graft.clone())?;
+
+        tracing::debug!(
+            local_vid = ?graft.local,
+            remote_vid = ?graft.remote,
+            "open graft"
+        );
+
+        Ok(graft)
     }
 
+    /// Attempt to execute a local commit to the specified Graft's local volume.
+    ///
+    /// Returns the resulting `VolumeRef` on success
     pub fn commit(
         self,
         graft: &VolumeId,
@@ -740,6 +681,8 @@ impl<'a> ReadWriteGuard<'a> {
         ReadGuard::open(self.storage()).snapshot(&graft.local)
     }
 
+    /// Verify we are ready to make a remote commit and update the graft
+    /// with a `PendingCommit`
     pub fn remote_commit_prepare(
         self,
         graft: &VolumeId,
@@ -776,6 +719,8 @@ impl<'a> ReadWriteGuard<'a> {
         Ok(())
     }
 
+    /// Finish the remote commit process by writing out an updated graft
+    /// and recording the remote commit locally
     pub fn remote_commit_success(
         self,
         graft: &VolumeId,
@@ -810,6 +755,8 @@ impl<'a> ReadWriteGuard<'a> {
         batch.commit()
     }
 
+    /// Drop a pending commit without applying it. This should only be called
+    /// after receiving a rejection from the remote.
     pub fn drop_pending_commit(self, graft: &VolumeId) -> Result<(), FjallStorageErr> {
         let graft = self.read.graft(graft)?;
         self.storage()
