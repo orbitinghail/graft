@@ -280,7 +280,7 @@ impl Runtime {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use graft_core::{PageIdx, page::Page};
+    use graft_core::{PageIdx, VolumeId, page::Page};
     use tokio::time::sleep;
 
     use crate::{
@@ -305,13 +305,16 @@ mod tests {
             Some(Duration::from_secs(1)),
         );
 
-        let handle = runtime.tag_open("leader").unwrap();
-        let remote_vid = handle.remote().unwrap();
+        let remote_vid = VolumeId::random();
+        let graft = runtime
+            .graft_open(None, Some(remote_vid.clone()))
+            .unwrap()
+            .local;
 
-        assert_eq!(handle.status().unwrap().to_string(), "_ r_",);
+        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "_ r_",);
 
         // sanity check volume writer semantics
-        let mut writer = handle.writer().unwrap();
+        let mut writer = runtime.graft_writer(graft.clone()).unwrap();
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i);
@@ -320,10 +323,10 @@ mod tests {
         }
         writer.commit().unwrap();
 
-        assert_eq!(handle.status().unwrap().to_string(), "1 r_",);
+        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "1 r_",);
 
         // sanity check volume reader semantics
-        let reader = handle.reader().unwrap();
+        let reader = runtime.graft_reader(graft.clone()).unwrap();
         tracing::debug!("got snapshot {:?}", reader.snapshot());
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::must_new(i as u32);
@@ -343,9 +346,8 @@ mod tests {
             Some(Duration::from_secs(1)),
         );
 
-        // open the same graft in the second runtime
-        let mut handle_2 = runtime_2.tag_open("follower").unwrap();
-        handle_2.clone_remote(Some(remote_vid)).unwrap();
+        // open the same remote volume in the second runtime
+        let graft_2 = runtime_2.graft_open(None, Some(remote_vid)).unwrap().local;
 
         // let both runtimes run for a little while
         tokio_rt.block_on(async {
@@ -355,11 +357,14 @@ mod tests {
             tracing::info!("remote tree\n{tree}")
         });
 
-        assert_eq!(handle.status().unwrap().to_string(), "1 r1",);
-        assert_eq!(handle_2.status().unwrap().to_string(), "1 r1",);
+        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "1 r1",);
+        assert_eq!(
+            runtime_2.graft_status(&graft_2).unwrap().to_string(),
+            "1 r1",
+        );
 
         // sanity check volume reader semantics in the second runtime
-        let reader_2 = handle_2.reader().unwrap();
+        let reader_2 = runtime_2.graft_reader(graft_2.clone()).unwrap();
         let task = tokio_rt.spawn_blocking(move || {
             for i in [1u8, 2, 5, 9] {
                 let pageidx = PageIdx::must_new(i as u32);
@@ -372,7 +377,7 @@ mod tests {
         tokio_rt.block_on(task).unwrap();
 
         // now write to the second volume, and sync back to the first
-        let mut writer_2 = handle_2.writer().unwrap();
+        let mut writer_2 = runtime_2.graft_writer(graft_2.clone()).unwrap();
         for i in [3u8, 4, 5, 7] {
             let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i + 10);
@@ -389,11 +394,14 @@ mod tests {
             tracing::info!("remote tree\n{tree}")
         });
 
-        assert_eq!(handle.status().unwrap().to_string(), "2 r2",);
-        assert_eq!(handle_2.status().unwrap().to_string(), "2 r2",);
+        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "2 r2",);
+        assert_eq!(
+            runtime_2.graft_status(&graft_2).unwrap().to_string(),
+            "2 r2",
+        );
 
         // sanity check volume reader semantics in the first runtime
-        let reader = handle.reader().unwrap();
+        let reader = runtime.graft_reader(graft.clone()).unwrap();
         let task = tokio_rt.spawn_blocking(move || {
             for i in [3u8, 4, 5, 7] {
                 let pageidx = PageIdx::must_new(i as u32);

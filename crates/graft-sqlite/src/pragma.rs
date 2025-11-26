@@ -207,18 +207,18 @@ impl GraftPragma {
                 )))
             }
 
-            GraftPragma::Info => Ok(Some(format_graft_info(file)?)),
-            GraftPragma::Status => Ok(Some(format_graft_status(file)?)),
+            GraftPragma::Info => Ok(Some(format_graft_info(runtime, file)?)),
+            GraftPragma::Status => Ok(Some(format_graft_status(runtime, file)?)),
 
             GraftPragma::Snapshot => {
                 let snapshot = file.snapshot_or_latest()?;
                 Ok(Some(format!("{snapshot:?}")))
             }
 
-            GraftPragma::Fetch => Ok(Some(fetch_or_pull(file, false)?)),
-            GraftPragma::Pull => Ok(Some(fetch_or_pull(file, true)?)),
+            GraftPragma::Fetch => Ok(Some(fetch_or_pull(runtime, file, false)?)),
+            GraftPragma::Pull => Ok(Some(fetch_or_pull(runtime, file, true)?)),
 
-            GraftPragma::Push => Ok(Some(push(file)?)),
+            GraftPragma::Push => Ok(Some(push(runtime, file)?)),
 
             GraftPragma::Audit => Ok(Some(format_graft_audit(runtime, file)?)),
 
@@ -260,8 +260,8 @@ macro_rules! pluralize {
     };
 }
 
-fn format_graft_info(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
-    let state = file.handle().state().or_into_ctx()?;
+fn format_graft_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let state = runtime.graft_get(&file.graft).or_into_ctx()?;
     let sync = state.sync().map_or_else(
         || "Never synced".into(),
         |sync| match sync.local_watermark {
@@ -287,13 +287,13 @@ fn format_graft_info(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     ))
 }
 
-fn format_graft_status(file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+fn format_graft_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     let mut f = String::new();
 
-    let tag = file.handle().tag();
+    let tag = &file.tag;
     writeln!(&mut f, "On tag {tag}")?;
 
-    let status = file.handle().status().or_into_ctx()?;
+    let status = runtime.graft_status(&file.graft).or_into_ctx()?;
     let local_changes = status.local_status.changes();
     let remote_changes = status.remote_status.changes();
 
@@ -378,14 +378,18 @@ fn format_graft_audit(runtime: &Runtime, file: &VolFile) -> Result<String, Culpr
     }
 }
 
-fn fetch_or_pull(file: &mut VolFile, pull: bool) -> Result<String, Culprit<ErrCtx>> {
-    let pre = file.handle().status().or_into_ctx()?;
+fn fetch_or_pull(
+    runtime: &Runtime,
+    file: &mut VolFile,
+    pull: bool,
+) -> Result<String, Culprit<ErrCtx>> {
+    let pre = runtime.graft_status(&file.graft).or_into_ctx()?;
     if pull {
-        file.handle().pull().or_into_ctx()?;
+        runtime.graft_pull(file.graft.clone()).or_into_ctx()?;
     } else {
-        file.handle().fetch().or_into_ctx()?;
+        runtime.fetch_volume(pre.remote, None).or_into_ctx()?;
     }
-    let post = file.handle().status().or_into_ctx()?;
+    let post = runtime.graft_status(&file.graft).or_into_ctx()?;
 
     let mut f = String::new();
 
@@ -419,13 +423,13 @@ fn fetch_or_pull(file: &mut VolFile, pull: bool) -> Result<String, Culprit<ErrCt
     Ok(f)
 }
 
-fn push(file: &mut VolFile) -> Result<String, Culprit<ErrCtx>> {
-    let pre = file.handle().status().or_into_ctx()?;
+fn push(runtime: &Runtime, file: &mut VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let pre = runtime.graft_status(&file.graft).or_into_ctx()?;
     if let Some(changes) = pre.local_status.changes()
         && !changes.is_empty()
     {
-        file.handle().push().or_into_ctx()?;
-        let post = file.handle().status().or_into_ctx()?;
+        runtime.graft_push(file.graft.clone()).or_into_ctx()?;
+        let post = runtime.graft_status(&file.graft).or_into_ctx()?;
 
         let pushed = AheadStatus::new(post.local_status.base, pre.local_status.base).changes();
 
@@ -450,9 +454,8 @@ fn format_tags(runtime: &Runtime) -> Result<String, Culprit<ErrCtx>> {
     let mut f = String::new();
     let mut tags = runtime.tag_iter();
     while let Some((tag, graft)) = tags.try_next().or_into_ctx()? {
-        let handle = runtime.tag_open(&tag).or_into_ctx()?;
-        let status = handle.status().or_into_ctx()?;
-        let remote = handle.remote().or_into_ctx()?;
+        let status = runtime.graft_status(&graft).or_into_ctx()?;
+        let remote = &status.remote;
 
         writedoc!(
             &mut f,
@@ -468,7 +471,6 @@ fn format_tags(runtime: &Runtime) -> Result<String, Culprit<ErrCtx>> {
 }
 
 fn format_grafts(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
-    let current_graft = file.handle().graft().or_into_ctx()?;
     let mut f = String::new();
     let mut grafts = runtime.graft_iter();
     while let Some(graft) = grafts.try_next().or_into_ctx()? {
@@ -483,7 +485,7 @@ fn format_grafts(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<Er
                   Remote: {remote}
                   Status: {status}
             ",
-            if local == current_graft {
+            if local == file.graft {
                 " (current)"
             } else {
                 ""

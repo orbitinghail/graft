@@ -36,51 +36,8 @@ A **Tag** is a mutable string that points at a Graft (by its local VolumeId).
 
 **Decision**: remove TagHandle, move all methods to Runtime, and have apps interact with Tags and Grafts directly.
 
-- [ ] implement methods on Runtime
+- [x] implement methods on Runtime
 - [ ] rename volumereader/writer to graft\*
 - [x] remove tag handle
 - [ ] sync_remote_to_local should just fast forward the sync point, no need to copy commits
-- [ ] fixup sqlite extension
-
-## Runtime actions
-
-### tags
-
-- iter tags along with their graft ids
-- tag exists
-- get tag -> retrieve a tag by name
-- get_or_init tag -> open a tag by name, creating it if it doesn't exist
-- delete tag -> remove tag, but not underlying graft
-
-### grafts
-
-- iter grafts
-- graft exists
-- open graft -> open a graft specifying the local and remote volumes
-  -> if a graft already exists for the local volume, returns that graft
-  -> erroring if the remote is specified and doesn't match
-- create graft from snapshot -> create a new graft from a snapshot
-- get graft -> retrieve a graft by local id
-- delete graft -> removes a graft and it's local volume, doesn't touch the remote
-- pull graft -> fetches the remote and then syncs remote to local
-- push graft -> remote commit
-- graft status -> the status of a graft
-- graft snapshot -> the latest snapshot of a graft
-- graft reader -> a reader for a graft
-- graft writer -> a writer for a graft
-
-### volumes
-
-- fetch volume -> fetches changes for a volume up to a particular LSN (or latest)
-
-### snapshots
-
-- checksum snapshot
-- snapshot page count
-- snapshot missing pages
-- hydrate snapshot -> fetches all pages for a snapshot
-
-# STATUS
-
-- almost done updating pragmas
-- need to make sure to test out everything, then switch to the remaining tasks for taxonomy
+- [x] fixup sqlite extension

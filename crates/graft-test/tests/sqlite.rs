@@ -43,8 +43,10 @@ fn test_sync_and_reset() {
 
     // verify both nodes are now pointing at the same remote LSN
     // and they have no outstanding local changes
-    let status1 = runtime1.tag_open("main").unwrap().status().unwrap();
-    let status2 = runtime2.tag_open("main").unwrap().status().unwrap();
+    let graft1 = runtime1.tag_get("main").unwrap().unwrap();
+    let status1 = runtime1.graft_status(&graft1).unwrap();
+    let graft2 = runtime2.tag_get("main").unwrap().unwrap();
+    let status2 = runtime2.graft_status(&graft2).unwrap();
     assert_eq!(status1.remote, status2.remote);
     assert_eq!(status1.remote_status.base, status2.remote_status.base);
     assert_eq!(status1.local_status.changes(), None);
