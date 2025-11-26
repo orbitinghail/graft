@@ -10,7 +10,7 @@ rust-version = { workspace = true }
 
 [lib]
 name = "graft"
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 graft-core = { path = "../graft-core", version = "0.1.5" }
