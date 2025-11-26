@@ -9,9 +9,9 @@ use graft_core::{
 };
 use graft_kernel::{
     graft::AheadStatus,
+    graft_reader::GraftRead,
+    graft_writer::{GraftWrite, GraftWriter},
     rt::runtime::Runtime,
-    volume_reader::VolumeRead,
-    volume_writer::{VolumeWrite, VolumeWriter},
 };
 use indoc::{formatdoc, indoc, writedoc};
 use sqlite_plugin::{
@@ -495,7 +495,7 @@ fn format_grafts(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<Er
     Ok(f)
 }
 
-fn graft_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, Culprit<ErrCtx>> {
+fn graft_import(mut writer: GraftWriter, path: PathBuf) -> Result<String, Culprit<ErrCtx>> {
     if writer.page_count().or_into_ctx()? > PageCount::ZERO {
         return pragma_err!("Refusing to import into a non-empty database.");
     }

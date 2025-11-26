@@ -12,14 +12,14 @@ use tryiter::TryIteratorExt;
 use crate::{
     KernelErr,
     graft::{Graft, GraftStatus},
+    graft_reader::GraftReader,
+    graft_writer::GraftWriter,
     remote::Remote,
     rt::{
         action::{Action, FetchSegment, FetchVolume, HydrateSnapshot, RemoteCommit},
         task::{autosync::AutosyncTask, supervise},
     },
     snapshot::Snapshot,
-    volume_reader::VolumeReader,
-    volume_writer::VolumeWriter,
 };
 
 use crate::local::fjall_storage::FjallStorage;
@@ -209,15 +209,15 @@ impl Runtime {
         self.storage().read().snapshot(graft).or_into_ctx()
     }
 
-    pub fn graft_reader(&self, graft: VolumeId) -> Result<VolumeReader> {
+    pub fn graft_reader(&self, graft: VolumeId) -> Result<GraftReader> {
         let snapshot = self.graft_snapshot(&graft)?;
-        Ok(VolumeReader::new(self.clone(), graft, snapshot))
+        Ok(GraftReader::new(self.clone(), graft, snapshot))
     }
 
-    pub fn graft_writer(&self, graft: VolumeId) -> Result<VolumeWriter> {
+    pub fn graft_writer(&self, graft: VolumeId) -> Result<GraftWriter> {
         let snapshot = self.graft_snapshot(&graft)?;
         let page_count = self.snapshot_pages(&snapshot)?;
-        Ok(VolumeWriter::new(self.clone(), graft, snapshot, page_count))
+        Ok(GraftWriter::new(self.clone(), graft, snapshot, page_count))
     }
 }
 
@@ -284,8 +284,8 @@ mod tests {
     use tokio::time::sleep;
 
     use crate::{
-        local::fjall_storage::FjallStorage, remote::RemoteConfig, rt::runtime::Runtime,
-        volume_reader::VolumeRead, volume_writer::VolumeWrite,
+        graft_reader::GraftRead, graft_writer::GraftWrite, local::fjall_storage::FjallStorage,
+        remote::RemoteConfig, rt::runtime::Runtime,
     };
 
     #[graft_test::test]

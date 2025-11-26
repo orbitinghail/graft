@@ -37,7 +37,7 @@ A **Tag** is a mutable string that points at a Graft (by its local VolumeId).
 **Decision**: remove TagHandle, move all methods to Runtime, and have apps interact with Tags and Grafts directly.
 
 - [x] implement methods on Runtime
-- [ ] rename volumereader/writer to graft\*
+- [x] rename volumereader/writer to graft\*
 - [x] remove tag handle
 - [ ] sync_remote_to_local should just fast forward the sync point, no need to copy commits
 - [x] fixup sqlite extension

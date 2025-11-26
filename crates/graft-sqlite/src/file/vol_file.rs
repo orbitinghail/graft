@@ -13,10 +13,10 @@ use graft_core::{
     page_count::PageCount,
 };
 use graft_kernel::{
+    graft_reader::{GraftRead, GraftReader},
+    graft_writer::{GraftWrite, GraftWriter},
     rt::runtime::Runtime,
     snapshot::Snapshot,
-    volume_reader::{VolumeRead, VolumeReader},
-    volume_writer::{VolumeWrite, VolumeWriter},
 };
 use parking_lot::{Mutex, MutexGuard};
 use sqlite_plugin::flags::{LockLevel, OpenOpts};
@@ -31,8 +31,8 @@ const VERSION_VALID_FOR_NUMBER_OFFSET: usize = 92;
 
 enum VolFileState {
     Idle,
-    Shared { reader: VolumeReader },
-    Reserved { writer: VolumeWriter },
+    Shared { reader: GraftReader },
+    Reserved { writer: GraftWriter },
     Committing,
 }
 
@@ -200,7 +200,7 @@ impl VfsFile for VolFile {
 
                     // convert the reader into a writer
                     self.state = VolFileState::Reserved {
-                        writer: VolumeWriter::try_from(reader.clone()).or_into_ctx()?,
+                        writer: GraftWriter::try_from(reader.clone()).or_into_ctx()?,
                     };
 
                     // Explicitly leak the reserved lock

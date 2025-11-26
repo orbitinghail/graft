@@ -3,20 +3,20 @@ use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
 
 use crate::{
     KernelErr,
+    graft_reader::{GraftRead, GraftReader},
     rt::runtime::Runtime,
     snapshot::Snapshot,
-    volume_reader::{VolumeRead, VolumeReader},
 };
 
-/// A type which can write to a Volume
-pub trait VolumeWrite {
+/// A type which can write to a Graft
+pub trait GraftWrite {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), KernelErr>;
     fn truncate(&mut self, page_count: PageCount) -> Result<(), KernelErr>;
-    fn commit(self) -> Result<VolumeReader, KernelErr>;
+    fn commit(self) -> Result<GraftReader, KernelErr>;
 }
 
 #[derive(Debug)]
-pub struct VolumeWriter {
+pub struct GraftWriter {
     runtime: Runtime,
     graft: VolumeId,
     snapshot: Snapshot,
@@ -24,7 +24,7 @@ pub struct VolumeWriter {
     segment: SegmentIdx,
 }
 
-impl VolumeWriter {
+impl GraftWriter {
     pub(crate) fn new(
         runtime: Runtime,
         graft: VolumeId,
@@ -42,7 +42,7 @@ impl VolumeWriter {
     }
 }
 
-impl VolumeRead for VolumeWriter {
+impl GraftRead for GraftWriter {
     fn snapshot(&self) -> &Snapshot {
         &self.snapshot
     }
@@ -68,7 +68,7 @@ impl VolumeRead for VolumeWriter {
     }
 }
 
-impl VolumeWrite for VolumeWriter {
+impl GraftWrite for GraftWriter {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), KernelErr> {
         self.page_count = self.page_count.max(pageidx.pages());
         self.segment.insert(pageidx);
@@ -91,13 +91,13 @@ impl VolumeWrite for VolumeWriter {
             .or_into_ctx()
     }
 
-    fn commit(self) -> Result<VolumeReader, KernelErr> {
+    fn commit(self) -> Result<GraftReader, KernelErr> {
         let snapshot = self
             .runtime
             .storage()
             .read_write()
             .commit(&self.graft, self.snapshot, self.page_count, self.segment)
             .or_into_ctx()?;
-        Ok(VolumeReader::new(self.runtime, self.graft, snapshot))
+        Ok(GraftReader::new(self.runtime, self.graft, snapshot))
     }
 }

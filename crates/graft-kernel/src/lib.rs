@@ -11,10 +11,10 @@ pub mod rt {
 
 pub mod err;
 pub mod graft;
+pub mod graft_reader;
+pub mod graft_writer;
 pub mod oracle;
 pub mod remote;
 pub mod snapshot;
-pub mod volume_reader;
-pub mod volume_writer;
 
 pub use err::{KernelErr, LogicalErr};
