@@ -788,46 +788,33 @@ impl<'a> ReadWriteGuard<'a> {
             lsns = %remote_changes.to_string(),
             remote = ?graft.remote,
             local = ?graft.local,
-            "syncing commits from remote to local volume"
+            "fast-forwarding graft to its remote"
         );
 
-        // save the remote lsn for later
+        // to perform the sync, we simply need to update the graft's SyncPoint
+        // to reference the latest remote_lsn
         let remote_lsn = *remote_changes.end();
 
-        // construct an iterator of new local lsns
-        // note: this iterator must return new local lsns in reverse as the
-        // commits iterator returns commits from newest to oldest
-        let num_commits = remote_changes.len();
-        let local_first = latest_local.map_or(LSN::FIRST, |l| l.next());
-        let local_last = local_first
-            .checked_add(num_commits - 1)
-            .expect("LSN overflow");
-        let mut new_local_lsns = (local_first..=local_last).iter().rev();
-
-        // iterate missing remote commits, and commit them to the local volume
-        let search = Snapshot::new(graft.remote.clone(), remote_changes);
-        let mut batch = self.storage().batch();
-        let mut commits = self.read.commits(&search);
-        while let Some(commit) = commits.try_next().or_into_ctx()? {
-            let next_lsn = new_local_lsns
-                .next()
-                .expect("BUG: storage has more commits than expected");
-            // map the remote commit into the local volume
-            batch.write_commit(commit.with_vid(graft.local.clone()).with_lsn(next_lsn));
-        }
-
-        assert!(
-            new_local_lsns.next().is_none(),
-            "BUG: not all new local lsns were used"
-        );
+        let new_sync = match graft.sync() {
+            Some(sync) => {
+                assert!(
+                    remote_lsn > sync.remote,
+                    "BUG: attempt to sync graft to older version of the remote"
+                );
+                SyncPoint {
+                    remote: remote_lsn,
+                    local_watermark: sync.local_watermark,
+                }
+            }
+            None => SyncPoint {
+                remote: remote_lsn,
+                local_watermark: None,
+            },
+        };
 
         // update the sync point
-        batch.write_graft(graft.with_sync(Some(SyncPoint {
-            local_watermark: Some(local_last),
-            remote: remote_lsn,
-        })));
-
-        // commit the batch
-        batch.commit()
+        self.storage()
+            .grafts
+            .insert(graft.local.clone(), graft.with_sync(Some(new_sync)))
     }
 }

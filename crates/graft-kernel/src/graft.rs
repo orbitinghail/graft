@@ -183,7 +183,7 @@ pub struct GraftStatus {
 ///  - `_ r_`: empty volume
 ///  - `123 r_`: never synced
 ///  - `123 r130`: remote and local in sync
-///  - `_ r130+130`: remote is 130 commits ahead, local is empty
+///  - `_ r130+7`: remote is 7 commits ahead, local is empty
 ///  - `123+3 r130`: local is 3 commits ahead
 ///  - `123 r130+3`: remote is 3 commits ahead
 ///  - `123+2 r130+3`: local and remote have diverged

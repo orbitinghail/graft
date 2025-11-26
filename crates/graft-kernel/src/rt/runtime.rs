@@ -360,7 +360,7 @@ mod tests {
         assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "1 r1",);
         assert_eq!(
             runtime_2.graft_status(&graft_2).unwrap().to_string(),
-            "1 r1",
+            "_ r1",
         );
 
         // sanity check volume reader semantics in the second runtime
@@ -394,10 +394,10 @@ mod tests {
             tracing::info!("remote tree\n{tree}")
         });
 
-        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "2 r2",);
+        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "1 r2",);
         assert_eq!(
             runtime_2.graft_status(&graft_2).unwrap().to_string(),
-            "2 r2",
+            "1 r2",
         );
 
         // sanity check volume reader semantics in the first runtime
