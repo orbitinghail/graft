@@ -90,7 +90,7 @@ impl RemoteErr {
 
 pub type Result<T> = culprit::Result<T, RemoteErr>;
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RemoteConfig {
     /// In memory object store

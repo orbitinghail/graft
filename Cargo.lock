@@ -1184,12 +1184,14 @@ dependencies = [
  "enum_dispatch",
  "graft-core",
  "graft-kernel",
- "graft-tracing",
  "indoc",
  "itertools 0.14.0",
  "parking_lot",
+ "platform-dirs",
+ "serde",
  "sqlite-plugin",
  "thiserror 2.0.17",
+ "tokio",
  "tracing",
  "tryiter",
  "zerocopy",
@@ -2314,7 +2316,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2887,9 +2889,9 @@ dependencies = [
 
 [[package]]
 name = "sqlite-plugin"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cbff4aac8be78a982cc6b3fa71a0f0e6e2176be9335ec3f62e751a357c73ea9"
+checksum = "2c8418de47f616a662aec91023fa5a3b4f1b1f3ca017ce98253e42721c16661b"
 dependencies = [
  "bindgen",
 ]
@@ -3298,6 +3300,7 @@ dependencies = [
  "matchers",
  "nu-ansi-term",
  "once_cell",
+ "parking_lot",
  "regex-automata",
  "sharded-slab",
  "smallvec",

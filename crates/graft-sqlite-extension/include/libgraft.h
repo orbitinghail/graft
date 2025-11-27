@@ -4,12 +4,10 @@
 extern "C" {
 #endif
 
-#include <sqlite3.h>
-
 /// Initializes the statically linked graft extension.
-/// Must be called with a valid `sqlite3*` database handle.
+/// Registers graft directly with statically linked SQLite3 symbols.
 /// Returns 0 on success, non-zero on error.
-int graft_static_init(sqlite3 *db);
+int graft_static_init();
 
 #ifdef __cplusplus
 }

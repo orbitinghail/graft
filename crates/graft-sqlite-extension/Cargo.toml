@@ -18,7 +18,7 @@ graft-kernel = { path = "../graft-kernel", version = "0.1.5" }
 graft-sqlite = { path = "../graft-sqlite", version = "0.1.5" }
 graft-tracing = { path = "../graft-tracing", version = "0.1.5" }
 
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio = { workspace = true }
 tracing = { workspace = true }
 platform-dirs = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

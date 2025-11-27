@@ -2,11 +2,9 @@ use std::{borrow::Cow, collections::HashMap, fmt::Debug, sync::Arc};
 
 use culprit::{Culprit, ResultExt};
 use graft_kernel::{KernelErr, LogicalErr, rt::runtime::Runtime};
-use graft_tracing::TracingConsumer;
 use parking_lot::Mutex;
 use sqlite_plugin::{
     flags::{AccessFlags, CreateMode, LockLevel, OpenKind, OpenMode, OpenOpts},
-    logger::{SqliteLogLevel, SqliteLogger},
     vars::{
         self, SQLITE_BUSY, SQLITE_BUSY_SNAPSHOT, SQLITE_CANTOPEN, SQLITE_INTERNAL, SQLITE_IOERR,
         SQLITE_NOTFOUND,
@@ -124,28 +122,6 @@ impl Vfs for GraftVfs {
         vars::SQLITE_IOCAP_SAFE_APPEND |
         // information is written to disk in the same order as calls to xWrite()
         vars::SQLITE_IOCAP_SEQUENTIAL
-    }
-
-    fn register_logger(&self, logger: SqliteLogger) {
-        #[derive(Clone)]
-        struct Writer(Arc<Mutex<SqliteLogger>>);
-
-        impl std::io::Write for Writer {
-            #[inline]
-            fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-                self.0.lock().log(SqliteLogLevel::Notice, data);
-                Ok(data.len())
-            }
-
-            #[inline]
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-
-        let writer = Writer(Arc::new(Mutex::new(logger)));
-        let make_writer = move || writer.clone();
-        graft_tracing::init_tracing_with_writer(TracingConsumer::Tool, make_writer);
     }
 
     fn pragma(
