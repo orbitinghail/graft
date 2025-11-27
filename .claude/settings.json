@@ -5,7 +5,8 @@
       "Bash(jq:*)",
       "Bash(just:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(sqlite3:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

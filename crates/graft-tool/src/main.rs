@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
-use graft_core::{ClientId, SegmentId, VolumeId};
+use graft_core::{SegmentId, VolumeId};
 
 #[derive(thiserror::Error, Debug)]
 pub enum HexEncodedKeyErr {
@@ -40,8 +40,6 @@ enum Tool {
     Vid,
     /// Generate a Segment ID (sid)
     Sid,
-    /// Generate a Client ID (cid)
-    Cid,
 
     /// Generate a new 32 byte hex encoded random key to use to create and
     /// validate Graft api tokens
@@ -77,7 +75,6 @@ fn main() {
     match cli.tool {
         Tool::Vid => println!("{}", VolumeId::random()),
         Tool::Sid => println!("{}", SegmentId::random()),
-        Tool::Cid => println!("{}", ClientId::random()),
         Tool::SecretKey => {
             let rand = rand::random::<[u8; 32]>();
             println!("{}", hex::encode(rand));

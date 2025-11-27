@@ -7,7 +7,7 @@ use std::{
 };
 
 use graft_core::{
-    ClientId, PageCount, PageIdx, VolumeId,
+    PageCount, PageIdx, VolumeId,
     page::{PAGESIZE, Page},
     pageidx,
 };
@@ -47,7 +47,7 @@ pub struct GraftTestRuntime {
     remote: Arc<Remote>,
     shutdown_tx: Arc<tokio::sync::Notify>,
 
-    // set the first time a vfs is setup for this test runtime
+    // this is set the first time a vfs is created for this test runtime
     vfs_id: Option<CString>,
 }
 
@@ -105,7 +105,15 @@ impl GraftTestRuntime {
 
     pub fn open_sqlite(&mut self, dbname: &str, remote: Option<VolumeId>) -> GraftSqliteConn {
         let vfs_id = self.vfs_id.get_or_insert_with(|| {
-            let vfs_id = CString::new(ClientId::random().serialize()).unwrap();
+            // generate a 16 byte random ascii CString
+            let vfs_id = {
+                let mut bytes = [0u8; 16];
+                for byte in bytes.iter_mut() {
+                    *byte = rand::random::<u8>() % 26 + b'a';
+                }
+                CString::new(bytes.to_vec()).unwrap()
+            };
+
             register_static(
                 vfs_id.clone(),
                 GraftVfs::new(self.runtime.clone()),
