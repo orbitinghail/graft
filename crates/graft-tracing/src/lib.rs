@@ -37,6 +37,7 @@ pub enum TracingConsumer {
 }
 
 /// Initializes tracing with stdout as the output.
+#[must_use]
 pub fn setup_tracing(consumer: TracingConsumer) -> impl SubscriberExt {
     setup_tracing_with_writer(consumer, std::io::stdout)
 }
@@ -49,6 +50,7 @@ pub fn setup_tracing(consumer: TracingConsumer) -> impl SubscriberExt {
 ///
 /// # Type Parameters
 /// * `W` - Writer type that implements the [`tracing_subscriber::fmt::MakeWriter`] trait
+#[must_use]
 pub fn setup_tracing_with_writer<W>(consumer: TracingConsumer, writer: W) -> impl SubscriberExt
 where
     W: for<'writer> MakeWriter<'writer> + 'static + Send + Sync,
