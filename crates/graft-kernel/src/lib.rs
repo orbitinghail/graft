@@ -15,6 +15,7 @@ pub mod graft_reader;
 pub mod graft_writer;
 pub mod oracle;
 pub mod remote;
+pub mod setup;
 pub mod snapshot;
 
 pub use err::{KernelErr, LogicalErr};

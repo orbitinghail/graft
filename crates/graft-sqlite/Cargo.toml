@@ -16,7 +16,6 @@ workspace = true
 [dependencies]
 graft-core = { path = "../graft-core", version = "0.1.5" }
 graft-kernel = { path = "../graft-kernel", version = "0.1.5" }
-graft-tracing = { path = "../graft-tracing", version = "0.1.5" }
 
 bytes = { workspace = true }
 bytestring = { workspace = true }
@@ -25,8 +24,17 @@ enum_dispatch = { workspace = true }
 indoc = { workspace = true }
 itertools = { workspace = true }
 parking_lot = { workspace = true }
-sqlite-plugin = { workspace = true }
+platform-dirs = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+sqlite-plugin = { workspace = true, default-features = false }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tryiter = { workspace = true }
+tokio = { workspace = true }
 zerocopy = { workspace = true }
+
+[features]
+default = []
+# export a register_static method allowing the Graft SQLite extension to be
+# statically setup in a Rust project
+register-static = ["sqlite-plugin/static"]

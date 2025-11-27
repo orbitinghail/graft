@@ -3,21 +3,22 @@ use std::{
     ffi::c_void,
     fmt::Display,
     fs::OpenOptions,
-    future::pending,
     num::NonZero,
-    path::PathBuf,
+    os::raw::c_int,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Duration,
 };
 
 use config::{Config, FileFormat};
 use graft_kernel::{
-    local::fjall_storage::FjallStorage, remote::RemoteConfig, rt::runtime::Runtime,
+    remote::RemoteConfig,
+    setup::{GraftConfig, setup_graft},
 };
 use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{TracingConsumer, init_tracing_with_writer};
 use serde::Deserialize;
 use sqlite_plugin::{
+    logger::{SqliteLogLevel, SqliteLogger},
     vars,
     vfs::{RegisterOpts, SqliteErr},
 };
@@ -29,7 +30,7 @@ fn default_data_dir() -> PathBuf {
 }
 
 #[derive(Debug, Deserialize)]
-struct ExtensionConfig {
+pub struct ExtensionConfig {
     remote: RemoteConfig,
 
     #[serde(default = "default_data_dir")]
@@ -45,11 +46,21 @@ struct ExtensionConfig {
     autosync: Option<NonZero<u64>>,
 }
 
-pub fn setup_log_file(path: PathBuf) {
+impl ExtensionConfig {
+    pub fn graft_config(&self) -> GraftConfig {
+        GraftConfig {
+            remote: self.remote.clone(),
+            data_dir: self.data_dir.clone(),
+            autosync: self.autosync,
+        }
+    }
+}
+
+pub fn setup_log_file(path: &Path) {
     let file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&path)
+        .open(path)
         .expect("failed to open log file");
 
     init_tracing_with_writer(TracingConsumer::Tool, Mutex::new(file));
@@ -65,7 +76,6 @@ impl<T: Display> From<T> for InitErr {
 }
 
 /// Write an error message to the `SQLite` error message pointer if it is not null.
-#[cfg(feature = "dynamic")]
 fn write_err_msg(
     p_api: *mut sqlite_plugin::sqlite3_api_routines,
     msg: &str,
@@ -116,36 +126,58 @@ fn resolve_config() -> Result<ExtensionConfig, InitErr> {
     Ok(config.build()?.try_deserialize()?)
 }
 
-fn init_vfs() -> Result<(RegisterOpts, GraftVfs), InitErr> {
+fn setup_logger(logger: SqliteLogger) {
+    #[derive(Clone)]
+    struct Writer(Arc<Mutex<SqliteLogger>>);
+
+    impl std::io::Write for Writer {
+        #[inline]
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            let msg = str::from_utf8(data).map_err(std::io::Error::other)?;
+            let logger = self.0.lock().expect("logger mutex poisoned");
+            for line in msg.lines() {
+                logger.log(SqliteLogLevel::Notice, line);
+            }
+            Ok(data.len())
+        }
+
+        #[inline]
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let writer = Writer(Arc::new(Mutex::new(logger)));
+    let make_writer = move || writer.clone();
+    graft_tracing::init_tracing_with_writer(TracingConsumer::Tool, make_writer);
+}
+
+#[cfg(feature = "dynamic")]
+fn sqlite3_graft_init_inner(
+    p_api: *mut sqlite_plugin::sqlite3_api_routines,
+) -> Result<(), InitErr> {
     let config = resolve_config()?;
-    if let Some(path) = config.log_file {
+    if let Some(path) = &config.log_file {
         setup_log_file(path);
     }
 
-    // spin up a tokio current thread runtime in a new thread
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-    let tokio_handle = rt.handle().clone();
-    std::thread::Builder::new()
-        .name("graft-runtime".to_string())
-        .spawn(move || {
-            // run the tokio event loop in this thread
-            rt.block_on(pending::<()>())
-        })?;
+    // initialize graft
+    let runtime = setup_graft(config.graft_config())?;
+    let vfs = GraftVfs::new(runtime);
+    let opts = RegisterOpts { make_default: config.make_default };
 
-    let remote = Arc::new(config.remote.build()?);
-    let storage = Arc::new(FjallStorage::open(config.data_dir)?);
-    let autosync = config.autosync.map(|s| Duration::from_secs(s.get()));
-    let runtime = Runtime::new(tokio_handle, remote, storage, autosync);
+    // Safety: `p_api` must be a valid, aligned pointer to a `sqlite3_api_routines` struct
+    let result =
+        unsafe { sqlite_plugin::vfs::register_dynamic(p_api, c"graft".to_owned(), vfs, opts) };
+    let logger = result.map_err(|err| InitErr(err, "Failed to register Graft VFS".into()))?;
 
-    Ok((
-        RegisterOpts { make_default: config.make_default },
-        GraftVfs::new(runtime),
-    ))
+    // setup logger will NOOP if we already setup a log file earlier
+    setup_logger(logger);
+
+    Ok(())
 }
 
-/// Register the VFS with `SQLite`.
+/// This function is automatically called by `SQLite` upon loading the extension.
 /// # Safety
 /// This function must be called by sqlite's extension loading mechanism.
 #[cfg(feature = "dynamic")]
@@ -154,19 +186,8 @@ pub unsafe extern "C" fn sqlite3_graft_init(
     _db: *mut c_void,
     pz_err_msg: *mut *const std::ffi::c_char,
     p_api: *mut sqlite_plugin::sqlite3_api_routines,
-) -> std::os::raw::c_int {
-    match init_vfs().and_then(|(opts, vfs)| {
-        if let Err(err) =
-            // Safety: `p_api` must be a valid, aligned pointer to a `sqlite3_api_routines` struct
-            unsafe {
-                sqlite_plugin::vfs::register_dynamic(p_api, c"graft".to_owned(), vfs, opts)
-            }
-        {
-            Err(InitErr(err, "Failed to register Graft VFS".into()))
-        } else {
-            Ok(())
-        }
-    }) {
+) -> c_int {
+    match sqlite3_graft_init_inner(p_api) {
         Ok(()) => sqlite_plugin::vars::SQLITE_OK_LOAD_PERMANENTLY,
         Err(err) => match write_err_msg(p_api, err.1.as_ref(), pz_err_msg) {
             Ok(()) => err.0,
@@ -175,23 +196,31 @@ pub unsafe extern "C" fn sqlite3_graft_init(
     }
 }
 
-/// Register the VFS with `SQLite`.
-/// # Safety
-/// This function must be passed a pointer to a valid SQLite db connection.
+#[cfg(feature = "static")]
+fn graft_static_init_inner() -> Result<(), InitErr> {
+    let config = resolve_config()?;
+    if let Some(path) = &config.log_file {
+        setup_log_file(path);
+    }
+
+    // initialize graft
+    let runtime = setup_graft(config.graft_config())?;
+    let vfs = GraftVfs::new(runtime);
+    let opts = RegisterOpts { make_default: config.make_default };
+
+    // Safety: `p_api` must be a valid, aligned pointer to a `sqlite3_api_routines` struct
+    let result = sqlite_plugin::vfs::register_static(c"graft".to_owned(), vfs, opts);
+    let logger = result.map_err(|err| InitErr(err, "Failed to register Graft VFS".into()))?;
+
+    // setup logger will NOOP if we already setup a log file earlier
+    setup_logger(logger);
+
+    Ok(())
+}
+
+/// Register the Graft SQLite extension statically.
 #[cfg(feature = "static")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn graft_static_init(_db: *mut c_void) -> std::os::raw::c_int {
-    match init_vfs().and_then(|(opts, vfs)| {
-        if let Err(err) = sqlite_plugin::vfs::register_static(c"graft".to_owned(), vfs, opts) {
-            Err(InitErr(err, "Failed to register Graft VFS".into()))
-        } else {
-            Ok(())
-        }
-    }) {
-        Ok(()) => 0,
-        Err(err) => {
-            let _ = err.1;
-            err.0
-        }
-    }
+pub unsafe extern "C" fn graft_static_init() -> c_int {
+    graft_static_init_inner().map_or_else(|err| err.0, |_| 0)
 }

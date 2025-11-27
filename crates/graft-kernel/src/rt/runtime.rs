@@ -131,7 +131,7 @@ impl Runtime {
         self.storage().read().get_tag(tag).or_into_ctx()
     }
 
-    /// retrieves the VolumeId for a tag, replacing it with the provided graft
+    /// retrieves the `VolumeId` for a tag, replacing it with the provided graft
     pub fn tag_replace(&self, tag: &str, graft: VolumeId) -> Result<Option<VolumeId>> {
         self.storage()
             .read_write()
@@ -157,7 +157,7 @@ impl Runtime {
         self.storage().read().graft_exists(graft).or_into_ctx()
     }
 
-    /// opens a graft. if either the graft's VolumeId or the remote's VolumeId
+    /// opens a graft. if either the graft's `VolumeId` or the remote's `VolumeId`
     /// are missing, they will be randomly generated. If the graft already
     /// exists, this function will fail if its remote doesn't match.
     pub fn graft_open(&self, graft: Option<VolumeId>, remote: Option<VolumeId>) -> Result<Graft> {
@@ -172,7 +172,7 @@ impl Runtime {
         self.storage().graft_from_snapshot(snapshot).or_into_ctx()
     }
 
-    /// retrieves an existing graft. returns LogicalErr::GraftNotFound if missing
+    /// retrieves an existing graft. returns `LogicalErr::GraftNotFound` if missing
     pub fn graft_get(&self, graft: &VolumeId) -> Result<Graft> {
         self.storage().read().graft(graft).or_into_ctx()
     }

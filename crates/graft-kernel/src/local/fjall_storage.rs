@@ -593,7 +593,7 @@ impl<'a> ReadWriteGuard<'a> {
         Ok(out)
     }
 
-    /// opens a graft. if either the graft's VolumeId or the remote's VolumeId
+    /// opens a graft. if either the graft's `VolumeId` or the remote's `VolumeId`
     /// are missing, they will be randomly generated. If the graft already
     /// exists, this function will fail if its remote doesn't match.
     pub fn graft_open(

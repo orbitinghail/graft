@@ -189,7 +189,7 @@ impl GraftPragma {
                         graft.local,
                     )))
                 } else {
-                    return pragma_err!("ERROR: must hydrate volume before forking");
+                    pragma_err!("ERROR: must hydrate volume before forking")
                 }
             }
 
