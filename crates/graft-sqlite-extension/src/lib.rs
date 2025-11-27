@@ -51,7 +51,7 @@ impl ExtensionConfig {
         GraftConfig {
             remote: self.remote.clone(),
             data_dir: self.data_dir.clone(),
-            autosync: self.autosync.clone(),
+            autosync: self.autosync,
         }
     }
 }
@@ -133,7 +133,7 @@ fn setup_logger(logger: SqliteLogger) {
     impl std::io::Write for Writer {
         #[inline]
         fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-            let msg = str::from_utf8(data).map_err(|err| std::io::Error::other(err))?;
+            let msg = str::from_utf8(data).map_err(std::io::Error::other)?;
             let logger = self.0.lock().expect("logger mutex poisoned");
             for line in msg.lines() {
                 logger.log(SqliteLogLevel::Notice, line);
