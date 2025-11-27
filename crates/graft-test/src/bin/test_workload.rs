@@ -6,7 +6,7 @@
 // use file_lock::{FileLock, FileOptions};
 // use graft_core::gid::ClientId;
 // use graft_test::Ticker;
-// use graft_tracing::{TracingConsumer, init_tracing, running_in_antithesis};
+// use graft_tracing::{TracingConsumer, setup_tracing, running_in_antithesis};
 // use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 // use rand::Rng;
 
@@ -66,7 +66,7 @@ fn main() {
 
 //     let mut rng = precept::random::rng();
 //     let (cid, _worker_lock) = get_or_init_cid();
-//     init_tracing(TracingConsumer::Test, Some(cid.short()));
+//     setup_tracing(TracingConsumer::Test, Some(cid.short())).init();
 //     let args = Args::parse();
 
 //     let workload: WorkloadConfig = Config::builder()
