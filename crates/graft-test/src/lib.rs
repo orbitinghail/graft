@@ -17,7 +17,7 @@ use graft_kernel::{
     rt::runtime::Runtime,
 };
 use graft_sqlite::vfs::GraftVfs;
-use graft_tracing::{TracingConsumer, init_tracing_with_writer};
+use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing_with_writer};
 use precept::dispatch::test::TestDispatch;
 use rusqlite::{Connection, OpenFlags, ToSql};
 use sqlite_plugin::vfs::{RegisterOpts, register_static};
@@ -35,7 +35,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 pub fn setup_test() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        init_tracing_with_writer(TracingConsumer::Test, TestWriter::default());
+        setup_tracing_with_writer(TracingConsumer::Test, TestWriter::default()).init();
         precept::init(&TestDispatch).expect("failed to setup precept");
         precept::disable_faults();
     });

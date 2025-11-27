@@ -15,7 +15,7 @@ use graft_kernel::{
     setup::{GraftConfig, setup_graft},
 };
 use graft_sqlite::vfs::GraftVfs;
-use graft_tracing::{TracingConsumer, init_tracing_with_writer};
+use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing_with_writer};
 use serde::Deserialize;
 use sqlite_plugin::{
     logger::{SqliteLogLevel, SqliteLogger},
@@ -56,14 +56,15 @@ impl ExtensionConfig {
     }
 }
 
-pub fn setup_log_file(path: &Path) {
+fn setup_log_file(path: &Path) {
     let file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
         .expect("failed to open log file");
 
-    init_tracing_with_writer(TracingConsumer::Tool, Mutex::new(file));
+    setup_tracing_with_writer(TracingConsumer::Tool, Mutex::new(file)).init();
+
     tracing::info!("Log file opened");
 }
 
@@ -149,7 +150,8 @@ fn setup_logger(logger: SqliteLogger) {
 
     let writer = Writer(Arc::new(Mutex::new(logger)));
     let make_writer = move || writer.clone();
-    graft_tracing::init_tracing_with_writer(TracingConsumer::Tool, make_writer);
+
+    setup_tracing_with_writer(TracingConsumer::Tool, make_writer).init();
 }
 
 #[cfg(feature = "dynamic")]
@@ -157,9 +159,6 @@ fn sqlite3_graft_init_inner(
     p_api: *mut sqlite_plugin::sqlite3_api_routines,
 ) -> Result<(), InitErr> {
     let config = resolve_config()?;
-    if let Some(path) = &config.log_file {
-        setup_log_file(path);
-    }
 
     // initialize graft
     let runtime = setup_graft(config.graft_config())?;
@@ -171,8 +170,11 @@ fn sqlite3_graft_init_inner(
         unsafe { sqlite_plugin::vfs::register_dynamic(p_api, c"graft".to_owned(), vfs, opts) };
     let logger = result.map_err(|err| InitErr(err, "Failed to register Graft VFS".into()))?;
 
-    // setup logger will NOOP if we already setup a log file earlier
-    setup_logger(logger);
+    if let Some(path) = &config.log_file {
+        setup_log_file(path);
+    } else {
+        setup_logger(logger);
+    }
 
     Ok(())
 }
@@ -199,9 +201,6 @@ pub unsafe extern "C" fn sqlite3_graft_init(
 #[cfg(feature = "static")]
 fn graft_static_init_inner() -> Result<(), InitErr> {
     let config = resolve_config()?;
-    if let Some(path) = &config.log_file {
-        setup_log_file(path);
-    }
 
     // initialize graft
     let runtime = setup_graft(config.graft_config())?;
@@ -212,8 +211,11 @@ fn graft_static_init_inner() -> Result<(), InitErr> {
     let result = sqlite_plugin::vfs::register_static(c"graft".to_owned(), vfs, opts);
     let logger = result.map_err(|err| InitErr(err, "Failed to register Graft VFS".into()))?;
 
-    // setup logger will NOOP if we already setup a log file earlier
-    setup_logger(logger);
+    if let Some(path) = &config.log_file {
+        setup_log_file(path);
+    } else {
+        setup_logger(logger);
+    }
 
     Ok(())
 }
