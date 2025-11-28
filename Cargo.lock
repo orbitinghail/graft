@@ -1112,7 +1112,7 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "graft-core"
-version = "0.1.5"
+version = "0.2.0-rc.1"
 dependencies = [
  "assert_matches",
  "bilrost",
@@ -1137,7 +1137,7 @@ dependencies = [
 
 [[package]]
 name = "graft-kernel"
-version = "0.1.5"
+version = "0.2.0-rc.1"
 dependencies = [
  "assert_matches",
  "async-stream",
@@ -1175,7 +1175,7 @@ dependencies = [
 
 [[package]]
 name = "graft-sqlite"
-version = "0.1.5"
+version = "0.2.0-rc.1"
 dependencies = [
  "bytes",
  "bytestring",
@@ -1198,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "graft-sqlite-extension"
-version = "0.1.5"
+version = "0.2.0-rc.1"
 dependencies = [
  "config",
  "graft-core",
@@ -1271,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "graft-tracing"
-version = "0.1.5"
+version = "0.2.0-rc.1"
 dependencies = [
  "bs58",
  "parking_lot",
