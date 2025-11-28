@@ -12,7 +12,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-graft-core = { path = "../graft-core" }
+graft-core = { path = "../graft-core", version = "0.2.0-rc.1" }
 
 async-stream = { workspace = true }
 bilrost = { workspace = true }
