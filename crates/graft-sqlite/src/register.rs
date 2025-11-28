@@ -1,4 +1,7 @@
-use graft_kernel::setup::{GraftConfig, InitErr, setup_graft};
+use graft_kernel::setup::setup_graft;
+
+pub use graft_kernel::remote::RemoteConfig;
+pub use graft_kernel::setup::{GraftConfig, InitErr};
 
 /// Statically register the Graft SQLite extension with `SQLite`.
 pub fn register_static(make_default: bool, config: GraftConfig) -> culprit::Result<(), InitErr> {

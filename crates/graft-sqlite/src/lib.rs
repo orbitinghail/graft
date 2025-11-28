@@ -8,4 +8,4 @@ mod dbg;
 pub mod register;
 
 #[cfg(feature = "register-static")]
-pub use register::register_static;
+pub use register::*;
