@@ -1,6 +1,5 @@
 use std::{
     borrow::Cow,
-    ffi::c_void,
     fmt::Display,
     fs::OpenOptions,
     num::NonZero,
@@ -68,6 +67,7 @@ fn setup_log_file(path: &Path) {
     tracing::info!("Log file opened");
 }
 
+#[allow(dead_code, reason = "msg is unused in static build")]
 struct InitErr(SqliteErr, Cow<'static, str>);
 
 impl<T: Display> From<T> for InitErr {
@@ -77,6 +77,7 @@ impl<T: Display> From<T> for InitErr {
 }
 
 /// Write an error message to the `SQLite` error message pointer if it is not null.
+#[cfg(feature = "dynamic")]
 fn write_err_msg(
     p_api: *mut sqlite_plugin::sqlite3_api_routines,
     msg: &str,
@@ -185,7 +186,7 @@ fn sqlite3_graft_init_inner(
 #[cfg(feature = "dynamic")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sqlite3_graft_init(
-    _db: *mut c_void,
+    _db: *mut std::ffi::c_void,
     pz_err_msg: *mut *const std::ffi::c_char,
     p_api: *mut sqlite_plugin::sqlite3_api_routines,
 ) -> c_int {

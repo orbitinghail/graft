@@ -61,7 +61,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Build
-        run: cargo build
+        run: just build-all
 
       - name: Test
         run: cargo nextest run
