@@ -1,6 +1,6 @@
 [package]
 name = "graft-sqlite"
-version = "0.2.0-rc.1"
+version = "0.2.0-rc.2"
 edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }
@@ -14,8 +14,8 @@ description = "A SQLite extension which uses Graft to replicate to and from obje
 workspace = true
 
 [dependencies]
-graft-core = { path = "../graft-core", version = "0.2.0-rc.1" }
-graft-kernel = { path = "../graft-kernel", version = "0.2.0-rc.1" }
+graft-core = { path = "../graft-core", version = "0.2.0-rc.2" }
+graft-kernel = { path = "../graft-kernel", version = "0.2.0-rc.2" }
 
 bytes = { workspace = true }
 bytestring = { workspace = true }
