@@ -18,6 +18,9 @@ Next, create a PR for the release branch and wait until the `release-prep.yml` w
 
 `release-prep` will create a GitHub Release in draft mode with draft notes. Once the workflow has succeeded with no errors and you are ready to release, update the draft GitHub Release notes to ensure they clearly outline what has actually changed.
 
+> ![IMPORTANT]
+> DO NOT PUBLISH THE RELEASE AT THIS STEP. The `release.yml` job will do that.
+
 `release-prep` will also trigger the `release.yml` workflow on the main branch. This workflow will wait for manual approval and will replace itself as needed. Do not approve this workflow until after the PR has landed.
 
 Finally, it's time to release! Merge the PR and approve the most recent `release.yml` workflow. This will cause all of the actual releases to go out to the various package managers as well as pushing a git tag and publishing the GitHub release.
