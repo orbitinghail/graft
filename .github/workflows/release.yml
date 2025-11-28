@@ -84,14 +84,9 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-          METASTORE_TAG=$(cat distx/metastore_tag)
-          PAGESTORE_TAG=$(cat distx/pagestore_tag)
           VERSION=$(cat distx/version)
 
-          echo "metastore_tag=$METASTORE_TAG" >>"$GITHUB_OUTPUT"
-          echo "pagestore_tag=$PAGESTORE_TAG" >>"$GITHUB_OUTPUT"
-          echo "version=$VERSION"             >>"$GITHUB_OUTPUT"
-
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
           if [[ "$VERSION" == *-rc* ]]; then
             echo "prerelease=true" >>"$GITHUB_OUTPUT"
           else
@@ -163,29 +158,6 @@ jobs:
           for crate in "${CRATES[@]}"; do
             cargo publish --no-verify -p "$crate"
           done
-
-      - name: Publish metastore and pagestore images
-        env:
-          METASTORE_SRC: ${{ steps.meta.outputs.metastore_tag }}
-          PAGESTORE_SRC: ${{ steps.meta.outputs.pagestore_tag }}
-          VERSION: ${{ steps.meta.outputs.version }}
-          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
-        run: |
-          set -euo pipefail
-
-          # copies the entire manifest list without pulling layers
-          copy_manifest() {
-            local src="$1" repo="$2" ver="$3"
-            # always tag the specific version
-            local args=(--tag "${repo}:${ver}")
-            # add :latest only when this is **not** a pre-release
-            [[ "${PRERELEASE}" == "false" ]] && args+=(--tag "${repo}:latest")
-
-            docker buildx imagetools create "${args[@]}" "${src}"
-          }
-
-          copy_manifest "${METASTORE_SRC}" "ghcr.io/orbitinghail/metastore" "${VERSION}"
-          copy_manifest "${PAGESTORE_SRC}"  "ghcr.io/orbitinghail/pagestore"  "${VERSION}"
 
       - name: Publish NPM Packages
         run: |
