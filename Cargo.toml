@@ -76,8 +76,8 @@ tokio-stream = "0.1.17"
 tokio-util = "0.7.16"
 toml = "0.9.8"
 tower-http = "0.6.6"
-tracing = "0.1.41"
-tracing-subscriber = "0.3.20"
+tracing = { version = "0.1.41", default-features = false }
+tracing-subscriber = { version = "0.3.20", default-features = false, features = ["smallvec", "std", "fmt", "ansi", "env-filter", "parking_lot"] }
 tryiter = "0.6.0"
 ureq = { version = "3.1.2", default-features = false, features = [ "rustls", "brotli", ] }
 url = "2.5.7"
