@@ -89,8 +89,11 @@ jobs:
           echo "version=$VERSION" >>"$GITHUB_OUTPUT"
           if [[ "$VERSION" == *-rc* ]]; then
             echo "prerelease=true" >>"$GITHUB_OUTPUT"
+            PRERELEASE_TAG="${VERSION#*-}"
+            echo "version-tag=$PRERELEASE_TAG" >>"$GITHUB_OUTPUT"
           else
             echo "prerelease=false" >>"$GITHUB_OUTPUT"
+            echo "version-tag=latest" >>"$GITHUB_OUTPUT"
           fi
 
       - name: Login to GitHub Container Registry
@@ -161,8 +164,9 @@ jobs:
 
       - name: Publish NPM Packages
         run: |
+          VERSION_TAG="--tag ${{ steps.meta.outputs.version-tag }}"
           for file in distx/npm/*; do
-            npm publish --access public "$file"
+            npm publish --access public $VERSION_TAG "$file"
           done
 
       - name: Publish Ruby Packages
