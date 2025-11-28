@@ -3,7 +3,7 @@
     "allow": [
       "Bash(cargo:*)",
       "Bash(jq:*)",
-      "Bash(just:*)",
+      "Bash(just:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"
