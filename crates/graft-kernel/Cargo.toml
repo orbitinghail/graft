@@ -8,6 +8,8 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 
+description = "The Graft storage engine."
+
 [lints]
 workspace = true
 
