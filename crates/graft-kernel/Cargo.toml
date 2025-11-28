@@ -13,7 +13,6 @@ workspace = true
 
 [dependencies]
 graft-core = { path = "../graft-core" }
-graft-tracing = { path = "../graft-tracing" }
 
 async-stream = { workspace = true }
 bilrost = { workspace = true }

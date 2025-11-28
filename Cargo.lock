@@ -1151,7 +1151,6 @@ dependencies = [
  "futures",
  "graft-core",
  "graft-test",
- "graft-tracing",
  "itertools 0.14.0",
  "lsm-tree",
  "object_store",
