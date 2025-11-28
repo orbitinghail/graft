@@ -11,18 +11,10 @@ fi
 
 echo "🌐 Web session detected - setting up dependencies..."
 
-# Try to install cargo-binstall if not present (for fast binary installations)
-USE_BINSTALL=false
+# Install cargo-binstall if not present (for fast binary installations)
 if ! command -v cargo-binstall &> /dev/null; then
   echo "📦 Installing cargo-binstall..."
-  if curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash > /dev/null 2>&1; then
-    USE_BINSTALL=true
-  else
-    echo "⚠️  cargo-binstall installation failed, falling back to cargo install"
-    USE_BINSTALL=false
-  fi
-else
-  USE_BINSTALL=true
+  curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 fi
 
 # Collect cargo binaries to install
@@ -47,17 +39,7 @@ fi
 if [ ${#cargo_bins[@]} -gt 0 ]; then
   echo "📦 Installing cargo binaries: ${cargo_bins[*]}..."
   {
-    if [ "$USE_BINSTALL" = true ]; then
-      cargo binstall -y --quiet "${cargo_bins[@]}" > /dev/null 2>&1
-    else
-      for bin in "${cargo_bins[@]}"; do
-        if [ "$bin" = "cargo-nextest" ]; then
-          cargo install cargo-nextest --locked --quiet > /dev/null 2>&1
-        else
-          cargo install "$bin" --quiet > /dev/null 2>&1
-        fi
-      done
-    fi
+    cargo binstall -y --quiet "${cargo_bins[@]}" > /dev/null 2>&1
     echo "✓ Cargo binaries installed"
   } &
   cargo_pid=$!
