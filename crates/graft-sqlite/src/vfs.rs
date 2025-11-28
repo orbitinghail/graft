@@ -124,25 +124,6 @@ impl Vfs for GraftVfs {
         vars::SQLITE_IOCAP_SEQUENTIAL
     }
 
-    fn pragma(
-        &self,
-        handle: &mut Self::Handle,
-        pragma: Pragma<'_>,
-    ) -> Result<Option<String>, PragmaErr> {
-        tracing::trace!("pragma: file={handle:?}, pragma={pragma:?}");
-        if let FileHandle::VolFile(file) = handle {
-            match GraftPragma::try_from(&pragma)?.eval(&self.runtime, file) {
-                Ok(val) => Ok(val),
-                Err(err) => Err(PragmaErr::Fail(
-                    err.ctx().sqlite_err(),
-                    Some(format!("{err}")),
-                )),
-            }
-        } else {
-            Err(PragmaErr::NotFound)
-        }
-    }
-
     fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         tracing::trace!("access: path={path:?}; flags={flags:?}");
         ErrCtx::wrap(move || self.runtime.tag_exists(path).or_into_ctx())
@@ -199,6 +180,13 @@ impl Vfs for GraftVfs {
         })
     }
 
+    fn delete(&self, path: &str) -> VfsResult<()> {
+        // nothing to do, SQLite only calls xDelete on secondary
+        // files, which in this VFS are in-memory and delete on close
+        tracing::trace!("delete: path={path:?}");
+        Ok(())
+    }
+
     fn close(&self, handle: Self::Handle) -> VfsResult<()> {
         tracing::trace!("close: file={handle:?}");
         ErrCtx::wrap(move || {
@@ -230,13 +218,23 @@ impl Vfs for GraftVfs {
         })
     }
 
-    fn delete(&self, path: &str) -> VfsResult<()> {
-        tracing::trace!("delete: path={path:?}");
-        ErrCtx::wrap(|| {
-            // TODO: delete volume
-            // TODO: do we want to actually delete volumes? or mark them for deletion?
-            Ok(())
-        })
+    fn pragma(
+        &self,
+        handle: &mut Self::Handle,
+        pragma: Pragma<'_>,
+    ) -> Result<Option<String>, PragmaErr> {
+        tracing::trace!("pragma: file={handle:?}, pragma={pragma:?}");
+        if let FileHandle::VolFile(file) = handle {
+            match GraftPragma::try_from(&pragma)?.eval(&self.runtime, file) {
+                Ok(val) => Ok(val),
+                Err(err) => Err(PragmaErr::Fail(
+                    err.ctx().sqlite_err(),
+                    Some(format!("{err}")),
+                )),
+            }
+        } else {
+            Err(PragmaErr::NotFound)
+        }
     }
 
     fn lock(&self, handle: &mut Self::Handle, level: LockLevel) -> VfsResult<()> {
