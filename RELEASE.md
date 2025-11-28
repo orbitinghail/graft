@@ -4,6 +4,8 @@ Starting from a clean local repo state on the main branch.
 
 First figure out the version you want to release. The latest version can be found using: `git describe --tags --abbrev=0` and you might also find `cargo release changes` helpful.
 
+In order to cut a pre-release, use the version format `X.Y.Z-rc.N`.
+
 When you are ready to release, run:
 
 ```
