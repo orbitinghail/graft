@@ -32,30 +32,30 @@ Here is an example serialized Volume ID:
 5rMJkYma1s-2da5Kmp3uLKEs
 ```
 
-## Local vs. Remote Volumes
+## Local vs. Remote Logs
 
-In Graft's replication system, volumes have two roles:
+In Graft's replication system, each Volume tracks two Logs:
 
-- **Remote Volume**: The source of truth, stored in object storage (S3, filesystem, etc.). This is the authoritative version that multiple clients can sync with.
-- **Local Volume**: Your working copy, cached and staged locally on your device. This is where you read and write data.
+- **Remote Log**: The source of truth, stored in object storage (S3, filesystem, etc.). This is the authoritative transaction log that multiple clients can sync with.
+- **Local Log**: Your working copy, cached and staged locally on your device. This is where you read and write data.
 
-A **Graft** pairs a local volume with a remote volume, enabling:
+A **Volume** tracks a local Log with a remote Log, enabling:
 - **Pulling** changes from remote to local
 - **Pushing** changes from local to remote
 - **Working offline** with local data
 - **Lazy loading** of pages on demand
 
-Think of it like git: the remote volume is like a GitHub repository, and your local volume is like your local clone.
+Think of it like git: the remote Log is like a GitHub repository, and your local Log is like your local clone.
 
 ## Volume Tags
 
-Rather than using Volume IDs directly, you can assign human-readable **tags** to grafts. Tags make it easy to manage multiple databases without memorizing long IDs.
+Rather than using Volume IDs directly, you can assign human-readable **tags** to Volumes. Tags make it easy to manage multiple databases without memorizing long IDs.
 
 ```sql
 -- List all tags
 pragma graft_tags;
 
--- Switch to a tagged graft
+-- Switch to a tagged Volume
 pragma graft_switch = "main";
 ```
 

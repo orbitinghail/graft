@@ -5,10 +5,12 @@ sidebar:
   order: 3
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside } from "@astrojs/starlight/components";
 
 <Aside type="caution">
-  The Graft Swift package currently has only been tested on the iOS Simulator. Further work and testing is required to support more Swift/Apple platforms. If you need additional platforms please [file an issue]. Thanks!
+  The Graft Swift package currently has only been tested on the iOS Simulator.
+  Further work and testing is required to support more Swift/Apple platforms. If
+  you need additional platforms please [file an issue]. Thanks!
 </Aside>
 
 ## Usage
@@ -60,7 +62,7 @@ Follow these steps to add [libgraft.swift] to your Xcode project using the Swift
    _ = tempDB.inDatabase { db in libgraft.graft_static_init(db.sqliteConnection) }
 
    // Open a Graft backed database with a random Volume ID through GRDB
-   let db = try DatabaseQueue(path: "random")
+   let db = try DatabaseQueue(path: "main")
    ```
 
 ## Notes

@@ -89,14 +89,17 @@ sqlite> # load the Graft extension
 sqlite> .load ./libgraft.so
 
 sqlite> # open a Graft Volume as a database
-sqlite> .open 'file:random?vfs=graft'
+sqlite> .open 'file:main?vfs=graft'
 
 sqlite> # verify Graft is working using pragma
 sqlite> pragma graft_status;
-Graft Status
-Client ID: Qi81Dp4C52izQ3LwX2YfZJ
-Volume ID: GonugMKom6Q92W5YddpVTd
-Current snapshot: None
-Autosync: true
-Volume status: Ok
++--------------------------------------------------+
+|                   On tag main                    |
++--------------------------------------------------+
+| On tag main                                      |
+| Local Log 74ggc1pWvh-3nSd2hKxw7rt7 is grafted to |
+| remote Log 74ggc1pWvh-3CGcHFP9HBTEK.             |
+|                                                  |
+| The Volume is up to date with the remote.        |
++--------------------------------------------------+
 ```

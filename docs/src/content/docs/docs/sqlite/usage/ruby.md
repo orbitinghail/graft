@@ -19,7 +19,7 @@ db = SQLite3::Database.new(':memory:')
 db.enable_load_extension(true)
 SqliteGraft.load(db)
 
-db = SQLite3::Database.new('file:random?vfs=graft');
+db = SQLite3::Database.new('file:main?vfs=graft');
 db.execute("PRAGMA graft_status") do |row|
   p row
 end

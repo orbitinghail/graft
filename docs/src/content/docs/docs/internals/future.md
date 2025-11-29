@@ -62,7 +62,7 @@ According to the go, hedging requests to blob storage can help dramatically redu
 
 ## Performance Optimizations
 
-Once Graft server is sufficiently mature, a series of performance optimization passes should be performed. I'll keep track of relevant blog posts and tools to make this easier here:
+Once Graft is sufficiently mature, a series of performance optimization passes should be performed. I'll keep track of relevant blog posts and tools to make this easier here:
 
 - [Compiling with PGO and BOLT]
 

@@ -3,7 +3,7 @@ title: Graft Identifier (GID)
 description: Graft Identifiers (GIDs) are 16 byte IDs used to globally identify Graft objects.
 ---
 
-Graft uses a 16 byte identifier called a Graft Identifier (GID) to identify Segments and Volumes. GIDs are similar to UUIDs and ULIDs with a Graft specific prefix and different canonical encoding.
+Graft uses a 16 byte identifier called a Graft Identifier (GID) to identify Volumes, Logs, and Segments. GIDs are similar to UUIDs and ULIDs with a Graft specific prefix and different canonical encoding.
 
 - **128-bit compatibility** (same size as UUID)
 - **Up to 2^64 unique GIDs per millisecond**
@@ -29,7 +29,13 @@ GIDs have the following layout:
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-Every GID has a 1 byte prefix which encodes its type. There are currently two GID prefixes: Volume and Segment. The prefix may contain other types or namespace metadata in the future.
+Every GID has a 1 byte prefix which encodes its type. There are currently three GID prefixes: Volume, Log, and Segment. The prefix may contain other types or namespace metadata in the future.
+
+The three GID types are:
+
+- **VolumeId**: Identifies a [Volume](/docs/concepts/volumes).
+- **LogId**: Identifies a Log (an ordered list of Commits)
+- **SegmentId**: Identifies a Segment (compressed storage of pages in object storage)
 
 Following the prefix is a 48 bit timestamp encoding milliseconds since the unix epoch and stored in network byte order (MSB first).
 

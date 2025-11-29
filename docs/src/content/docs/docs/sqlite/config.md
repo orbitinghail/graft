@@ -64,6 +64,7 @@ prefix = "optional/prefix"  # optional
 - **`prefix`**: Optional path prefix within the bucket.
 
 **Credentials:** S3 credentials and configuration are loaded from standard AWS environment variables:
+
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
 - `AWS_REGION`
@@ -72,7 +73,7 @@ prefix = "optional/prefix"  # optional
 ### `autosync`
 
 - **Environment variable:** `GRAFT_AUTOSYNC`
-- **Description:** Background synchronization interval in seconds. When set, Graft will automatically push local changes to remote storage at this interval.
+- **Description:** Background synchronization interval in seconds. When set, Graft will automatically sync volumes with the remote at this interval.
 - **Default:** Not set (no automatic synchronization)
 - **Example:** `autosync = 60` (sync every 60 seconds)
 
@@ -85,8 +86,7 @@ prefix = "optional/prefix"  # optional
 ### `make_default`
 
 - **Environment variable:** `GRAFT_MAKE_DEFAULT`
-- **Description:** When `make_default` is `true`, Graft will register itself as the _default_ SQLite VFS, causing _all_ new connections to use Graft. This is mainly useful for integrating Graft into SQLite libraries which don't support specifying a custom VFS.
-- **Default:** `false`
+- **Description:** Cause the Graft VFS to become the default VFS for all new database connections.
 
 ## Example Configurations
 
@@ -103,6 +103,7 @@ prefix = "prod"
 ```
 
 Set environment variables:
+
 ```bash
 export AWS_ACCESS_KEY_ID="your-access-key"
 export AWS_SECRET_ACCESS_KEY="your-secret-key"

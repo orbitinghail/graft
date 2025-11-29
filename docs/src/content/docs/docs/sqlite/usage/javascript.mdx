@@ -23,7 +23,7 @@ let db = new DatabaseSync(":memory:", { allowExtension: true });
 sqliteGraft.load(db);
 
 // open a Graft volume as a database and run graft_status
-db = new DatabaseSync("file:random?vfs=graft");
+db = new DatabaseSync("file:main?vfs=graft");
 let result = db.prepare("PRAGMA graft_status");
 console.log(result.all());
 ```

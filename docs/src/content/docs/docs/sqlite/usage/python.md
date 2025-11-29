@@ -21,7 +21,7 @@ db.enable_load_extension(True)
 sqlite_graft.load(db)
 
 # open a Graft volume as a database
-db = sqlite3.connect(f"file:random?vfs=graft", autocommit=True, uri=True)
+db = sqlite3.connect(f"file:main?vfs=graft", autocommit=True, uri=True)
 
 # use pragma to verify graft is working
 result = db.execute("pragma graft_status")
