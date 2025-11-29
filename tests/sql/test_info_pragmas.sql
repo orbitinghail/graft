@@ -1,7 +1,7 @@
 -- initialize two connections to the same database
 .connection 0
 .open "file:main?vfs=graft"
-pragma graft_switch="5rMJhorqTw-2dcMpAG9SgLPw:5rMJhorrQK-2dv4hJLznFMj8";
+pragma graft_switch="74ggc1B6R4-2kkvcy9fi4CHJ:74ggc1B6jg-2udz14pbDayZC";
 pragma graft_status;
 pragma graft_info;
 

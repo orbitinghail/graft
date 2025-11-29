@@ -1,28 +1,28 @@
 -- initialize two connections to the same database
 .connection 0
 .open "file:main?vfs=graft"
-pragma graft_switch="5rMJhorqTw-2dcMpAG9SgLPw:5rMJhorrQK-2dv4hJLznFMj8";
-+----------------------------------------------------------------------------------------+
-| Switched to Graft 5rMJhorqTw-2dcMpAG9SgLPw with remote Volume 5rMJhorrQK-2dv4hJLznFMj8 |
-+----------------------------------------------------------------------------------------+
-| Switched to Graft 5rMJhorqTw-2dcMpAG9SgLPw with remote Volume 5rMJhorrQK-2dv4hJLznFMj8 |
-+----------------------------------------------------------------------------------------+
+pragma graft_switch="74ggc1B6R4-2kkvcy9fi4CHJ:74ggc1B6jg-2udz14pbDayZC";
++-------------------------------------------------------------------------------------+
+| Switched to Graft 74ggc1B6R4-2kkvcy9fi4CHJ with remote Log 74ggc1B6jg-2udz14pbDayZC |
++-------------------------------------------------------------------------------------+
+| Switched to Graft 74ggc1B6R4-2kkvcy9fi4CHJ with remote Log 74ggc1B6jg-2udz14pbDayZC |
++-------------------------------------------------------------------------------------+
 pragma graft_status;
-+---------------------------------------------------------+
-|                       On tag main                       |
-+---------------------------------------------------------+
-| On tag main                                             |
-| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (_) is grafted to |
-| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).             |
-|                                                         |
-| The local Volume is up to date with the remote Volume.  |
-+---------------------------------------------------------+
++------------------------------------------------------+
+|                     On tag main                      |
++------------------------------------------------------+
+| On tag main                                          |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (_) is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
+|                                                      |
+| The local Log is up to date with the remote Log.     |
++------------------------------------------------------+
 pragma graft_info;
 +----------------------------------+
-| Graft: 5rMJhorqTw-2dcMpAG9SgLPw  |
+| Graft: 74ggc1B6R4-2kkvcy9fi4CHJ  |
 +----------------------------------+
-| Graft: 5rMJhorqTw-2dcMpAG9SgLPw  |
-| Remote: 5rMJhorrQK-2dv4hJLznFMj8 |
+| Graft: 74ggc1B6R4-2kkvcy9fi4CHJ  |
+| Remote: 74ggc1B6jg-2udz14pbDayZC |
 | Last sync: Never synced          |
 | Snapshot: Snapshot([])           |
 | Snapshot pages: 0                |
@@ -32,21 +32,21 @@ pragma graft_info;
 .connection 1
 .open "file:main?vfs=graft"
 pragma graft_status;
-+---------------------------------------------------------+
-|                       On tag main                       |
-+---------------------------------------------------------+
-| On tag main                                             |
-| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (_) is grafted to |
-| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).             |
-|                                                         |
-| The local Volume is up to date with the remote Volume.  |
-+---------------------------------------------------------+
++------------------------------------------------------+
+|                     On tag main                      |
++------------------------------------------------------+
+| On tag main                                          |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (_) is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
+|                                                      |
+| The local Log is up to date with the remote Log.     |
++------------------------------------------------------+
 pragma graft_info;
 +----------------------------------+
-| Graft: 5rMJhorqTw-2dcMpAG9SgLPw  |
+| Graft: 74ggc1B6R4-2kkvcy9fi4CHJ  |
 +----------------------------------+
-| Graft: 5rMJhorqTw-2dcMpAG9SgLPw  |
-| Remote: 5rMJhorrQK-2dv4hJLznFMj8 |
+| Graft: 74ggc1B6R4-2kkvcy9fi4CHJ  |
+| Remote: 74ggc1B6jg-2udz14pbDayZC |
 | Last sync: Never synced          |
 | Snapshot: Snapshot([])           |
 | Snapshot pages: 0                |
@@ -59,37 +59,37 @@ pragma graft_info;
 
 -- check pragmas
 pragma graft_status;
-+-----------------------------------------------------------+
-|                        On tag main                        |
-+-----------------------------------------------------------+
-| On tag main                                               |
-| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (6) is grafted to   |
-| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).               |
-|                                                           |
-| The local Volume is 6 commits ahead of the remote Volume. |
-|   (use 'pragma graft_push' to push changes)               |
-+-----------------------------------------------------------+
++------------------------------------------------------+
+|                     On tag main                      |
++------------------------------------------------------+
+| On tag main                                          |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (6) is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
+|                                                      |
+| The local Log is 6 commits ahead of the remote Log.  |
+|   (use 'pragma graft_push' to push changes)          |
++------------------------------------------------------+
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 +---------------------------------+
 pragma graft_audit;
 +--------------------------------------------------------+
-|  Cached 14 of 14 pages (100%) from the remote volume.  |
+|   Cached 14 of 14 pages (100%) from the remote Log.    |
 +--------------------------------------------------------+
-| Cached 14 of 14 pages (100%) from the remote volume.   |
-| Checksum: 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
+| Cached 14 of 14 pages (100%) from the remote Log.      |
+| Checksum: 2FpLPEqwTAbQR14Bp84n8NHYPN94RnhnXo6u63js1SSV |
 +--------------------------------------------------------+
 pragma graft_info;
 +-------------------------------------------+
-|      Graft: 5rMJhorqTw-2dcMpAG9SgLPw      |
+|      Graft: 74ggc1B6R4-2kkvcy9fi4CHJ      |
 +-------------------------------------------+
-| Graft: 5rMJhorqTw-2dcMpAG9SgLPw           |
-| Remote: 5rMJhorrQK-2dv4hJLznFMj8          |
+| Graft: 74ggc1B6R4-2kkvcy9fi4CHJ           |
+| Remote: 74ggc1B6jg-2udz14pbDayZC          |
 | Last sync: Never synced                   |
-| Snapshot: Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot: Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 | Snapshot pages: 14                        |
 | Snapshot size: 56 KB                      |
 +-------------------------------------------+
@@ -97,37 +97,37 @@ pragma graft_info;
 -- check pragmas on connection 1
 .connection 1
 pragma graft_status;
-+-----------------------------------------------------------+
-|                        On tag main                        |
-+-----------------------------------------------------------+
-| On tag main                                               |
-| Local Volume 5rMJhorqTw-2dcMpAG9SgLPw (6) is grafted to   |
-| remote Volume 5rMJhorrQK-2dv4hJLznFMj8 (_).               |
-|                                                           |
-| The local Volume is 6 commits ahead of the remote Volume. |
-|   (use 'pragma graft_push' to push changes)               |
-+-----------------------------------------------------------+
++------------------------------------------------------+
+|                     On tag main                      |
++------------------------------------------------------+
+| On tag main                                          |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (6) is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
+|                                                      |
+| The local Log is 6 commits ahead of the remote Log.  |
+|   (use 'pragma graft_push' to push changes)          |
++------------------------------------------------------+
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 +---------------------------------+
 pragma graft_audit;
 +--------------------------------------------------------+
-|  Cached 14 of 14 pages (100%) from the remote volume.  |
+|   Cached 14 of 14 pages (100%) from the remote Log.    |
 +--------------------------------------------------------+
-| Cached 14 of 14 pages (100%) from the remote volume.   |
-| Checksum: 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
+| Cached 14 of 14 pages (100%) from the remote Log.      |
+| Checksum: 2FpLPEqwTAbQR14Bp84n8NHYPN94RnhnXo6u63js1SSV |
 +--------------------------------------------------------+
 pragma graft_info;
 +-------------------------------------------+
-|      Graft: 5rMJhorqTw-2dcMpAG9SgLPw      |
+|      Graft: 74ggc1B6R4-2kkvcy9fi4CHJ      |
 +-------------------------------------------+
-| Graft: 5rMJhorqTw-2dcMpAG9SgLPw           |
-| Remote: 5rMJhorrQK-2dv4hJLznFMj8          |
+| Graft: 74ggc1B6R4-2kkvcy9fi4CHJ           |
+| Remote: 74ggc1B6jg-2udz14pbDayZC          |
 | Last sync: Never synced                   |
-| Snapshot: Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot: Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 | Snapshot pages: 14                        |
 | Snapshot size: 56 KB                      |
 +-------------------------------------------+
@@ -142,9 +142,9 @@ select count(*) from ledger;
 +----------+
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 +---------------------------------+
 
 -- switch to connection 0, write something, check snapshot, switch back
@@ -152,34 +152,34 @@ pragma graft_snapshot;
 INSERT INTO ledger (account_id, amount) VALUES (1, -10), (2, 10);
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=7]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=7]]) |
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=7]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=7]]) |
 +---------------------------------+
 .connection 1
 
 -- check that connection 1 pragmas can't see the new snapshot
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 +---------------------------------+
 pragma graft_audit;
 +--------------------------------------------------------+
-|  Cached 14 of 14 pages (100%) from the remote volume.  |
+|   Cached 14 of 14 pages (100%) from the remote Log.    |
 +--------------------------------------------------------+
-| Cached 14 of 14 pages (100%) from the remote volume.   |
-| Checksum: 7GcvThzzuNkG3VRZwhgoFNGLVNUDgzkMoWf1j8JifSAz |
+| Cached 14 of 14 pages (100%) from the remote Log.      |
+| Checksum: 2FpLPEqwTAbQR14Bp84n8NHYPN94RnhnXo6u63js1SSV |
 +--------------------------------------------------------+
 pragma graft_info;
 +-------------------------------------------+
-|      Graft: 5rMJhorqTw-2dcMpAG9SgLPw      |
+|      Graft: 74ggc1B6R4-2kkvcy9fi4CHJ      |
 +-------------------------------------------+
-| Graft: 5rMJhorqTw-2dcMpAG9SgLPw           |
-| Remote: 5rMJhorrQK-2dv4hJLznFMj8          |
+| Graft: 74ggc1B6R4-2kkvcy9fi4CHJ           |
+| Remote: 74ggc1B6jg-2udz14pbDayZC          |
 | Last sync: Never synced                   |
-| Snapshot: Snapshot([2dcMpAG9SgLPw[..=6]]) |
+| Snapshot: Snapshot([2kkvcy9fi4CHJ[..=6]]) |
 | Snapshot pages: 14                        |
 | Snapshot size: 56 KB                      |
 +-------------------------------------------+
@@ -189,25 +189,25 @@ commit;
 
 pragma graft_snapshot;
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=7]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=7]]) |
 +---------------------------------+
-| Snapshot([2dcMpAG9SgLPw[..=7]]) |
+| Snapshot([2kkvcy9fi4CHJ[..=7]]) |
 +---------------------------------+
 pragma graft_audit;
 +--------------------------------------------------------+
-|  Cached 14 of 14 pages (100%) from the remote volume.  |
+|   Cached 14 of 14 pages (100%) from the remote Log.    |
 +--------------------------------------------------------+
-| Cached 14 of 14 pages (100%) from the remote volume.   |
-| Checksum: 84sLYe1cUrBCQ46mMmVqeLG1rWsdkB7ebujsXFgZ1sPk |
+| Cached 14 of 14 pages (100%) from the remote Log.      |
+| Checksum: BKmJp5EaFm8LVjNqMhYffRkzztBphJ6vb9dYfannr3DY |
 +--------------------------------------------------------+
 pragma graft_info;
 +-------------------------------------------+
-|      Graft: 5rMJhorqTw-2dcMpAG9SgLPw      |
+|      Graft: 74ggc1B6R4-2kkvcy9fi4CHJ      |
 +-------------------------------------------+
-| Graft: 5rMJhorqTw-2dcMpAG9SgLPw           |
-| Remote: 5rMJhorrQK-2dv4hJLznFMj8          |
+| Graft: 74ggc1B6R4-2kkvcy9fi4CHJ           |
+| Remote: 74ggc1B6jg-2udz14pbDayZC          |
 | Last sync: Never synced                   |
-| Snapshot: Snapshot([2dcMpAG9SgLPw[..=7]]) |
+| Snapshot: Snapshot([2kkvcy9fi4CHJ[..=7]]) |
 | Snapshot pages: 14                        |
 | Snapshot size: 56 KB                      |
 +-------------------------------------------+

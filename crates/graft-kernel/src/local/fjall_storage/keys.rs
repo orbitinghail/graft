@@ -198,8 +198,8 @@ mod tests {
         test_invalid::<PageKey>(b"");
 
         // PageKeys must naturally sort in ascending order by page index
-        let sid1: SegmentId = "74ggYyz4aX-33cEC1Bm7Gekh".parse().unwrap();
-        let sid2: SegmentId = "74ggYyz7mA-33d6VHh4ENsxq".parse().unwrap();
+        let sid1: SegmentId = "8H24TMbwaL-3sWCcWZqGu8DG".parse().unwrap();
+        let sid2: SegmentId = "8H24TMby3c-2rtTmSK9xAWo4".parse().unwrap();
         test_serialized_order(&[
             PageKey::new(sid1.clone(), pageidx!(1)),
             PageKey::new(sid1.clone(), pageidx!(2)),
