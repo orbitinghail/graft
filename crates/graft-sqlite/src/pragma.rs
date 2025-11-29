@@ -108,7 +108,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
                     let parts = arg.split(":").collect_vec();
 
-                    if parts.len() < 1 || parts.len() > 3 {
+                    if parts.is_empty() || parts.len() > 3 {
                         return Err(PragmaErr::Fail(
                             SQLITE_ERROR,
                             Some(

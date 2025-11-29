@@ -31,6 +31,6 @@ impl GidRandom {
         // set the first bit of the first byte to 1
         // this ensures that the bs58 representation of Random is always 13 bytes
         data[0] |= 0x80;
-        Self { data: data }
+        Self { data }
     }
 }

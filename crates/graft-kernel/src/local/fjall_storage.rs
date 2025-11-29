@@ -62,7 +62,7 @@ pub struct FjallStorage {
     tags: TypedPartition<ByteString, VolumeId>,
 
     /// This partition stores state regarding each `Volume`
-    /// keyed by its VolumeId
+    /// keyed by its `VolumeId`
     /// {`VolumeId`} -> `Volume`
     volumes: TypedPartition<VolumeId, Volume>,
 
@@ -469,7 +469,7 @@ impl<'a> ReadGuard<'a> {
             .or_into_ctx()
     }
 
-    /// Retrieve the PageCount of a Volume at a particular LSN.
+    /// Retrieve the `PageCount` of a Volume at a particular LSN.
     pub fn page_count(&self, log: &LogId, lsn: LSN) -> Result<Option<PageCount>, FjallStorageErr> {
         Ok(self.get_commit(log, lsn)?.map(|c| c.page_count()))
     }
