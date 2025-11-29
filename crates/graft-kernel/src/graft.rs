@@ -2,15 +2,15 @@ use std::{fmt::Display, ops::RangeInclusive};
 
 use bilrost::Message;
 
-use graft_core::{VolumeId, commit_hash::CommitHash, lsn::LSN};
+use graft_core::{LogId, commit_hash::CommitHash, lsn::LSN};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct SyncPoint {
-    /// This Graft is attached to the Remote Volume at this LSN
+    /// This Graft is attached to the remote Log at this LSN
     #[bilrost(1)]
     pub remote: LSN,
 
-    /// All commits up to this watermark in the local volume have been written
+    /// All commits up to this watermark in the local Log have been written
     /// to the remote.
     #[bilrost(2)]
     pub local_watermark: Option<LSN>,
@@ -18,11 +18,11 @@ pub struct SyncPoint {
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct PendingCommit {
-    /// The LSN we are syncing from the local Volume
+    /// The LSN we are syncing from the local Log
     #[bilrost(1)]
     pub local: LSN,
 
-    /// The LSN we are creating in the remote Volume
+    /// The LSN we are creating in the remote Log
     #[bilrost(2)]
     pub commit: LSN,
 
@@ -44,15 +44,15 @@ impl From<PendingCommit> for SyncPoint {
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct Graft {
-    /// The local Volume backing this Graft
+    /// The local Log backing this Graft
     #[bilrost(1)]
-    pub local: VolumeId,
+    pub local: LogId,
 
-    /// The remote Volume backing this Graft.
+    /// The remote Log backing this Graft.
     #[bilrost(2)]
-    pub remote: VolumeId,
+    pub remote: LogId,
 
-    /// Metadata keeping track of which portion of the local and remote volume
+    /// Metadata keeping track of which portion of the local and remote log
     /// this Graft cares about.
     #[bilrost(3)]
     pub sync: Option<SyncPoint>,
@@ -67,8 +67,8 @@ pub struct Graft {
 
 impl Graft {
     pub fn new(
-        local: VolumeId,
-        remote: VolumeId,
+        local: LogId,
+        remote: LogId,
         sync: Option<SyncPoint>,
         pending_commit: Option<PendingCommit>,
     ) -> Self {
@@ -170,14 +170,13 @@ impl Display for AheadStatus {
 
 #[derive(Debug)]
 pub struct GraftStatus {
-    pub local: VolumeId,
+    pub local: LogId,
     pub local_status: AheadStatus,
-    pub remote: VolumeId,
+    pub remote: LogId,
     pub remote_status: AheadStatus,
 }
 
-/// Output a human readable concise description of the status of this named
-/// volume.
+/// Output a human readable concise description of the status of this volume.
 ///
 /// # Output examples:
 ///  - `_ r_`: empty volume

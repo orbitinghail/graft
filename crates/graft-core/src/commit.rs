@@ -8,20 +8,17 @@ use smallvec::SmallVec;
 use splinter_rs::Splinter;
 
 use crate::{
-    PageCount, PageIdx, SegmentId, VolumeId, commit_hash::CommitHash, lsn::LSN, pageset::PageSet,
-    volume_ref::VolumeRef,
+    LogId, PageCount, PageIdx, SegmentId, commit_hash::CommitHash, logref::LogRef, lsn::LSN,
+    pageset::PageSet,
 };
 
-/// Commits are stored at `{prefix}/{vid}/log/{lsn}`.
-/// A commit may not include a `SegmentRef` if only the Volume's page count has
-/// changed. This happens when the Volume is extended or truncated without
-/// additional writes.
-/// Commits are immutable.
+/// A Commit tracks which pages have changed in a volume at a particular point in time (LSN).
+/// A commit's `SegmentIdx` may be omitted if only the Volume's `PageCount` has changed.
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct Commit {
-    /// The Volume's ID.
+    /// The ID of the Log which this Commit is part of.
     #[bilrost(1)]
-    pub vid: VolumeId,
+    pub log: LogId,
 
     /// The LSN of the Commit.
     #[bilrost(2)]
@@ -32,27 +29,27 @@ pub struct Commit {
     pub page_count: PageCount,
 
     /// An optional `CommitHash` for this Commit.
-    /// Always present on Remote Volume commits.
-    /// May be omitted on Local commits.
+    /// Always present on Commits uploaded to a remote Log.
+    /// May be omitted on commits to a local Log.
     #[bilrost(4)]
     pub commit_hash: Option<CommitHash>,
 
-    /// If this Commit contains any pages, `segment_idx` records details on the
-    /// relevant Segment.
+    /// If this Commit contains any pages, `segment_idx` forms an index of those
+    /// pages within associated Segments.
     #[bilrost(5)]
     pub segment_idx: Option<SegmentIdx>,
 
     /// If this commit is a checkpoint, this timestamp is set and records the time
-    /// the commit was made a checkpoint
+    /// the commit was made a checkpoint.
     #[bilrost(6)]
     pub checkpointed_at: Option<SystemTime>,
 }
 
 impl Commit {
     /// Creates a new Commit for the given snapshot info
-    pub fn new(vid: VolumeId, lsn: LSN, page_count: PageCount) -> Self {
+    pub fn new(log: LogId, lsn: LSN, page_count: PageCount) -> Self {
         Self {
-            vid,
+            log,
             lsn,
             page_count,
             commit_hash: None,
@@ -61,8 +58,8 @@ impl Commit {
         }
     }
 
-    pub fn with_vid(self, vid: VolumeId) -> Self {
-        Self { vid, ..self }
+    pub fn with_log_id(self, log: LogId) -> Self {
+        Self { log, ..self }
     }
 
     pub fn with_lsn(self, lsn: LSN) -> Self {
@@ -83,16 +80,16 @@ impl Commit {
         Self { checkpointed_at, ..self }
     }
 
-    pub fn vid(&self) -> &VolumeId {
-        &self.vid
+    pub fn log(&self) -> &LogId {
+        &self.log
     }
 
     pub fn lsn(&self) -> LSN {
         self.lsn
     }
 
-    pub fn vref(&self) -> VolumeRef {
-        VolumeRef::new(self.vid.clone(), self.lsn)
+    pub fn logref(&self) -> LogRef {
+        LogRef::new(self.log.clone(), self.lsn)
     }
 
     pub fn page_count(&self) -> PageCount {

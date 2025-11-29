@@ -7,7 +7,7 @@ use std::{
 };
 
 use graft_core::{
-    PageCount, PageIdx, VolumeId,
+    LogId, PageCount, PageIdx,
     page::{PAGESIZE, Page},
     pageidx,
 };
@@ -103,7 +103,7 @@ impl GraftTestRuntime {
         Self::with_remote(self.remote.clone())
     }
 
-    pub fn open_sqlite(&mut self, dbname: &str, remote: Option<VolumeId>) -> GraftSqliteConn {
+    pub fn open_sqlite(&mut self, dbname: &str, remote: Option<LogId>) -> GraftSqliteConn {
         let vfs_id = self.vfs_id.get_or_insert_with(|| {
             // generate a 16 byte random ascii CString
             let vfs_id = {

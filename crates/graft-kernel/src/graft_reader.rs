@@ -1,5 +1,5 @@
 use culprit::Culprit;
-use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
+use graft_core::{LogId, PageCount, PageIdx, page::Page};
 
 use crate::{KernelErr, graft_writer::GraftWriter, rt::runtime::Runtime, snapshot::Snapshot};
 
@@ -13,12 +13,12 @@ pub trait GraftRead {
 #[derive(Debug, Clone)]
 pub struct GraftReader {
     runtime: Runtime,
-    graft: VolumeId,
+    graft: LogId,
     snapshot: Snapshot,
 }
 
 impl GraftReader {
-    pub(crate) fn new(runtime: Runtime, graft: VolumeId, snapshot: Snapshot) -> Self {
+    pub(crate) fn new(runtime: Runtime, graft: LogId, snapshot: Snapshot) -> Self {
         Self { runtime, graft, snapshot }
     }
 }

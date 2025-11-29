@@ -3,11 +3,11 @@ use std::{collections::BTreeMap, ops::RangeInclusive};
 use bytes::Bytes;
 use culprit::ResultExt;
 use graft_core::{
-    CommitHashBuilder, PageCount, PageIdx, SegmentId, VolumeId,
+    CommitHashBuilder, LogId, PageCount, PageIdx, SegmentId,
     commit::{Commit, SegmentIdx},
     commit_hash::CommitHash,
+    logref::LogRef,
     lsn::LSN,
-    volume_ref::VolumeRef,
 };
 use smallvec::SmallVec;
 use splinter_rs::{Optimizable, PartitionRead, Splinter};
@@ -18,14 +18,14 @@ use crate::{
     graft::PendingCommit,
     local::fjall_storage::FjallStorage,
     remote::{Remote, segment::SegmentBuilder},
-    rt::action::{Action, FetchVolume},
+    rt::action::{Action, FetchLog},
     snapshot::Snapshot,
 };
 
 /// Commits a Graft's local changes into its remote.
 #[derive(Debug)]
 pub struct RemoteCommit {
-    pub graft: VolumeId,
+    pub graft: LogId,
 }
 
 impl Action for RemoteCommit {
@@ -62,7 +62,7 @@ impl Action for RemoteCommit {
             .or_into_ctx()?;
 
         let commit = Commit::new(
-            plan.commit_ref.vid().clone(),
+            plan.commit_ref.log().clone(),
             plan.commit_ref.lsn(),
             plan.page_count,
         )
@@ -85,8 +85,8 @@ impl Action for RemoteCommit {
                 // 1. Someone (including us) pushed the same commit (idempotency)
                 // 2. Someone (including us) pushed a DIFFERENT commit (divergence)
                 // To resolve this, refetch the remote and attempt recovery.
-                FetchVolume {
-                    vid: commit.vid.clone(),
+                FetchLog {
+                    log: commit.log.clone(),
                     max_lsn: Some(commit.lsn),
                 }
                 .run(storage, remote)
@@ -106,15 +106,15 @@ impl Action for RemoteCommit {
 }
 
 struct CommitPlan {
-    local_vid: VolumeId,
+    local: LogId,
     lsns: RangeInclusive<LSN>,
-    commit_ref: VolumeRef,
+    commit_ref: LogRef,
     page_count: PageCount,
 }
 
 fn plan_commit(
     storage: &FjallStorage,
-    graft: &VolumeId,
+    graft: &LogId,
 ) -> culprit::Result<Option<CommitPlan>, KernelErr> {
     let reader = storage.read();
     let graft = reader.graft(graft).or_into_ctx()?;
@@ -133,22 +133,22 @@ fn plan_commit(
     let page_count = reader
         .page_count(&graft.local, latest_local)
         .or_into_ctx()?
-        .expect("BUG: no page count for local volume");
+        .expect("BUG: no page count for commit");
 
     let Some(sync) = graft.sync() else {
         // this is the first time we are pushing this graft to the remote
         assert_eq!(latest_remote, None, "BUG: remote should be empty");
         return Ok(Some(CommitPlan {
-            local_vid: graft.local.clone(),
+            local: graft.local.clone(),
             lsns: LSN::FIRST..=latest_local,
-            commit_ref: VolumeRef::new(graft.remote, LSN::FIRST),
+            commit_ref: LogRef::new(graft.remote, LSN::FIRST),
             page_count,
         }));
     };
 
     // check for divergence
     if graft.remote_changes(latest_remote).is_some() {
-        // the remote and local volumes have diverged
+        // the remote and local logs have diverged
         let status = graft.status(Some(latest_local), latest_remote);
         tracing::debug!("graft {} has diverged; status=`{status}`", graft.local);
         return Err(LogicalErr::GraftDiverged(graft.local).into());
@@ -164,9 +164,9 @@ fn plan_commit(
     let commit_lsn = sync.remote.next();
 
     Ok(Some(CommitPlan {
-        local_vid: graft.local.clone(),
+        local: graft.local.clone(),
         lsns: local_lsns,
-        commit_ref: VolumeRef::new(graft.remote.clone(), commit_lsn),
+        commit_ref: LogRef::new(graft.remote.clone(), commit_lsn),
         page_count,
     }))
 }
@@ -179,7 +179,7 @@ fn build_segment(
 
     // built a snapshot which only matches the LSNs we want to
     // include in the segment
-    let segment_path = Snapshot::new(plan.local_vid.clone(), plan.lsns.clone());
+    let segment_path = Snapshot::new(plan.local.clone(), plan.lsns.clone());
 
     // collect all of the segment pages, only keeping the newest (first) page
     // for each unique pageidx
@@ -220,7 +220,7 @@ fn build_segment(
 
     let mut segment_builder = SegmentBuilder::new();
     let mut commithash_builder = CommitHashBuilder::new(
-        plan.commit_ref.vid().clone(),
+        plan.commit_ref.log().clone(),
         plan.commit_ref.lsn(),
         plan.page_count,
     );
@@ -249,7 +249,7 @@ fn build_segment(
 
 /// Attempts to recover from a remote commit conflict by checking the remote
 /// for the commit we tried to push.
-fn attempt_recovery(storage: &FjallStorage, graft: &VolumeId) -> culprit::Result<(), KernelErr> {
+fn attempt_recovery(storage: &FjallStorage, graft: &LogId) -> culprit::Result<(), KernelErr> {
     let reader = storage.read();
     let graft = reader.graft(graft).or_into_ctx()?;
 

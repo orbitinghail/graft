@@ -1,76 +1,76 @@
 use std::ops::RangeInclusive;
 
 use graft_core::{
-    VolumeId,
+    LogId,
+    logref::LogRef,
     lsn::{LSN, LSNRangeExt},
-    volume_ref::VolumeRef,
 };
 use smallvec::SmallVec;
 
 /// A `Snapshot` represents a logical view of a Volume, possibly made
-/// up of LSN ranges from multiple physical Volumes.
+/// up of LSN ranges from multiple Logs.
 #[derive(Clone, Hash)]
 pub struct Snapshot {
-    path: SmallVec<[VolumeRangeRef; 1]>,
+    path: SmallVec<[LogRangeRef; 1]>,
 }
 
-/// A reference to a volume and a range of LSNs within that volume.
+/// A reference to a Log and a range of LSNs within that Log.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct VolumeRangeRef {
-    pub vid: VolumeId,
+pub struct LogRangeRef {
+    pub log: LogId,
     pub lsns: RangeInclusive<LSN>,
 }
 
-impl std::fmt::Debug for VolumeRangeRef {
+impl std::fmt::Debug for LogRangeRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}[{}]", self.vid, self.lsns.to_string())
+        write!(f, "{:?}[{}]", self.log, self.lsns.to_string())
     }
 }
 
-impl VolumeRangeRef {
-    pub fn start_ref(&self) -> VolumeRef {
-        VolumeRef::new(self.vid.clone(), *self.lsns.start())
+impl LogRangeRef {
+    pub fn start_ref(&self) -> LogRef {
+        LogRef::new(self.log.clone(), *self.lsns.start())
     }
 
-    pub fn end_ref(&self) -> VolumeRef {
-        VolumeRef::new(self.vid.clone(), *self.lsns.end())
+    pub fn end_ref(&self) -> LogRef {
+        LogRef::new(self.log.clone(), *self.lsns.end())
     }
 }
 
 impl Snapshot {
     pub const EMPTY: Self = Self { path: SmallVec::new_const() };
 
-    pub fn new(vid: VolumeId, lsns: RangeInclusive<LSN>) -> Self {
+    pub fn new(log: LogId, lsns: RangeInclusive<LSN>) -> Self {
         assert!(!lsns.is_empty());
         Self {
-            path: SmallVec::from_const([VolumeRangeRef { vid, lsns }]),
+            path: SmallVec::from_const([LogRangeRef { log, lsns }]),
         }
     }
 
-    pub fn head(&self) -> Option<(&VolumeId, LSN)> {
+    pub fn head(&self) -> Option<(&LogId, LSN)> {
         self.path
             .first()
-            .map(|entry| (&entry.vid, *entry.lsns.end()))
+            .map(|entry| (&entry.log, *entry.lsns.end()))
     }
 
     pub fn is_empty(&self) -> bool {
         self.path.is_empty()
     }
 
-    pub fn append(&mut self, vid: VolumeId, lsns: RangeInclusive<LSN>) {
+    pub fn append(&mut self, log: LogId, lsns: RangeInclusive<LSN>) {
         assert!(!lsns.is_empty());
-        self.path.push(VolumeRangeRef { vid, lsns });
+        self.path.push(LogRangeRef { log, lsns });
     }
 
-    /// iterate through all of the volume range references in the snapshot
-    pub fn iter(&self) -> std::slice::Iter<'_, VolumeRangeRef> {
+    /// iterate through all of the log range references in the snapshot
+    pub fn iter(&self) -> std::slice::Iter<'_, LogRangeRef> {
         self.path.iter()
     }
 }
 
 impl IntoIterator for Snapshot {
-    type Item = VolumeRangeRef;
-    type IntoIter = smallvec::IntoIter<[VolumeRangeRef; 1]>;
+    type Item = LogRangeRef;
+    type IntoIter = smallvec::IntoIter<[LogRangeRef; 1]>;
     fn into_iter(self) -> Self::IntoIter {
         self.path.into_iter()
     }

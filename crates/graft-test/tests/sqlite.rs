@@ -1,10 +1,10 @@
-use graft_core::VolumeId;
+use graft_core::LogId;
 use graft_test::GraftTestRuntime;
 
 #[graft_test::test]
 fn test_sync_and_reset() {
     // create two nodes connected to the same remote
-    let remote = VolumeId::random();
+    let remote = LogId::random();
     let mut runtime1 = GraftTestRuntime::with_memory_remote();
     let sqlite1 = runtime1.open_sqlite("main", Some(remote.clone()));
     let mut runtime2 = runtime1.spawn_peer();

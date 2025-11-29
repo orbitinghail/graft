@@ -2,7 +2,7 @@ use std::{collections::HashSet, fmt::Debug};
 
 use culprit::ResultExt;
 use futures::stream::FuturesUnordered;
-use graft_core::VolumeId;
+use graft_core::LogId;
 use tokio::time::Interval;
 use tokio_stream::StreamExt;
 use tryiter::TryIteratorExt;
@@ -12,7 +12,7 @@ use crate::{
     local::fjall_storage::FjallStorage,
     remote::Remote,
     rt::{
-        action::{Action, FetchVolume, RemoteCommit},
+        action::{Action, FetchLog, RemoteCommit},
         task::{Result, Task},
     },
 };
@@ -44,11 +44,11 @@ impl Task for AutosyncTask {
             self.ticker.tick().await;
 
             enum Subtask {
-                Push { graft: VolumeId },
-                Pull { graft: VolumeId },
+                Push { graft: LogId },
+                Pull { graft: LogId },
             }
 
-            // a set of VolumeIDs to fetch
+            // a set of LogIds to fetch
             let mut fetches = HashSet::new();
             // a set of actions to execute
             let mut actions = vec![];
@@ -81,7 +81,7 @@ impl Task for AutosyncTask {
             // execute all scheduled fetches
             let mut futures: FuturesUnordered<_> = fetches
                 .into_iter()
-                .map(|vid| FetchVolume { vid, max_lsn: None }.run(storage, remote))
+                .map(|log| FetchLog { log, max_lsn: None }.run(storage, remote))
                 .collect();
             while let Some(result) = futures.next().await {
                 if let Err(err) = result {

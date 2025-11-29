@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use zerocopy::{ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-use crate::gid::prefix::Prefix;
+use crate::gid::prefix::{ConstDefault, Prefix};
 
 #[derive(
     Debug,
@@ -25,9 +25,11 @@ pub struct GidTimestamp<P: Prefix> {
     ts: [u8; 6],
 }
 
-impl<P: Prefix> GidTimestamp<P> {
-    pub const ZERO: Self = Self { prefix: P::DEFAULT, ts: [0; 6] };
+impl<P: Prefix> ConstDefault for GidTimestamp<P> {
+    const DEFAULT: Self = Self { prefix: P::DEFAULT, ts: [0; 6] };
+}
 
+impl<P: Prefix> GidTimestamp<P> {
     #[inline]
     pub fn now() -> Self {
         SystemTime::now().into()
@@ -53,14 +55,14 @@ impl<P: Prefix> From<SystemTime> for GidTimestamp<P> {
 
 #[cfg(test)]
 mod tests {
-    use crate::gid::prefix::Volume;
+    use crate::gid::prefix::Log;
 
     use super::*;
 
     #[test]
     fn test_gid_timestamp_now() {
-        let now = GidTimestamp::<Volume>::now();
-        assert!(now != GidTimestamp::ZERO);
+        let now = GidTimestamp::<Log>::now();
+        assert!(now != GidTimestamp::DEFAULT);
     }
 
     #[test]
@@ -69,12 +71,12 @@ mod tests {
             st.duration_since(UNIX_EPOCH).unwrap().as_millis()
         }
         let now = SystemTime::now();
-        let gid_ts: GidTimestamp<Volume> = now.into();
+        let gid_ts: GidTimestamp<Log> = now.into();
         assert_eq!(st_ms(gid_ts.as_time()), st_ms(now));
     }
 
     #[test]
     fn test_gid_timestamp_zero() {
-        assert_eq!(GidTimestamp::<Volume>::ZERO.as_time(), UNIX_EPOCH);
+        assert_eq!(GidTimestamp::<Log>::DEFAULT.as_time(), UNIX_EPOCH);
     }
 }

@@ -8,7 +8,7 @@ use std::{
 use bytes::BytesMut;
 use culprit::{Culprit, Result, ResultExt};
 use graft_core::{
-    PageIdx, VolumeId,
+    LogId, PageIdx,
     page::{PAGESIZE, Page},
     page_count::PageCount,
 };
@@ -65,7 +65,7 @@ impl Debug for VolFileState {
 pub struct VolFile {
     runtime: Runtime,
     pub tag: String,
-    pub graft: VolumeId,
+    pub graft: LogId,
     opts: OpenOpts,
 
     reserved: Arc<Mutex<()>>,
@@ -86,7 +86,7 @@ impl VolFile {
     pub fn new(
         runtime: Runtime,
         tag: String,
-        graft: VolumeId,
+        graft: LogId,
         opts: OpenOpts,
         reserved: Arc<Mutex<()>>,
     ) -> Self {
@@ -129,7 +129,7 @@ impl VolFile {
         self.opts
     }
 
-    pub fn switch_graft(&mut self, graft: &VolumeId) -> Result<(), ErrCtx> {
+    pub fn switch_graft(&mut self, graft: &LogId) -> Result<(), ErrCtx> {
         self.runtime
             .tag_replace(&self.tag, graft.clone())
             .or_into_ctx()?;

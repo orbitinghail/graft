@@ -17,7 +17,7 @@ use zerocopy::{
 use crate::{
     byte_unit::ByteUnit,
     derive_zerocopy_encoding,
-    gid::random::GidRandom,
+    gid::{prefix::ConstDefault, random::GidRandom},
     zerocopy_ext::{TryFromBytesExt, ZerocopyErr},
 };
 
@@ -54,20 +54,20 @@ mod time;
 #[repr(C)]
 pub struct Gid<P: Prefix> {
     time: GidTimestamp<P>,
-    random: GidRandom<P>,
+    random: GidRandom,
 }
 
-pub type VolumeId = Gid<prefix::Volume>;
+pub type LogId = Gid<prefix::Log>;
 pub type SegmentId = Gid<prefix::Segment>;
 
-static_assertions::assert_eq_size!(VolumeId, [u8; GID_SIZE.as_usize()]);
+static_assertions::assert_eq_size!(LogId, [u8; GID_SIZE.as_usize()]);
 static_assertions::assert_eq_size!(SegmentId, [u8; GID_SIZE.as_usize()]);
 
 impl<P: Prefix> Gid<P> {
     pub const SIZE: ByteUnit = GID_SIZE;
-    pub const ZERO: Self = Self {
-        time: GidTimestamp::ZERO,
-        random: GidRandom::ZERO,
+    pub const EMPTY: Self = Self {
+        time: GidTimestamp::DEFAULT,
+        random: GidRandom::DEFAULT,
     };
 
     pub fn random() -> Self {
@@ -79,7 +79,7 @@ impl<P: Prefix> Gid<P> {
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self == &Self::ZERO
+        self == &Self::EMPTY
     }
 
     /// serializes the Gid to a string
@@ -144,7 +144,7 @@ impl<P: Prefix> PartialOrd for Gid<P> {
 impl<P: Prefix> Default for Gid<P> {
     #[inline]
     fn default() -> Self {
-        Self::ZERO
+        Self::EMPTY
     }
 }
 
@@ -302,7 +302,7 @@ impl<'de, P: Prefix> Deserialize<'de> for Gid<P> {
 derive_zerocopy_encoding!(
     encode type (Gid<P>)
     with size (GID_SIZE.as_usize())
-    with empty (Gid::<P>::ZERO)
+    with empty (Gid::<P>::EMPTY)
     with generics (P: Prefix)
 );
 
@@ -319,23 +319,23 @@ mod tests {
 
     fn mkgid(prefix: u8, ts: SystemTime, random: u8) -> [u8; 16] {
         let mut bytes = [random; 16];
-        bytes[..7].copy_from_slice(GidTimestamp::<prefix::Volume>::from(ts).as_bytes());
+        bytes[..7].copy_from_slice(GidTimestamp::<prefix::Log>::from(ts).as_bytes());
         bytes[0] = prefix;
-        bytes[7] = prefix;
+        bytes[7] |= 0x80; // set the first bit in random to 1
         bytes
     }
 
     #[graft_test::test]
     fn test_mkgid() {
-        let gid = mkgid(prefix::Volume::Value as u8, SystemTime::UNIX_EPOCH, 0);
-        let gid = VolumeId::try_read_from_bytes(&gid).unwrap();
+        let gid = mkgid(prefix::Log::Value as u8, SystemTime::UNIX_EPOCH, 0);
+        let gid = LogId::try_read_from_bytes(&gid).unwrap();
         assert_eq!(gid.as_time(), SystemTime::UNIX_EPOCH);
-        assert_eq!(gid.random, GidRandom::<prefix::Volume>::ZERO);
+        assert_eq!(gid.random, GidRandom::DEFAULT);
 
         let gid = mkgid(prefix::Segment::Value as u8, SystemTime::UNIX_EPOCH, 0);
         let gid = SegmentId::try_read_from_bytes(&gid).unwrap();
         assert_eq!(gid.as_time(), SystemTime::UNIX_EPOCH);
-        assert_eq!(gid.random, GidRandom::<prefix::Segment>::ZERO);
+        assert_eq!(gid.random, GidRandom::DEFAULT);
     }
 
     #[graft_test::test]
@@ -355,7 +355,7 @@ mod tests {
 
     #[graft_test::test]
     fn test_ts() {
-        let vid = VolumeId::random();
+        let vid = LogId::random();
         let ts = vid.as_time();
         assert!(ts.duration_since(UNIX_EPOCH).unwrap().as_millis() > 0)
     }
@@ -364,11 +364,11 @@ mod tests {
     fn test_size() {
         let g = SegmentId::default();
         println!("gid: {}", g.serialize());
-        assert!(g.serialize().len() <= ENCODED_LEN);
+        assert!(g.serialize().len() == ENCODED_LEN);
 
-        let g = VolumeId::default();
+        let g = LogId::default();
         println!("gid: {}", g.serialize());
-        assert!(g.serialize().len() <= ENCODED_LEN);
+        assert!(g.serialize().len() == ENCODED_LEN);
     }
 
     #[graft_test::test]
@@ -399,7 +399,7 @@ mod tests {
         ];
 
         for &case in cases.iter() {
-            let result: Result<VolumeId, _> = case.parse();
+            let result: Result<LogId, _> = case.parse();
             assert_matches!(result.unwrap_err(), GidParseErr::InvalidLength);
         }
 
@@ -411,14 +411,14 @@ mod tests {
             "5rMJhdWzu92doCGF-QwpamqX",
         ];
         for &case in cases.iter() {
-            let result: Result<VolumeId, _> = case.parse();
+            let result: Result<LogId, _> = case.parse();
             assert_matches!(result.unwrap_err(), GidParseErr::InvalidGidLayout);
         }
 
         // invalid prefix
         let cases = ["2rMJhdWzu9-2doCGFQwpamqX", "5rMJhdWzu9-3doCGFQwpamqX"];
         for &case in cases.iter() {
-            let result: Result<VolumeId, _> = case.parse();
+            let result: Result<LogId, _> = case.parse();
             assert_matches!(result.unwrap_err(), GidParseErr::Corrupt(_));
         }
 
@@ -428,7 +428,7 @@ mod tests {
             mkgid(5, SystemTime::now(), random()),
         ];
         for &case in cases.iter() {
-            let result: Result<VolumeId, _> = case.try_into();
+            let result: Result<LogId, _> = case.try_into();
             assert_matches!(
                 result.unwrap_err(),
                 GidParseErr::Corrupt(ZerocopyErr::InvalidData)
@@ -438,7 +438,7 @@ mod tests {
         // wrong prefix
         let raw = mkgid(prefix::Segment::Value as u8, SystemTime::now(), random());
         assert_matches!(
-            VolumeId::try_from(raw).unwrap_err(),
+            LogId::try_from(raw).unwrap_err(),
             GidParseErr::Corrupt(ZerocopyErr::InvalidData)
         );
     }
@@ -447,17 +447,17 @@ mod tests {
     fn test_bilrost() {
         #[derive(Message, Debug, PartialEq, Eq)]
         struct TestMsg {
-            vid: VolumeId,
+            vid: LogId,
             sid: SegmentId,
 
-            vids: Vec<VolumeId>,
+            vids: Vec<LogId>,
         }
 
         let msg = TestMsg {
-            vid: VolumeId::random(),
+            vid: LogId::random(),
             sid: SegmentId::random(),
 
-            vids: vec![VolumeId::random(), VolumeId::random()],
+            vids: vec![LogId::random(), LogId::random()],
         };
         let b = msg.encode_to_bytes();
         let decoded: TestMsg = TestMsg::decode(b).unwrap();
@@ -468,12 +468,12 @@ mod tests {
     fn test_gid_alphanumeric_sort() {
         // generate 10 gids separated by random times from 1ms to 1000ms
         // then verify that they sort in order
-        let mut gids: Vec<VolumeId> = Vec::new();
+        let mut gids: Vec<LogId> = Vec::new();
         let mut current_time = SystemTime::UNIX_EPOCH;
         for _ in 0..10 {
             let delta = std::time::Duration::from_millis(rand::random::<u64>() % 1000 + 1);
             current_time += delta;
-            let gid = VolumeId {
+            let gid = LogId {
                 time: GidTimestamp::from(current_time),
                 random: GidRandom::random(),
             };

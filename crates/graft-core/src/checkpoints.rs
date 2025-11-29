@@ -6,8 +6,8 @@ use smallvec::SmallVec;
 
 use crate::lsn::LSN;
 
-/// A Volume's `CheckpointSet` is stored at `{prefix}/{vid}/checkpoints`.
-/// `CheckpointSets` are updated by the checkpointer via compare-and-swap.
+/// A set of checkpoints LSNs in a Log. Each commit referenced by a checkpoint
+/// LSN contains a full copy of the Volume as of that point in time.
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
 pub struct Checkpoints {
     /// The set of checkpoint LSNs sorted in ascending order.

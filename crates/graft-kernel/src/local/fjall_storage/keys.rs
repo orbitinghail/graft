@@ -3,8 +3,7 @@ use bytestring::ByteString;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
 use graft_core::{
-    PageIdx, SegmentId, VolumeId, cbe::CBE64, lsn::LSN, volume_ref::VolumeRef,
-    zerocopy_ext::TryFromBytesExt,
+    LogId, PageIdx, SegmentId, cbe::CBE64, logref::LogRef, lsn::LSN, zerocopy_ext::TryFromBytesExt,
 };
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
 
@@ -17,17 +16,17 @@ pub trait FjallKeyPrefix {
     type Prefix: AsRef<[u8]>;
 }
 
-impl FjallReprRef for VolumeId {
+impl FjallReprRef for LogId {
     #[inline]
     fn as_slice(&self) -> impl AsRef<[u8]> {
         self.as_bytes()
     }
 }
 
-impl FjallRepr for VolumeId {
+impl FjallRepr for LogId {
     #[inline]
     fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-        VolumeId::try_from(Bytes::from(slice)).or_into_ctx()
+        LogId::try_from(Bytes::from(slice)).or_into_ctx()
     }
 }
 
@@ -48,33 +47,33 @@ impl FjallRepr for ByteString {
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
-struct SerializedVolumeRef {
-    vid: VolumeId,
+struct SerializedLogRef {
+    log: LogId,
     lsn: CBE64,
 }
 
-impl AsRef<[u8]> for SerializedVolumeRef {
+impl AsRef<[u8]> for SerializedLogRef {
     #[inline]
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
 }
 
-impl FjallKeyPrefix for VolumeRef {
-    type Prefix = VolumeId;
+impl FjallKeyPrefix for LogRef {
+    type Prefix = LogId;
 }
 
 proxy_to_fjall_repr!(
-    encode (VolumeRef) using proxy (SerializedVolumeRef)
+    encode (LogRef) using proxy (SerializedLogRef)
     into_proxy(me) {
-        SerializedVolumeRef {
-            vid: me.vid,
+        SerializedLogRef {
+            log: me.log,
             lsn: me.lsn.into(),
         }
     }
     from_proxy(proxy) {
-        Ok(VolumeRef {
-            vid: proxy.vid.clone(),
+        Ok(LogRef {
+            log: proxy.log.clone(),
             lsn: LSN::try_from(proxy.lsn)?,
         })
     }
@@ -149,40 +148,36 @@ mod tests {
     use super::*;
 
     #[graft_test::test]
-    fn test_volume_id() {
-        test_roundtrip(VolumeId::random());
-        test_roundtrip(VolumeId::ZERO);
-        test_invalid::<VolumeId>(b"");
-        test_invalid::<VolumeId>(b"asdf");
-        test_invalid::<VolumeId>(SegmentId::random().as_bytes());
+    fn test_log_id() {
+        test_roundtrip(LogId::random());
+        test_roundtrip(LogId::EMPTY);
+        test_invalid::<LogId>(b"");
+        test_invalid::<LogId>(b"asdf");
+        test_invalid::<LogId>(SegmentId::random().as_bytes());
     }
 
     #[graft_test::test]
     fn test_commit_key() {
-        test_roundtrip(VolumeRef::new(VolumeId::random(), lsn!(123)));
+        test_roundtrip(LogRef::new(LogId::random(), lsn!(123)));
 
         // zero LSN is invalid
-        test_invalid::<VolumeRef>(
-            SerializedVolumeRef {
-                vid: VolumeId::random(),
-                lsn: CBE64::new(0),
-            }
-            .as_bytes(),
+        test_invalid::<LogRef>(
+            SerializedLogRef { log: LogId::random(), lsn: CBE64::new(0) }.as_bytes(),
         );
 
-        test_invalid::<VolumeRef>(b"short");
-        test_invalid::<VolumeRef>(b"");
+        test_invalid::<LogRef>(b"short");
+        test_invalid::<LogRef>(b"");
 
         // CommitKeys must naturally sort in descending order by LSN
-        let vid1: VolumeId = "5rMJhdYXJ3-2e64STQSCVT8X".parse().unwrap();
-        let vid2: VolumeId = "5rMJhdYYXB-2e2iX9AHva3xQ".parse().unwrap();
+        let log1: LogId = "74ggc11XPe-3tpZminfUtzHG".parse().unwrap();
+        let log2: LogId = "74ggc11YqY-3eHQq23tMuPUq".parse().unwrap();
         test_serialized_order(&[
-            VolumeRef::new(vid1.clone(), lsn!(4)),
-            VolumeRef::new(vid1.clone(), lsn!(3)),
-            VolumeRef::new(vid1.clone(), lsn!(2)),
-            VolumeRef::new(vid1, lsn!(1)),
-            VolumeRef::new(vid2.clone(), lsn!(2)),
-            VolumeRef::new(vid2, lsn!(1)),
+            LogRef::new(log1.clone(), lsn!(4)),
+            LogRef::new(log1.clone(), lsn!(3)),
+            LogRef::new(log1.clone(), lsn!(2)),
+            LogRef::new(log1, lsn!(1)),
+            LogRef::new(log2.clone(), lsn!(2)),
+            LogRef::new(log2, lsn!(1)),
         ]);
     }
 

@@ -12,8 +12,7 @@ use crate::{
 
 const HYDRATE_CONCURRENCY: usize = 5;
 
-/// Downloads all missing pages for a Volume up to an optional maximum LSN.
-/// If `max_lsn` is not specified, will hydrate the Volume up to its latest snapshot.
+/// Downloads all missing pages for a Snapshot.
 #[derive(Debug)]
 pub struct HydrateSnapshot {
     pub snapshot: Snapshot,

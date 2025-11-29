@@ -7,7 +7,7 @@ use thiserror::Error;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::{
-    VolumeId,
+    LogId,
     cbe::CBE64,
     derive_zerocopy_encoding,
     lsn::LSN,
@@ -149,7 +149,7 @@ derive_zerocopy_encoding!(
 /// Builder for computing commit hashes using BLAKE3.
 ///
 /// Implements the commit hash algorithm as specified in RFC 0001.
-/// The hash incorporates the volume ID, LSN, page count, and page data
+/// The hash incorporates the Log ID, LSN, page count, and page data
 /// to ensure uniqueness and integrity verification.
 pub struct CommitHashBuilder {
     hasher: blake3::Hasher,
@@ -157,13 +157,13 @@ pub struct CommitHashBuilder {
 }
 
 impl CommitHashBuilder {
-    /// Creates a new `CommitHashBuilder` initialized with the given volume metadata.
-    pub fn new(vid: VolumeId, lsn: LSN, volume_pages: PageCount) -> Self {
+    /// Creates a new `CommitHashBuilder` initialized with the given metadata.
+    pub fn new(logid: LogId, lsn: LSN, pages: PageCount) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&COMMIT_HASH_MAGIC);
-        hasher.update(vid.as_bytes());
+        hasher.update(logid.as_bytes());
         hasher.update(CBE64::from(lsn).as_bytes());
-        hasher.update(&volume_pages.to_u32().to_be_bytes());
+        hasher.update(&pages.to_u32().to_be_bytes());
         Self { hasher, last_pageidx: None }
     }
 
@@ -218,11 +218,11 @@ mod tests {
 
     #[graft_test::test]
     fn test_commit_hash_builder_table() {
-        let vid: VolumeId = "5rMJhdVrxb-2e7iyEK3dXuE3".parse().unwrap();
+        let log: LogId = "74ggbzxuMf-2uAmM7FwXntwW".parse().unwrap();
 
         struct TestCase {
             name: &'static str,
-            vid: VolumeId,
+            log: LogId,
             lsn: LSN,
             page_count: PageCount,
             pages: Vec<(PageIdx, Page)>,
@@ -231,37 +231,37 @@ mod tests {
 
         let test_cases = vec![
             TestCase {
-                name: "empty_volume",
-                vid: vid.clone(),
+                name: "empty_log",
+                log: log.clone(),
                 lsn: lsn!(1),
                 page_count: PageCount::ZERO,
                 pages: vec![],
-                expected_hash: "5YbaAZvwrzRck5WQPwaKqo5SirMns1WGPwxvkoc16Jn6",
+                expected_hash: "5ZCKZ9nz14E6kttXgRzGzWPe4iGad8fqE6bADSLxzfXV",
             },
             TestCase {
                 name: "single_page",
-                vid: vid.clone(),
+                log: log.clone(),
                 lsn: lsn!(42),
                 page_count: PageCount::new(1),
                 pages: vec![(pageidx!(1), Page::test_filled(0xAA))],
-                expected_hash: "5XqotAhgdkC8NBdv5eS4jZFM1LCeugjLQHpwSDEgfz8n",
+                expected_hash: "5Zx7fz5utSpLyJvurgLiQGHzdNHH4Wwk1BoxoyfR3C5j",
             },
             TestCase {
                 name: "multiple_pages",
-                vid,
+                log,
                 lsn: lsn!(123),
                 page_count: PageCount::new(2),
                 pages: vec![
                     (pageidx!(1), Page::test_filled(0x11)),
                     (pageidx!(2), Page::test_filled(0x22)),
                 ],
-                expected_hash: "5XYzfp5hcQLw3TejqZPT1GcXz2XV7fXFGYYhJ1KLUjNw",
+                expected_hash: "5Xsk16UBYSSQ75xbikQfTHykWpbVv3az1ncaFGajqjhe",
             },
         ];
 
         for test_case in test_cases {
             let mut builder =
-                CommitHashBuilder::new(test_case.vid, test_case.lsn, test_case.page_count);
+                CommitHashBuilder::new(test_case.log, test_case.lsn, test_case.page_count);
 
             for (pageidx, page) in test_case.pages {
                 builder.write_page(pageidx, &page);
@@ -293,7 +293,7 @@ mod tests {
     #[graft_test::test]
     #[should_panic(expected = "Pages must be written in order by pageidx")]
     fn test_commit_hash_builder_page_order_panic() {
-        let mut builder = CommitHashBuilder::new(VolumeId::random(), LSN::FIRST, PageCount::ZERO);
+        let mut builder = CommitHashBuilder::new(LogId::random(), LSN::FIRST, PageCount::ZERO);
         builder.write_page(pageidx!(2), &Page::test_filled(0x22));
         builder.write_page(pageidx!(1), &Page::test_filled(0x11)); // This should panic
     }

@@ -26,14 +26,14 @@ use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unalig
     Default,
 )]
 #[repr(u8)]
-pub enum Volume {
+pub enum Log {
     #[default]
-    Value = 0b1_00_00000,
+    Value = 0b1_01_00000,
 }
 
-impl Debug for Volume {
+impl Debug for Log {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Volume")
+        write!(f, "Log")
     }
 }
 
@@ -55,7 +55,7 @@ impl Debug for Volume {
 #[repr(u8)]
 pub enum Segment {
     #[default]
-    Value = 0b1_01_00000,
+    Value = 0b1_10_00000,
 }
 
 impl Debug for Segment {
@@ -64,57 +64,23 @@ impl Debug for Segment {
     }
 }
 
-#[derive(
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    ByteHash,
-    PartialOrd,
-    Ord,
-    IntoBytes,
-    Unaligned,
-    TryFromBytes,
-    Immutable,
-    KnownLayout,
-    Default,
-)]
-#[repr(u8)]
-pub enum Client {
-    #[default]
-    Value = 0b1_10_00000,
-}
-
-impl Debug for Client {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Client")
-    }
-}
-
 // Ensure none of the prefixes equal one-another
-const_assert_ne!(Volume::Value as u8, Segment::Value as u8);
-const_assert_ne!(Volume::Value as u8, Client::Value as u8);
-const_assert_ne!(Segment::Value as u8, Client::Value as u8);
+const_assert_ne!(Log::Value as u8, Segment::Value as u8);
 
 // Ensure none of the prefixes are zero.
-const_assert_ne!(Volume::Value as u8, 0);
+const_assert_ne!(Log::Value as u8, 0);
 const_assert_ne!(Segment::Value as u8, 0);
-const_assert_ne!(Client::Value as u8, 0);
 
 pub trait ConstDefault {
     const DEFAULT: Self;
 }
 
-impl ConstDefault for Volume {
-    const DEFAULT: Self = Volume::Value;
+impl ConstDefault for Log {
+    const DEFAULT: Self = Log::Value;
 }
 
 impl ConstDefault for Segment {
     const DEFAULT: Self = Segment::Value;
-}
-
-impl ConstDefault for Client {
-    const DEFAULT: Self = Client::Value;
 }
 
 pub trait Prefix:
@@ -134,6 +100,5 @@ pub trait Prefix:
 {
 }
 
-impl Prefix for Volume {}
+impl Prefix for Log {}
 impl Prefix for Segment {}
-impl Prefix for Client {}

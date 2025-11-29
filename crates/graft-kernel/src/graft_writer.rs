@@ -1,5 +1,5 @@
 use culprit::{Result, ResultExt};
-use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
+use graft_core::{LogId, PageCount, PageIdx, commit::SegmentIdx, page::Page};
 
 use crate::{
     KernelErr,
@@ -18,7 +18,7 @@ pub trait GraftWrite {
 #[derive(Debug)]
 pub struct GraftWriter {
     runtime: Runtime,
-    graft: VolumeId,
+    graft: LogId,
     snapshot: Snapshot,
     page_count: PageCount,
     segment: SegmentIdx,
@@ -27,7 +27,7 @@ pub struct GraftWriter {
 impl GraftWriter {
     pub(crate) fn new(
         runtime: Runtime,
-        graft: VolumeId,
+        graft: LogId,
         snapshot: Snapshot,
         page_count: PageCount,
     ) -> Self {

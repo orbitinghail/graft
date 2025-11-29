@@ -20,7 +20,7 @@ pub enum DecodeErr {
     #[error(transparent)]
     InvalidUtf8(#[from] Utf8Error),
 
-    #[error("Invalid VolumeID: {0}")]
+    #[error("Invalid ID: {0}")]
     GidParseErr(#[from] graft_core::gid::GidParseErr),
 
     #[error("Bilrost error: {0}")]

@@ -3,7 +3,7 @@ use std::{fmt::Write, fs::File, io::Read, path::PathBuf};
 use bytes::{Bytes, BytesMut};
 use culprit::{Culprit, ResultExt};
 use graft_core::{
-    PageCount, PageIdx, VolumeId,
+    LogId, PageCount, PageIdx,
     lsn::LSNRangeExt,
     page::{PAGESIZE, Page},
 };
@@ -31,13 +31,10 @@ pub enum GraftPragma {
     Tags,
 
     /// `pragma graft_switch = "local_vid[:remote]";`
-    Switch {
-        graft: VolumeId,
-        remote: Option<VolumeId>,
-    },
+    Switch { graft: LogId, remote: Option<LogId> },
 
     /// `pragma graft_clone [= "remote_vid"];`
-    Clone { remote: Option<VolumeId> },
+    Clone { remote: Option<LogId> },
 
     /// `pragma graft_fork;`
     Fork,
@@ -89,7 +86,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "clone" => {
                     if let Some(arg) = p.arg {
                         let remote = arg
-                            .parse::<VolumeId>()
+                            .parse::<LogId>()
                             .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
                         Ok(GraftPragma::Clone { remote: Some(remote) })
                     } else {
@@ -97,16 +94,16 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     }
                 }
                 "fork" => Ok(GraftPragma::Fork),
-                "new" => Ok(GraftPragma::Switch { graft: VolumeId::random(), remote: None }),
+                "new" => Ok(GraftPragma::Switch { graft: LogId::random(), remote: None }),
                 "switch" => {
                     let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
                     let (prefix, suffix) = arg.split_once(":").unwrap_or((arg, ""));
                     let graft = prefix
-                        .parse::<VolumeId>()
+                        .parse::<LogId>()
                         .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
                     let remote =
                         if !suffix.is_empty() {
-                            Some(suffix.parse::<VolumeId>().map_err(|err| {
+                            Some(suffix.parse::<LogId>().map_err(|err| {
                                 PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string()))
                             })?)
                         } else {
@@ -168,7 +165,7 @@ impl GraftPragma {
                 file.switch_graft(&graft.local)?;
 
                 Ok(Some(format!(
-                    "Created new Graft {} with remote Volume {}",
+                    "Created new Graft {} with remote Log {}",
                     graft.local, graft.remote
                 )))
             }
@@ -202,7 +199,7 @@ impl GraftPragma {
                 file.switch_graft(&graft.local)?;
 
                 Ok(Some(format!(
-                    "Switched to Graft {} with remote Volume {}",
+                    "Switched to Graft {} with remote Log {}",
                     graft.local, graft.remote,
                 )))
             }
@@ -273,7 +270,7 @@ fn format_graft_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culpri
     let remote = state.remote;
     let snapshot = file.snapshot_or_latest()?;
     let page_count = file.page_count()?;
-    let vol_size = PAGESIZE * page_count.to_usize();
+    let snapshot_size = PAGESIZE * page_count.to_usize();
 
     Ok(formatdoc!(
         "
@@ -282,7 +279,7 @@ fn format_graft_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culpri
             Last sync: {sync}
             Snapshot: {snapshot:?}
             Snapshot pages: {page_count}
-            Snapshot size: {vol_size}
+            Snapshot size: {snapshot_size}
         "
     ))
 }
@@ -300,8 +297,8 @@ fn format_graft_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culp
     writeln!(
         &mut f,
         indoc! {"
-            Local Volume {} ({}) is grafted to
-            remote Volume {} ({}).
+            Local Log {} ({}) is grafted to
+            remote Log {} ({}).
         "},
         status.local, status.local_status, status.remote, status.remote_status,
     )?;
@@ -311,7 +308,7 @@ fn format_graft_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culp
             write!(
                 &mut f,
                 indoc! {"
-                    The local and remote Volumes have diverged, and have {} and {}
+                    The local and remote Logs have diverged, and have {} and {}
                     different commits each, respectively.
                 "},
                 local.len(),
@@ -322,7 +319,7 @@ fn format_graft_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culp
             write!(
                 &mut f,
                 indoc! {"
-                    The local Volume is {} {} ahead of the remote Volume.
+                    The local Log is {} {} ahead of the remote Log.
                       (use 'pragma graft_push' to push changes)
                 "},
                 local.len(),
@@ -333,7 +330,7 @@ fn format_graft_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culp
             writeln!(
                 &mut f,
                 indoc! {"
-                    The remote Volume is {} {} ahead of the local Volume.
+                    The remote Log is {} {} ahead of the local Log.
                       (use 'pragma graft_pull' to pull changes)
                 "},
                 remote.len(),
@@ -341,10 +338,7 @@ fn format_graft_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culp
             )?;
         }
         (None, None) => {
-            write!(
-                &mut f,
-                "The local Volume is up to date with the remote Volume."
-            )?;
+            write!(&mut f, "The local Log is up to date with the remote Log.")?;
         }
     }
 
@@ -359,7 +353,7 @@ fn format_graft_audit(runtime: &Runtime, file: &VolFile) -> Result<String, Culpr
         let checksum = runtime.snapshot_checksum(&snapshot).or_into_ctx()?;
         Ok(formatdoc!(
             "
-                Cached {pages} of {pages} {} (100%%) from the remote volume.
+                Cached {pages} of {pages} {} (100%%) from the remote Log.
                 Checksum: {checksum}
             ",
             pluralize!(pages, "page"),
@@ -370,7 +364,7 @@ fn format_graft_audit(runtime: &Runtime, file: &VolFile) -> Result<String, Culpr
         let pct = (have as f64) / (pages as f64) * 100.0;
         Ok(formatdoc!(
             "
-                Cached {have} of {pages} {} ({pct:.02}%%) from the remote volume.
+                Cached {have} of {pages} {} ({pct:.02}%%) from the remote Log.
                   (use 'pragma graft_hydrate' to fetch missing pages)
             ",
             pluralize!(pages, "page"),
@@ -387,7 +381,7 @@ fn fetch_or_pull(
     if pull {
         runtime.graft_pull(file.graft.clone()).or_into_ctx()?;
     } else {
-        runtime.fetch_volume(pre.remote, None).or_into_ctx()?;
+        runtime.fetch_log(pre.remote, None).or_into_ctx()?;
     }
     let post = runtime.graft_status(&file.graft).or_into_ctx()?;
 
@@ -397,12 +391,12 @@ fn fetch_or_pull(
     {
         writeln!(
             &mut f,
-            "Pulled LSNs {} into remote Volume {}",
+            "Pulled LSNs {} into remote Log {}",
             diff.to_string(),
             post.remote
         )?;
     } else {
-        writeln!(&mut f, "No changes to remote Volume {}", post.remote)?;
+        writeln!(&mut f, "No changes to remote Log {}", post.remote)?;
     }
 
     if pull {
@@ -411,12 +405,12 @@ fn fetch_or_pull(
         {
             writeln!(
                 &mut f,
-                "Pulled LSNs {} into local Volume {}",
+                "Pulled LSNs {} into local Log {}",
                 diff.to_string(),
                 post.remote
             )?;
         } else {
-            writeln!(&mut f, "No changes to local Volume {}", post.remote)?;
+            writeln!(&mut f, "No changes to local Log {}", post.remote)?;
         }
     }
 
@@ -435,8 +429,8 @@ fn push(runtime: &Runtime, file: &mut VolFile) -> Result<String, Culprit<ErrCtx>
 
         Ok(formatdoc!(
             "
-                Pushed LSNs {} from local Volume {}
-                to remote Volume {} @ {}
+                Pushed LSNs {} from local Log {}
+                to remote Log {} @ {}
             ",
             pushed.map_or("unknown".into(), |lsns| lsns.to_string()),
             post.local,

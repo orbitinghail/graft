@@ -62,7 +62,7 @@ mod tests {
 
     use graft_core::checkpoints::Checkpoints;
     use graft_core::lsn;
-    use graft_core::{PageCount, VolumeId, page::PAGESIZE};
+    use graft_core::{LogId, PageCount, page::PAGESIZE};
 
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_empty_default, test_invalid, test_roundtrip,
@@ -76,19 +76,14 @@ mod tests {
     }
 
     #[graft_test::test]
-    fn test_volume_handle() {
-        test_roundtrip(Graft::new(
-            VolumeId::random(),
-            VolumeId::random(),
-            None,
-            None,
-        ));
+    fn test_volume() {
+        test_roundtrip(Graft::new(LogId::random(), LogId::random(), None, None));
         test_empty_default::<Graft>();
         test_invalid::<Graft>(&b"abc".repeat(123));
     }
 
     #[graft_test::test]
-    fn test_volume_meta() {
+    fn test_checkpoints() {
         test_roundtrip(CachedCheckpoints::new(
             Checkpoints::from([lsn!(123)].as_slice()),
             Some("asdf"),
@@ -99,11 +94,7 @@ mod tests {
 
     #[graft_test::test]
     fn test_commit() {
-        test_roundtrip(Commit::new(
-            VolumeId::random(),
-            lsn!(123),
-            PageCount::new(456),
-        ));
+        test_roundtrip(Commit::new(LogId::random(), lsn!(123), PageCount::new(456)));
         test_empty_default::<Commit>();
         test_invalid::<Commit>(&b"abc".repeat(123));
     }

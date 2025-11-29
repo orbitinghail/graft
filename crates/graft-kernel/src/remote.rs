@@ -8,7 +8,7 @@ use futures::{
     stream::{self, FuturesOrdered},
 };
 use graft_core::{
-    SegmentId, VolumeId,
+    LogId, SegmentId,
     cbe::CBE64,
     checkpoints::{CachedCheckpoints, Checkpoints},
     commit::Commit,
@@ -26,11 +26,11 @@ pub mod segment;
 const FETCH_COMMITS_CONCURRENCY: usize = 5;
 
 enum RemotePath<'a> {
-    /// `CheckpointSets` are stored at `/volumes/{vid}/checkpoints`
-    CheckpointSet(&'a VolumeId),
+    /// `CheckpointSets` are stored at `/logs/{logid}/checkpoints`
+    CheckpointSet(&'a LogId),
 
-    /// Commits are stored at `/volumes/{vid}/log/{CBE64 hex LSN}`
-    Commit(&'a VolumeId, LSN),
+    /// Commits are stored at `/logs/{logid}/commits/{CBE64 hex LSN}`
+    Commit(&'a LogId, LSN),
 
     /// Segments are stored at `/segments/{sid}`
     Segment(&'a SegmentId),
@@ -39,13 +39,11 @@ enum RemotePath<'a> {
 impl RemotePath<'_> {
     fn build(self) -> object_store::path::Path {
         match self {
-            Self::CheckpointSet(vid) => {
-                Path::from_iter(["volumes", &vid.serialize(), "checkpoints"])
-            }
-            Self::Commit(vid, lsn) => Path::from_iter([
-                "volumes",
-                &vid.serialize(),
-                "log",
+            Self::CheckpointSet(log) => Path::from_iter(["logs", &log.serialize(), "checkpoints"]),
+            Self::Commit(log, lsn) => Path::from_iter([
+                "logs",
+                &log.serialize(),
+                "commits",
                 &CBE64::from(lsn).to_string(),
             ]),
             Self::Segment(sid) => Path::from_iter(["segments", &sid.serialize()]),
@@ -143,15 +141,15 @@ impl Remote {
         Ok(Self { store })
     }
 
-    /// Fetches checkpoints for the specified volume. If `etag` is not `None`
+    /// Fetches checkpoints for the specified Log. If `etag` is not `None`
     /// then this method will return a not modified error.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_checkpoints(
         &self,
-        vid: &VolumeId,
+        log: &LogId,
         etag: Option<String>,
     ) -> Result<CachedCheckpoints> {
-        let path = RemotePath::CheckpointSet(vid).build();
+        let path = RemotePath::CheckpointSet(log).build();
         let opts = GetOptions {
             if_none_match: etag,
             ..GetOptions::default()
@@ -170,7 +168,7 @@ impl Remote {
     /// commits as soon as we reach the end of the log.
     pub fn stream_commits_ordered<I: IntoIterator<Item = LSN>>(
         &self,
-        vid: &VolumeId,
+        log: &LogId,
         lsns: I,
     ) -> impl Stream<Item = Result<Commit>> {
         // convert the set into a stream of chunks, such that the first chunk
@@ -186,7 +184,7 @@ impl Remote {
             .flat_map(|chunk| {
                 chunk
                     .into_iter()
-                    .map(|lsn| self.get_commit(vid, lsn))
+                    .map(|lsn| self.get_commit(log, lsn))
                     .collect::<FuturesOrdered<_>>()
             })
             .try_take_while(|result| future::ready(Ok(result.is_some())))
@@ -195,8 +193,8 @@ impl Remote {
 
     /// Fetches a single commit, returning None if the commit is not found.
     #[tracing::instrument(level = "trace", skip(self, lsn), fields(lsn = %lsn))]
-    pub async fn get_commit(&self, vid: &VolumeId, lsn: LSN) -> Result<Option<Commit>> {
-        let path = RemotePath::Commit(vid, lsn).build();
+    pub async fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>> {
+        let path = RemotePath::Commit(log, lsn).build();
         match self.store.get(&path).await {
             Ok(res) => Commit::decode(res.bytes().await?).or_into_ctx().map(Some),
             Err(object_store::Error::NotFound { .. }) => Ok(None),
@@ -208,7 +206,7 @@ impl Remote {
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
     #[tracing::instrument(level = "debug", skip(self, commit), fields(lsn = %commit.lsn()))]
     pub async fn put_commit(&self, commit: &Commit) -> Result<()> {
-        let path = RemotePath::Commit(commit.vid(), commit.lsn()).build();
+        let path = RemotePath::Commit(commit.log(), commit.lsn()).build();
         let payload = PutPayload::from_bytes(commit.encode_to_bytes());
         self.store
             .put_opts(

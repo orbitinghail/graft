@@ -1,6 +1,6 @@
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
-use crate::gid::prefix::Prefix;
+use crate::gid::prefix::ConstDefault;
 
 #[derive(
     Debug,
@@ -17,15 +17,20 @@ use crate::gid::prefix::Prefix;
     Unaligned,
 )]
 #[repr(C)]
-pub struct GidRandom<P: Prefix> {
-    prefix: P,
-    data: [u8; 8],
+pub struct GidRandom {
+    data: [u8; 9],
 }
 
-impl<P: Prefix> GidRandom<P> {
-    pub const ZERO: Self = Self { prefix: P::DEFAULT, data: [0; 8] };
+impl ConstDefault for GidRandom {
+    const DEFAULT: Self = Self { data: [0x80, 0, 0, 0, 0, 0, 0, 0, 0] };
+}
 
+impl GidRandom {
     pub fn random() -> Self {
-        Self { prefix: P::DEFAULT, data: rand::random() }
+        let mut data: [u8; 9] = rand::random();
+        // set the first bit of the first byte to 1
+        // this ensures that the bs58 representation of Random is always 13 bytes
+        data[0] |= 0x80;
+        Self { data: data }
     }
 }

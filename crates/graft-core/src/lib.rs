@@ -9,7 +9,7 @@ pub mod pageset;
 
 pub mod checkpoints;
 pub mod commit;
-pub mod volume_ref;
+pub mod logref;
 
 pub mod bilrost_util;
 pub mod byte_unit;
@@ -19,7 +19,7 @@ pub mod merge_runs;
 pub mod zerocopy_ext;
 
 pub use commit_hash::{CommitHashBuilder, CommitHashParseErr};
-pub use gid::{SegmentId, VolumeId};
+pub use gid::{LogId, SegmentId};
 pub use page_count::PageCount;
 pub use pageidx::PageIdx;
 

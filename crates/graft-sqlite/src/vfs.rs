@@ -76,7 +76,7 @@ impl ErrCtx {
             KernelErr::Storage(_) => SQLITE_IOERR,
             KernelErr::Remote(_) => SQLITE_IOERR,
             KernelErr::Logical(err) => match err {
-                LogicalErr::VolumeNotFound(_) | LogicalErr::GraftNotFound(_) => SQLITE_IOERR,
+                LogicalErr::GraftNotFound(_) => SQLITE_IOERR,
                 LogicalErr::GraftConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
                 LogicalErr::GraftNeedsRecovery(_)
                 | LogicalErr::GraftDiverged(_)
