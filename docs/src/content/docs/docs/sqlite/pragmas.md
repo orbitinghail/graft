@@ -7,7 +7,7 @@ The application can interact with the Graft SQLite extension using the following
 
 [pragma statements]: https://www.sqlite.org/pragma.html
 
-## Graft Management
+## Volume Management
 
 ### `pragma graft_volumes`
 
@@ -31,51 +31,47 @@ Displays tag names, the Volume they point to, and sync status.
 
 ### `pragma graft_new`
 
-Creates a new Volume with a random Volume ID.
+Creates a new Volume with a random Volume ID. Updates the current tag to point at the new Volume.
 
 ```sql
 pragma graft_new;
 ```
 
-This is a convenience shortcut for `pragma graft_switch` with a randomly generated VolumeId. It creates a fresh, empty database with no remote tracking.
+This is a convenience shortcut for `pragma graft_switch` with a randomly generated VolumeId. It creates a fresh, empty database.
 
 ### `pragma graft_switch = "local_vid[:local[:remote]]"`
 
-Switches the current connection to a different Volume.
+Switches the current connection to a different Volume. You may optionally specify local and remote log ids. If any of the ids don't exist they will be created. Updates the current tag to point at the Volume.
 
 ```sql
 -- Switch to a specific Volume by Volume ID
-pragma graft_switch = "GonugMKom6Q92W5YddpVTd";
+pragma graft_switch = "5rMJkfqcEt-2ei3bXFrcteHv";
 
 -- Switch to a Volume and specify its local and remote Log IDs
-pragma graft_switch = "GonugMKom6Q92W5YddpVTd:GpABCDEFGHIJKLMNOPQRST:GqXYZABCDEFGHIJKLMNOPQ";
+pragma graft_switch="5rMJkf2zHE-2xMqqKcN8RLZh:74ggc1B6R4-2kkvcy9fi4CHJ:74ggc1B6jg-2udz14pbDayZC";
 ```
-
-If the Volume doesn't exist, it will be created. Optionally specify a local LogId and remote LogId to track.
 
 ### `pragma graft_clone = "remote_log_id"`
 
-Clones a Volume from a remote Log.
+Creates a new local Volume that tracks the specified remote Log. Like `git clone`. Updates the current tag to point at the new Volume.
 
 ```sql
 -- Clone from a specific remote Log
-pragma graft_clone = "GonugMKom6Q92W5YddpVTd";
+pragma graft_clone = "74ggc2H6PL-39NEcP8ybwTiB";
 
 -- Clone from the current Volume's remote Log
 pragma graft_clone;
 ```
 
-Creates a new local Volume that tracks the specified remote Log. Like `git clone`.
-
 ### `pragma graft_fork`
 
-Forks the current snapshot into a new independent Volume.
+Forks the current Volume into a new independent Volume. Updates the current tag to point at the new Volume.
 
 ```sql
 pragma graft_fork;
 ```
 
-Creates a divergent copy of your current database state. The Volume must be fully hydrated (all pages downloaded) before forking. Like `git fork` - creates an independent copy.
+The Volume must be fully hydrated (all pages downloaded) before forking.
 
 ## Introspection
 
@@ -88,6 +84,7 @@ pragma graft_info;
 ```
 
 Displays:
+
 - Volume ID
 - Local Log ID
 - Remote Log ID
@@ -114,59 +111,50 @@ Returns a compressed description of the current connection's snapshot.
 pragma graft_snapshot;
 ```
 
-Shows the snapshot structure, which may span multiple volumes with LSN ranges.
+Shows the snapshot structure, which may span LSN ranges on multiple logs.
 
 ### `pragma graft_audit`
 
-Shows page coverage statistics for the current snapshot.
+Scans the current volume. Reports how many pages are cached locally versus the total number of pages. If fully hydrated, shows a checksum. Otherwise, suggests using `pragma graft_hydrate`.
 
 ```sql
 pragma graft_audit;
 ```
 
-Reports how many pages are cached locally versus the total number of pages. If fully hydrated, shows a checksum. Otherwise, suggests using `pragma graft_hydrate`.
-
 ### `pragma graft_version`
 
-Displays Graft's version and commit hash.
+Displays Graft's version and commit hash. Useful for debugging and support.
 
 ```sql
 pragma graft_version;
 ```
 
-Useful for debugging and support.
-
 ## Synchronization
 
 ### `pragma graft_fetch`
 
-Fetches remote metadata without applying changes.
+Fetches the remote log without applying changes.
+Similar to `git fetch`.
 
 ```sql
 pragma graft_fetch;
 ```
 
-Updates the local cache of remote checkpoints. Like `git fetch` - downloads metadata but doesn't merge.
-
 ### `pragma graft_pull`
 
-Fetches and merges changes from the remote Log.
+Fetches and merges changes from the remote Log. Similar to `git pull`.
 
 ```sql
 pragma graft_pull;
 ```
 
-Combines fetch and merge into one operation. Like `git pull` - downloads and applies remote changes.
-
 ### `pragma graft_push`
 
-Pushes local changes to the remote Log.
+Pushes local changes to the remote Log. Similar to `git push`.
 
 ```sql
 pragma graft_push;
 ```
-
-Uploads local commits to remote storage and updates remote checkpoints. Like `git push`.
 
 ### `pragma graft_hydrate`
 
@@ -175,8 +163,6 @@ Downloads all missing pages for the current snapshot.
 ```sql
 pragma graft_hydrate;
 ```
-
-Ensures all pages are available locally. Required before `pragma graft_fork`.
 
 ## Data Import
 
