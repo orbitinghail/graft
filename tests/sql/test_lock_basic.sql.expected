@@ -8,28 +8,28 @@ pragma graft_switch="5rMJkf2zHE-2xMqqKcN8RLZh:74ggc1B6R4-2kkvcy9fi4CHJ:74ggc1B6j
 | Switched to Volume 5rMJkf2zHE-2xMqqKcN8RLZh with local Log 74ggc1B6R4-2kkvcy9fi4CHJ and remote Log 74ggc1B6jg-2udz14pbDayZC |
 +-----------------------------------------------------------------------------------------------------------------------------+
 pragma graft_status;
-+------------------------------------------------------+
-|                     On tag main                      |
-+------------------------------------------------------+
-| On tag main                                          |
-| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (_) is grafted to |
-| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
-|                                                      |
-| The local Log is up to date with the remote Log.     |
-+------------------------------------------------------+
++--------------------------------------------------+
+|                   On tag main                    |
++--------------------------------------------------+
+| On tag main                                      |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC.             |
+|                                                  |
+| The Volume is up to date with the remote.        |
++--------------------------------------------------+
 
 .connection 1
 .open "file:main?vfs=graft"
 pragma graft_status;
-+------------------------------------------------------+
-|                     On tag main                      |
-+------------------------------------------------------+
-| On tag main                                          |
-| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (_) is grafted to |
-| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
-|                                                      |
-| The local Log is up to date with the remote Log.     |
-+------------------------------------------------------+
++--------------------------------------------------+
+|                   On tag main                    |
++--------------------------------------------------+
+| On tag main                                      |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC.             |
+|                                                  |
+| The Volume is up to date with the remote.        |
++--------------------------------------------------+
 
 -- load the sample dataset
 .read datasets/simple.sql
@@ -140,27 +140,27 @@ select * from t;
 
 -- check metadata
 pragma graft_status;
-+------------------------------------------------------+
-|                     On tag main                      |
-+------------------------------------------------------+
-| On tag main                                          |
-| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (4) is grafted to |
-| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
-|                                                      |
-| The local Log is 4 commits ahead of the remote Log.  |
-|   (use 'pragma graft_push' to push changes)          |
-+------------------------------------------------------+
++--------------------------------------------------+
+|                   On tag main                    |
++--------------------------------------------------+
+| On tag main                                      |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC.             |
+|                                                  |
+| The Volume is ahead of the remote by 4 commits.  |
+|   (use 'pragma graft_push' to push changes)      |
++--------------------------------------------------+
 .connection 0
 pragma graft_status;
-+------------------------------------------------------+
-|                     On tag main                      |
-+------------------------------------------------------+
-| On tag main                                          |
-| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (4) is grafted to |
-| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
-|                                                      |
-| The local Log is 4 commits ahead of the remote Log.  |
-|   (use 'pragma graft_push' to push changes)          |
-+------------------------------------------------------+
++--------------------------------------------------+
+|                   On tag main                    |
++--------------------------------------------------+
+| On tag main                                      |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC.             |
+|                                                  |
+| The Volume is ahead of the remote by 4 commits.  |
+|   (use 'pragma graft_push' to push changes)      |
++--------------------------------------------------+
 
 SQLite Exit Code = 1
