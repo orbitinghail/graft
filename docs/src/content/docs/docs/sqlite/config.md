@@ -14,64 +14,114 @@ The `libgraft` SQLite extension can be configured using either a configuration f
 
 If the `GRAFT_CONFIG` environment variable is set, `libgraft` will use the provided path instead.
 
-### Configuration Options
+## Configuration Options
 
-The configuration file supports the following options:
-
-#### `data_dir`
+### `data_dir`
 
 - **Environment variable:** `GRAFT_DIR`
-- **Description:** Path to the directory where Graft stores its data. Relative paths are resolved from the current working directory.
+- **Description:** Path to the directory where Graft stores its local data (Fjall LSM storage).
 - **Default:**
   - Linux & macOS: `$XDG_DATA_HOME/graft` or `~/.local/share/graft`
   - Windows: `%LOCALAPPDATA%\graft` or `C:\Users\%USERNAME%\AppData\Local\graft`
 
-#### `metastore`
+### `remote`
 
-- **Environment variable:** `GRAFT_METASTORE`
-- **Description:** URL for the Graft MetaStore.
-- **Default:** `http://127.0.0.1:3001`
+Configuration for remote object storage. This is where Graft stores the source of truth for your data.
 
-#### `pagestore`
+#### `remote.type = "memory"`
 
-- **Environment variable:** `GRAFT_PAGESTORE`
-- **Description:** URL for the Graft PageStore.
-- **Default:** `http://127.0.0.1:3000`
+In-memory object storage. Useful for testing and development.
 
-#### `token`
+```toml
+[remote]
+type = "memory"
+```
 
-- **Environment variable:** `GRAFT_TOKEN`
-- **Description:** Provide an API token to use when connecting to the Graft MetaStore and PageStore.
+#### `remote.type = "fs"`
 
-#### `autosync`
+Local filesystem storage. Good for development and single-machine deployments.
+
+```toml
+[remote]
+type = "fs"
+root = "/path/to/storage"
+```
+
+- **`root`**: Path to the directory where remote data is stored.
+
+#### `remote.type = "s3_compatible"`
+
+S3-compatible object storage (AWS S3, MinIO, R2, etc.). Recommended for production.
+
+```toml
+[remote]
+type = "s3_compatible"
+bucket = "my-graft-bucket"
+prefix = "optional/prefix"  # optional
+```
+
+- **`bucket`**: S3 bucket name.
+- **`prefix`**: Optional path prefix within the bucket.
+
+**Credentials:** S3 credentials and configuration are loaded from standard AWS environment variables:
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_REGION`
+- `AWS_ENDPOINT` (for S3-compatible services like MinIO, R2, etc.)
+
+### `autosync`
 
 - **Environment variable:** `GRAFT_AUTOSYNC`
-- **Description:** Enables or disables background synchronization.
-- **Default:** `true`
-- **Values:** `true`, `false`
-- **Note:** Even if set to `false`, background sync can be enabled explicitly using `pragma graft_sync = true`.
+- **Description:** Background synchronization interval in seconds. When set, Graft will automatically push local changes to remote storage at this interval.
+- **Default:** Not set (no automatic synchronization)
+- **Example:** `autosync = 60` (sync every 60 seconds)
 
-#### `client_id`
-
-- **Environment variable:** `GRAFT_CLIENT_ID`
-- **Description:** Specify a unique Client ID to use. If not set, a new Client ID is randomly generated. It is strongly recommended to set this explicitly in production environments.
-
-#### `log_file`
+### `log_file`
 
 - **Environment variable:** `GRAFT_LOG_FILE`
-- **Description:** Write a verbose log of all Graft operations to the specified log file. The verbosity can be controlled using the environment variable `RUST_LOG`. Valid verbosity levels are: `error, warn, info, debug, trace`
+- **Description:** Write a verbose log of all Graft operations to the specified log file. Verbosity can be controlled using the `RUST_LOG` environment variable.
+- **Valid verbosity levels:** `error`, `warn`, `info`, `debug`, `trace`
 
-#### `make_default`
+### `make_default`
 
 - **Environment variable:** `GRAFT_MAKE_DEFAULT`
-- **Description:** When `make_default` is true, Graft will register itself as the _default_ SQLite VFS which will cause _all_ new connections to use Graft. This is mainly useful for integrating Graft into SQLite libraries which don't support specifying which VFS to use.
+- **Description:** When `make_default` is `true`, Graft will register itself as the _default_ SQLite VFS, causing _all_ new connections to use Graft. This is mainly useful for integrating Graft into SQLite libraries which don't support specifying a custom VFS.
+- **Default:** `false`
 
-### Example Configuration File (`graft.toml`)
+## Example Configurations
+
+### Production (S3)
 
 ```toml
 data_dir = "/var/lib/graft"
-metastore = "http://metastore.example.com:3001"
-pagestore = "http://pagestore.example.com:3000"
-autosync = false
-client_id = "QiAaSzeTbNnMQFxK6jm125"
+autosync = 60
+
+[remote]
+type = "s3_compatible"
+bucket = "my-app-graft"
+prefix = "prod"
+```
+
+Set environment variables:
+```bash
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export AWS_REGION="us-east-1"
+```
+
+### Development (Filesystem)
+
+```toml
+data_dir = "./data"
+
+[remote]
+type = "fs"
+root = "./remote-storage"
+```
+
+### Testing (In-Memory)
+
+```toml
+[remote]
+type = "memory"
 ```

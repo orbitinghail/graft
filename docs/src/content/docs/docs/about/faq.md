@@ -18,3 +18,7 @@ Rust provides **memory safety, strong concurrency support, and predictable perfo
 ## Is Graft free?
 
 Yes. Graft is open source, released under a dual license: MIT or Apache 2.0. You are free to use, modify, and integrate it into your own projects, whether personal or commercial. We also plan to offer hosted services and support plans for teams that want managed Graft infrastructure or deeper integration help — but the core engine is and will remain free and open.
+
+## Do I need to run any servers to use Graft?
+
+No! Graft uses object storage (like AWS S3, Cloudflare R2, or MinIO) directly. This makes deployment simple and costs predictable. You can also use local filesystem storage for development and testing.
