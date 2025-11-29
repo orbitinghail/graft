@@ -5,8 +5,6 @@ description: An overview of Graft's consistency and isolation model
 
 import { Steps } from "@astrojs/starlight/components";
 
-_(This model only applies when using the official Graft Client with Graft Server. Third-party client implementations may violate this model.)_
-
 ## Global Consistency
 
 Graft provides **[Serializable Snapshot Isolation](https://distributed-computing-musings.com/2022/02/transactions-serializable-snapshot-isolation/)** globally.
@@ -27,7 +25,7 @@ Upon rejection, the client must choose one of:
    - Locally, the client experiences **Optimistic Snapshot Isolation**, meaning:
      - Reads always observe internally consistent snapshots.
      - However, these snapshots may later be discarded if the commit is rejected.
-3. **Merge**: Attempt to merge the remote snapshot with local commits. _(Not yet implemented by Graft; this degrades global consistency to [snapshot isolation](https://jepsen.io/consistency/models/snapshot-isolation))_
+3. **Merge**: Attempt to merge the remote snapshot with local commits. _(Not yet implemented by Graft; merging degrades global consistency to [snapshot isolation](https://jepsen.io/consistency/models/snapshot-isolation))_
 
 **Optimistic Snapshot Isolation:**
 
@@ -37,18 +35,18 @@ Under optimistic snapshot isolation, a client may observe a snapshot which never
 
 1. Initial state on all clients
 
-    ```sql
-    create table accounts (id, bal, check(bal >= 0));
-    insert into accounts values (1, 10);
-    ```
+   ```sql
+   create table accounts (id, bal, check(bal >= 0));
+   insert into accounts values (1, 10);
+   ```
 
 2. client A commits locally:
 
-    ```sql
-    sqlite> update accounts set bal = bal - 10 where id = 1
+   ```sql
+   sqlite> update accounts set bal = bal - 10 where id = 1
 
-    -- accounts = [ { id: 1, bal: 0 } ]
-    ```
+   -- accounts = [ { id: 1, bal: 0 } ]
+   ```
 
 3. client B commits concurrently:
 

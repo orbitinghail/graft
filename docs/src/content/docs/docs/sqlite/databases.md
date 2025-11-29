@@ -3,55 +3,115 @@ title: Databases
 description: Understanding how to connect to different databases using Graft
 ---
 
-The Graft SQLite extension maps each SQLite database to a single [Graft Volume](/docs/concepts/volumes/).
+When using Graft, each SQLite database maps to a **Volume** - which tracks a local Log (your working copy) with a remote Log (the source of truth in object storage).
 
-You can either connect to a specific database by using a [Graft Volume ID](/docs/concepts/volumes/) as the database name or by using the literal string `random` to dynamically create a new volume.
+You can create or connect to Volumes several ways:
 
-## Connect to a specific database by Volume Id
+- By Tag
+- Create new databases
+- Clone from remote
+- Fork a database
 
-When connecting to a Graft SQLite database, you can specify a particular Volume ID directly:
+## Connect by Tag
 
-```sql
-.open 'file:GonugMKom6Q92W5YddpVTd?vfs=graft'
-```
-
-## Create a new database with a random Volume Id
-
-Alternatively, you can use `random` to automatically generate a new Volume:
+When you open a database using the Graft VFS, the name of the database is used as the Tag.
 
 ```sql
-.open 'file:random?vfs=graft'
+-- open the tag "main" using graft
+.open 'file:main?vfs=graft'
 ```
 
-To open additional connections to a randomly generated Volume, you'll first need the generated Volume ID. You can retrieve it using either of the following methods:
+You can also use `ATTACH`:
 
-- **Using the SQLite CLI:**
+```sql
+-- attach to another tag
+ATTACH 'file:production?vfs=graft' AS prod;
+```
 
-  ```sql
-  .databases
-  ```
+## Create a New Database
 
-  The Volume ID will appear in the second column for each attached database which uses Graft.
+Use `graft_new` to create a new empty Volume and update your current tag to point at it. If your tag was attached to another Volume, it will remain untouched.
 
-- **Programmatically via SQLite interfaces such as Python:**
+```sql
+sqlite> pragma graft_status;
++--------------------------------------------------+
+|                   On tag main                    |
++--------------------------------------------------+
+| On tag main                                      |
+| Local Log 74ggc1nwQK-3SivxKLwdLBFq is grafted to |
+| remote Log 74ggc1nwQK-2nuRmHd4ZHivj.             |
+|                                                  |
+| The Volume is up to date with the remote.        |
++--------------------------------------------------+
+sqlite> select * from t;
++-------------+
+|    data     |
++-------------+
+| hello world |
+| hi bob      |
+| testing     |
++-------------+
+sqlite> pragma graft_new;
++-----------------------------------------------------------------------------------------------------------------------------+
+| Switched to Volume 5rMJkfMogd-3bVjH8fwwX44x with local Log 74ggc1o8bK-34EknTZT8mjSx and remote Log 74ggc1o8bK-3LdWJvxfi3sPr |
++-----------------------------------------------------------------------------------------------------------------------------+
+| Switched to Volume 5rMJkfMogd-3bVjH8fwwX44x with local Log 74ggc1o8bK-34EknTZT8mjSx and remote Log 74ggc1o8bK-3LdWJvxfi3sPr |
++-----------------------------------------------------------------------------------------------------------------------------+
+sqlite> select * from t;
+(1) no such table: t in "select * from t;"
+Runtime error: no such table: t
+sqlite> pragma graft_volumes;
++--------------------------------------------+
+|      Volume: 5rMJkfMcVd-3DsuawkC8v1Do      |
++--------------------------------------------+
+| Volume: 5rMJkfMcVd-3DsuawkC8v1Do           |
+|   Local: 74ggc1nwQK-3SivxKLwdLBFq          |
+|   Remote: 74ggc1nwQK-2nuRmHd4ZHivj         |
+|   Status: 1 r_                             |
+| Volume: 5rMJkfMogd-3bVjH8fwwX44x (current) |
+|   Local: 74ggc1o8bK-34EknTZT8mjSx          |
+|   Remote: 74ggc1o8bK-3LdWJvxfi3sPr         |
+|   Status: _ r_                             |
++--------------------------------------------+
+```
 
-  ```python
-  import sqlite3
-  import sqlite_graft
+## Clone from Remote
 
-  # load graft using a temporary (empty) in-memory SQLite database
-  db = sqlite3.connect(":memory:")
-  db.enable_load_extension(True)
-  sqlite_graft.load(db)
+You can create a new local Volume based on a remote Log Id:
 
-  conn = sqlite3.connect('file:random?vfs=graft', autocommit=True, uri=True)
-  cursor = conn.execute('PRAGMA database_list')
-  db_list = cursor.fetchall()
+```sql
+pragma graft_clone = "74ggc1X5BE-3A7QEtHWMomvb";
++--------------------------------------------------------------------------------------+
+| Created new Volume 5rMJkfNQfi-3i6P4jPw9XWVh from remote Log 74ggc1X5BE-3A7QEtHWMomvb |
++--------------------------------------------------------------------------------------+
+| Created new Volume 5rMJkfNQfi-3i6P4jPw9XWVh from remote Log 74ggc1X5BE-3A7QEtHWMomvb |
++--------------------------------------------------------------------------------------+
+sqlite> pragma graft_pull;
++-----------------------------------------------------------+
+| Pulled LSNs ..=1 into remote Log 74ggc1X5BE-3A7QEtHWMomvb |
++-----------------------------------------------------------+
+| Pulled LSNs ..=1 into remote Log 74ggc1X5BE-3A7QEtHWMomvb |
++-----------------------------------------------------------+
+sqlite> .tables
+wdi_country         wdi_csv             wdi_series
+wdi_country_series  wdi_footnote        wdi_series_time
+```
 
-  for db in db_list:
-      db_alias = db[1]    # Database alias (e.g., 'main', 'attached_db')
-      volume_id = db[2]   # Filename, i.e., the Volume ID
-      print(f"{db_alias}: {volume_id}")
-  ```
+## Fork
 
-These retrieved Volume IDs can then be used to open the same Volumes across multiple connections and from multiple nodes.
+A database can be forked into a new volume using `graft_fork`:
+
+```sql
+-- First ensure all pages are downloaded
+pragma graft_hydrate;
+
+-- Then fork
+pragma graft_fork;
++---------------------------------------------------------------+
+| Forked current snapshot into Volume: 5rMJkfPC21-3AHxh6aeSWzCp |
++---------------------------------------------------------------+
+| Forked current snapshot into Volume: 5rMJkfPC21-3AHxh6aeSWzCp |
++---------------------------------------------------------------+
+```
+
+This creates a divergent copy that's independent from the original. The Volume must be fully hydrated before forking.

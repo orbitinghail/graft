@@ -330,10 +330,10 @@ fn format_volume_status(runtime: &Runtime, file: &VolFile) -> Result<String, Cul
     writeln!(
         &mut f,
         indoc! {"
-            Local Log {} ({}) is grafted to
-            remote Log {} ({}).
+            Local Log {} is grafted to
+            remote Log {}.
         "},
-        status.local, status.local_status, status.remote, status.remote_status,
+        status.local, status.remote,
     )?;
 
     match (local_changes, remote_changes) {
@@ -341,8 +341,8 @@ fn format_volume_status(runtime: &Runtime, file: &VolFile) -> Result<String, Cul
             write!(
                 &mut f,
                 indoc! {"
-                    The local and remote Logs have diverged, and have {} and {}
-                    different commits each, respectively.
+                    The Volume and the remote have diverged,
+                    and have {} and {} different commits each, respectively.
                 "},
                 local.len(),
                 remote.len(),
@@ -352,7 +352,7 @@ fn format_volume_status(runtime: &Runtime, file: &VolFile) -> Result<String, Cul
             write!(
                 &mut f,
                 indoc! {"
-                    The local Log is {} {} ahead of the remote Log.
+                    The Volume is ahead of the remote by {} {}.
                       (use 'pragma graft_push' to push changes)
                 "},
                 local.len(),
@@ -363,7 +363,7 @@ fn format_volume_status(runtime: &Runtime, file: &VolFile) -> Result<String, Cul
             writeln!(
                 &mut f,
                 indoc! {"
-                    The remote Log is {} {} ahead of the local Log.
+                    The Volume is behind the remote by {} {}.
                       (use 'pragma graft_pull' to pull changes)
                 "},
                 remote.len(),
@@ -371,7 +371,7 @@ fn format_volume_status(runtime: &Runtime, file: &VolFile) -> Result<String, Cul
             )?;
         }
         (None, None) => {
-            write!(&mut f, "The local Log is up to date with the remote Log.")?;
+            write!(&mut f, "The Volume is up to date with the remote.")?;
         }
     }
 
@@ -420,7 +420,7 @@ fn fetch_or_pull(
 
     let mut f = String::new();
 
-    if let Some(diff) = AheadStatus::new(post.remote_status.head, pre.remote_status.head).changes()
+    if let Some(diff) = AheadStatus::new(post.remote_status.base, pre.remote_status.base).changes()
     {
         writeln!(
             &mut f,
@@ -430,21 +430,6 @@ fn fetch_or_pull(
         )?;
     } else {
         writeln!(&mut f, "No changes to remote Log {}", post.remote)?;
-    }
-
-    if pull {
-        if let Some(diff) =
-            AheadStatus::new(post.local_status.head, pre.local_status.head).changes()
-        {
-            writeln!(
-                &mut f,
-                "Pulled LSNs {} into local Log {}",
-                diff.to_string(),
-                post.remote
-            )?;
-        } else {
-            writeln!(&mut f, "No changes to local Log {}", post.remote)?;
-        }
     }
 
     Ok(f)

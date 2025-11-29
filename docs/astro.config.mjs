@@ -119,25 +119,9 @@ export default defineConfig({
           ],
         },
         {
-          label: "Backend",
-          collapsed: true,
-          items: [
-            { label: "Overview", slug: "docs/backend" },
-            { label: "Deploy", slug: "docs/backend/deploy" },
-            { label: "Config", slug: "docs/backend/config" },
-            { label: "Auth", slug: "docs/backend/auth" },
-            { label: "API", slug: "docs/backend/api" },
-          ],
-        },
-        {
           label: "Internals",
           collapsed: true,
           autogenerate: { directory: "docs/internals" },
-        },
-        {
-          label: "RFCs",
-          collapsed: true,
-          autogenerate: { directory: "docs/rfcs" },
         },
       ],
     }),

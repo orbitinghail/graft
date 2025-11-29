@@ -3,7 +3,7 @@ title: Volumes
 description: An overview of Graft Volumes
 ---
 
-Graft organizes data into **Volumes**, which are the primary unit of storage and replication.
+Graft organizes data into **Volumes**.
 
 ## What is a Volume?
 
@@ -19,22 +19,49 @@ Volumes support **lazy**, **partial** replication: clients can track only a subs
 
 ## What is a Volume ID?
 
-Each Volume is uniquely identified by a **Volume ID**, which is a 16 byte **Graft Identifier (GID)**.
-
-- **128-bit compatibility** (same size as UUID)
-- **Up to 2^72 unique Volume IDs per millisecond**
-- **Lexicographically sortable** by creation time!
-- **Canonically encoded as a 22-character string**, compared to the 36-character UUID
-- **Case sensitive**
-- **No special characters** (fully URL safe)
-- **Creation time is embedded**: newer Volume IDs always sort after older ones
+Each Volume is uniquely identified by a **Volume ID**, which is a 16 byte **[Graft Identifier (GID)]**.
 
 > **Note**: Graft Volume IDs are similar in spirit to [ULID]s — they embed timestamp information — but they use a custom, compact encoding tailored for Graft.
 
+[Graft Identifier (GID)]: /docs/internals/gid/
 [ULID]: https://github.com/ulid/spec
 
 Here is an example serialized Volume ID:
 
 ```
-GonugMKom6Q92W5YddpVTd
+5rMJkYma1s-2da5Kmp3uLKEs
 ```
+
+## Local vs. Remote Logs
+
+In Graft's replication system, each Volume tracks two Logs:
+
+- **Remote Log**: The source of truth, stored in object storage (S3, filesystem, etc.). This is the authoritative transaction log that multiple clients can sync with.
+- **Local Log**: Your working copy, cached and staged locally on your device. This is where you read and write data.
+
+A **Volume** tracks a local Log with a remote Log, enabling:
+- **Pulling** changes from remote to local
+- **Pushing** changes from local to remote
+- **Working offline** with local data
+- **Lazy loading** of pages on demand
+
+Think of it like git: the remote Log is like a GitHub repository, and your local Log is like your local clone.
+
+## Volume Tags
+
+Rather than using Volume IDs directly, you can assign human-readable **tags** to Volumes. Tags make it easy to manage multiple databases without memorizing long IDs.
+
+```sql
+-- List all tags
+pragma graft_tags;
+
+-- Switch to a tagged Volume
+pragma graft_switch = "main";
+```
+
+For example, you might have tags like:
+- `main` - Your primary production database
+- `staging` - Staging environment
+- `feature-xyz` - A feature branch
+
+Tags are stored as simple name → VolumeId mappings and make database management much more intuitive.

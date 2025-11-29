@@ -14,15 +14,15 @@ vfs.iVersion   = 3
 vfs.szOsFile   = 240
 vfs.mxPathname = 512
 pragma graft_status;
-+------------------------------------------------------+
-|                     On tag main                      |
-+------------------------------------------------------+
-| On tag main                                          |
-| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (_) is grafted to |
-| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
-|                                                      |
-| The local Log is up to date with the remote Log.     |
-+------------------------------------------------------+
++--------------------------------------------------+
+|                   On tag main                    |
++--------------------------------------------------+
+| On tag main                                      |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC.             |
+|                                                  |
+| The Volume is up to date with the remote.        |
++--------------------------------------------------+
 
 CREATE TABLE t1(a, b);
 INSERT INTO t1 VALUES(1, 2);
@@ -55,16 +55,16 @@ SELECT * FROM t1;
 COMMIT;
 
 pragma graft_status;
-+------------------------------------------------------+
-|                     On tag main                      |
-+------------------------------------------------------+
-| On tag main                                          |
-| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ (4) is grafted to |
-| remote Log 74ggc1B6jg-2udz14pbDayZC (_).             |
-|                                                      |
-| The local Log is 4 commits ahead of the remote Log.  |
-|   (use 'pragma graft_push' to push changes)          |
-+------------------------------------------------------+
++--------------------------------------------------+
+|                   On tag main                    |
++--------------------------------------------------+
+| On tag main                                      |
+| Local Log 74ggc1B6R4-2kkvcy9fi4CHJ is grafted to |
+| remote Log 74ggc1B6jg-2udz14pbDayZC.             |
+|                                                  |
+| The Volume is ahead of the remote by 4 commits.  |
+|   (use 'pragma graft_push' to push changes)      |
++--------------------------------------------------+
 
 vacuum;
 drop table t1;

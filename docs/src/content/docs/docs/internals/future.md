@@ -30,41 +30,6 @@ This can be addressed in a number of ways:
 - Experiment with S3 express zone
 - Buffer writes in a low-latency durable consensus group sitting in front of object storage.
 
-One way to build this is by combining a consensus replication layer with semi-durable storage. Fly.io offers non-replicated nvme drives. We only need to buffer around 1 second of writes per active volume while we wait for those writes to be committed to object storage. We also can aggressively coalesce transactions with the current txn model offered by graft, which means we may not need the full lsn based infrastructure used by the page store.
-
-**insight:** the absolute simplest thing we can do is simply return the segment id a write _will be written to_ before committing the segment to object storage. One way to provide durability for this operation is to have the pageserver simply coordinate with one or two other pageservers on a per in-progress segment basis. Each of the page servers can commit to object storage independently, and let object storage handle deduplication (since they are all committing to the same key with the same contents, we don't care who wins and object store will either reject or overwrite accordingly). This increases the costs linearly based on the number of additional writers, but the absolute costs are still very small.
-
-Technically, the above write protocol can be coordinated entirely by the client if the pageservers simply had an optimistic write mode. The only difference being that the client would have to handle PageIdxs being stored in potentially multiple potentially overlapping segments which would have to be deduplicated later at query time. Letting the pageserver coordinate this process makes things easier for the rest of the system.
-
-## Garbage collection, checkpointing, and compaction
-
-These features are needed to maximize query performance, minimize wasted space, and enable deleting data permanently. They all relate to Graft’s decision to store data directly in object storage, and batch changes together into files called segments.
-
-## Authentication and authorization
-
-This is a fairly broad project that encompasses everything from accounts on the Graft managed service to fine-grained authorization to read/write Volumes. Currently the Graft backend supports [PASETO token authentication][auth].
-
-[auth]: /docs/backend/auth/
-
-## Volume forking
-
-The Graft service is already setup to perform zero-copy forks, since it can easily copy Segment references over to the new Volume. However, to perform a local fork, Graft currently needs to copy all of the pages. This could be solved by layering volumes locally and allowing reads to fall through or changing how pages are addressed locally.
-
-## Volume Router
-
-In order to scale the Metastore around the world, we need a globally available routing system to determine where each Volume lives. This allows the Metastore to be entirely region local which is simpler, faster, and cheaper than backing it with some kind of globally available database.
-
-The only data we will need to make globally available is where each Volume lives. We can solve this in a number of ways:
-
-1. Add region namespacing to Volume Ids. This permanently pins each Volume to a region (or at least a namespace) allowing clients to send traffic to the right location without any additional communication. The downside is a lack of flexibility.
-2. A globally available volume registry service. Cloudflare might be the ideal place for this. They provide multiple storage and caching services that would fairly efficiently keep this routing data highly available globally.
-
-I'm still undecided, but leaning towards using CF as a volume registry to increase flexibility in volume placement (and more importantly the ability to move volumes).
-
-## Improved idempotency
-
-Currently we run some heuristics to determine idempotency. This has proved to be error prone. The safer option would be to have the client store the fully serialized commit before sending to the metastore, and then reply that on recovery. This may also make some of the other client side replay code simpler.
-
 ## Variable sized pages
 
 I am very curious how much impact variable sized pages would be to Graft adoption. Currently pages are exactly 4KiB which will likely limit workloads. We could implement variable length pages in one of two ways:
@@ -73,44 +38,9 @@ I am very curious how much impact variable sized pages would be to Graft adoptio
 
 2. Each Volume's page size can be configured at creation. This is less flexible as it still restricts use cases, however it is more flexible than the current setup. It would likely allow Graft more optimization flexibility in storage.
 
-The primary downside of either approach is complexity. It also starts to beg the question of whether Graft should just offer a non-paged abstraction layer that internally maps onto pages.
+## Garbage collection, checkpointing, and compaction
 
-I'm leaning towards building (1) as it feels like a reasonable lift from the current design.
-
-## Checksums
-
-Currently Graft has no way to audit the correctness of underlying storage such as object storage and fjall. It may be prudent to add some strategic checksums to our large serialized formats (segments, splinters, commits) to help detect corruption. Luckily both object storage and fjall already do a lot of work to prevent data corruption, hence why this is in the future work file.
-
-## Time-Travel and Point in Time Restore
-
-Currently, it's only possible to go back in time to fixed checkpoints and recently written LSNs. Returning to an arbitrary LSN or timestamp in the last week or so is not possible since we aggressively checkpoint.
-
-The simplest solution is to simply keep the existing history around longer before checkpointing. The main downside of this approach is that it results in a dramatically large amount of files, and thus decreases search performance.
-
-The main optimization that other bottomless databases take is to merge segments such that they store multiple versions of each page. Thus there are fewer files to query and the files compress well (subsequent page versions usually don't change much).
-
-The downside of this approach is that it makes searching for a particular page version more difficult, adds complexity to segments, and makes the merger do more work.
-
-A key aspect of our design is that segments do not store absolute LSNs. This allows them to be reordered safely by the metastore, as well as reused between checkpoints for unchanged portions of the keyspace. In order to support multiple versions of a page in a segment while also maintaining LSN independence, we will need to store LSNs in Segments as "relative" LSNs, resolving them to absolute LSNs via inspecting the metastore's log.
-
-## Segment Compaction
-
-Compaction is the act of reorganizing segments over time to improve read performance as well as storage cost.
-
-In L0, each Segment contains PageIdxs at one rLSN per Volume. This is the default layer in which Segments are created.
-
-In L1, each Segment contains PageIdxs at multiple rLSNs per Volume. Whenever possible, L1 Segments contain data for a single Volume.
-
-The decision to merge depends on optimal Segment size. Let's say the optimal Segment size is 8 MB (AnyBlob suggests 8-16 MB, while Neon uses 128 MB). In this case we would want to collect Segments which overlap in Volume until we can produce at least one Optimal Segment which only contains data for a single Volume (or we run out of Segments to merge).
-
-Once we can produce one single-volume optimal Segment. The rest of the data is distributed to other Segments. This packing problem can be solved using the following greedy approach:
-
-1. Set min_bucket=8MB and max_bucket=16MB
-2. Collect PageIdxs and rLSNs per Volume from Segments into candidate chunks. Care should be taken to always include all Segments from a Snapshot to handle duplicate PageIdxs. Stop collection once the largest chunk is larger than min_bucket size.
-3. Partition any chunks larger than max_bucket by PageIdx and LSN until all chunks are smaller than max_bucket size.
-4. Iterate through chunks from largest to smallest, emitting Segments as they reach min_bucket size.
-5. Commit added/removed segments to each Metastore
-6. Delete all removed segments
+These features are needed to maximize query performance, minimize wasted space, and enable deleting data permanently.
 
 ## Page deltas
 
@@ -132,7 +62,7 @@ According to the go, hedging requests to blob storage can help dramatically redu
 
 ## Performance Optimizations
 
-Once Graft server is sufficiently mature, a series of performance optimization passes should be performed. I'll keep track of relevant blog posts and tools to make this easier here:
+Once Graft is sufficiently mature, a series of performance optimization passes should be performed. I'll keep track of relevant blog posts and tools to make this easier here:
 
 - [Compiling with PGO and BOLT]
 
