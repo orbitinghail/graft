@@ -3,7 +3,8 @@ use bytestring::ByteString;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
 use graft_core::{
-    LogId, PageIdx, SegmentId, cbe::CBE64, logref::LogRef, lsn::LSN, zerocopy_ext::TryFromBytesExt,
+    LogId, PageIdx, SegmentId, VolumeId, cbe::CBE64, logref::LogRef, lsn::LSN,
+    zerocopy_ext::TryFromBytesExt,
 };
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
 
@@ -14,6 +15,20 @@ use crate::{
 
 pub trait FjallKeyPrefix {
     type Prefix: AsRef<[u8]>;
+}
+
+impl FjallReprRef for VolumeId {
+    #[inline]
+    fn as_slice(&self) -> impl AsRef<[u8]> {
+        self.as_bytes()
+    }
+}
+
+impl FjallRepr for VolumeId {
+    #[inline]
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
+        VolumeId::try_from(Bytes::from(slice)).or_into_ctx()
+    }
 }
 
 impl FjallReprRef for LogId {
@@ -146,6 +161,15 @@ mod tests {
     };
 
     use super::*;
+
+    #[graft_test::test]
+    fn test_volume_id() {
+        test_roundtrip(VolumeId::random());
+        test_roundtrip(VolumeId::EMPTY);
+        test_invalid::<VolumeId>(b"");
+        test_invalid::<VolumeId>(b"asdf");
+        test_invalid::<VolumeId>(SegmentId::random().as_bytes());
+    }
 
     #[graft_test::test]
     fn test_log_id() {

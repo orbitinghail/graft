@@ -76,11 +76,11 @@ impl ErrCtx {
             KernelErr::Storage(_) => SQLITE_IOERR,
             KernelErr::Remote(_) => SQLITE_IOERR,
             KernelErr::Logical(err) => match err {
-                LogicalErr::GraftNotFound(_) => SQLITE_IOERR,
-                LogicalErr::GraftConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
-                LogicalErr::GraftNeedsRecovery(_)
-                | LogicalErr::GraftDiverged(_)
-                | LogicalErr::GraftRemoteMismatch { .. } => SQLITE_INTERNAL,
+                LogicalErr::VolumeNotFound(_) => SQLITE_IOERR,
+                LogicalErr::VolumeConcurrentWrite(_) => SQLITE_BUSY_SNAPSHOT,
+                LogicalErr::VolumeNeedsRecovery(_)
+                | LogicalErr::VolumeDiverged(_)
+                | LogicalErr::VolumeRemoteMismatch { .. } => SQLITE_INTERNAL,
             },
         }
     }
@@ -143,19 +143,19 @@ impl Vfs for GraftVfs {
                     }
                 );
 
-                let graft = if can_create {
-                    // create the graft if needed
-                    if let Some(graft) = self.runtime.tag_get(tag).or_into_ctx()? {
-                        graft
+                let vid = if can_create {
+                    // create the volume if needed
+                    if let Some(vid) = self.runtime.tag_get(tag).or_into_ctx()? {
+                        vid
                     } else {
-                        let graft = self.runtime.graft_open(None, None).or_into_ctx()?;
+                        let volume = self.runtime.volume_open(None, None, None).or_into_ctx()?;
                         self.runtime
-                            .tag_replace(tag, graft.local.clone())
+                            .tag_replace(tag, volume.vid.clone())
                             .or_into_ctx()?;
-                        graft.local
+                        volume.vid
                     }
                 } else {
-                    // just get the existing graft
+                    // just get the existing volume
                     self.runtime
                         .tag_get(tag)
                         .or_into_ctx()?
@@ -168,7 +168,7 @@ impl Vfs for GraftVfs {
                 return Ok(VolFile::new(
                     self.runtime.clone(),
                     tag.to_owned(),
-                    graft,
+                    vid,
                     opts,
                     reserved_lock,
                 )

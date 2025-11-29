@@ -1,40 +1,40 @@
 use culprit::{Result, ResultExt};
-use graft_core::{LogId, PageCount, PageIdx, commit::SegmentIdx, page::Page};
+use graft_core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
 
 use crate::{
     KernelErr,
-    graft_reader::{GraftRead, GraftReader},
     rt::runtime::Runtime,
     snapshot::Snapshot,
+    volume_reader::{VolumeRead, VolumeReader},
 };
 
-/// A type which can write to a Graft
-pub trait GraftWrite {
+/// A type which can write to a Volume
+pub trait VolumeWrite {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), KernelErr>;
     fn truncate(&mut self, page_count: PageCount) -> Result<(), KernelErr>;
-    fn commit(self) -> Result<GraftReader, KernelErr>;
+    fn commit(self) -> Result<VolumeReader, KernelErr>;
 }
 
 #[derive(Debug)]
-pub struct GraftWriter {
+pub struct VolumeWriter {
     runtime: Runtime,
-    graft: LogId,
+    vid: VolumeId,
     snapshot: Snapshot,
     page_count: PageCount,
     segment: SegmentIdx,
 }
 
-impl GraftWriter {
+impl VolumeWriter {
     pub(crate) fn new(
         runtime: Runtime,
-        graft: LogId,
+        vid: VolumeId,
         snapshot: Snapshot,
         page_count: PageCount,
     ) -> Self {
         let segment = runtime.create_staged_segment();
         Self {
             runtime,
-            graft,
+            vid,
             snapshot,
             page_count,
             segment,
@@ -42,7 +42,7 @@ impl GraftWriter {
     }
 }
 
-impl GraftRead for GraftWriter {
+impl VolumeRead for VolumeWriter {
     fn snapshot(&self) -> &Snapshot {
         &self.snapshot
     }
@@ -68,7 +68,7 @@ impl GraftRead for GraftWriter {
     }
 }
 
-impl GraftWrite for GraftWriter {
+impl VolumeWrite for VolumeWriter {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), KernelErr> {
         self.page_count = self.page_count.max(pageidx.pages());
         self.segment.insert(pageidx);
@@ -91,13 +91,13 @@ impl GraftWrite for GraftWriter {
             .or_into_ctx()
     }
 
-    fn commit(self) -> Result<GraftReader, KernelErr> {
+    fn commit(self) -> Result<VolumeReader, KernelErr> {
         let snapshot = self
             .runtime
             .storage()
             .read_write()
-            .commit(&self.graft, self.snapshot, self.page_count, self.segment)
+            .commit(&self.vid, self.snapshot, self.page_count, self.segment)
             .or_into_ctx()?;
-        Ok(GraftReader::new(self.runtime, self.graft, snapshot))
+        Ok(VolumeReader::new(self.runtime, self.vid, snapshot))
     }
 }

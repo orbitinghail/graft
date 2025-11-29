@@ -8,15 +8,15 @@ use std::{
 use bytes::BytesMut;
 use culprit::{Culprit, Result, ResultExt};
 use graft_core::{
-    LogId, PageIdx,
+    PageIdx, VolumeId,
     page::{PAGESIZE, Page},
     page_count::PageCount,
 };
 use graft_kernel::{
-    graft_reader::{GraftRead, GraftReader},
-    graft_writer::{GraftWrite, GraftWriter},
     rt::runtime::Runtime,
     snapshot::Snapshot,
+    volume_reader::{VolumeRead, VolumeReader},
+    volume_writer::{VolumeWrite, VolumeWriter},
 };
 use parking_lot::{Mutex, MutexGuard};
 use sqlite_plugin::flags::{LockLevel, OpenOpts};
@@ -31,8 +31,8 @@ const VERSION_VALID_FOR_NUMBER_OFFSET: usize = 92;
 
 enum VolFileState {
     Idle,
-    Shared { reader: GraftReader },
-    Reserved { writer: GraftWriter },
+    Shared { reader: VolumeReader },
+    Reserved { writer: VolumeWriter },
     Committing,
 }
 
@@ -65,7 +65,7 @@ impl Debug for VolFileState {
 pub struct VolFile {
     runtime: Runtime,
     pub tag: String,
-    pub graft: LogId,
+    pub vid: VolumeId,
     opts: OpenOpts,
 
     reserved: Arc<Mutex<()>>,
@@ -76,7 +76,7 @@ impl Debug for VolFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VolFile")
             .field("tag", &self.tag)
-            .field("graft", &self.graft)
+            .field("vid", &self.vid)
             .field("state", &self.state)
             .finish()
     }
@@ -86,14 +86,14 @@ impl VolFile {
     pub fn new(
         runtime: Runtime,
         tag: String,
-        graft: LogId,
+        vid: VolumeId,
         opts: OpenOpts,
         reserved: Arc<Mutex<()>>,
     ) -> Self {
         Self {
             runtime,
             tag,
-            graft,
+            vid,
             opts,
             reserved,
             state: VolFileState::Idle,
@@ -102,7 +102,7 @@ impl VolFile {
 
     pub fn snapshot_or_latest(&self) -> Result<Snapshot, ErrCtx> {
         match &self.state {
-            VolFileState::Idle => self.runtime.graft_snapshot(&self.graft).or_into_ctx(),
+            VolFileState::Idle => self.runtime.volume_snapshot(&self.vid).or_into_ctx(),
             VolFileState::Shared { reader } => Ok(reader.snapshot().clone()),
             VolFileState::Reserved { writer } => Ok(writer.snapshot().clone()),
             VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
@@ -112,7 +112,7 @@ impl VolFile {
     pub fn page_count(&self) -> Result<PageCount, ErrCtx> {
         match &self.state {
             VolFileState::Idle => {
-                let snapshot = self.runtime.graft_snapshot(&self.graft).or_into_ctx()?;
+                let snapshot = self.runtime.volume_snapshot(&self.vid).or_into_ctx()?;
                 self.runtime.snapshot_pages(&snapshot).or_into_ctx()
             }
             VolFileState::Shared { reader } => reader.page_count().or_into_ctx(),
@@ -129,11 +129,11 @@ impl VolFile {
         self.opts
     }
 
-    pub fn switch_graft(&mut self, graft: &LogId) -> Result<(), ErrCtx> {
+    pub fn switch_volume(&mut self, vid: &VolumeId) -> Result<(), ErrCtx> {
         self.runtime
-            .tag_replace(&self.tag, graft.clone())
+            .tag_replace(&self.tag, vid.clone())
             .or_into_ctx()?;
-        self.graft = graft.clone();
+        self.vid = vid.clone();
         Ok(())
     }
 }
@@ -156,10 +156,7 @@ impl VfsFile for VolFile {
             LockLevel::Shared => {
                 if let VolFileState::Idle = self.state {
                     // Transition Idle -> Shared
-                    let reader = self
-                        .runtime
-                        .graft_reader(self.graft.clone())
-                        .or_into_ctx()?;
+                    let reader = self.runtime.volume_reader(self.vid.clone()).or_into_ctx()?;
                     self.state = VolFileState::Shared { reader };
                 } else {
                     return Err(Culprit::new_with_note(
@@ -189,7 +186,7 @@ impl VfsFile for VolFile {
                     // has changed we can immediately reject the lock upgrade
                     if !self
                         .runtime
-                        .snapshot_is_latest(&self.graft, reader.snapshot())
+                        .snapshot_is_latest(&self.vid, reader.snapshot())
                         .or_into_ctx()?
                     {
                         return Err(Culprit::new_with_note(
@@ -200,7 +197,7 @@ impl VfsFile for VolFile {
 
                     // convert the reader into a writer
                     self.state = VolFileState::Reserved {
-                        writer: GraftWriter::try_from(reader.clone()).or_into_ctx()?,
+                        writer: VolumeWriter::try_from(reader.clone()).or_into_ctx()?,
                     };
 
                     // Explicitly leak the reserved lock
@@ -308,10 +305,7 @@ impl VfsFile for VolFile {
                 // sqlite sometimes reads the database header without holding a
                 // lock, in this case we are expected to read from the latest
                 // snapshot
-                let reader = self
-                    .runtime
-                    .graft_reader(self.graft.clone())
-                    .or_into_ctx()?;
+                let reader = self.runtime.volume_reader(self.vid.clone()).or_into_ctx()?;
                 reader.read_page(pageidx).or_into_ctx()?
             }
             VolFileState::Shared { reader } => reader.read_page(pageidx).or_into_ctx()?,

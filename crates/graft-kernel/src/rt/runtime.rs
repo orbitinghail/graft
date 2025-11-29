@@ -3,23 +3,23 @@ use std::{sync::Arc, time::Duration};
 use bytestring::ByteString;
 use culprit::ResultExt;
 use graft_core::{
-    LogId, PageCount, PageIdx, SegmentId, checksum::Checksum, commit::SegmentIdx, lsn::LSN,
-    page::Page, pageset::PageSet,
+    LogId, PageCount, PageIdx, SegmentId, VolumeId, checksum::Checksum, commit::SegmentIdx,
+    lsn::LSN, page::Page, pageset::PageSet,
 };
 use tracing::Instrument;
 use tryiter::TryIteratorExt;
 
 use crate::{
     KernelErr,
-    graft::{Graft, GraftStatus},
-    graft_reader::GraftReader,
-    graft_writer::GraftWriter,
     remote::Remote,
     rt::{
         action::{Action, FetchLog, FetchSegment, HydrateSnapshot, RemoteCommit},
         task::{autosync::AutosyncTask, supervise},
     },
     snapshot::Snapshot,
+    volume::{Volume, VolumeStatus},
+    volume_reader::VolumeReader,
+    volume_writer::VolumeWriter,
 };
 
 use crate::local::fjall_storage::FjallStorage;
@@ -116,7 +116,7 @@ impl Runtime {
 
 // tag methods
 impl Runtime {
-    pub fn tag_iter(&self) -> impl Iterator<Item = Result<(ByteString, LogId)>> {
+    pub fn tag_iter(&self) -> impl Iterator<Item = Result<(ByteString, VolumeId)>> {
         self.storage()
             .read()
             .iter_tags()
@@ -127,15 +127,15 @@ impl Runtime {
         self.storage().read().tag_exists(name).or_into_ctx()
     }
 
-    pub fn tag_get(&self, tag: &str) -> Result<Option<LogId>> {
+    pub fn tag_get(&self, tag: &str) -> Result<Option<VolumeId>> {
         self.storage().read().get_tag(tag).or_into_ctx()
     }
 
-    /// retrieves the `LogId` for a tag, replacing it with the provided graft
-    pub fn tag_replace(&self, tag: &str, graft: LogId) -> Result<Option<LogId>> {
+    /// retrieves the `VolumeId` for a tag, replacing it with the provided `VolumeId`
+    pub fn tag_replace(&self, tag: &str, vid: VolumeId) -> Result<Option<VolumeId>> {
         self.storage()
             .read_write()
-            .tag_replace(tag, graft)
+            .tag_replace(tag, vid)
             .or_into_ctx()
     }
 
@@ -144,80 +144,84 @@ impl Runtime {
     }
 }
 
-// graft methods
+// volume methods
 impl Runtime {
-    pub fn graft_iter(&self) -> impl Iterator<Item = Result<Graft>> {
+    pub fn volume_iter(&self) -> impl Iterator<Item = Result<Volume>> {
         self.storage()
             .read()
-            .iter_grafts()
+            .iter_volumes()
             .map_err(|err| err.map_ctx(KernelErr::from))
     }
 
-    pub fn graft_exists(&self, graft: &LogId) -> Result<bool> {
-        self.storage().read().graft_exists(graft).or_into_ctx()
+    pub fn volume_exists(&self, vid: &VolumeId) -> Result<bool> {
+        self.storage().read().volume_exists(vid).or_into_ctx()
     }
 
-    /// opens a graft. if either `LogId` is missing, they will be randomly
-    /// generated. If the graft already exists, this function will fail if its
+    /// opens a volume. if any id is missing, it will be randomly
+    /// generated. If the volume already exists, this function will fail if its
     /// remote Log doesn't match.
-    pub fn graft_open(&self, graft: Option<LogId>, remote: Option<LogId>) -> Result<Graft> {
+    pub fn volume_open(
+        &self,
+        vid: Option<VolumeId>,
+        local: Option<LogId>,
+        remote: Option<LogId>,
+    ) -> Result<Volume> {
         self.storage()
             .read_write()
-            .graft_open(graft, remote)
+            .volume_open(vid, local, remote)
             .or_into_ctx()
     }
 
-    /// creates a new graft by forking an existing snapshot
-    pub fn graft_from_snapshot(&self, snapshot: &Snapshot) -> Result<Graft> {
-        self.storage().graft_from_snapshot(snapshot).or_into_ctx()
+    /// creates a new volume by forking an existing snapshot
+    pub fn volume_from_snapshot(&self, snapshot: &Snapshot) -> Result<Volume> {
+        self.storage().volume_from_snapshot(snapshot).or_into_ctx()
     }
 
-    /// retrieves an existing graft. returns `LogicalErr::GraftNotFound` if missing
-    pub fn graft_get(&self, graft: &LogId) -> Result<Graft> {
-        self.storage().read().graft(graft).or_into_ctx()
+    /// retrieves an existing volume. returns `LogicalErr::VolumeNotFound` if missing
+    pub fn volume_get(&self, vid: &VolumeId) -> Result<Volume> {
+        self.storage().read().volume(vid).or_into_ctx()
     }
 
-    /// removes a graft but leaves the underlying logs in place
-    pub fn graft_delete(&self, graft: &LogId) -> Result<()> {
-        self.storage().graft_delete(graft).or_into_ctx()
+    /// removes a volume but leaves the underlying logs in place
+    pub fn volume_delete(&self, vid: &VolumeId) -> Result<()> {
+        self.storage().volume_delete(vid).or_into_ctx()
     }
 
-    /// fetches the latest changes to the remote and then pulls them into the
-    /// graft
-    pub fn graft_pull(&self, graft: LogId) -> Result<()> {
-        let graft = self.inner.storage.read().graft(&graft).or_into_ctx()?;
-        self.fetch_log(graft.remote, None)?;
+    /// fetches the latest changes to the remote and then pulls them into the volume
+    pub fn volume_pull(&self, vid: VolumeId) -> Result<()> {
+        let volume = self.inner.storage.read().volume(&vid).or_into_ctx()?;
+        self.fetch_log(volume.remote, None)?;
         self.storage()
             .read_write()
-            .sync_remote_to_local(graft.local)
+            .sync_remote_to_local(volume.vid)
             .or_into_ctx()
     }
 
-    pub fn graft_push(&self, graft: LogId) -> Result<()> {
-        self.run_action(RemoteCommit { graft })
+    pub fn volume_push(&self, vid: VolumeId) -> Result<()> {
+        self.run_action(RemoteCommit { vid })
     }
 
-    pub fn graft_status(&self, graft: &LogId) -> Result<GraftStatus> {
+    pub fn volume_status(&self, vid: &VolumeId) -> Result<VolumeStatus> {
         let reader = self.storage().read();
-        let state = reader.graft(graft).or_into_ctx()?;
-        let latest_local = reader.latest_lsn(&state.local).or_into_ctx()?;
-        let latest_remote = reader.latest_lsn(&state.remote).or_into_ctx()?;
-        Ok(state.status(latest_local, latest_remote))
+        let volume = reader.volume(vid).or_into_ctx()?;
+        let latest_local = reader.latest_lsn(&volume.local).or_into_ctx()?;
+        let latest_remote = reader.latest_lsn(&volume.remote).or_into_ctx()?;
+        Ok(volume.status(latest_local, latest_remote))
     }
 
-    pub fn graft_snapshot(&self, graft: &LogId) -> Result<Snapshot> {
-        self.storage().read().snapshot(graft).or_into_ctx()
+    pub fn volume_snapshot(&self, vid: &VolumeId) -> Result<Snapshot> {
+        self.storage().read().snapshot(vid).or_into_ctx()
     }
 
-    pub fn graft_reader(&self, graft: LogId) -> Result<GraftReader> {
-        let snapshot = self.graft_snapshot(&graft)?;
-        Ok(GraftReader::new(self.clone(), graft, snapshot))
+    pub fn volume_reader(&self, vid: VolumeId) -> Result<VolumeReader> {
+        let snapshot = self.volume_snapshot(&vid)?;
+        Ok(VolumeReader::new(self.clone(), vid, snapshot))
     }
 
-    pub fn graft_writer(&self, graft: LogId) -> Result<GraftWriter> {
-        let snapshot = self.graft_snapshot(&graft)?;
+    pub fn volume_writer(&self, vid: VolumeId) -> Result<VolumeWriter> {
+        let snapshot = self.volume_snapshot(&vid)?;
         let page_count = self.snapshot_pages(&snapshot)?;
-        Ok(GraftWriter::new(self.clone(), graft, snapshot, page_count))
+        Ok(VolumeWriter::new(self.clone(), vid, snapshot, page_count))
     }
 }
 
@@ -244,10 +248,10 @@ impl Runtime {
         }
     }
 
-    pub fn snapshot_is_latest(&self, graft: &LogId, snapshot: &Snapshot) -> Result<bool> {
+    pub fn snapshot_is_latest(&self, vid: &VolumeId, snapshot: &Snapshot) -> Result<bool> {
         self.storage()
             .read()
-            .is_latest_snapshot(graft, snapshot)
+            .is_latest_snapshot(vid, snapshot)
             .or_into_ctx()
     }
 
@@ -284,8 +288,8 @@ mod tests {
     use tokio::time::sleep;
 
     use crate::{
-        graft_reader::GraftRead, graft_writer::GraftWrite, local::fjall_storage::FjallStorage,
-        remote::RemoteConfig, rt::runtime::Runtime,
+        local::fjall_storage::FjallStorage, remote::RemoteConfig, rt::runtime::Runtime,
+        volume_reader::VolumeRead, volume_writer::VolumeWrite,
     };
 
     #[graft_test::test]
@@ -306,15 +310,15 @@ mod tests {
         );
 
         let remote_log = LogId::random();
-        let graft = runtime
-            .graft_open(None, Some(remote_log.clone()))
+        let vid = runtime
+            .volume_open(None, None, Some(remote_log.clone()))
             .unwrap()
-            .local;
+            .vid;
 
-        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "_ r_",);
+        assert_eq!(runtime.volume_status(&vid).unwrap().to_string(), "_ r_",);
 
-        // sanity check graft writer semantics
-        let mut writer = runtime.graft_writer(graft.clone()).unwrap();
+        // sanity check volume writer semantics
+        let mut writer = runtime.volume_writer(vid.clone()).unwrap();
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i);
@@ -323,10 +327,10 @@ mod tests {
         }
         writer.commit().unwrap();
 
-        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "1 r_",);
+        assert_eq!(runtime.volume_status(&vid).unwrap().to_string(), "1 r_",);
 
-        // sanity check graft reader semantics
-        let reader = runtime.graft_reader(graft.clone()).unwrap();
+        // sanity check volume reader semantics
+        let reader = runtime.volume_reader(vid.clone()).unwrap();
         tracing::debug!("got snapshot {:?}", reader.snapshot());
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::must_new(i as u32);
@@ -347,7 +351,10 @@ mod tests {
         );
 
         // open the same remote log in the second runtime
-        let graft_2 = runtime_2.graft_open(None, Some(remote_log)).unwrap().local;
+        let vid_2 = runtime_2
+            .volume_open(None, None, Some(remote_log))
+            .unwrap()
+            .vid;
 
         // let both runtimes run for a little while
         tokio_rt.block_on(async {
@@ -357,14 +364,11 @@ mod tests {
             tracing::info!("remote tree\n{tree}")
         });
 
-        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "1 r1",);
-        assert_eq!(
-            runtime_2.graft_status(&graft_2).unwrap().to_string(),
-            "_ r1",
-        );
+        assert_eq!(runtime.volume_status(&vid).unwrap().to_string(), "1 r1",);
+        assert_eq!(runtime_2.volume_status(&vid_2).unwrap().to_string(), "_ r1",);
 
-        // sanity check graft reader semantics in the second runtime
-        let reader_2 = runtime_2.graft_reader(graft_2.clone()).unwrap();
+        // sanity check volume reader semantics in the second runtime
+        let reader_2 = runtime_2.volume_reader(vid_2.clone()).unwrap();
         let task = tokio_rt.spawn_blocking(move || {
             for i in [1u8, 2, 5, 9] {
                 let pageidx = PageIdx::must_new(i as u32);
@@ -376,8 +380,8 @@ mod tests {
         });
         tokio_rt.block_on(task).unwrap();
 
-        // now write to the second graft, and sync back to the first
-        let mut writer_2 = runtime_2.graft_writer(graft_2.clone()).unwrap();
+        // now write to the second volume, and sync back to the first
+        let mut writer_2 = runtime_2.volume_writer(vid_2.clone()).unwrap();
         for i in [3u8, 4, 5, 7] {
             let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i + 10);
@@ -394,14 +398,11 @@ mod tests {
             tracing::info!("remote tree\n{tree}")
         });
 
-        assert_eq!(runtime.graft_status(&graft).unwrap().to_string(), "1 r2",);
-        assert_eq!(
-            runtime_2.graft_status(&graft_2).unwrap().to_string(),
-            "1 r2",
-        );
+        assert_eq!(runtime.volume_status(&vid).unwrap().to_string(), "1 r2",);
+        assert_eq!(runtime_2.volume_status(&vid_2).unwrap().to_string(), "1 r2",);
 
-        // sanity check graft reader semantics in the first runtime
-        let reader = runtime.graft_reader(graft.clone()).unwrap();
+        // sanity check volume reader semantics in the first runtime
+        let reader = runtime.volume_reader(vid.clone()).unwrap();
         let task = tokio_rt.spawn_blocking(move || {
             for i in [3u8, 4, 5, 7] {
                 let pageidx = PageIdx::must_new(i as u32);

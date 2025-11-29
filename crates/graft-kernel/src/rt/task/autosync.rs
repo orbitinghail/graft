@@ -2,7 +2,7 @@ use std::{collections::HashSet, fmt::Debug};
 
 use culprit::ResultExt;
 use futures::stream::FuturesUnordered;
-use graft_core::LogId;
+use graft_core::VolumeId;
 use tokio::time::Interval;
 use tokio_stream::StreamExt;
 use tryiter::TryIteratorExt;
@@ -44,8 +44,8 @@ impl Task for AutosyncTask {
             self.ticker.tick().await;
 
             enum Subtask {
-                Push { graft: LogId },
-                Pull { graft: LogId },
+                Push { vid: VolumeId },
+                Pull { vid: VolumeId },
             }
 
             // a set of LogIds to fetch
@@ -56,24 +56,24 @@ impl Task for AutosyncTask {
             // collect actions
             {
                 let reader = storage.read();
-                let mut grafts = reader
-                    .iter_grafts()
+                let mut volumes = reader
+                    .iter_volumes()
                     .map_err(|err| err.map_ctx(KernelErr::from));
-                while let Some(graft) = grafts.try_next()? {
-                    let latest_local = reader.latest_lsn(&graft.local).or_into_ctx()?;
-                    let latest_remote = reader.latest_lsn(&graft.remote).or_into_ctx()?;
-                    let local_changes = graft.local_changes(latest_local).is_some();
-                    let remote_changes = graft.remote_changes(latest_remote).is_some();
+                while let Some(volume) = volumes.try_next()? {
+                    let latest_local = reader.latest_lsn(&volume.local).or_into_ctx()?;
+                    let latest_remote = reader.latest_lsn(&volume.remote).or_into_ctx()?;
+                    let local_changes = volume.local_changes(latest_local).is_some();
+                    let remote_changes = volume.remote_changes(latest_remote).is_some();
 
                     if remote_changes && local_changes {
-                        // graft has diverged and requires user/app intervention
+                        // volume has diverged and requires user/app intervention
                     } else if remote_changes {
-                        actions.push(Subtask::Pull { graft: graft.local })
+                        actions.push(Subtask::Pull { vid: volume.vid })
                     } else if local_changes {
-                        actions.push(Subtask::Push { graft: graft.local })
+                        actions.push(Subtask::Push { vid: volume.vid })
                     } else {
-                        fetches.insert(graft.remote);
-                        actions.push(Subtask::Pull { graft: graft.local });
+                        fetches.insert(volume.remote);
+                        actions.push(Subtask::Pull { vid: volume.vid });
                     }
                 }
             }
@@ -94,12 +94,10 @@ impl Task for AutosyncTask {
                 .into_iter()
                 .map(|action| async {
                     match action {
-                        Subtask::Push { graft } => {
-                            RemoteCommit { graft }.run(storage, remote).await
-                        }
-                        Subtask::Pull { graft } => storage
+                        Subtask::Push { vid } => RemoteCommit { vid }.run(storage, remote).await,
+                        Subtask::Pull { vid } => storage
                             .read_write()
-                            .sync_remote_to_local(graft)
+                            .sync_remote_to_local(vid)
                             .or_into_culprit("syncing changes from remote"),
                     }
                 })

@@ -26,6 +26,33 @@ use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unalig
     Default,
 )]
 #[repr(u8)]
+pub enum Volume {
+    #[default]
+    Value = 0b1_00_00000,
+}
+
+impl Debug for Volume {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Volume")
+    }
+}
+
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    ByteHash,
+    PartialOrd,
+    Ord,
+    IntoBytes,
+    Unaligned,
+    TryFromBytes,
+    Immutable,
+    KnownLayout,
+    Default,
+)]
+#[repr(u8)]
 pub enum Log {
     #[default]
     Value = 0b1_01_00000,
@@ -75,6 +102,10 @@ pub trait ConstDefault {
     const DEFAULT: Self;
 }
 
+impl ConstDefault for Volume {
+    const DEFAULT: Self = Volume::Value;
+}
+
 impl ConstDefault for Log {
     const DEFAULT: Self = Log::Value;
 }
@@ -100,5 +131,6 @@ pub trait Prefix:
 {
 }
 
+impl Prefix for Volume {}
 impl Prefix for Log {}
 impl Prefix for Segment {}

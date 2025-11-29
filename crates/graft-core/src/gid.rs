@@ -57,9 +57,11 @@ pub struct Gid<P: Prefix> {
     random: GidRandom,
 }
 
+pub type VolumeId = Gid<prefix::Volume>;
 pub type LogId = Gid<prefix::Log>;
 pub type SegmentId = Gid<prefix::Segment>;
 
+static_assertions::assert_eq_size!(VolumeId, [u8; GID_SIZE.as_usize()]);
 static_assertions::assert_eq_size!(LogId, [u8; GID_SIZE.as_usize()]);
 static_assertions::assert_eq_size!(SegmentId, [u8; GID_SIZE.as_usize()]);
 
@@ -327,6 +329,11 @@ mod tests {
 
     #[graft_test::test]
     fn test_mkgid() {
+        let gid = mkgid(prefix::Volume::Value as u8, SystemTime::UNIX_EPOCH, 0);
+        let gid = VolumeId::try_read_from_bytes(&gid).unwrap();
+        assert_eq!(gid.as_time(), SystemTime::UNIX_EPOCH);
+        assert_eq!(gid.random, GidRandom::DEFAULT);
+
         let gid = mkgid(prefix::Log::Value as u8, SystemTime::UNIX_EPOCH, 0);
         let gid = LogId::try_read_from_bytes(&gid).unwrap();
         assert_eq!(gid.as_time(), SystemTime::UNIX_EPOCH);
@@ -367,6 +374,10 @@ mod tests {
         assert!(g.serialize().len() == ENCODED_LEN);
 
         let g = LogId::default();
+        println!("gid: {}", g.serialize());
+        assert!(g.serialize().len() == ENCODED_LEN);
+
+        let g = VolumeId::default();
         println!("gid: {}", g.serialize());
         assert!(g.serialize().len() == ENCODED_LEN);
     }

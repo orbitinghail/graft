@@ -1,5 +1,5 @@
 use crate::{local::fjall_storage::FjallStorageErr, remote::RemoteErr};
-use graft_core::LogId;
+use graft_core::{LogId, VolumeId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum KernelErr {
@@ -24,23 +24,23 @@ impl From<FjallStorageErr> for KernelErr {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LogicalErr {
-    #[error("Concurrent write to Graft {0}")]
-    GraftConcurrentWrite(LogId),
+    #[error("Concurrent write to Volume {0}")]
+    VolumeConcurrentWrite(VolumeId),
 
-    #[error("Graft {0} not found")]
-    GraftNotFound(LogId),
+    #[error("Volume {0} not found")]
+    VolumeNotFound(VolumeId),
 
-    #[error("Graft {0} has a pending commit and needs recovery")]
-    GraftNeedsRecovery(LogId),
+    #[error("Volume {0} has a pending commit and needs recovery")]
+    VolumeNeedsRecovery(VolumeId),
 
-    #[error("Graft {0} has diverged from the remote")]
-    GraftDiverged(LogId),
+    #[error("Volume {0} has diverged from the remote")]
+    VolumeDiverged(VolumeId),
 
     #[error(
-        "Graft `{graft}` has a different remote Log than expected; expected={expected}, actual={actual}"
+        "Volume `{vid}` has a different remote Log than expected; expected={expected}, actual={actual}"
     )]
-    GraftRemoteMismatch {
-        graft: LogId,
+    VolumeRemoteMismatch {
+        vid: VolumeId,
         expected: LogId,
         actual: LogId,
     },

@@ -2,11 +2,11 @@ use std::{fmt::Display, ops::RangeInclusive};
 
 use bilrost::Message;
 
-use graft_core::{LogId, commit_hash::CommitHash, lsn::LSN};
+use graft_core::{LogId, commit_hash::CommitHash, gid::VolumeId, lsn::LSN};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct SyncPoint {
-    /// This Graft is attached to the remote Log at this LSN
+    /// This Volume is attached to the remote Log at this LSN
     #[bilrost(1)]
     pub remote: LSN,
 
@@ -43,36 +43,51 @@ impl From<PendingCommit> for SyncPoint {
 }
 
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
-pub struct Graft {
-    /// The local Log backing this Graft
+pub struct Volume {
+    /// The Volume Id
     #[bilrost(1)]
+    pub vid: VolumeId,
+
+    /// The local Log backing this Volume.
+    #[bilrost(2)]
     pub local: LogId,
 
-    /// The remote Log backing this Graft.
-    #[bilrost(2)]
+    /// The remote Log backing this Volume.
+    #[bilrost(3)]
     pub remote: LogId,
 
     /// Metadata keeping track of which portion of the local and remote log
-    /// this Graft cares about.
-    #[bilrost(3)]
+    /// this Volume cares about.
+    #[bilrost(4)]
     pub sync: Option<SyncPoint>,
 
     /// Presence of the `pending_commit` field means that the Push operation is in
     /// the process of committing to the remote. If no such Push job is currently
     /// running (i.e. it was interrupted), this field must be used to resume or
     /// abort the commit process.
-    #[bilrost(4)]
+    #[bilrost(5)]
     pub pending_commit: Option<PendingCommit>,
 }
 
-impl Graft {
+impl Volume {
     pub fn new(
+        vid: VolumeId,
         local: LogId,
         remote: LogId,
         sync: Option<SyncPoint>,
         pending_commit: Option<PendingCommit>,
     ) -> Self {
-        Self { local, remote, sync, pending_commit }
+        Self { vid, local, remote, sync, pending_commit }
+    }
+
+    pub fn new_random() -> Self {
+        Self {
+            vid: VolumeId::random(),
+            local: LogId::random(),
+            remote: LogId::random(),
+            sync: None,
+            pending_commit: None,
+        }
     }
 
     pub fn with_sync(self, sync: Option<SyncPoint>) -> Self {
@@ -111,8 +126,9 @@ impl Graft {
         .changes()
     }
 
-    pub fn status(&self, latest_local: Option<LSN>, latest_remote: Option<LSN>) -> GraftStatus {
-        GraftStatus {
+    pub fn status(&self, latest_local: Option<LSN>, latest_remote: Option<LSN>) -> VolumeStatus {
+        VolumeStatus {
+            vid: self.vid.clone(),
             local: self.local.clone(),
             local_status: AheadStatus {
                 head: latest_local,
@@ -169,7 +185,8 @@ impl Display for AheadStatus {
 }
 
 #[derive(Debug)]
-pub struct GraftStatus {
+pub struct VolumeStatus {
+    pub vid: VolumeId,
     pub local: LogId,
     pub local_status: AheadStatus,
     pub remote: LogId,
@@ -186,13 +203,13 @@ pub struct GraftStatus {
 ///  - `123+3 r130`: local is 3 commits ahead
 ///  - `123 r130+3`: remote is 3 commits ahead
 ///  - `123+2 r130+3`: local and remote have diverged
-impl Display for GraftStatus {
+impl Display for VolumeStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} r{}", self.local_status, self.remote_status)
     }
 }
 
-impl GraftStatus {
+impl VolumeStatus {
     pub fn has_diverged(&self) -> bool {
         self.local_status.changes().is_some() && self.remote_status.changes().is_some()
     }

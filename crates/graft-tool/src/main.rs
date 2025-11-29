@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
-use graft_core::{LogId, SegmentId};
+use graft_core::{LogId, SegmentId, VolumeId};
 
 #[derive(thiserror::Error, Debug)]
 pub enum HexEncodedKeyErr {
@@ -36,6 +36,8 @@ impl From<HexEncodedKey> for rusty_paseto::core::Key<32> {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// Generate a Volume ID (vid)
+    Vid,
     /// Generate a Log ID (logid)
     Log,
     /// Generate a Segment ID (sid)
@@ -73,6 +75,7 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
     match cli.tool {
+        Tool::Vid => println!("{}", VolumeId::random()),
         Tool::Log => println!("{}", LogId::random()),
         Tool::Sid => println!("{}", SegmentId::random()),
         Tool::SecretKey => {

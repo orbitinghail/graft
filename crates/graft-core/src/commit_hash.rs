@@ -158,10 +158,10 @@ pub struct CommitHashBuilder {
 
 impl CommitHashBuilder {
     /// Creates a new `CommitHashBuilder` initialized with the given metadata.
-    pub fn new(logid: LogId, lsn: LSN, pages: PageCount) -> Self {
+    pub fn new(log: LogId, lsn: LSN, pages: PageCount) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&COMMIT_HASH_MAGIC);
-        hasher.update(logid.as_bytes());
+        hasher.update(log.as_bytes());
         hasher.update(CBE64::from(lsn).as_bytes());
         hasher.update(&pages.to_u32().to_be_bytes());
         Self { hasher, last_pageidx: None }

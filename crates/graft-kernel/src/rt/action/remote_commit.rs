@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, ops::RangeInclusive};
 use bytes::Bytes;
 use culprit::ResultExt;
 use graft_core::{
-    CommitHashBuilder, LogId, PageCount, PageIdx, SegmentId,
+    CommitHashBuilder, LogId, PageCount, PageIdx, SegmentId, VolumeId,
     commit::{Commit, SegmentIdx},
     commit_hash::CommitHash,
     logref::LogRef,
@@ -15,26 +15,26 @@ use tryiter::TryIteratorExt;
 
 use crate::{
     KernelErr, LogicalErr,
-    graft::PendingCommit,
     local::fjall_storage::FjallStorage,
     remote::{Remote, segment::SegmentBuilder},
     rt::action::{Action, FetchLog},
     snapshot::Snapshot,
+    volume::PendingCommit,
 };
 
-/// Commits a Graft's local changes into its remote.
+/// Commits a Volume's local changes into its remote.
 #[derive(Debug)]
 pub struct RemoteCommit {
-    pub graft: LogId,
+    pub vid: VolumeId,
 }
 
 impl Action for RemoteCommit {
     async fn run(self, storage: &FjallStorage, remote: &Remote) -> culprit::Result<(), KernelErr> {
         // first, check if we need to recover from a pending commit
         // we do this *before* plan since this may modify storage
-        attempt_recovery(storage, &self.graft).or_into_culprit("attempting recovery")?;
+        attempt_recovery(storage, &self.vid).or_into_culprit("attempting recovery")?;
 
-        let Some(plan) = plan_commit(storage, &self.graft)? else {
+        let Some(plan) = plan_commit(storage, &self.vid)? else {
             // nothing to commit
             return Ok(());
         };
@@ -48,11 +48,11 @@ impl Action for RemoteCommit {
 
         // make final preparations before pushing to the remote.
         // these preparations include checking preconditions and setting
-        // pending_commit on the Graft
+        // pending_commit on the Volume
         storage
             .read_write()
             .remote_commit_prepare(
-                &self.graft,
+                &self.vid,
                 PendingCommit {
                     local: *plan.lsns.end(),
                     commit: plan.commit_ref.lsn,
@@ -76,7 +76,7 @@ impl Action for RemoteCommit {
             Ok(()) => {
                 storage
                     .read_write()
-                    .remote_commit_success(&self.graft, commit)
+                    .remote_commit_success(&self.vid, commit)
                     .or_into_ctx()?;
                 Ok(())
             }
@@ -86,12 +86,12 @@ impl Action for RemoteCommit {
                 // 2. Someone (including us) pushed a DIFFERENT commit (divergence)
                 // To resolve this, refetch the remote and attempt recovery.
                 FetchLog {
-                    log: commit.log.clone(),
+                    log: commit.log,
                     max_lsn: Some(commit.lsn),
                 }
                 .run(storage, remote)
                 .await?;
-                attempt_recovery(storage, &self.graft)
+                attempt_recovery(storage, &self.vid)
                     .or_into_culprit("recovering from existing remote commit")
             }
             Err(err) => {
@@ -114,48 +114,48 @@ struct CommitPlan {
 
 fn plan_commit(
     storage: &FjallStorage,
-    graft: &LogId,
+    vid: &VolumeId,
 ) -> culprit::Result<Option<CommitPlan>, KernelErr> {
     let reader = storage.read();
-    let graft = reader.graft(graft).or_into_ctx()?;
+    let volume = reader.volume(vid).or_into_ctx()?;
 
-    if graft.pending_commit().is_some() {
+    if volume.pending_commit().is_some() {
         // this should have been handled earlier
-        return Err(LogicalErr::GraftNeedsRecovery(graft.local).into());
+        return Err(LogicalErr::VolumeNeedsRecovery(volume.vid).into());
     }
 
-    let Some(latest_local) = reader.latest_lsn(&graft.local).or_into_ctx()? else {
+    let Some(latest_local) = reader.latest_lsn(&volume.local).or_into_ctx()? else {
         // nothing to push
         return Ok(None);
     };
-    let latest_remote = reader.latest_lsn(&graft.remote).or_into_ctx()?;
+    let latest_remote = reader.latest_lsn(&volume.remote).or_into_ctx()?;
 
     let page_count = reader
-        .page_count(&graft.local, latest_local)
+        .page_count(&volume.local, latest_local)
         .or_into_ctx()?
         .expect("BUG: no page count for commit");
 
-    let Some(sync) = graft.sync() else {
-        // this is the first time we are pushing this graft to the remote
+    let Some(sync) = volume.sync() else {
+        // this is the first time we are pushing this volume to the remote
         assert_eq!(latest_remote, None, "BUG: remote should be empty");
         return Ok(Some(CommitPlan {
-            local: graft.local.clone(),
+            local: volume.local.clone(),
             lsns: LSN::FIRST..=latest_local,
-            commit_ref: LogRef::new(graft.remote, LSN::FIRST),
+            commit_ref: LogRef::new(volume.remote, LSN::FIRST),
             page_count,
         }));
     };
 
     // check for divergence
-    if graft.remote_changes(latest_remote).is_some() {
+    if volume.remote_changes(latest_remote).is_some() {
         // the remote and local logs have diverged
-        let status = graft.status(Some(latest_local), latest_remote);
-        tracing::debug!("graft {} has diverged; status=`{status}`", graft.local);
-        return Err(LogicalErr::GraftDiverged(graft.local).into());
+        let status = volume.status(Some(latest_local), latest_remote);
+        tracing::debug!("volume {} has diverged; status=`{status}`", volume.local);
+        return Err(LogicalErr::VolumeDiverged(volume.vid).into());
     }
 
     // calculate which LSNs we need to sync
-    let Some(local_lsns) = graft.local_changes(Some(latest_local)) else {
+    let Some(local_lsns) = volume.local_changes(Some(latest_local)) else {
         // nothing to push
         return Ok(None);
     };
@@ -164,9 +164,9 @@ fn plan_commit(
     let commit_lsn = sync.remote.next();
 
     Ok(Some(CommitPlan {
-        local: graft.local.clone(),
+        local: volume.local.clone(),
         lsns: local_lsns,
-        commit_ref: LogRef::new(graft.remote.clone(), commit_lsn),
+        commit_ref: LogRef::new(volume.remote.clone(), commit_lsn),
         page_count,
     }))
 }
@@ -204,7 +204,7 @@ fn build_segment(
             let outstanding = Splinter::from(commit_pages) - &pageset;
             // load all of the outstanding pages
             for pageidx in outstanding.iter() {
-                // SAFETY: outstanding is built from a Graft of already valid PageIdxs
+                // SAFETY: outstanding is built from a set of valid PageIdxs
                 let pageidx = unsafe { PageIdx::new_unchecked(pageidx) };
                 debug_assert!(plan.page_count.contains(pageidx));
                 let page = reader.read_page(idx.sid.clone(), pageidx).or_into_ctx()?;
@@ -249,22 +249,22 @@ fn build_segment(
 
 /// Attempts to recover from a remote commit conflict by checking the remote
 /// for the commit we tried to push.
-fn attempt_recovery(storage: &FjallStorage, graft: &LogId) -> culprit::Result<(), KernelErr> {
+fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> culprit::Result<(), KernelErr> {
     let reader = storage.read();
-    let graft = reader.graft(graft).or_into_ctx()?;
+    let volume = reader.volume(vid).or_into_ctx()?;
 
-    if let Some(pending) = graft.pending_commit {
+    if let Some(pending) = volume.pending_commit {
         tracing::debug!(?pending, "got pending commit");
         match storage
             .read()
-            .get_commit(&graft.remote, pending.commit)
+            .get_commit(&volume.remote, pending.commit)
             .or_into_ctx()?
         {
             Some(commit) if commit.commit_hash() == Some(&pending.commit_hash) => {
                 // It's the same commit. Recovery success!
                 storage
                     .read_write()
-                    .remote_commit_success(&graft.local, commit)
+                    .remote_commit_success(&volume.vid, commit)
                     .or_into_ctx()?;
                 Ok(())
             }
@@ -272,22 +272,22 @@ fn attempt_recovery(storage: &FjallStorage, graft: &LogId) -> culprit::Result<()
                 // Case 2: Divergence detected.
                 storage
                     .read_write()
-                    .drop_pending_commit(&graft.local)
+                    .drop_pending_commit(&volume.vid)
                     .or_into_ctx()?;
                 tracing::warn!(
-                    "remote commit rejected for graft {}, commit {}/{} already exists with different hash: {:?}",
-                    graft.local,
-                    graft.remote,
+                    "remote commit rejected for volume {}, commit {}/{} already exists with different hash: {:?}",
+                    volume.vid,
+                    volume.remote,
                     pending.commit,
                     commit.commit_hash
                 );
-                Err(LogicalErr::GraftDiverged(graft.local).into())
+                Err(LogicalErr::VolumeDiverged(volume.vid).into())
             }
             None => {
                 // No commit found. Recovery unknown.
                 // We don't drop the pending commit, as we may need to wait for the
                 // commit to show up in the remote.
-                Err(LogicalErr::GraftNeedsRecovery(graft.local).into())
+                Err(LogicalErr::VolumeNeedsRecovery(volume.vid).into())
             }
         }
     } else {

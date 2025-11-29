@@ -1,43 +1,43 @@
 use culprit::Culprit;
-use graft_core::{LogId, PageCount, PageIdx, page::Page};
+use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
 
-use crate::{KernelErr, graft_writer::GraftWriter, rt::runtime::Runtime, snapshot::Snapshot};
+use crate::{KernelErr, rt::runtime::Runtime, snapshot::Snapshot, volume_writer::VolumeWriter};
 
-/// A type which can read from a Graft
-pub trait GraftRead {
+/// A type which can read from a Volume
+pub trait VolumeRead {
     fn snapshot(&self) -> &Snapshot;
     fn page_count(&self) -> culprit::Result<PageCount, KernelErr>;
     fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr>;
 }
 
 #[derive(Debug, Clone)]
-pub struct GraftReader {
+pub struct VolumeReader {
     runtime: Runtime,
-    graft: LogId,
+    vid: VolumeId,
     snapshot: Snapshot,
 }
 
-impl GraftReader {
-    pub(crate) fn new(runtime: Runtime, graft: LogId, snapshot: Snapshot) -> Self {
-        Self { runtime, graft, snapshot }
+impl VolumeReader {
+    pub(crate) fn new(runtime: Runtime, vid: VolumeId, snapshot: Snapshot) -> Self {
+        Self { runtime, vid, snapshot }
     }
 }
 
-impl TryFrom<GraftReader> for GraftWriter {
+impl TryFrom<VolumeReader> for VolumeWriter {
     type Error = Culprit<KernelErr>;
 
-    fn try_from(reader: GraftReader) -> Result<Self, Self::Error> {
+    fn try_from(reader: VolumeReader) -> Result<Self, Self::Error> {
         let page_count = reader.page_count()?;
         Ok(Self::new(
             reader.runtime,
-            reader.graft,
+            reader.vid,
             reader.snapshot,
             page_count,
         ))
     }
 }
 
-impl GraftRead for GraftReader {
+impl VolumeRead for VolumeReader {
     fn snapshot(&self) -> &Snapshot {
         &self.snapshot
     }

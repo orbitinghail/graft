@@ -3,17 +3,18 @@ use std::{fmt::Write, fs::File, io::Read, path::PathBuf};
 use bytes::{Bytes, BytesMut};
 use culprit::{Culprit, ResultExt};
 use graft_core::{
-    LogId, PageCount, PageIdx,
+    LogId, PageCount, PageIdx, VolumeId,
     lsn::LSNRangeExt,
     page::{PAGESIZE, Page},
 };
 use graft_kernel::{
-    graft::AheadStatus,
-    graft_reader::GraftRead,
-    graft_writer::{GraftWrite, GraftWriter},
     rt::runtime::Runtime,
+    volume::AheadStatus,
+    volume_reader::VolumeRead,
+    volume_writer::{VolumeWrite, VolumeWriter},
 };
 use indoc::{formatdoc, indoc, writedoc};
+use itertools::Itertools;
 use sqlite_plugin::{
     vars::SQLITE_ERROR,
     vfs::{Pragma, PragmaErr},
@@ -24,16 +25,20 @@ use zerocopy::FromBytes;
 use crate::{dbg::SqliteHeader, file::vol_file::VolFile, vfs::ErrCtx};
 
 pub enum GraftPragma {
-    /// `pragma graft_list;`
-    List,
+    /// `pragma graft_volumes;`
+    Volumes,
 
     /// `pragma graft_tags;`
     Tags,
 
-    /// `pragma graft_switch = "local_vid[:remote]";`
-    Switch { graft: LogId, remote: Option<LogId> },
+    /// `pragma graft_switch = "local_vid[:local[:remote]]";`
+    Switch {
+        vid: VolumeId,
+        local: Option<LogId>,
+        remote: Option<LogId>,
+    },
 
-    /// `pragma graft_clone [= "remote_vid"];`
+    /// `pragma graft_clone [= "remote"];`
     Clone { remote: Option<LogId> },
 
     /// `pragma graft_fork;`
@@ -81,7 +86,7 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
             && prefix == "graft"
         {
             return match suffix {
-                "list" => Ok(GraftPragma::List),
+                "volumes" => Ok(GraftPragma::Volumes),
                 "tags" => Ok(GraftPragma::Tags),
                 "clone" => {
                     if let Some(arg) = p.arg {
@@ -94,22 +99,44 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     }
                 }
                 "fork" => Ok(GraftPragma::Fork),
-                "new" => Ok(GraftPragma::Switch { graft: LogId::random(), remote: None }),
+                "new" => Ok(GraftPragma::Switch {
+                    vid: VolumeId::random(),
+                    local: None,
+                    remote: None,
+                }),
                 "switch" => {
                     let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
-                    let (prefix, suffix) = arg.split_once(":").unwrap_or((arg, ""));
-                    let graft = prefix
-                        .parse::<LogId>()
+                    let parts = arg.split(":").collect_vec();
+
+                    if parts.len() < 1 || parts.len() > 3 {
+                        return Err(PragmaErr::Fail(
+                            SQLITE_ERROR,
+                            Some(
+                                "argument must be in the form: `local_vid[:local[:remote]]`"
+                                    .to_string(),
+                            ),
+                        ));
+                    }
+
+                    let vid = parts[0]
+                        .parse::<VolumeId>()
                         .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
-                    let remote =
-                        if !suffix.is_empty() {
-                            Some(suffix.parse::<LogId>().map_err(|err| {
-                                PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string()))
-                            })?)
-                        } else {
-                            None
-                        };
-                    Ok(GraftPragma::Switch { graft, remote })
+                    let local = parts
+                        .get(1)
+                        .map(|s| {
+                            s.parse::<LogId>()
+                                .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))
+                        })
+                        .transpose()?;
+                    let remote = parts
+                        .get(2)
+                        .map(|s| {
+                            s.parse::<LogId>()
+                                .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))
+                        })
+                        .transpose()?;
+
+                    Ok(GraftPragma::Switch { vid, local, remote })
                 }
                 "info" => Ok(GraftPragma::Info),
                 "status" => Ok(GraftPragma::Status),
@@ -149,8 +176,8 @@ impl GraftPragma {
         file: &mut VolFile,
     ) -> Result<Option<String>, Culprit<ErrCtx>> {
         match self {
-            GraftPragma::List => Ok(Some(format_grafts(runtime, file)?)),
-            GraftPragma::Tags => Ok(Some(format_tags(runtime)?)),
+            GraftPragma::Volumes => Ok(Some(format_volumes(runtime, file)?)),
+            GraftPragma::Tags => Ok(Some(format_tags(runtime, file)?)),
 
             GraftPragma::Clone { remote } => {
                 if !file.is_idle() {
@@ -159,14 +186,16 @@ impl GraftPragma {
 
                 let remote = match remote {
                     Some(remote) => remote,
-                    None => runtime.graft_get(&file.graft).or_into_ctx()?.remote,
+                    None => runtime.volume_get(&file.vid).or_into_ctx()?.remote,
                 };
-                let graft = runtime.graft_open(None, Some(remote)).or_into_ctx()?;
-                file.switch_graft(&graft.local)?;
+                let volume = runtime
+                    .volume_open(None, None, Some(remote))
+                    .or_into_ctx()?;
+                file.switch_volume(&volume.vid)?;
 
                 Ok(Some(format!(
-                    "Created new Graft {} with remote Log {}",
-                    graft.local, graft.remote
+                    "Created new Volume {} from remote Log {}",
+                    volume.vid, volume.remote
                 )))
             }
 
@@ -178,34 +207,36 @@ impl GraftPragma {
                 let snapshot = file.snapshot_or_latest()?;
                 let missing = runtime.snapshot_missing_pages(&snapshot).or_into_ctx()?;
                 if missing.is_empty() {
-                    let graft = runtime.graft_from_snapshot(&snapshot).or_into_ctx()?;
-                    file.switch_graft(&graft.local)?;
+                    let volume = runtime.volume_from_snapshot(&snapshot).or_into_ctx()?;
+                    file.switch_volume(&volume.vid)?;
 
                     Ok(Some(format!(
-                        "Forked current snapshot into Graft: {}",
-                        graft.local,
+                        "Forked current snapshot into Volume: {}",
+                        volume.vid,
                     )))
                 } else {
                     pragma_err!("ERROR: must hydrate volume before forking")
                 }
             }
 
-            GraftPragma::Switch { graft, remote } => {
+            GraftPragma::Switch { vid, local, remote } => {
                 if !file.is_idle() {
                     return pragma_err!("cannot switch while there is an open transaction");
                 }
 
-                let graft = runtime.graft_open(Some(graft), remote).or_into_ctx()?;
-                file.switch_graft(&graft.local)?;
+                let volume = runtime
+                    .volume_open(Some(vid), local, remote)
+                    .or_into_ctx()?;
+                file.switch_volume(&volume.vid)?;
 
                 Ok(Some(format!(
-                    "Switched to Graft {} with remote Log {}",
-                    graft.local, graft.remote,
+                    "Switched to Volume {} with local Log {} and remote Log {}",
+                    volume.vid, volume.local, volume.remote,
                 )))
             }
 
-            GraftPragma::Info => Ok(Some(format_graft_info(runtime, file)?)),
-            GraftPragma::Status => Ok(Some(format_graft_status(runtime, file)?)),
+            GraftPragma::Info => Ok(Some(format_volume_info(runtime, file)?)),
+            GraftPragma::Status => Ok(Some(format_volume_status(runtime, file)?)),
 
             GraftPragma::Snapshot => {
                 let snapshot = file.snapshot_or_latest()?;
@@ -217,7 +248,7 @@ impl GraftPragma {
 
             GraftPragma::Push => Ok(Some(push(runtime, file)?)),
 
-            GraftPragma::Audit => Ok(Some(format_graft_audit(runtime, file)?)),
+            GraftPragma::Audit => Ok(Some(format_volume_audit(runtime, file)?)),
 
             GraftPragma::Hydrate => {
                 let snapshot = file.snapshot_or_latest()?;
@@ -236,12 +267,12 @@ impl GraftPragma {
             }
 
             GraftPragma::Import(path) => {
-                let writer = runtime.graft_writer(file.graft.clone()).or_into_ctx()?;
-                graft_import(writer, path).map(Some)
+                let writer = runtime.volume_writer(file.vid.clone()).or_into_ctx()?;
+                volume_import(writer, path).map(Some)
             }
 
             GraftPragma::DumpSqliteHeader => {
-                let reader = runtime.graft_reader(file.graft.clone()).or_into_ctx()?;
+                let reader = runtime.volume_reader(file.vid.clone()).or_into_ctx()?;
                 let page = reader.read_page(PageIdx::FIRST).or_into_ctx()?;
                 let header = SqliteHeader::read_from_bytes(&page[..100])
                     .expect("failed to parse SQLite header");
@@ -257,8 +288,8 @@ macro_rules! pluralize {
     };
 }
 
-fn format_graft_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
-    let state = runtime.graft_get(&file.graft).or_into_ctx()?;
+fn format_volume_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+    let state = runtime.volume_get(&file.vid).or_into_ctx()?;
     let sync = state.sync().map_or_else(
         || "Never synced".into(),
         |sync| match sync.local_watermark {
@@ -266,6 +297,7 @@ fn format_graft_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culpri
             None => format!("R{}", sync.remote),
         },
     );
+    let vid = state.vid;
     let local = state.local;
     let remote = state.remote;
     let snapshot = file.snapshot_or_latest()?;
@@ -274,7 +306,8 @@ fn format_graft_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culpri
 
     Ok(formatdoc!(
         "
-            Graft: {local}
+            Volume: {vid}
+            Local: {local}
             Remote: {remote}
             Last sync: {sync}
             Snapshot: {snapshot:?}
@@ -284,13 +317,13 @@ fn format_graft_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culpri
     ))
 }
 
-fn format_graft_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+fn format_volume_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     let mut f = String::new();
 
     let tag = &file.tag;
     writeln!(&mut f, "On tag {tag}")?;
 
-    let status = runtime.graft_status(&file.graft).or_into_ctx()?;
+    let status = runtime.volume_status(&file.vid).or_into_ctx()?;
     let local_changes = status.local_status.changes();
     let remote_changes = status.remote_status.changes();
 
@@ -345,7 +378,7 @@ fn format_graft_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culp
     Ok(f)
 }
 
-fn format_graft_audit(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+fn format_volume_audit(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     let snapshot = file.snapshot_or_latest()?;
     let missing_pages = runtime.snapshot_missing_pages(&snapshot).or_into_ctx()?;
     let pages = file.page_count().or_into_ctx()?.to_usize();
@@ -377,13 +410,13 @@ fn fetch_or_pull(
     file: &mut VolFile,
     pull: bool,
 ) -> Result<String, Culprit<ErrCtx>> {
-    let pre = runtime.graft_status(&file.graft).or_into_ctx()?;
+    let pre = runtime.volume_status(&file.vid).or_into_ctx()?;
     if pull {
-        runtime.graft_pull(file.graft.clone()).or_into_ctx()?;
+        runtime.volume_pull(file.vid.clone()).or_into_ctx()?;
     } else {
         runtime.fetch_log(pre.remote, None).or_into_ctx()?;
     }
-    let post = runtime.graft_status(&file.graft).or_into_ctx()?;
+    let post = runtime.volume_status(&file.vid).or_into_ctx()?;
 
     let mut f = String::new();
 
@@ -418,12 +451,12 @@ fn fetch_or_pull(
 }
 
 fn push(runtime: &Runtime, file: &mut VolFile) -> Result<String, Culprit<ErrCtx>> {
-    let pre = runtime.graft_status(&file.graft).or_into_ctx()?;
+    let pre = runtime.volume_status(&file.vid).or_into_ctx()?;
     if let Some(changes) = pre.local_status.changes()
         && !changes.is_empty()
     {
-        runtime.graft_push(file.graft.clone()).or_into_ctx()?;
-        let post = runtime.graft_status(&file.graft).or_into_ctx()?;
+        runtime.volume_push(file.vid.clone()).or_into_ctx()?;
+        let post = runtime.volume_status(&file.vid).or_into_ctx()?;
 
         let pushed = AheadStatus::new(post.local_status.base, pre.local_status.base).changes();
 
@@ -444,52 +477,53 @@ fn push(runtime: &Runtime, file: &mut VolFile) -> Result<String, Culprit<ErrCtx>
     }
 }
 
-fn format_tags(runtime: &Runtime) -> Result<String, Culprit<ErrCtx>> {
+fn format_tags(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     let mut f = String::new();
     let mut tags = runtime.tag_iter();
-    while let Some((tag, graft)) = tags.try_next().or_into_ctx()? {
-        let status = runtime.graft_status(&graft).or_into_ctx()?;
+    while let Some((tag, vid)) = tags.try_next().or_into_ctx()? {
+        let status = runtime.volume_status(&vid).or_into_ctx()?;
+        let local = &status.local;
         let remote = &status.remote;
 
         writedoc!(
             &mut f,
             "
-                Tag: {tag}
-                  Graft: {graft}
+                Tag: {tag}{}
+                  Volume: {vid}
+                    Local: {local}
                     Remote: {remote}
                     Status: {status}
             ",
+            if tag == file.tag { " (current)" } else { "" }
         )?;
     }
     Ok(f)
 }
 
-fn format_grafts(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+fn format_volumes(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
     let mut f = String::new();
-    let mut grafts = runtime.graft_iter();
-    while let Some(graft) = grafts.try_next().or_into_ctx()? {
-        let status = runtime.graft_status(&graft.local).or_into_ctx()?;
-        let local = graft.local;
-        let remote = graft.remote;
+    let mut volumes = runtime.volume_iter();
+    while let Some(volume) = volumes.try_next().or_into_ctx()? {
+        let vid = volume.vid;
+        let status = runtime.volume_status(&vid).or_into_ctx()?;
+        let local = volume.local;
+        let remote = volume.remote;
 
         writedoc!(
             &mut f,
             "
-                Graft: {local}{}
+                Volume: {vid}{}
+                  Local: {local}
                   Remote: {remote}
                   Status: {status}
             ",
-            if local == file.graft {
-                " (current)"
-            } else {
-                ""
-            }
+            if vid == file.vid { " (current)" } else { "" }
         )?;
     }
     Ok(f)
 }
 
-fn graft_import(mut writer: GraftWriter, path: PathBuf) -> Result<String, Culprit<ErrCtx>> {
+fn volume_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, Culprit<ErrCtx>> {
     if writer.page_count().or_into_ctx()? > PageCount::ZERO {
         return pragma_err!("Refusing to import into a non-empty database.");
     }

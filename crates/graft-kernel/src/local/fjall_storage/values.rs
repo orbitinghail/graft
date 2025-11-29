@@ -4,8 +4,8 @@ use culprit::ResultExt;
 use graft_core::{checkpoints::CachedCheckpoints, commit::Commit, page::Page};
 
 use crate::{
-    graft::Graft,
     local::fjall_storage::fjall_repr::{FjallRepr, FjallReprRef},
+    volume::Volume,
 };
 
 use super::fjall_repr::DecodeErr;
@@ -54,15 +54,15 @@ macro_rules! impl_fjallrepr_for_bilrost {
     };
 }
 
-impl_fjallrepr_for_bilrost!(Graft, CachedCheckpoints, Commit);
+impl_fjallrepr_for_bilrost!(Volume, CachedCheckpoints, Commit);
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use graft_core::checkpoints::Checkpoints;
-    use graft_core::lsn;
     use graft_core::{LogId, PageCount, page::PAGESIZE};
+    use graft_core::{VolumeId, lsn};
 
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_empty_default, test_invalid, test_roundtrip,
@@ -77,9 +77,15 @@ mod tests {
 
     #[graft_test::test]
     fn test_volume() {
-        test_roundtrip(Graft::new(LogId::random(), LogId::random(), None, None));
-        test_empty_default::<Graft>();
-        test_invalid::<Graft>(&b"abc".repeat(123));
+        test_roundtrip(Volume::new(
+            VolumeId::random(),
+            LogId::random(),
+            LogId::random(),
+            None,
+            None,
+        ));
+        test_empty_default::<Volume>();
+        test_invalid::<Volume>(&b"abc".repeat(123));
     }
 
     #[graft_test::test]
