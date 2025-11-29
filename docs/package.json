@@ -8,8 +8,7 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro",
-    "list-rfcs": "node scripts/list-rfcs.js"
+    "astro": "astro"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.6.0",

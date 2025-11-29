@@ -134,11 +134,6 @@ export default defineConfig({
           collapsed: true,
           autogenerate: { directory: "docs/internals" },
         },
-        {
-          label: "RFCs",
-          collapsed: true,
-          autogenerate: { directory: "docs/rfcs" },
-        },
       ],
     }),
     sitemap(),

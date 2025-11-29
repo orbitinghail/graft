@@ -148,7 +148,6 @@ derive_zerocopy_encoding!(
 
 /// Builder for computing commit hashes using BLAKE3.
 ///
-/// Implements the commit hash algorithm as specified in RFC 0001.
 /// The hash incorporates the Log ID, LSN, page count, and page data
 /// to ensure uniqueness and integrity verification.
 pub struct CommitHashBuilder {
