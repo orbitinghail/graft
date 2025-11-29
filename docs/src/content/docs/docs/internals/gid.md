@@ -39,7 +39,7 @@ The three GID types are:
 
 Following the prefix is a 48 bit timestamp encoding milliseconds since the unix epoch and stored in network byte order (MSB first).
 
-Following the timestamp is a duplicate of the prefix. This second prefix ensures that the random bytes section fo the GID does not start with a zero-byte, which is an important aspect of it's encoded representation.
+Following the timestamp is a duplicate of the prefix. This second prefix ensures that the random bytes section of the GID does not start with a zero-byte, which is an important aspect of it's encoded representation.
 
 Finally there are 64 bits of random noise allowing up to `2^64` GIDs to be generated per millisecond.
 
