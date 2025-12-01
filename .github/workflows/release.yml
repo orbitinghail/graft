@@ -119,7 +119,7 @@ jobs:
       - name: Install Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3"
+          ruby-version: "3.4.7"
 
       - name: Get GitHub Bot User ID
         id: get-bot-id
@@ -140,7 +140,7 @@ jobs:
           git push origin "$TAG_NAME"
 
       - name: Update GitHub Release
-        uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           name: v${{ steps.meta.outputs.version }}
           draft: false
