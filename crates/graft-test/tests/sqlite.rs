@@ -1,5 +1,6 @@
 use graft_core::LogId;
 use graft_test::GraftTestRuntime;
+use rusqlite::Connection;
 
 #[graft_test::test]
 fn test_sync_and_reset() {
@@ -65,6 +66,91 @@ fn test_sync_and_reset() {
     // shutdown everything
     runtime1.shutdown().unwrap();
     runtime2.shutdown().unwrap();
+}
+
+#[graft_test::test]
+fn test_import_export() {
+    let mut runtime = GraftTestRuntime::with_memory_remote();
+    let sqlite = runtime.open_sqlite("main", None);
+
+    // Create a table with some data
+    sqlite
+        .execute_batch(
+            r#"
+            CREATE TABLE test_data (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                value INTEGER NOT NULL
+            );
+            INSERT INTO test_data (id, name, value) VALUES
+                (1, 'Alice', 100),
+                (2, 'Bob', 200),
+                (3, 'Charlie', 300);
+            "#,
+        )
+        .unwrap();
+
+    // Verify the data
+    let count: i64 = sqlite
+        .query_row("SELECT COUNT(*) FROM test_data", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 3);
+
+    // Create a temporary directory for export
+    let temp_dir = tempfile::tempdir().unwrap();
+    let export_path = temp_dir.path().join("exported.db");
+    let export_path_str = export_path.to_str().unwrap();
+
+    // Export the database
+    sqlite.graft_pragma_arg("export", export_path_str);
+
+    // Verify the exported file exists
+    assert!(export_path.exists());
+
+    // Open the exported SQLite file directly to verify it's valid
+    let exported_conn = Connection::open(&export_path).unwrap();
+
+    // Verify we can query the exported database
+    let count: i64 = exported_conn
+        .query_row("SELECT COUNT(*) FROM test_data", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 3);
+
+    // Verify the data is correct
+    let name: String = exported_conn
+        .query_row("SELECT name FROM test_data WHERE id = 2", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(name, "Bob");
+
+    drop(exported_conn);
+
+    // Create a new volume and import the exported database
+    let sqlite2 = runtime.open_sqlite("imported", None);
+    sqlite2.graft_pragma_arg("import", export_path_str);
+
+    // Verify the imported data
+    let count: i64 = sqlite2
+        .query_row("SELECT COUNT(*) FROM test_data", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 3);
+
+    let name: String = sqlite2
+        .query_row("SELECT name FROM test_data WHERE id = 2", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(name, "Bob");
+
+    // Verify we can query all the data
+    let sum: i64 = sqlite2
+        .query_row("SELECT SUM(value) FROM test_data", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(sum, 600);
+
+    // Cleanup
+    runtime.shutdown().unwrap();
 }
 
 // #[graft_test::test]

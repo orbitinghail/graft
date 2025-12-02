@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher},
     mem,
@@ -15,7 +16,7 @@ use graft_core::{
 use graft_kernel::{
     rt::runtime::Runtime,
     snapshot::Snapshot,
-    volume_reader::{VolumeRead, VolumeReader},
+    volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},
     volume_writer::{VolumeWrite, VolumeWriter},
 };
 use parking_lot::{Mutex, MutexGuard};
@@ -135,6 +136,17 @@ impl VolFile {
             .or_into_ctx()?;
         self.vid = vid.clone();
         Ok(())
+    }
+
+    pub fn reader(&self) -> Result<VolumeReadRef<'_>, ErrCtx> {
+        match &self.state {
+            VolFileState::Idle => Ok(VolumeReadRef::Reader(Cow::Owned(
+                self.runtime.volume_reader(self.vid.clone()).or_into_ctx()?,
+            ))),
+            VolFileState::Shared { reader, .. } => Ok(VolumeReadRef::Reader(Cow::Borrowed(reader))),
+            VolFileState::Reserved { writer, .. } => Ok(VolumeReadRef::Writer(writer)),
+            VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
+        }
     }
 }
 

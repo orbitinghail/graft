@@ -40,3 +40,4 @@ bs58 = { workspace = true }
 zerocopy = { workspace = true }
 static_assertions = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
+tempfile = { workspace = true }
