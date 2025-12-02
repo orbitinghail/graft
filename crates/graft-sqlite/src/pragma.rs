@@ -1,4 +1,9 @@
-use std::{fmt::Write, fs::File, io::Read, path::PathBuf};
+use std::{
+    fmt::Write,
+    fs::File,
+    io::{Read, Write as IoWrite},
+    path::PathBuf,
+};
 
 use bytes::{Bytes, BytesMut};
 use culprit::{Culprit, ResultExt};
@@ -73,6 +78,9 @@ pub enum GraftPragma {
 
     /// `pragma graft_import = "PATH";`
     Import(PathBuf),
+
+    /// `pragma graft_export = "PATH";`
+    Export(PathBuf),
 
     /// `pragma graft_dump_header;`
     DumpSqliteHeader,
@@ -151,6 +159,11 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
                     let path = PathBuf::from(arg);
                     Ok(GraftPragma::Import(path))
+                }
+                "export" => {
+                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
+                    let path = PathBuf::from(arg);
+                    Ok(GraftPragma::Export(path))
                 }
                 "dump_header" => Ok(GraftPragma::DumpSqliteHeader),
                 _ => Err(PragmaErr::Fail(
@@ -270,6 +283,8 @@ impl GraftPragma {
                 let writer = runtime.volume_writer(file.vid.clone()).or_into_ctx()?;
                 volume_import(writer, path).map(Some)
             }
+
+            GraftPragma::Export(path) => volume_export(runtime, file, path).map(Some),
 
             GraftPragma::DumpSqliteHeader => {
                 let reader = runtime.volume_reader(file.vid.clone()).or_into_ctx()?;
@@ -558,6 +573,32 @@ fn volume_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, Culp
 
     Ok(format!(
         "imported {} {}",
+        total_pages,
+        pluralize!(total_pages, "page")
+    ))
+}
+
+fn volume_export(
+    _runtime: &Runtime,
+    file: &VolFile,
+    path: PathBuf,
+) -> Result<String, Culprit<ErrCtx>> {
+    // Get a reader based on the current state of the VolFile
+    let reader = file.reader()?;
+
+    let page_count = reader.page_count().or_into_ctx()?;
+    let total_pages = page_count.to_usize();
+
+    let mut output_file = File::create(&path)?;
+
+    // Iterate over all pages and write them to the output file
+    for page_idx in page_count.iter() {
+        let page = reader.read_page(page_idx).or_into_ctx()?;
+        output_file.write_all(page.as_ref())?;
+    }
+
+    Ok(format!(
+        "exported {} {}",
         total_pages,
         pluralize!(total_pages, "page")
     ))

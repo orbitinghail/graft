@@ -164,7 +164,7 @@ Downloads all missing pages for the current snapshot.
 pragma graft_hydrate;
 ```
 
-## Data Import
+## Data Import/Export
 
 ### `pragma graft_import = "PATH"`
 
@@ -175,3 +175,18 @@ pragma graft_import = "/path/to/database.db";
 ```
 
 Reads a SQLite database file and writes its pages into the current Volume. The Volume must be empty before importing.
+
+### `pragma graft_export = "PATH"`
+
+Exports the current Volume to a regular SQLite database file.
+
+```sql
+pragma graft_export = "/path/to/output.db";
+```
+
+Reads all pages from the current Volume and writes them to a standard SQLite database file. The exported file can be opened with any SQLite client.
+
+**Important notes:**
+- If a file already exists at the target path, it will be overwritten
+- Unlike import, export has no restrictions and can be called at any time
+- Exports the current database state as seen by the connection

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use culprit::Culprit;
 use graft_core::{PageCount, PageIdx, VolumeId, page::Page};
 
@@ -48,5 +50,33 @@ impl VolumeRead for VolumeReader {
 
     fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr> {
         self.runtime.read_page(&self.snapshot, pageidx)
+    }
+}
+
+pub enum VolumeReadRef<'a> {
+    Reader(Cow<'a, VolumeReader>),
+    Writer(&'a VolumeWriter),
+}
+
+impl VolumeRead for VolumeReadRef<'_> {
+    fn snapshot(&self) -> &Snapshot {
+        match self {
+            VolumeReadRef::Reader(r) => r.snapshot(),
+            VolumeReadRef::Writer(w) => w.snapshot(),
+        }
+    }
+
+    fn page_count(&self) -> culprit::Result<PageCount, KernelErr> {
+        match self {
+            VolumeReadRef::Reader(r) => r.page_count(),
+            VolumeReadRef::Writer(w) => w.page_count(),
+        }
+    }
+
+    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, KernelErr> {
+        match self {
+            VolumeReadRef::Reader(r) => r.read_page(pageidx),
+            VolumeReadRef::Writer(w) => w.read_page(pageidx),
+        }
     }
 }
