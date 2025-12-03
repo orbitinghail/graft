@@ -7,8 +7,6 @@
   <a href="https://crates.io/crates/graft"><img alt="crates.io" src="https://img.shields.io/crates/v/graft.svg"></a>
   &nbsp;
   <a href="https://graft.rs"><img alt="graft.rs" src="https://img.shields.io/badge/graft.rs-docs-blue"></a>
-  &nbsp;
-  <a href="https://deepwiki.com/orbitinghail/graft"><img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg"></a>
 </p>
 
 **Graft** is an open-source transactional storage engine designed for efficient data synchronization at the edge. It supports lazy, partial replication with strong consistency, ensuring applications replicate only the data they need.
