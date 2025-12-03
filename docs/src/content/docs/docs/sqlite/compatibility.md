@@ -3,7 +3,7 @@ title: Compatibility
 description: SQLite configuration, compatibility, and behaviors when using Graft
 ---
 
-When using Graft as the storage engine for SQLite via the `libgraft` extension, it’s important to understand how SQLite's configuration interacts with Graft’s underlying behavior. Graft replaces SQLite's built-in filesystem storage with its own crash-safe, transactional engine. This affects how certain SQLite settings should be used and how SQLite behaves.
+When using Graft as the storage engine for SQLite via the extension, it’s important to understand how SQLite's configuration interacts with Graft’s underlying behavior. Graft replaces SQLite's built-in filesystem storage with its own crash-safe, transactional engine. This affects how certain SQLite settings should be used and how SQLite behaves.
 
 ## SQLite version compatibility
 

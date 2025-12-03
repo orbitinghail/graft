@@ -3,16 +3,16 @@ title: Config
 description: Configuring the Graft SQLite extension
 ---
 
-The `libgraft` SQLite extension can be configured using either a configuration file (`graft.toml`) or environment variables.
+The SQLite extension can be configured using either a configuration file (`graft.toml`) or environment variables.
 
-`libgraft` searches for the configuration file in the current directory or in the following standard locations:
+The extension searches for the configuration file in the current directory or in the following standard locations:
 
 | Platform      | Configuration Path                  | Example                                           |
 | ------------- | ----------------------------------- | ------------------------------------------------- |
 | Linux & macOS | `$XDG_CONFIG_HOME/graft/graft.toml` | `/home/alice/.config/graft/graft.toml`            |
 | Windows       | `%APPDATA%\graft\graft.toml`        | `C:\Users\Alice\AppData\Roaming\graft\graft.toml` |
 
-If the `GRAFT_CONFIG` environment variable is set, `libgraft` will use the provided path instead.
+If the `GRAFT_CONFIG` environment variable is set it will be used instead of searching.
 
 ## Configuration Options
 

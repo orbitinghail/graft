@@ -61,8 +61,8 @@ test:
 
 build-all:
   cargo build
-  cargo build --no-default-features --features static --package graft-sqlite-extension
-  cargo build --no-default-features --features dynamic --package graft-sqlite-extension
+  cargo build --no-default-features --features static --package graft-ext
+  cargo build --no-default-features --features dynamic --package graft-ext
 
 test-workload-image:
   docker build \

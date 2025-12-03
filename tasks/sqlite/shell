@@ -79,16 +79,16 @@ export GRAFT_DATA_DIR="${DATA_ROOT}/clients/${CLIENT_ID}"
 
 mkdir -p "${GRAFT_REMOTE__ROOT}" "${GRAFT_DATA_DIR}"
 
-cargo build ${BUILD_FLAGS} --features precept/disabled --package graft-sqlite-extension
+cargo build ${BUILD_FLAGS} --features precept/disabled --package graft-ext
 
 # Discover the path to the VFS depending on platform
 LIB_PATH="${GIT_ROOT}/target/${TARGET}"
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-    LIB_PATH="${LIB_PATH}/graft_sqlite_extension.dll"
+    LIB_PATH="${LIB_PATH}/graft_ext.dll"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
-    LIB_PATH="${LIB_PATH}/libgraft_sqlite_extension.dylib"
+    LIB_PATH="${LIB_PATH}/libgraft_ext.dylib"
 else
-    LIB_PATH="${LIB_PATH}/libgraft_sqlite_extension.so"
+    LIB_PATH="${LIB_PATH}/libgraft_ext.so"
 fi
 
 ARGS=(

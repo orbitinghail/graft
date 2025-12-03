@@ -14,7 +14,7 @@ Before working on Graft, it's important to gain consensus on what you want to ch
 
 [File an issue]: https://github.com/orbitinghail/graft/issues/new
 [Start a discussion]: https://github.com/orbitinghail/graft/discussions/new/choose
-[Join the Discord]: https://discord.gg/etFk2N9nzC
+[Join the Discord]: https://discord.gg/dhyjne5XK9
 
 Once you're ready to start building, it's time to get Graft running on your computer!
 

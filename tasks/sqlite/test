@@ -15,7 +15,7 @@ FILTER="${1:-}"
 # build libgraft if it's not specified
 LIBGRAFT="${LIBGRAFT:-}"
 if [ -z "${LIBGRAFT}" ]; then
-    cargo build --features precept/disabled --package graft-sqlite-extension
+    cargo build --features precept/disabled --package graft-ext
     if [ $? -ne 0 ]; then
         echo "Cargo build failed"
         exit 1
@@ -23,11 +23,11 @@ if [ -z "${LIBGRAFT}" ]; then
 
     LIB_PATH="${GIT_ROOT}/target/debug"
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-        LIBGRAFT="${LIB_PATH}/graft_sqlite_extension.dll"
+        LIBGRAFT="${LIB_PATH}/graft_ext.dll"
     elif [[ "$OSTYPE" == "darwin"* ]]; then
-        LIBGRAFT="${LIB_PATH}/libgraft_sqlite_extension.dylib"
+        LIBGRAFT="${LIB_PATH}/libgraft_ext.dylib"
     else
-        LIBGRAFT="${LIB_PATH}/libgraft_sqlite_extension.so"
+        LIBGRAFT="${LIB_PATH}/libgraft_ext.so"
     fi
 fi
 

@@ -20,7 +20,7 @@ just run sqlite test
 just run sqlite test <filter>
 
 # Build individual components
-cargo build --package graft-sqlite-extension
+cargo build --package graft-sqlite
 
 # Build docs
 cd ./docs && pnpm build

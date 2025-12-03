@@ -1153,6 +1153,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "graft-ext"
+version = "0.0.0"
+dependencies = [
+ "config",
+ "graft",
+ "graft-sqlite",
+ "graft-tracing",
+ "platform-dirs",
+ "precept",
+ "serde",
+ "sqlite-plugin",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "graft-sqlite"
 version = "0.2.0-rc.6"
 dependencies = [
@@ -1172,23 +1189,6 @@ dependencies = [
  "tracing",
  "tryiter",
  "zerocopy",
-]
-
-[[package]]
-name = "graft-sqlite-extension"
-version = "0.0.0"
-dependencies = [
- "config",
- "graft",
- "graft-sqlite",
- "graft-tracing",
- "platform-dirs",
- "precept",
- "serde",
- "sqlite-plugin",
- "tokio",
- "tracing",
- "url",
 ]
 
 [[package]]

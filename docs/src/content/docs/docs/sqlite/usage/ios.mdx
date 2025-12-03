@@ -37,7 +37,7 @@ Follow these steps to add [libgraft.swift] to your Xcode project using the Swift
 
    ```swift
    // first, you need to import libgraft
-   import libgraft
+   import libgraft_ext
    ```
 
    ```swift
@@ -59,7 +59,7 @@ Follow these steps to add [libgraft.swift] to your Xcode project using the Swift
 
    // Initialize graft with an in-memory SQLite database managed by GRDB
    let tempDB = try DatabaseQueue()
-   _ = tempDB.inDatabase { db in libgraft.graft_static_init(db.sqliteConnection) }
+   _ = tempDB.inDatabase { db in libgraft_ext.graft_static_init(db.sqliteConnection) }
 
    // Open a Graft backed database with a random Volume ID through GRDB
    let db = try DatabaseQueue(path: "main")
@@ -67,7 +67,7 @@ Follow these steps to add [libgraft.swift] to your Xcode project using the Swift
 
 ## Notes
 
-The libgraft.swift Package contains a statically compiled version of the libgraft SQLite extension. When you add it to your Swift project, Swift will statically link libgraft during compilation. This will fail if libgraft is unable to find SQLite symbols at compile time.
+The libgraft.swift Package contains a statically compiled version of the Graft SQLite extension. When you add it to your Swift project, Swift will statically link `libgraft_ext` during compilation. This will fail if `libgraft_ext` is unable to find SQLite symbols at compile time.
 
 The system version of SQLite included on iOS should be sufficient for Graft to work. So pull in SQLite using any mechanism you prefer.
 

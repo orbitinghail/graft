@@ -78,7 +78,7 @@ export default defineConfig({
         {
           icon: "discord",
           label: "Discord",
-          href: "https://discord.gg/SXPbDJ863Z",
+          href: "https://discord.gg/dhyjne5XK9",
         },
       ],
       customCss: ["./src/styles/global.css"],

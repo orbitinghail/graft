@@ -30,26 +30,26 @@ for platform in "$DIST_DIR"/*; do
     echo "Processing platform: $platform_name"
     case "$platform_name" in
         linux-aarch64|linux-x86_64)
-            libname="libgraft_sqlite_extension.so"
-            archive_name="libgraft-$platform_name.tar.gz"
+            libname="libgraft_ext.so"
+            archive_name="libgraft-ext-$platform_name.tar.gz"
             tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR/$platform_name" "$libname"
             ;;
 
         macos-aarch64|macos-x86_64)
-            libname="libgraft_sqlite_extension.dylib"
-            archive_name="libgraft-$platform_name.tar.gz"
+            libname="libgraft_ext.dylib"
+            archive_name="libgraft-ext-$platform_name.tar.gz"
             tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR/$platform_name" "$libname"
             ;;
 
         windows-aarch64|windows-x86_64)
-            libname="graft_sqlite_extension.dll"
-            archive_name="libgraft-$platform_name.zip"
+            libname="graft_ext.dll"
+            archive_name="libgraft-ext-$platform_name.zip"
             zip -j "$OUTPUT_DIR/$archive_name" "$DIST_DIR/$platform_name/$libname" >/dev/null
             ;;
 
-        libgraft.xcframework)
-            libname="libgraft.xcframework"
-            archive_name="libgraft.xcframework.zip"
+        libgraft_ext.xcframework)
+            libname="libgraft_ext.xcframework"
+            archive_name="libgraft-ext.xcframework.zip"
             (cd $DIST_DIR; zip -r "$OUTPUT_DIR/$archive_name" "$libname" >/dev/null)
             ;;
 
