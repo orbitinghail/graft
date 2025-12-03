@@ -7,7 +7,7 @@ use crate::{
 
 use crossbeam::channel::RecvTimeoutError;
 use culprit::{Culprit, ResultExt};
-use graft_core::{VolumeId, page_idx::PageIdxRangeExt};
+use graft::core::{VolumeId, page_idx::PageIdxRangeExt};
 use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
 use rand::{Rng, distr::uniform::SampleRange, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};

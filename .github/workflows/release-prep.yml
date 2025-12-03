@@ -57,11 +57,8 @@ jobs:
 
           EXPECTED_VERSION="${{ steps.version.outputs.version }}"
           CRATES=(
-            graft-core
-            graft-kernel
-            graft-tracing
+            graft
             graft-sqlite
-            graft-sqlite-extension
           )
 
           for crate in "${CRATES[@]}"; do
@@ -108,8 +105,8 @@ jobs:
               - aarch64-unknown-linux-gnu
             artifact-name: dynamic-linux
             artifacts: |
-              target/x86_64-unknown-linux-gnu/release/libgraft.so
-              target/aarch64-unknown-linux-gnu/release/libgraft.so
+              target/x86_64-unknown-linux-gnu/release/libgraft_sqlite_extension.so
+              target/aarch64-unknown-linux-gnu/release/libgraft_sqlite_extension.so
 
           - runs-on: windows-2022
             features: dynamic
@@ -118,8 +115,8 @@ jobs:
               - aarch64-pc-windows-msvc
             artifact-name: dynamic-windows
             artifacts: |
-              target/x86_64-pc-windows-msvc/release/graft.dll
-              target/aarch64-pc-windows-msvc/release/graft.dll
+              target/x86_64-pc-windows-msvc/release/graft_sqlite_extension.dll
+              target/aarch64-pc-windows-msvc/release/graft_sqlite_extension.dll
 
           - runs-on: macos-14
             features: dynamic
@@ -128,8 +125,8 @@ jobs:
               - aarch64-apple-darwin
             artifact-name: dynamic-macos
             artifacts: |
-              target/x86_64-apple-darwin/release/libgraft.dylib
-              target/aarch64-apple-darwin/release/libgraft.dylib
+              target/x86_64-apple-darwin/release/libgraft_sqlite_extension.dylib
+              target/aarch64-apple-darwin/release/libgraft_sqlite_extension.dylib
 
           - runs-on: macos-14
             features: static
@@ -138,8 +135,8 @@ jobs:
               - aarch64-apple-ios-sim
             artifact-name: static-ios
             artifacts: |
-              target/aarch64-apple-ios/release/libgraft.a
-              target/aarch64-apple-ios-sim/release/libgraft.a
+              target/aarch64-apple-ios/release/libgraft_sqlite_extension.a
+              target/aarch64-apple-ios-sim/release/libgraft_sqlite_extension.a
 
     name: Building ${{ matrix.platform.artifact-name }} artifact
     runs-on: ${{ matrix.platform.runs-on }}
@@ -220,10 +217,10 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -create-xcframework \
-            -library input/aarch64-apple-ios/release/libgraft.a \
-                    -headers crates/graft-sqlite-extension/include \
-            -library input/aarch64-apple-ios-sim/release/libgraft.a \
-                    -headers crates/graft-sqlite-extension/include \
+            -library input/aarch64-apple-ios/release/libgraft_sqlite_extension.a \
+            -headers crates/graft-sqlite-extension/include \
+            -library input/aarch64-apple-ios-sim/release/libgraft_sqlite_extension.a \
+            -headers crates/graft-sqlite-extension/include \
             -output libgraft.xcframework
 
       - name: Upload universal library artifact
@@ -271,12 +268,12 @@ jobs:
       - name: Reorganize build artifacts
         run: |
           mkdir -p dist/{linux,windows,macos}-{x86_64,aarch64}
-          mv builds/x86_64-unknown-linux-gnu/release/libgraft.so     dist/linux-x86_64/libgraft.so
-          mv builds/aarch64-unknown-linux-gnu/release/libgraft.so    dist/linux-aarch64/libgraft.so
-          mv builds/x86_64-pc-windows-msvc/release/graft.dll         dist/windows-x86_64/graft.dll
-          mv builds/aarch64-pc-windows-msvc/release/graft.dll        dist/windows-aarch64/graft.dll
-          mv builds/x86_64-apple-darwin/release/libgraft.dylib       dist/macos-x86_64/libgraft.dylib
-          mv builds/aarch64-apple-darwin/release/libgraft.dylib      dist/macos-aarch64/libgraft.dylib
+          mv builds/x86_64-unknown-linux-gnu/release/libgraft_sqlite_extension.so     dist/linux-x86_64/libgraft_sqlite_extension.so
+          mv builds/aarch64-unknown-linux-gnu/release/libgraft_sqlite_extension.so    dist/linux-aarch64/libgraft_sqlite_extension.so
+          mv builds/x86_64-pc-windows-msvc/release/graft_sqlite_extension.dll         dist/windows-x86_64/graft_sqlite_extension.dll
+          mv builds/aarch64-pc-windows-msvc/release/graft_sqlite_extension.dll        dist/windows-aarch64/graft_sqlite_extension.dll
+          mv builds/x86_64-apple-darwin/release/libgraft_sqlite_extension.dylib       dist/macos-x86_64/libgraft_sqlite_extension.dylib
+          mv builds/aarch64-apple-darwin/release/libgraft_sqlite_extension.dylib      dist/macos-aarch64/libgraft_sqlite_extension.dylib
 
       - name: Run SQLite dist
         run: |

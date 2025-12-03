@@ -8,12 +8,12 @@ use std::{
 
 use bytes::BytesMut;
 use culprit::{Culprit, Result, ResultExt};
-use graft_core::{
+use graft::core::{
     PageIdx, VolumeId,
     page::{PAGESIZE, Page},
     page_count::PageCount,
 };
-use graft_kernel::{
+use graft::{
     rt::runtime::Runtime,
     snapshot::Snapshot,
     volume_reader::{VolumeRead, VolumeReadRef, VolumeReader},

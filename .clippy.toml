@@ -7,7 +7,7 @@ disallowed-methods = [
     # alternative.
     #
     # Instead of using TryFromBytes::try_ref_from_bytes, use
-    # `graft_core::zerocopy_ext::TryFromBytesExt::try_ref_from_unaligned_bytes`
+    # `graft::core::zerocopy_ext::TryFromBytesExt::try_ref_from_unaligned_bytes`
     # which will guarantee alignment safety via the Unaligned tag.
     "zerocopy::TryFromBytes::try_ref_from_bytes",
 ]

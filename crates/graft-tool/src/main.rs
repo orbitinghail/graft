@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
-use graft_core::{LogId, SegmentId, VolumeId};
+use graft::core::{LogId, SegmentId, VolumeId};
 
 #[derive(thiserror::Error, Debug)]
 pub enum HexEncodedKeyErr {

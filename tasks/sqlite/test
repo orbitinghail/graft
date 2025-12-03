@@ -23,11 +23,11 @@ if [ -z "${LIBGRAFT}" ]; then
 
     LIB_PATH="${GIT_ROOT}/target/debug"
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-        LIBGRAFT="${LIB_PATH}/graft.dll"
+        LIBGRAFT="${LIB_PATH}/graft_sqlite_extension.dll"
     elif [[ "$OSTYPE" == "darwin"* ]]; then
-        LIBGRAFT="${LIB_PATH}/libgraft.dylib"
+        LIBGRAFT="${LIB_PATH}/libgraft_sqlite_extension.dylib"
     else
-        LIBGRAFT="${LIB_PATH}/libgraft.so"
+        LIBGRAFT="${LIB_PATH}/libgraft_sqlite_extension.so"
     fi
 fi
 

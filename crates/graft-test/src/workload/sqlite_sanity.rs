@@ -1,6 +1,6 @@
 use culprit::{Result, ResultExt};
+use graft::core::{ClientId, VolumeId};
 use graft_client::runtime::storage::volume_state::{SyncDirection, VolumeConfig, VolumeStatus};
-use graft_core::{ClientId, VolumeId};
 use graft_sqlite::vfs::GraftVfs;
 use precept::expect_sometimes;
 use rand::{Rng, seq::IndexedRandom};

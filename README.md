@@ -2,9 +2,9 @@
 <p align="center">
   <a href="https://github.com/orbitinghail/graft/actions"><img alt="Build Status" src="https://img.shields.io/github/actions/workflow/status/orbitinghail/graft/ci.yml"></a>
   &nbsp;
-  <a href="https://docs.rs/graft-kernel"><img alt="docs.rs" src="https://img.shields.io/docsrs/graft-kernel?label=docs.rs"></a>
+  <a href="https://docs.rs/graft"><img alt="docs.rs" src="https://img.shields.io/docsrs/graft?label=docs.rs"></a>
   &nbsp;
-  <a href="https://crates.io/crates/graft-kernel"><img alt="crates.io" src="https://img.shields.io/crates/v/graft-kernel.svg"></a>
+  <a href="https://crates.io/crates/graft"><img alt="crates.io" src="https://img.shields.io/crates/v/graft.svg"></a>
   &nbsp;
   <a href="https://graft.rs"><img alt="graft.rs" src="https://img.shields.io/badge/graft.rs-docs-blue"></a>
   &nbsp;
@@ -49,7 +49,7 @@ The easiest way to use Graft is via the Graft SQLite extension which is called `
 
 ### Rust Crate
 
-Graft can be embedded in your Rust application directly, although for now that is left as an exercise for the reader. You can find the Rust docs here: https://docs.rs/graft-kernel
+Graft can be embedded in your Rust application directly, although for now that is left as an exercise for the reader. You can find the Rust docs here: https://docs.rs/graft
 
 ### Other languages?
 

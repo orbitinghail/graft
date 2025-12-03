@@ -1111,46 +1111,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
-name = "graft-core"
-version = "0.2.0-rc.5"
-dependencies = [
- "assert_matches",
- "bilrost",
- "blake3",
- "bs58",
- "bytes",
- "bytestring",
- "culprit",
- "foldhash 0.2.0",
- "graft-test",
- "hashbrown 0.16.1",
- "rand",
- "range-set-blaze",
- "serde",
- "smallvec",
- "splinter-rs",
- "static_assertions",
- "thiserror 2.0.17",
- "xxhash-rust",
- "zerocopy",
-]
-
-[[package]]
-name = "graft-kernel"
+name = "graft"
 version = "0.2.0-rc.5"
 dependencies = [
  "assert_matches",
  "async-stream",
  "bilrost",
+ "blake3",
+ "bs58",
  "bytes",
  "bytestring",
  "circular-buffer",
  "culprit",
  "event-listener",
  "fjall",
+ "foldhash 0.2.0",
  "futures",
- "graft-core",
  "graft-test",
+ "hashbrown 0.16.1",
  "itertools 0.14.0",
  "lsm-tree",
  "object_store",
@@ -1169,6 +1147,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tryiter",
+ "xxhash-rust",
  "zerocopy",
  "zstd",
 ]
@@ -1181,8 +1160,7 @@ dependencies = [
  "bytestring",
  "culprit",
  "enum_dispatch",
- "graft-core",
- "graft-kernel",
+ "graft",
  "indoc",
  "itertools 0.14.0",
  "parking_lot",
@@ -1198,11 +1176,10 @@ dependencies = [
 
 [[package]]
 name = "graft-sqlite-extension"
-version = "0.2.0-rc.5"
+version = "0.0.0"
 dependencies = [
  "config",
- "graft-core",
- "graft-kernel",
+ "graft",
  "graft-sqlite",
  "graft-tracing",
  "platform-dirs",
@@ -1226,8 +1203,7 @@ dependencies = [
  "culprit",
  "enum_dispatch",
  "file-lock",
- "graft-core",
- "graft-kernel",
+ "graft",
  "graft-sqlite",
  "graft-test-macro",
  "graft-tracing",
@@ -1263,7 +1239,7 @@ name = "graft-tool"
 version = "0.1.0"
 dependencies = [
  "clap",
- "graft-core",
+ "graft",
  "hex",
  "rand",
  "rusty_paseto",
@@ -1272,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "graft-tracing"
-version = "0.2.0-rc.5"
+version = "0.0.0"
 dependencies = [
  "bs58",
  "parking_lot",

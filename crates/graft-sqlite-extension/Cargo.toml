@@ -1,6 +1,5 @@
 [package]
 name = "graft-sqlite-extension"
-version = "0.2.0-rc.5"
 edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }
@@ -9,14 +8,12 @@ homepage = { workspace = true }
 rust-version = { workspace = true }
 
 [lib]
-name = "graft"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-graft-core = { path = "../graft-core", version = "0.2.0-rc.5" }
-graft-kernel = { path = "../graft-kernel", version = "0.2.0-rc.5" }
-graft-sqlite = { path = "../graft-sqlite", version = "0.2.0-rc.5" }
-graft-tracing = { path = "../graft-tracing", version = "0.2.0-rc.5" }
+graft = { path = "../graft" }
+graft-sqlite = { path = "../graft-sqlite" }
+graft-tracing = { path = "../graft-tracing" }
 
 tokio = { workspace = true }
 tracing = { workspace = true }

@@ -34,11 +34,8 @@ if [[ ! $VERSION =~ $regex ]]; then
 fi
 
 RELEASE_CRATES=(
-    graft-tracing
-    graft-core
-    graft-kernel
+    graft
     graft-sqlite
-    graft-sqlite-extension
 )
 
 # verify that HEAD == origin/main

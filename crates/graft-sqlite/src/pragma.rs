@@ -7,12 +7,12 @@ use std::{
 
 use bytes::{Bytes, BytesMut};
 use culprit::{Culprit, ResultExt};
-use graft_core::{
+use graft::core::{
     LogId, PageCount, PageIdx, VolumeId,
     lsn::LSNRangeExt,
     page::{PAGESIZE, Page},
 };
-use graft_kernel::{
+use graft::{
     rt::runtime::Runtime,
     volume::AheadStatus,
     volume_reader::VolumeRead,

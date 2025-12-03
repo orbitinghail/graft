@@ -6,13 +6,13 @@ use std::{
     thread::JoinHandle,
 };
 
-use graft_core::{
+use graft::core::{
     LogId, PageCount, PageIdx,
     page::{PAGESIZE, Page},
-    pageidx,
 };
-use graft_kernel::{
+use graft::{
     local::fjall_storage::FjallStorage,
+    pageidx,
     remote::{Remote, RemoteConfig},
     rt::runtime::Runtime,
 };
@@ -300,7 +300,7 @@ impl Display for PageHash {
 
 #[cfg(test)]
 mod test {
-    use graft_core::{
+    use graft::core::{
         PageIdx,
         page::{PAGESIZE, Page},
     };

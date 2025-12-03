@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --trace)
             shift
-            export RUST_LOG="graft_sqlite=trace,graft_kernel=trace"
+            export RUST_LOG="graft_sqlite=trace,graft=trace"
             ;;
         --log)
             shift
@@ -84,11 +84,11 @@ cargo build ${BUILD_FLAGS} --features precept/disabled --package graft-sqlite-ex
 # Discover the path to the VFS depending on platform
 LIB_PATH="${GIT_ROOT}/target/${TARGET}"
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-    LIB_PATH="${LIB_PATH}/graft.dll"
+    LIB_PATH="${LIB_PATH}/graft_sqlite_extension.dll"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
-    LIB_PATH="${LIB_PATH}/libgraft.dylib"
+    LIB_PATH="${LIB_PATH}/libgraft_sqlite_extension.dylib"
 else
-    LIB_PATH="${LIB_PATH}/libgraft.so"
+    LIB_PATH="${LIB_PATH}/libgraft_sqlite_extension.so"
 fi
 
 ARGS=(

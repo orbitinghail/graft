@@ -154,9 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           CRATES=(
-            graft-tracing
-            graft-core
-            graft-kernel
+            graft
             graft-sqlite
           )
           for crate in "${CRATES[@]}"; do

@@ -4,7 +4,7 @@
 // use config::Config;
 // use culprit::{Culprit, ResultExt};
 // use file_lock::{FileLock, FileOptions};
-// use graft_core::gid::ClientId;
+// use graft::core::gid::ClientId;
 // use graft_test::Ticker;
 // use graft_tracing::{TracingConsumer, setup_tracing, running_in_antithesis};
 // use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
