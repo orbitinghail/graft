@@ -14,25 +14,25 @@ The Graft SQLite extension can be downloaded and used with SQLite anywhere you c
 
 ## Manual download
 
-`libgraft`, is released using [GitHub Releases] for most platforms. You can access the latest release using the links below:
+The Graft SQLite extension, is released using [GitHub Releases] for most platforms. You can access the latest release using the links below:
 
-| Platform | Architecture | Download Link                   |
-| -------- | ------------ | ------------------------------- |
-| Linux    | x86_64       | [libgraft-linux-x86_64.tar.gz]  |
-| Linux    | aarch64      | [libgraft-linux-aarch64.tar.gz] |
-| Windows  | x86_64       | [libgraft-windows-x86_64.zip]   |
-| Windows  | aarch64      | [libgraft-windows-aarch64.zip]  |
-| macOS    | x86_64       | [libgraft-macos-x86_64.tar.gz]  |
-| macOS    | aarch64      | [libgraft-macos-aarch64.tar.gz] |
+| Platform | Architecture | Download Link                       |
+| -------- | ------------ | ----------------------------------- |
+| Linux    | x86_64       | [libgraft-ext-linux-x86_64.tar.gz]  |
+| Linux    | aarch64      | [libgraft-ext-linux-aarch64.tar.gz] |
+| Windows  | x86_64       | [libgraft-ext-windows-x86_64.zip]   |
+| Windows  | aarch64      | [libgraft-ext-windows-aarch64.zip]  |
+| macOS    | x86_64       | [libgraft-ext-macos-x86_64.tar.gz]  |
+| macOS    | aarch64      | [libgraft-ext-macos-aarch64.tar.gz] |
 
 After downloading the file for your system's platform and architecture, decompress the file to access the extension, which is named `libgraft.[dll,dylib,so]`.
 
-[libgraft-linux-x86_64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-linux-x86_64.tar.gz
-[libgraft-linux-aarch64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-linux-aarch64.tar.gz
-[libgraft-windows-x86_64.zip]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-windows-x86_64.zip
-[libgraft-windows-aarch64.zip]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-windows-aarch64.zip
-[libgraft-macos-x86_64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-macos-x86_64.tar.gz
-[libgraft-macos-aarch64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-macos-aarch64.tar.gz
+[libgraft-ext-linux-x86_64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-ext-linux-x86_64.tar.gz
+[libgraft-ext-linux-aarch64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-ext-linux-aarch64.tar.gz
+[libgraft-ext-windows-x86_64.zip]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-ext-windows-x86_64.zip
+[libgraft-ext-windows-aarch64.zip]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-ext-windows-aarch64.zip
+[libgraft-ext-macos-x86_64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-ext-macos-x86_64.tar.gz
+[libgraft-ext-macos-aarch64.tar.gz]: https://github.com/orbitinghail/graft/releases/latest/download/libgraft-ext-macos-aarch64.tar.gz
 [install-sqlite-ext]: https://antonz.org/install-sqlite-extension/
 [GitHub Releases]: https://github.com/orbitinghail/graft/releases/latest
 
@@ -49,7 +49,7 @@ After downloading the file for your system's platform and architecture, decompre
   </TabItem>
 </Tabs>
 
-Once installed, you can find the path to `libgraft` using the `which` subcommand:
+Once installed, you can find the path to `libgraft_ext` using the `which` subcommand:
 
 <Tabs syncKey="platform">
   <TabItem label="Linux/macOS">
@@ -76,7 +76,7 @@ After starting the SQLite shell you can load the Graft extension with the `.load
 .load PATH_TO_LIBGRAFT
 ```
 
-Here is an example of loading `libgraft` on linux, opening a Volume, and checking `pragma graft_status` to make sure it all works:
+Here is an example of loading `libgraft_ext` on linux, opening a Volume, and checking `pragma graft_status` to make sure it all works:
 
 ```console
 ➜ sqlite3
@@ -86,7 +86,7 @@ Connected to a transient in-memory database.
 Use ".open FILENAME" to reopen on a persistent database.
 
 sqlite> # load the Graft extension
-sqlite> .load ./libgraft_sqlite_extension.so
+sqlite> .load ./libgraft_ext.so
 
 sqlite> # open a Graft Volume as a database
 sqlite> .open 'file:main?vfs=graft'

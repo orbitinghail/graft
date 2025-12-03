@@ -11,7 +11,7 @@ Graft is a transactional storage engine designed for **lazy, partial replication
 
 ```
 ┌─────────────────────────────────────────┐
-│    SQLite Extension (libgraft)          │
+│    SQLite Extension (libgraft_ext)      │
 │    VFS + Pragma Interface               │
 └────────────────┬────────────────────────┘
                  │

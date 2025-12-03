@@ -39,13 +39,15 @@
 
 ## Using Graft
 
-Graft should be considered **Alpha** quality software. Thus, please message @carlsverre before using it in production.
+Graft should be considered **Alpha** quality software. Thus, please contact @carlsverre before using it in production. The easiest way to contact @carlsverre is via Discord on the [orbitinghail server][discord].
+
+[discord]: https://discord.gg/2x2P6vwP2t
 
 ### SQLite extension
 
-The easiest way to use Graft is via the Graft SQLite extension which is called `libgraft`. [Please see the documentation][libgraft-docs] for instructions on how to download and use `libgraft`.
+The easiest way to use Graft is via the Graft SQLite extension. [Please see the documentation][sqlite-docs] for instructions on how to download and use it with SQLite.
 
-[libgraft-docs]: https://graft.rs/docs/sqlite/
+[sqlite-docs]: https://graft.rs/docs/sqlite/
 
 ### Rust Crate
 
@@ -53,7 +55,7 @@ Graft can be embedded in your Rust application directly, although for now that i
 
 ### Other languages?
 
-You can use the Graft SQLite extension from any language that has a native SQLite library. Please [see the documentation for details][libgraft-docs].
+You can use the Graft SQLite extension from any language that has a native SQLite library. Please [see the documentation for details][sqlite-docs].
 
 If you'd like to access the Graft low-level Volume API from a language other than Rust, please [file an issue]!
 

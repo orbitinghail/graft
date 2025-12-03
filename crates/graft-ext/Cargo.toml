@@ -1,5 +1,5 @@
 [package]
-name = "graft-sqlite-extension"
+name = "graft-ext"
 edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }

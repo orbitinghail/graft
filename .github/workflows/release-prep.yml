@@ -105,8 +105,8 @@ jobs:
               - aarch64-unknown-linux-gnu
             artifact-name: dynamic-linux
             artifacts: |
-              target/x86_64-unknown-linux-gnu/release/libgraft_sqlite_extension.so
-              target/aarch64-unknown-linux-gnu/release/libgraft_sqlite_extension.so
+              target/x86_64-unknown-linux-gnu/release/libgraft_ext.so
+              target/aarch64-unknown-linux-gnu/release/libgraft_ext.so
 
           - runs-on: windows-2022
             features: dynamic
@@ -115,8 +115,8 @@ jobs:
               - aarch64-pc-windows-msvc
             artifact-name: dynamic-windows
             artifacts: |
-              target/x86_64-pc-windows-msvc/release/graft_sqlite_extension.dll
-              target/aarch64-pc-windows-msvc/release/graft_sqlite_extension.dll
+              target/x86_64-pc-windows-msvc/release/graft_ext.dll
+              target/aarch64-pc-windows-msvc/release/graft_ext.dll
 
           - runs-on: macos-14
             features: dynamic
@@ -125,8 +125,8 @@ jobs:
               - aarch64-apple-darwin
             artifact-name: dynamic-macos
             artifacts: |
-              target/x86_64-apple-darwin/release/libgraft_sqlite_extension.dylib
-              target/aarch64-apple-darwin/release/libgraft_sqlite_extension.dylib
+              target/x86_64-apple-darwin/release/libgraft_ext.dylib
+              target/aarch64-apple-darwin/release/libgraft_ext.dylib
 
           - runs-on: macos-14
             features: static
@@ -135,8 +135,8 @@ jobs:
               - aarch64-apple-ios-sim
             artifact-name: static-ios
             artifacts: |
-              target/aarch64-apple-ios/release/libgraft_sqlite_extension.a
-              target/aarch64-apple-ios-sim/release/libgraft_sqlite_extension.a
+              target/aarch64-apple-ios/release/libgraft_ext.a
+              target/aarch64-apple-ios-sim/release/libgraft_ext.a
 
     name: Building ${{ matrix.platform.artifact-name }} artifact
     runs-on: ${{ matrix.platform.runs-on }}
@@ -178,13 +178,13 @@ jobs:
           set -euo pipefail
           echo "RUSTFLAGS=-C link-arg=-Wl,-undefined,dynamic_lookup" >> $GITHUB_ENV
 
-      - name: Build libgraft
+      - name: Build the extension
         run: |
           for target in ${{ join(matrix.platform.targets, ' ') }}; do
             cargo build --release \
               --no-default-features \
               --features precept/disabled,${{ matrix.platform.features }} \
-              --package graft-sqlite-extension \
+              --package graft-ext \
               --target $target
           done
 
@@ -217,17 +217,17 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -create-xcframework \
-            -library input/aarch64-apple-ios/release/libgraft_sqlite_extension.a \
-            -headers crates/graft-sqlite-extension/include \
-            -library input/aarch64-apple-ios-sim/release/libgraft_sqlite_extension.a \
-            -headers crates/graft-sqlite-extension/include \
-            -output libgraft.xcframework
+            -library input/aarch64-apple-ios/release/libgraft_ext.a \
+            -headers crates/graft-ext/include \
+            -library input/aarch64-apple-ios-sim/release/libgraft_ext.a \
+            -headers crates/graft-ext/include \
+            -output libgraft_ext.xcframework
 
       - name: Upload universal library artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: libgraft.xcframework
-          path: libgraft.xcframework
+          name: libgraft_ext.xcframework
+          path: libgraft_ext.xcframework
 
   package:
     runs-on: ubuntu-24.04
@@ -268,23 +268,23 @@ jobs:
       - name: Reorganize build artifacts
         run: |
           mkdir -p dist/{linux,windows,macos}-{x86_64,aarch64}
-          mv builds/x86_64-unknown-linux-gnu/release/libgraft_sqlite_extension.so     dist/linux-x86_64/libgraft_sqlite_extension.so
-          mv builds/aarch64-unknown-linux-gnu/release/libgraft_sqlite_extension.so    dist/linux-aarch64/libgraft_sqlite_extension.so
-          mv builds/x86_64-pc-windows-msvc/release/graft_sqlite_extension.dll         dist/windows-x86_64/graft_sqlite_extension.dll
-          mv builds/aarch64-pc-windows-msvc/release/graft_sqlite_extension.dll        dist/windows-aarch64/graft_sqlite_extension.dll
-          mv builds/x86_64-apple-darwin/release/libgraft_sqlite_extension.dylib       dist/macos-x86_64/libgraft_sqlite_extension.dylib
-          mv builds/aarch64-apple-darwin/release/libgraft_sqlite_extension.dylib      dist/macos-aarch64/libgraft_sqlite_extension.dylib
+          mv builds/x86_64-unknown-linux-gnu/release/libgraft_ext.so     dist/linux-x86_64/libgraft_ext.so
+          mv builds/aarch64-unknown-linux-gnu/release/libgraft_ext.so    dist/linux-aarch64/libgraft_ext.so
+          mv builds/x86_64-pc-windows-msvc/release/graft_ext.dll         dist/windows-x86_64/graft_ext.dll
+          mv builds/aarch64-pc-windows-msvc/release/graft_ext.dll        dist/windows-aarch64/graft_ext.dll
+          mv builds/x86_64-apple-darwin/release/libgraft_ext.dylib       dist/macos-x86_64/libgraft_ext.dylib
+          mv builds/aarch64-apple-darwin/release/libgraft_ext.dylib      dist/macos-aarch64/libgraft_ext.dylib
 
       - name: Run SQLite dist
         run: |
           VERSION=${{ needs.validate.outputs.version }}
           ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${VERSION}
 
-      - name: Download ios-universal libgraft.xcframework artifact
+      - name: Download ios-universal libgraft_ext.xcframework artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          name: libgraft.xcframework
-          path: dist/libgraft.xcframework
+          name: libgraft_ext.xcframework
+          path: dist/libgraft_ext.xcframework
 
       - name: Package archives
         run: just run package-archives
