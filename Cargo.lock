@@ -1112,7 +1112,7 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "graft"
-version = "0.2.0-rc.7"
+version = "0.2.0"
 dependencies = [
  "assert_matches",
  "async-stream",
@@ -1171,7 +1171,7 @@ dependencies = [
 
 [[package]]
 name = "graft-sqlite"
-version = "0.2.0-rc.7"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "bytestring",
