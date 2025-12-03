@@ -41,7 +41,7 @@
 
 Graft should be considered **Alpha** quality software. Thus, please contact @carlsverre before using it in production. The easiest way to contact @carlsverre is via Discord on the [orbitinghail server][discord].
 
-[discord]: https://discord.gg/2x2P6vwP2t
+[discord]: https://discord.gg/dhyjne5XK9
 
 ### SQLite extension
 
