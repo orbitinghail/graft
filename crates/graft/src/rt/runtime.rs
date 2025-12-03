@@ -1,11 +1,11 @@
 use std::{sync::Arc, time::Duration};
 
-use bytestring::ByteString;
-use culprit::ResultExt;
-use graft_core::{
+use crate::core::{
     LogId, PageCount, PageIdx, SegmentId, VolumeId, checksum::Checksum, commit::SegmentIdx,
     lsn::LSN, page::Page, pageset::PageSet,
 };
+use bytestring::ByteString;
+use culprit::ResultExt;
 use tracing::Instrument;
 use tryiter::TryIteratorExt;
 
@@ -284,7 +284,7 @@ impl Runtime {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use graft_core::{LogId, PageIdx, page::Page};
+    use crate::core::{LogId, PageIdx, page::Page};
     use tokio::time::sleep;
 
     use crate::{

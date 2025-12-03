@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
+use crate::core::commit::SegmentRangeRef;
 use culprit::ResultExt;
-use graft_core::commit::SegmentRangeRef;
 
 use crate::{
     local::fjall_storage::FjallStorage,

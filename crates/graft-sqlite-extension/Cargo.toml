@@ -11,7 +11,6 @@ rust-version = { workspace = true }
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-graft-core = { path = "../graft-core" }
 graft = { path = "../graft" }
 graft-sqlite = { path = "../graft-sqlite" }
 graft-tracing = { path = "../graft-tracing" }

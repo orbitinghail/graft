@@ -1,8 +1,6 @@
 use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
-use bytestring::ByteString;
-use fjall::{Batch, Instant, KvSeparationOptions, PartitionCreateOptions};
-use graft_core::{
+use crate::core::{
     LogId, PageCount, PageIdx, SegmentId, VolumeId,
     checkpoints::CachedCheckpoints,
     checksum::{Checksum, ChecksumBuilder},
@@ -13,6 +11,8 @@ use graft_core::{
     page::Page,
     pageset::PageSet,
 };
+use bytestring::ByteString;
+use fjall::{Batch, Instant, KvSeparationOptions, PartitionCreateOptions};
 use parking_lot::{Mutex, MutexGuard};
 use tryiter::TryIteratorExt;
 

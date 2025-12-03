@@ -14,22 +14,26 @@ description = "The Graft storage engine."
 workspace = true
 
 [dependencies]
-graft-core = { path = "../graft-core", version = "0.2.0-rc.5" }
-
+assert_matches = { workspace = true }
 async-stream = { workspace = true }
-bilrost = { workspace = true }
+bilrost = { workspace = true, features = ["bytestring", "smallvec"] }
+blake3 = { workspace = true }
+bs58 = { workspace = true }
 bytes = { workspace = true }
 bytestring = { workspace = true }
 circular-buffer = { workspace = true }
 culprit = { workspace = true }
 event-listener = { workspace = true }
 fjall = { workspace = true }
+foldhash = { workspace = true }
 futures = { workspace = true }
+hashbrown = { workspace = true }
 itertools = { workspace = true }
 lsm-tree = { workspace = true }
 object_store = { workspace = true, features = ["aws"] }
 parking_lot = { workspace = true }
 precept = { workspace = true, features = ["antithesis"] }
+rand = { workspace = true }
 range-set-blaze = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 smallvec = { workspace = true }
@@ -42,12 +46,16 @@ tokio = { workspace = true, features = ["sync", "rt", "time", "parking_lot"] }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tryiter = { workspace = true }
+xxhash-rust = { workspace = true }
 zerocopy = { workspace = true }
 zstd = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-graft-core = { path = "../graft-core", features = ["testutil"] }
 graft-test = { path = "../graft-test" }
 rand = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
+
+[features]
+default = []
+testutil = []

@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-use crate::{cbe::CBE32, derive_newtype_proxy, page_count::PageCount};
+use crate::core::{cbe::CBE32, page_count::PageCount};
+use crate::derive_newtype_proxy;
 
 #[derive(
     Clone,
@@ -40,7 +41,7 @@ macro_rules! pageidx {
         const V: u32 = $v;
         static_assertions::const_assert!(V > 0 && V <= u32::MAX);
         // SAFETY: V is checked at compile time to be > 0
-        unsafe { $crate::PageIdx::new_unchecked(V) }
+        unsafe { $crate::core::PageIdx::new_unchecked(V) }
     }};
 }
 
@@ -314,7 +315,7 @@ derive_newtype_proxy!(
 
 #[cfg(test)]
 mod tests {
-    use crate::{PageCount, PageIdx, pageidx::PageIdxRangeExt};
+    use crate::core::{PageCount, PageIdx, pageidx::PageIdxRangeExt};
 
     #[test]
     fn test_page_idx_iter() {

@@ -1,4 +1,4 @@
-use graft_core::{LogId, PageCount};
+use graft::core::{LogId, PageCount};
 use graft_test::GraftTestRuntime;
 use rusqlite::Connection;
 

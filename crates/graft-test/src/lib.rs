@@ -6,15 +6,15 @@ use std::{
     thread::JoinHandle,
 };
 
-use graft::{
-    local::fjall_storage::FjallStorage,
-    remote::{Remote, RemoteConfig},
-    rt::runtime::Runtime,
-};
-use graft_core::{
+use graft::core::{
     LogId, PageCount, PageIdx,
     page::{PAGESIZE, Page},
+};
+use graft::{
+    local::fjall_storage::FjallStorage,
     pageidx,
+    remote::{Remote, RemoteConfig},
+    rt::runtime::Runtime,
 };
 use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing_with_writer};
@@ -300,7 +300,7 @@ impl Display for PageHash {
 
 #[cfg(test)]
 mod test {
-    use graft_core::{
+    use graft::core::{
         PageIdx,
         page::{PAGESIZE, Page},
     };

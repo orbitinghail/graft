@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use bilrost::Message;
 
-use crate::{LogId, lsn::LSN};
+use crate::core::{LogId, lsn::LSN};
 
 /// A reference to a Log at a particular LSN.
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]

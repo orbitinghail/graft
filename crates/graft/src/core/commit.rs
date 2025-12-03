@@ -7,7 +7,7 @@ use bilrost::Message;
 use smallvec::SmallVec;
 use splinter_rs::Splinter;
 
-use crate::{
+use crate::core::{
     LogId, PageCount, PageIdx, SegmentId, commit_hash::CommitHash, logref::LogRef, lsn::LSN,
     pageset::PageSet,
 };

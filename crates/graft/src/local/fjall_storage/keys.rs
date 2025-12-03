@@ -1,11 +1,11 @@
+use crate::core::{
+    LogId, PageIdx, SegmentId, VolumeId, cbe::CBE64, logref::LogRef, lsn::LSN,
+    zerocopy_ext::TryFromBytesExt,
+};
 use bytes::Bytes;
 use bytestring::ByteString;
 use culprit::{Result, ResultExt};
 use fjall::Slice;
-use graft_core::{
-    LogId, PageIdx, SegmentId, VolumeId, cbe::CBE64, logref::LogRef, lsn::LSN,
-    zerocopy_ext::TryFromBytesExt,
-};
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
 
 use crate::{
@@ -154,10 +154,11 @@ proxy_to_fjall_repr!(
 
 #[cfg(test)]
 mod tests {
-    use graft_core::{lsn, pageidx};
-
-    use crate::local::fjall_storage::fjall_repr::testutil::{
-        test_invalid, test_roundtrip, test_serialized_order,
+    use crate::{
+        local::fjall_storage::fjall_repr::testutil::{
+            test_invalid, test_roundtrip, test_serialized_order,
+        },
+        lsn, pageidx,
     };
 
     use super::*;

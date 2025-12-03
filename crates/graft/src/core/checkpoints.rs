@@ -4,7 +4,7 @@ use bilrost::Message;
 use bytestring::ByteString;
 use smallvec::SmallVec;
 
-use crate::lsn::LSN;
+use crate::core::lsn::LSN;
 
 /// A set of checkpoints LSNs in a Log. Each commit referenced by a checkpoint
 /// LSN contains a full copy of the Volume as of that point in time.

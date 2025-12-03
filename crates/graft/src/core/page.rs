@@ -7,7 +7,7 @@ use bytes::{Buf, Bytes, BytesMut};
 use culprit::Culprit;
 use thiserror::Error;
 
-use crate::byte_unit::ByteUnit;
+use crate::core::byte_unit::ByteUnit;
 
 pub const PAGESIZE: ByteUnit = ByteUnit::from_kb(4);
 static_assertions::const_assert!(PAGESIZE.is_power_of_two());

@@ -1,10 +1,12 @@
 use std::str::Utf8Error;
 
-use culprit::Result;
-use fjall::Slice;
-use graft_core::{
+use crate::core::{
     lsn::InvalidLSN, page::PageSizeErr, pageidx::ConvertToPageIdxErr, zerocopy_ext::ZerocopyErr,
 };
+use culprit::Result;
+use fjall::Slice;
+
+use crate::core::gid::GidParseErr;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeErr {
@@ -21,7 +23,7 @@ pub enum DecodeErr {
     InvalidUtf8(#[from] Utf8Error),
 
     #[error("Invalid ID: {0}")]
-    GidParseErr(#[from] graft_core::gid::GidParseErr),
+    GidParseErr(#[from] GidParseErr),
 
     #[error("Bilrost error: {0}")]
     BilrostErr(#[from] bilrost::DecodeError),

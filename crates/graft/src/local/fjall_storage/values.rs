@@ -1,7 +1,7 @@
+use crate::core::{checkpoints::CachedCheckpoints, commit::Commit, page::Page};
 use bilrost::{Message, OwnedMessage};
 use bytes::Bytes;
 use culprit::ResultExt;
-use graft_core::{checkpoints::CachedCheckpoints, commit::Commit, page::Page};
 
 use crate::{
     local::fjall_storage::fjall_repr::{FjallRepr, FjallReprRef},
@@ -60,9 +60,10 @@ impl_fjallrepr_for_bilrost!(Volume, CachedCheckpoints, Commit);
 mod tests {
     use super::*;
 
-    use graft_core::checkpoints::Checkpoints;
-    use graft_core::{LogId, PageCount, page::PAGESIZE};
-    use graft_core::{VolumeId, lsn};
+    use crate::core::VolumeId;
+    use crate::core::checkpoints::Checkpoints;
+    use crate::core::{LogId, PageCount, page::PAGESIZE};
+    use crate::lsn;
 
     use crate::local::fjall_storage::fjall_repr::testutil::{
         test_empty_default, test_invalid, test_roundtrip,

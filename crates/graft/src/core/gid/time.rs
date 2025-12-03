@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use zerocopy::{ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-use crate::gid::prefix::{ConstDefault, Prefix};
+use crate::core::gid::prefix::{ConstDefault, Prefix};
 
 #[derive(
     Debug,
@@ -55,7 +55,7 @@ impl<P: Prefix> From<SystemTime> for GidTimestamp<P> {
 
 #[cfg(test)]
 mod tests {
-    use crate::gid::prefix::Log;
+    use crate::core::gid::prefix::Log;
 
     use super::*;
 

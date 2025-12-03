@@ -3,12 +3,12 @@ use std::{fmt::Display, num::TryFromIntError, ops::RangeInclusive};
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::{
+use crate::core::{
     byte_unit::ByteUnit,
-    derive_newtype_proxy,
     page::PAGESIZE,
     pageidx::{PageIdx, PageIdxIter},
 };
+use crate::derive_newtype_proxy;
 
 #[derive(
     Debug,

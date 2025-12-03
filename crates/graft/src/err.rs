@@ -1,5 +1,5 @@
+use crate::core::{LogId, VolumeId};
 use crate::{local::fjall_storage::FjallStorageErr, remote::RemoteErr};
-use graft_core::{LogId, VolumeId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum KernelErr {

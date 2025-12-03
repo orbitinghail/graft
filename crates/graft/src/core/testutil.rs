@@ -8,7 +8,7 @@ use rand::{
     prelude::Distribution,
 };
 
-use crate::{
+use crate::core::{
     page::{PAGESIZE, Page},
     pageidx::PageIdx,
 };

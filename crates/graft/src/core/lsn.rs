@@ -6,12 +6,12 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
+use crate::core::cbe::CBE64;
+use crate::derive_newtype_proxy;
 use range_set_blaze::RangeSetBlaze;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, ValidityError};
-
-use crate::{cbe::CBE64, derive_newtype_proxy};
 
 #[derive(Debug, Error)]
 #[error("LSN must be non-zero")]
@@ -35,7 +35,7 @@ macro_rules! lsn {
         const V: u64 = $v;
         static_assertions::const_assert!(V > 0 && V <= u64::MAX);
         // SAFETY: V is checked at compile time to be > 0
-        unsafe { $crate::lsn::LSN::new_unchecked(V) }
+        unsafe { $crate::core::lsn::LSN::new_unchecked(V) }
     }};
 }
 
@@ -498,8 +498,6 @@ pub type LSNSet = RangeSetBlaze<LSN>;
 
 #[cfg(test)]
 mod tests {
-    use crate::lsn;
-
     use super::*;
 
     #[test]

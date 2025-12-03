@@ -9,7 +9,7 @@
 //     ClientPair,
 //     runtime::{runtime::Runtime, storage::Storage},
 // };
-// use graft_core::gid::ClientId;
+// use graft::core::gid::ClientId;
 // use graft_test::{
 //     Ticker, start_graft_backend,
 //     workload::{WorkloadConfig, WorkloadErr},

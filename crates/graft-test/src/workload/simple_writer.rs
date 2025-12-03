@@ -6,6 +6,7 @@ use crate::{
 };
 
 use culprit::{Culprit, ResultExt};
+use graft::core::{VolumeId, page::Page};
 use graft_client::{
     oracle::LeapOracle,
     runtime::{
@@ -14,7 +15,6 @@ use graft_client::{
         volume_writer::VolumeWrite,
     },
 };
-use graft_core::{VolumeId, page::Page};
 use precept::{expect_always_or_unreachable, expect_sometimes};
 use rand::{Rng, distr::uniform::SampleRange, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};

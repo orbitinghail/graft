@@ -14,12 +14,12 @@ use zerocopy::{
     ValidityError,
 };
 
-use crate::{
+use crate::core::{
     byte_unit::ByteUnit,
-    derive_zerocopy_encoding,
     gid::{prefix::ConstDefault, random::GidRandom},
     zerocopy_ext::{TryFromBytesExt, ZerocopyErr},
 };
+use crate::derive_zerocopy_encoding;
 
 /// Size of a GID in bytes
 const GID_SIZE: ByteUnit = ByteUnit::new(16);

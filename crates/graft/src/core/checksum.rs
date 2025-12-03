@@ -44,7 +44,7 @@ impl Display for Checksum {
 /// ## Example
 ///
 /// ```rust
-/// use graft_core::checksum::ChecksumBuilder;
+/// use graft::core::checksum::ChecksumBuilder;
 ///
 /// let mut builder = ChecksumBuilder::new();
 /// builder.write(&"apple");

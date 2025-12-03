@@ -3,12 +3,12 @@
 * in order by `PageIdx`.
 */
 
-use bytes::{Bytes, BytesMut};
-use graft_core::{
+use crate::core::{
     PageCount, PageIdx,
     commit::SegmentFrameIdx,
     page::{PAGESIZE, Page},
 };
+use bytes::{Bytes, BytesMut};
 use smallvec::SmallVec;
 use zstd::zstd_safe::{CCtx, CParameter, DCtx, InBuffer, OutBuffer, zstd_sys::ZSTD_EndDirective};
 
@@ -194,7 +194,7 @@ pub fn segment_frame_iter<'a>(
 
 #[cfg(test)]
 mod test {
-    use graft_core::pageidx;
+    use crate::pageidx;
 
     use super::*;
 

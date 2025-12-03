@@ -14,7 +14,6 @@ description = "A SQLite extension which uses Graft to replicate to and from obje
 workspace = true
 
 [dependencies]
-graft-core = { path = "../graft-core", version = "0.2.0-rc.5" }
 graft = { path = "../graft", version = "0.2.0-rc.5" }
 
 bytes = { workspace = true }

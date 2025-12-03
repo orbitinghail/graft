@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --trace)
             shift
-            export RUST_LOG="graft_sqlite=trace,graft_kernel=trace"
+            export RUST_LOG="graft_sqlite=trace,graft=trace"
             ;;
         --log)
             shift

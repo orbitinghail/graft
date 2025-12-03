@@ -1117,15 +1117,18 @@ dependencies = [
  "assert_matches",
  "async-stream",
  "bilrost",
+ "blake3",
+ "bs58",
  "bytes",
  "bytestring",
  "circular-buffer",
  "culprit",
  "event-listener",
  "fjall",
+ "foldhash 0.2.0",
  "futures",
- "graft-core",
  "graft-test",
+ "hashbrown 0.16.1",
  "itertools 0.14.0",
  "lsm-tree",
  "object_store",
@@ -1144,33 +1147,9 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tryiter",
- "zerocopy",
- "zstd",
-]
-
-[[package]]
-name = "graft-core"
-version = "0.2.0-rc.5"
-dependencies = [
- "assert_matches",
- "bilrost",
- "blake3",
- "bs58",
- "bytes",
- "bytestring",
- "culprit",
- "foldhash 0.2.0",
- "graft-test",
- "hashbrown 0.16.1",
- "rand",
- "range-set-blaze",
- "serde",
- "smallvec",
- "splinter-rs",
- "static_assertions",
- "thiserror 2.0.17",
  "xxhash-rust",
  "zerocopy",
+ "zstd",
 ]
 
 [[package]]
@@ -1182,7 +1161,6 @@ dependencies = [
  "culprit",
  "enum_dispatch",
  "graft",
- "graft-core",
  "indoc",
  "itertools 0.14.0",
  "parking_lot",
@@ -1202,7 +1180,6 @@ version = "0.0.0"
 dependencies = [
  "config",
  "graft",
- "graft-core",
  "graft-sqlite",
  "graft-tracing",
  "platform-dirs",
@@ -1227,7 +1204,6 @@ dependencies = [
  "enum_dispatch",
  "file-lock",
  "graft",
- "graft-core",
  "graft-sqlite",
  "graft-test-macro",
  "graft-tracing",
@@ -1263,7 +1239,7 @@ name = "graft-tool"
 version = "0.1.0"
 dependencies = [
  "clap",
- "graft-core",
+ "graft",
  "hex",
  "rand",
  "rusty_paseto",

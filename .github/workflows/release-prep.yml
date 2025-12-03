@@ -57,7 +57,6 @@ jobs:
 
           EXPECTED_VERSION="${{ steps.version.outputs.version }}"
           CRATES=(
-            graft-core
             graft
             graft-sqlite
           )

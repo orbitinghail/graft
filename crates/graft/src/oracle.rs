@@ -1,5 +1,5 @@
+use crate::core::PageIdx;
 use circular_buffer::CircularBuffer;
-use graft_core::PageIdx;
 
 pub trait Oracle {
     /// `observe_cache_hit` is called whenever Graft satisfies a page read from

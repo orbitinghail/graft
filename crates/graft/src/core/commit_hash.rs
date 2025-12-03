@@ -3,19 +3,18 @@ use std::{
     str::FromStr,
 };
 
-use thiserror::Error;
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
-
-use crate::{
+use crate::core::{
     LogId,
     cbe::CBE64,
-    derive_zerocopy_encoding,
     lsn::LSN,
     page::Page,
     page_count::PageCount,
     pageidx::PageIdx,
     zerocopy_ext::{self, ZerocopyErr},
 };
+use crate::derive_zerocopy_encoding;
+use thiserror::Error;
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 /// The size of a `CommitHash` in bytes.
 const COMMIT_HASH_SIZE: usize = 32;

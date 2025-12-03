@@ -9,6 +9,7 @@ pub mod rt {
     mod task;
 }
 
+pub mod core;
 pub mod err;
 pub mod oracle;
 pub mod remote;

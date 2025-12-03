@@ -2,7 +2,7 @@ use std::{fmt::Display, ops::RangeInclusive};
 
 use bilrost::Message;
 
-use graft_core::{LogId, commit_hash::CommitHash, gid::VolumeId, lsn::LSN};
+use crate::core::{LogId, commit_hash::CommitHash, gid::VolumeId, lsn::LSN};
 
 #[derive(Debug, Clone, Message, PartialEq, Eq)]
 pub struct SyncPoint {

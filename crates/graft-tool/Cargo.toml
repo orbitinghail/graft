@@ -9,7 +9,7 @@ homepage = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-graft-core = { path = "../graft-core" }
+graft = { path = "../graft" }
 
 rusty_paseto = { workspace = true, features = ["batteries_included"] }
 clap = { workspace = true, features = ["derive"] }

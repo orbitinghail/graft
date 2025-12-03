@@ -2,7 +2,7 @@ use std::any::type_name;
 
 use bilrost::DecodeError;
 
-use crate::zerocopy_ext::ZerocopyErr;
+use crate::core::zerocopy_ext::ZerocopyErr;
 
 pub(crate) fn map_zerocopy_err<T>(err: ZerocopyErr) -> bilrost::DecodeError {
     let mut e = DecodeError::new(bilrost::DecodeErrorKind::InvalidValue);
@@ -30,7 +30,7 @@ macro_rules! derive_zerocopy_encoding {
         $(with generics ($($impl_generics:tt)*))?
     ) => {
         const _:() = {
-            use $crate::bilrost_util::zerocopy_encoding::map_zerocopy_err;
+            use $crate::core::bilrost_util::zerocopy_encoding::map_zerocopy_err;
             use ::bilrost::encoding::{
                 Wiretyped, WireType, ForOverwrite, GeneralGeneric, ValueEncoder,
                 PlainBytes, encoded_len_varint, ValueDecoder, Capped, DecodeContext,

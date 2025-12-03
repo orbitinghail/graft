@@ -34,7 +34,6 @@ if [[ ! $VERSION =~ $regex ]]; then
 fi
 
 RELEASE_CRATES=(
-    graft-core
     graft
     graft-sqlite
 )

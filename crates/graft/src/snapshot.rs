@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use graft_core::{
+use crate::core::{
     LogId,
     logref::LogRef,
     lsn::{LSN, LSNRangeExt},

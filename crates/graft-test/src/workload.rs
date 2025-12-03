@@ -4,7 +4,7 @@ use super::{PageTracker, PageTrackerErr};
 use config::ConfigError;
 use culprit::{Culprit, ResultExt};
 use enum_dispatch::enum_dispatch;
-use graft_core::{gid::ClientId, page::PageSizeErr, zerocopy_ext::ZerocopyErr};
+use graft::core::{gid::ClientId, page::PageSizeErr, zerocopy_ext::ZerocopyErr};
 use precept::expect_always_or_unreachable;
 use rand::Rng;
 use serde::{Deserialize, Serialize};

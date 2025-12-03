@@ -1,6 +1,6 @@
 use zerocopy::{ByteHash, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
-use crate::gid::prefix::ConstDefault;
+use crate::core::gid::prefix::ConstDefault;
 
 #[derive(
     Debug,

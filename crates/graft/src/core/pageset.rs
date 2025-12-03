@@ -3,7 +3,8 @@ use std::ops::{BitOrAssign, RangeBounds, RangeInclusive, SubAssign};
 use bytes::Bytes;
 use splinter_rs::{CowSplinter, Cut, PartitionRead, PartitionWrite, Splinter};
 
-use crate::{PageCount, PageIdx, derive_newtype_proxy};
+use crate::core::{PageCount, PageIdx};
+use crate::derive_newtype_proxy;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PageSet {
