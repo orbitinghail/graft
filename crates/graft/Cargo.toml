@@ -1,5 +1,5 @@
 [package]
-name = "graft-kernel"
+name = "graft"
 version = "0.2.0-rc.5"
 edition = "2024"
 authors.workspace = true

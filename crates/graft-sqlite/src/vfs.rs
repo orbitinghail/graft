@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Debug, sync::Arc};
 
 use culprit::{Culprit, ResultExt};
-use graft_kernel::{KernelErr, LogicalErr, rt::runtime::Runtime};
+use graft::{KernelErr, LogicalErr, rt::runtime::Runtime};
 use parking_lot::Mutex;
 use sqlite_plugin::{
     flags::{AccessFlags, CreateMode, LockLevel, OpenKind, OpenMode, OpenOpts},

@@ -9,7 +9,7 @@ use std::{
 };
 
 use config::{Config, FileFormat};
-use graft_kernel::{
+use graft::{
     remote::RemoteConfig,
     setup::{GraftConfig, setup_graft},
 };
@@ -156,9 +156,7 @@ fn setup_logger(logger: SqliteLogger) {
 }
 
 #[cfg(feature = "dynamic")]
-fn sqlite3_graft_init_inner(
-    p_api: *mut sqlite_plugin::sqlite3_api_routines,
-) -> Result<(), InitErr> {
+fn dynamic_init(p_api: *mut sqlite_plugin::sqlite3_api_routines) -> Result<(), InitErr> {
     let config = resolve_config()?;
 
     // initialize graft
@@ -180,17 +178,18 @@ fn sqlite3_graft_init_inner(
     Ok(())
 }
 
-/// This function is automatically called by `SQLite` upon loading the extension.
+/// This function is automatically called by `SQLite` upon loading the extension
+/// at runtime.
 /// # Safety
 /// This function must be called by sqlite's extension loading mechanism.
 #[cfg(feature = "dynamic")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn sqlite3_graft_init(
+pub unsafe extern "C" fn sqlite3_extension_init(
     _db: *mut std::ffi::c_void,
     pz_err_msg: *mut *const std::ffi::c_char,
     p_api: *mut sqlite_plugin::sqlite3_api_routines,
 ) -> c_int {
-    match sqlite3_graft_init_inner(p_api) {
+    match dynamic_init(p_api) {
         Ok(()) => sqlite_plugin::vars::SQLITE_OK_LOAD_PERMANENTLY,
         Err(err) => match write_err_msg(p_api, err.1.as_ref(), pz_err_msg) {
             Ok(()) => err.0,

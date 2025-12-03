@@ -71,7 +71,7 @@ The easiest way to ensure everything works is to run the tests. This can be done
 # Test the whole workspace or an individual crate
 # cargo nextest run [-p <crate>] [-- <filter for a specific test name>]
 cargo nextest run
-cargo nextest run -p graft-kernel
+cargo nextest run -p graft
 cargo nextest run runtime_sanity
 
 # Run SQLite tests

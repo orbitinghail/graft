@@ -6,15 +6,15 @@ use std::{
     thread::JoinHandle,
 };
 
+use graft::{
+    local::fjall_storage::FjallStorage,
+    remote::{Remote, RemoteConfig},
+    rt::runtime::Runtime,
+};
 use graft_core::{
     LogId, PageCount, PageIdx,
     page::{PAGESIZE, Page},
     pageidx,
-};
-use graft_kernel::{
-    local::fjall_storage::FjallStorage,
-    remote::{Remote, RemoteConfig},
-    rt::runtime::Runtime,
 };
 use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing_with_writer};

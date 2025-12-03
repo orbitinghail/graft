@@ -13,7 +13,7 @@ workspace = true
 
 [dependencies]
 graft-core = { path = "../graft-core", features = ["testutil"] }
-graft-kernel = { path = "../graft-kernel" }
+graft = { path = "../graft" }
 graft-tracing = { path = "../graft-tracing" }
 graft-test-macro = { path = "../graft-test-macro" }
 graft-sqlite = { path = "../graft-sqlite" }

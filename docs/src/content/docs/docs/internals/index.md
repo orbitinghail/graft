@@ -16,7 +16,7 @@ Graft is a transactional storage engine designed for **lazy, partial replication
 └────────────────┬────────────────────────┘
                  │
 ┌────────────────▼────────────────────────┐
-│        Runtime (graft-kernel)           │
+│             Runtime (graft)             │
 │  • Tag Management                       │
 │  • Volume Management                    │
 │  • VolumeReader/Writer                  │

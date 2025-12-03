@@ -1,6 +1,6 @@
 use std::ffi::CString;
 
-use graft_kernel::setup::{GraftConfig, InitErr, setup_graft};
+use graft::setup::{GraftConfig, InitErr, setup_graft};
 
 /// Statically register the Graft SQLite extension with `SQLite`.
 ///

@@ -1,14 +1,11 @@
 [package]
 name = "graft-tracing"
-version = "0.2.0-rc.5"
 edition = "2024"
 authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }
 rust-version = { workspace = true }
-
-description = "Tracing support for Graft components."
 
 [lints]
 workspace = true
