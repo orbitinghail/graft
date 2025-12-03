@@ -5,3 +5,7 @@
 - create some hello-world examples of using Graft without SQLite
 - port tests
 - write first draft of antithesis tests
+
+# Rename graft-kernel to graft, and merge in graft-core
+
+I've got the `graft` crate on crates.io! Whoopie!
