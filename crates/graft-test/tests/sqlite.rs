@@ -1,4 +1,4 @@
-use graft_core::LogId;
+use graft_core::{LogId, PageCount};
 use graft_test::GraftTestRuntime;
 use rusqlite::Connection;
 
@@ -153,117 +153,76 @@ fn test_import_export() {
     runtime.shutdown().unwrap();
 }
 
-// #[graft_test::test]
-// fn test_sqlite_query_only_fetches_needed_pages() {
-//     let (backend, clients) = start_graft_backend();
-//     let vid = VolumeId::random();
+#[graft_test::test]
+fn test_sqlite_query_only_fetches_needed_pages() {
+    let log = LogId::random();
 
-//     // create the first node (writer)
-//     let writer_runtime = Runtime::new(
-//         ClientId::random(),
-//         clients.clone(),
-//         Storage::open_temporary().unwrap(),
-//     );
-//     writer_runtime
-//         .start_sync_task(Duration::from_secs(1), 8, true, "sync-1")
-//         .unwrap();
-//     register_static(
-//         c"graft-writer".to_owned(),
-//         GraftVfs::new(writer_runtime.clone()),
-//         RegisterOpts { make_default: false },
-//     )
-//     .expect("failed to register vfs");
+    // create a writer
+    let mut writer = GraftTestRuntime::with_memory_remote();
+    let writer_sql = writer.open_sqlite("main", Some(log.clone()));
+    let writer_vid = writer.tag_get("main").unwrap().unwrap();
 
-//     // open a sqlite connection and handle to the same volume on both nodes
-//     let sqlite_writer = Connection::open_with_flags_and_vfs(
-//         vid.pretty(),
-//         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-//         c"graft-writer",
-//     )
-//     .unwrap();
-//     let writer_handle = writer_runtime
-//         .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
-//         .unwrap();
+    // create a reader
+    let mut reader = writer.spawn_peer();
+    let reader_sql = reader.open_sqlite("main", Some(log.clone()));
+    let reader_vid = reader.tag_get("main").unwrap().unwrap();
 
-//     // create a table with 100 rows and enough data per row to pad out a few blocks
-//     sqlite_writer
-//         .execute_batch(
-//             r#"
-//             CREATE TABLE test_data (
-//                 id INTEGER PRIMARY KEY,
-//                 value TEXT NOT NULL
-//             );
-//             WITH RECURSIVE generate_rows(x) AS (
-//                 SELECT 0
-//                 UNION ALL
-//                 SELECT x + 1 FROM generate_rows WHERE x + 1 <= 100
-//             )
-//             INSERT INTO test_data (id, value)
-//             SELECT x, printf('%.*c', 100, 'x') FROM generate_rows;
-//             "#,
-//         )
-//         .unwrap();
-//     assert_eq!(writer_handle.snapshot().unwrap().unwrap().pages(), 5);
+    // create a table and then insert 10 rows, which each consume just over a page. then push each segment to the remote
+    // note: we use separate txns for each row to ensure they end up in separate segments
+    writer_sql.execute("CREATE TABLE t (d)", []).unwrap();
+    for _ in 0..10 {
+        writer_sql
+            .execute("insert into t values (printf('%0*d', 4096, 0))", [])
+            .unwrap();
+        writer_sql.graft_pragma("push");
+    }
 
-//     // create the second node (reader)
-//     let reader_runtime = Runtime::new(
-//         ClientId::random(),
-//         clients,
-//         Storage::open_temporary().unwrap(),
-//     );
-//     reader_runtime
-//         .start_sync_task(Duration::from_millis(100), 8, true, "sync-2")
-//         .unwrap();
-//     register_static(
-//         c"graft-reader".to_owned(),
-//         GraftVfs::new(reader_runtime.clone()),
-//         RegisterOpts { make_default: false },
-//     )
-//     .expect("failed to register vfs");
-//     let sqlite_reader = Connection::open_with_flags_and_vfs(
-//         vid.pretty(),
-//         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-//         c"graft-reader",
-//     )
-//     .unwrap();
+    let snapshot = writer.volume_snapshot(&writer_vid).unwrap();
+    assert_eq!(
+        writer.snapshot_pages(&snapshot).unwrap(),
+        PageCount::new(14)
+    );
 
-//     // subscribe to remote changes and wait for the change metadata to be replicated
-//     reader_runtime
-//         .open_volume(&vid, VolumeConfig::new(SyncDirection::Both))
-//         .unwrap()
-//         .subscribe_to_remote_changes()
-//         .recv_timeout(Duration::from_secs(5))
-//         .unwrap();
-//     // this doesn't do any page reads yet
-//     assert_eq!(reader_runtime.clients().pagestore().pages_read(), 0);
+    // pull changes into the reader
+    reader_sql.graft_pragma("pull");
 
-//     // perform a single row lookup by ID
-//     let value: i32 = sqlite_reader
-//         .query_row("SELECT id FROM test_data WHERE id = 42", [], |row| {
-//             row.get(0)
-//         })
-//         .unwrap();
-//     assert_eq!(value, 42);
-//     // only a small number of pages are read
-//     assert_eq!(reader_runtime.clients().pagestore().pages_read(), 3);
+    // all pages missing
+    let snapshot = reader.volume_snapshot(&reader_vid).unwrap();
+    assert_eq!(
+        reader
+            .snapshot_missing_pages(&snapshot)
+            .unwrap()
+            .cardinality(),
+        14
+    );
 
-//     // perform a query that reads all rows
-//     let value: i32 = sqlite_reader
-//         .query_row("SELECT sum(id) FROM test_data", [], |row| row.get(0))
-//         .unwrap();
-//     assert_eq!(value, 5050);
-//     // this pulls in the rest of the pages
-//     assert_eq!(
-//         reader_runtime.clients().pagestore().pages_read(),
-//         writer_handle.snapshot().unwrap().unwrap().pages()
-//     );
+    // perform a single row lookup by ID
+    let value: i32 = reader_sql
+        .query_row("SELECT length(d) FROM t LIMIT 1", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(value, 4096);
 
-//     // shutdown everything
-//     writer_runtime
-//         .shutdown_sync_task(Duration::from_secs(5))
-//         .unwrap();
-//     reader_runtime
-//         .shutdown_sync_task(Duration::from_secs(5))
-//         .unwrap();
-//     backend.shutdown(Duration::from_secs(5)).unwrap();
-// }
+    // only 5 pages retrieved
+    assert_eq!(
+        reader
+            .snapshot_missing_pages(&snapshot)
+            .unwrap()
+            .cardinality(),
+        9
+    );
+
+    // perform a query that reads all rows
+    let value: i32 = reader_sql
+        .query_row("SELECT sum(length(d)) FROM t", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(value, 40960);
+
+    // no pages missing
+    assert_eq!(
+        reader
+            .snapshot_missing_pages(&snapshot)
+            .unwrap()
+            .cardinality(),
+        0
+    );
+}

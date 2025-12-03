@@ -99,6 +99,7 @@ impl GraftTestRuntime {
         }
     }
 
+    /// Spawn a new runtime connected to the same remote as this runtime
     pub fn spawn_peer(&self) -> GraftTestRuntime {
         Self::with_remote(self.remote.clone())
     }
