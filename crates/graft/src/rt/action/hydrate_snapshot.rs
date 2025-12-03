@@ -3,7 +3,7 @@ use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 
 use crate::{
-    KernelErr,
+    GraftErr,
     local::fjall_storage::FjallStorage,
     remote::Remote,
     rt::action::{Action, fetch_segment::FetchSegment},
@@ -19,7 +19,7 @@ pub struct HydrateSnapshot {
 }
 
 impl Action for HydrateSnapshot {
-    async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<(), KernelErr> {
+    async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<(), GraftErr> {
         let missing_frames = storage
             .read()
             .find_missing_frames(&self.snapshot)

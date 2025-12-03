@@ -19,4 +19,4 @@ pub mod volume;
 pub mod volume_reader;
 pub mod volume_writer;
 
-pub use err::{KernelErr, LogicalErr};
+pub use err::{GraftErr, LogicalErr};

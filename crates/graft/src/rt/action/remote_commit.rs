@@ -14,7 +14,7 @@ use splinter_rs::{Optimizable, PartitionRead, Splinter};
 use tryiter::TryIteratorExt;
 
 use crate::{
-    KernelErr, LogicalErr,
+    GraftErr, LogicalErr,
     local::fjall_storage::FjallStorage,
     remote::{Remote, segment::SegmentBuilder},
     rt::action::{Action, FetchLog},
@@ -29,7 +29,7 @@ pub struct RemoteCommit {
 }
 
 impl Action for RemoteCommit {
-    async fn run(self, storage: &FjallStorage, remote: &Remote) -> culprit::Result<(), KernelErr> {
+    async fn run(self, storage: &FjallStorage, remote: &Remote) -> culprit::Result<(), GraftErr> {
         // first, check if we need to recover from a pending commit
         // we do this *before* plan since this may modify storage
         attempt_recovery(storage, &self.vid).or_into_culprit("attempting recovery")?;
@@ -115,7 +115,7 @@ struct CommitPlan {
 fn plan_commit(
     storage: &FjallStorage,
     vid: &VolumeId,
-) -> culprit::Result<Option<CommitPlan>, KernelErr> {
+) -> culprit::Result<Option<CommitPlan>, GraftErr> {
     let reader = storage.read();
     let volume = reader.volume(vid).or_into_ctx()?;
 
@@ -174,7 +174,7 @@ fn plan_commit(
 fn build_segment(
     storage: &FjallStorage,
     plan: &CommitPlan,
-) -> culprit::Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), KernelErr> {
+) -> culprit::Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), GraftErr> {
     let reader = storage.read();
 
     // built a snapshot which only matches the LSNs we want to
@@ -249,7 +249,7 @@ fn build_segment(
 
 /// Attempts to recover from a remote commit conflict by checking the remote
 /// for the commit we tried to push.
-fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> culprit::Result<(), KernelErr> {
+fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> culprit::Result<(), GraftErr> {
     let reader = storage.read();
     let volume = reader.volume(vid).or_into_ctx()?;
 

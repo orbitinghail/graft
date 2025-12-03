@@ -2,7 +2,7 @@ use crate::core::{LogId, VolumeId};
 use crate::{local::fjall_storage::FjallStorageErr, remote::RemoteErr};
 
 #[derive(Debug, thiserror::Error)]
-pub enum KernelErr {
+pub enum GraftErr {
     #[error(transparent)]
     Storage(FjallStorageErr),
 
@@ -13,11 +13,11 @@ pub enum KernelErr {
     Logical(#[from] LogicalErr),
 }
 
-impl From<FjallStorageErr> for KernelErr {
+impl From<FjallStorageErr> for GraftErr {
     fn from(value: FjallStorageErr) -> Self {
         match value {
-            FjallStorageErr::LogicalErr(verr) => KernelErr::Logical(verr),
-            other => KernelErr::Storage(other),
+            FjallStorageErr::LogicalErr(verr) => GraftErr::Logical(verr),
+            other => GraftErr::Storage(other),
         }
     }
 }

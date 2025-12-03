@@ -1,11 +1,11 @@
 use std::{fmt::Debug, sync::Arc};
 use tracing::Instrument;
 
-use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote};
+use crate::{GraftErr, local::fjall_storage::FjallStorage, remote::Remote};
 
 pub mod autosync;
 
-pub type Result<T> = culprit::Result<T, KernelErr>;
+pub type Result<T> = culprit::Result<T, GraftErr>;
 
 /// A long running stateful async background task.
 pub trait Task: Debug {
@@ -16,7 +16,7 @@ pub trait Task: Debug {
 
     /// Decide whether or not to restart the task on error.
     #[allow(unused_variables)]
-    fn should_restart(&self, err: &KernelErr) -> bool {
+    fn should_restart(&self, err: &GraftErr) -> bool {
         true
     }
 }

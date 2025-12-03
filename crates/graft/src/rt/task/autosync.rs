@@ -8,7 +8,7 @@ use tokio_stream::StreamExt;
 use tryiter::TryIteratorExt;
 
 use crate::{
-    KernelErr,
+    GraftErr,
     local::fjall_storage::FjallStorage,
     remote::Remote,
     rt::{
@@ -58,7 +58,7 @@ impl Task for AutosyncTask {
                 let reader = storage.read();
                 let mut volumes = reader
                     .iter_volumes()
-                    .map_err(|err| err.map_ctx(KernelErr::from));
+                    .map_err(|err| err.map_ctx(GraftErr::from));
                 while let Some(volume) = volumes.try_next()? {
                     let latest_local = reader.latest_lsn(&volume.local).or_into_ctx()?;
                     let latest_remote = reader.latest_lsn(&volume.remote).or_into_ctx()?;

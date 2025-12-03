@@ -10,7 +10,7 @@ use tracing::Instrument;
 use tryiter::TryIteratorExt;
 
 use crate::{
-    KernelErr,
+    GraftErr,
     remote::Remote,
     rt::{
         action::{Action, FetchLog, FetchSegment, HydrateSnapshot, RemoteCommit},
@@ -24,7 +24,7 @@ use crate::{
 
 use crate::local::fjall_storage::FjallStorage;
 
-type Result<T> = culprit::Result<T, KernelErr>;
+type Result<T> = culprit::Result<T, GraftErr>;
 
 #[derive(Clone, Debug)]
 pub struct Runtime {
@@ -120,7 +120,7 @@ impl Runtime {
         self.storage()
             .read()
             .iter_tags()
-            .map_err(|err| err.map_ctx(KernelErr::from))
+            .map_err(|err| err.map_ctx(GraftErr::from))
     }
 
     pub fn tag_exists(&self, name: &str) -> Result<bool> {
@@ -150,7 +150,7 @@ impl Runtime {
         self.storage()
             .read()
             .iter_volumes()
-            .map_err(|err| err.map_ctx(KernelErr::from))
+            .map_err(|err| err.map_ctx(GraftErr::from))
     }
 
     pub fn volume_exists(&self, vid: &VolumeId) -> Result<bool> {

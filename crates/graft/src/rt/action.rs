@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::{KernelErr, local::fjall_storage::FjallStorage, remote::Remote};
+use crate::{GraftErr, local::fjall_storage::FjallStorage, remote::Remote};
 
 macro_rules! action {
     ($mod:tt, $action:ident) => {
@@ -14,7 +14,7 @@ action!(fetch_log, FetchLog);
 action!(hydrate_snapshot, HydrateSnapshot);
 action!(remote_commit, RemoteCommit);
 
-pub type Result<T> = culprit::Result<T, KernelErr>;
+pub type Result<T> = culprit::Result<T, GraftErr>;
 
 /// A one-off async action.
 pub trait Action: Debug {
