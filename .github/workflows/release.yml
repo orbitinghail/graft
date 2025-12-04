@@ -67,7 +67,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: |
             graft
-            libgraft.swift
+            Graft.swift
 
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
@@ -185,10 +185,10 @@ jobs:
           uv publish distx/datasette/*
           uv publish distx/sqlite_utils/*
 
-      - name: Publish libgraft Swift package
+      - name: Trigger Swift package update
         uses: benc-uk/workflow-dispatch@e2e5e9a103e331dad343f381a29e654aea3cf8fc # v1.2.4
         with:
           workflow: update.yml
-          repo: orbitinghail/libgraft.swift
+          repo: orbitinghail/Graft.swift
           ref: main
           token: ${{ steps.app-token.outputs.token }}
