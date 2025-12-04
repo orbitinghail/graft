@@ -9,7 +9,6 @@
   "assets": {
     "path": "https://github.com/orbitinghail/graft/releases/latest/download",
     "files": {
-      "darwin-amd64": "libgraft-ext-macos-x86_64.tar.gz",
       "darwin-arm64": "libgraft-ext-macos-aarch64.tar.gz",
       "linux-amd64": "libgraft-ext-linux-x86_64.tar.gz",
       "linux-arm64": "libgraft-ext-linux-aarch64.tar.gz",

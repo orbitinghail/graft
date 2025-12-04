@@ -35,7 +35,7 @@ for platform in "$DIST_DIR"/*; do
             tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR/$platform_name" "$libname"
             ;;
 
-        macos-aarch64|macos-x86_64)
+        macos-aarch64)
             libname="libgraft_ext.dylib"
             archive_name="libgraft-ext-$platform_name.tar.gz"
             tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR/$platform_name" "$libname"

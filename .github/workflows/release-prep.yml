@@ -121,11 +121,9 @@ jobs:
           - runs-on: macos-14
             features: dynamic
             targets:
-              - x86_64-apple-darwin
               - aarch64-apple-darwin
             artifact-name: dynamic-macos
             artifacts: |
-              target/x86_64-apple-darwin/release/libgraft_ext.dylib
               target/aarch64-apple-darwin/release/libgraft_ext.dylib
 
           - runs-on: macos-14
@@ -133,10 +131,12 @@ jobs:
             targets:
               - aarch64-apple-ios
               - aarch64-apple-ios-sim
-            artifact-name: static-ios
+              - aarch64-apple-darwin
+            artifact-name: static-apple
             artifacts: |
               target/aarch64-apple-ios/release/libgraft_ext.a
               target/aarch64-apple-ios-sim/release/libgraft_ext.a
+              target/aarch64-apple-darwin/release/libgraft_ext.a
 
     name: Building ${{ matrix.platform.artifact-name }} artifact
     runs-on: ${{ matrix.platform.runs-on }}
@@ -195,7 +195,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  build-ios-universal:
+  build-apple-universal:
     runs-on: macos-15
     needs: [build]
     permissions:
@@ -210,13 +210,15 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          name: static-ios
+          name: static-apple
           path: input/
 
-      - name: build ios universal library
+      - name: build apple universal library
         run: |
           set -euo pipefail
           xcodebuild -create-xcframework \
+            -library input/aarch64-apple-darwin/release/libgraft_ext.a \
+            -headers crates/graft-ext/include \
             -library input/aarch64-apple-ios/release/libgraft_ext.a \
             -headers crates/graft-ext/include \
             -library input/aarch64-apple-ios-sim/release/libgraft_ext.a \
@@ -231,7 +233,7 @@ jobs:
 
   package:
     runs-on: ubuntu-24.04
-    needs: [build, build-ios-universal, validate, crates]
+    needs: [build, build-apple-universal, validate, crates]
 
     permissions:
       contents: write
@@ -268,11 +270,11 @@ jobs:
       - name: Reorganize build artifacts
         run: |
           mkdir -p dist/{linux,windows,macos}-{x86_64,aarch64}
+          rmdir dist/macos-x86_64
           mv builds/x86_64-unknown-linux-gnu/release/libgraft_ext.so     dist/linux-x86_64/libgraft_ext.so
           mv builds/aarch64-unknown-linux-gnu/release/libgraft_ext.so    dist/linux-aarch64/libgraft_ext.so
           mv builds/x86_64-pc-windows-msvc/release/graft_ext.dll         dist/windows-x86_64/graft_ext.dll
           mv builds/aarch64-pc-windows-msvc/release/graft_ext.dll        dist/windows-aarch64/graft_ext.dll
-          mv builds/x86_64-apple-darwin/release/libgraft_ext.dylib       dist/macos-x86_64/libgraft_ext.dylib
           mv builds/aarch64-apple-darwin/release/libgraft_ext.dylib      dist/macos-aarch64/libgraft_ext.dylib
 
       - name: Run SQLite dist
@@ -280,7 +282,7 @@ jobs:
           VERSION=${{ needs.validate.outputs.version }}
           ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${VERSION}
 
-      - name: Download ios-universal libgraft_ext.xcframework artifact
+      - name: Download apple-universal libgraft_ext.xcframework artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: libgraft_ext.xcframework
