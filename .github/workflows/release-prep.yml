@@ -267,15 +267,18 @@ jobs:
           path: builds/
           merge-multiple: true
 
+      - name: Print artifacts tree
+        run: tree builds/
+
       - name: Reorganize build artifacts
         run: |
           mkdir -p dist/{linux,windows,macos}-{x86_64,aarch64}
           rmdir dist/macos-x86_64
-          mv builds/x86_64-unknown-linux-gnu/release/libgraft_ext.so     dist/linux-x86_64/libgraft_ext.so
-          mv builds/aarch64-unknown-linux-gnu/release/libgraft_ext.so    dist/linux-aarch64/libgraft_ext.so
-          mv builds/x86_64-pc-windows-msvc/release/graft_ext.dll         dist/windows-x86_64/graft_ext.dll
-          mv builds/aarch64-pc-windows-msvc/release/graft_ext.dll        dist/windows-aarch64/graft_ext.dll
-          mv builds/aarch64-apple-darwin/release/libgraft_ext.dylib      dist/macos-aarch64/libgraft_ext.dylib
+          mv builds/x86_64-unknown-linux-gnu/release/libgraft_ext.so      dist/linux-x86_64/libgraft_ext.so
+          mv builds/aarch64-unknown-linux-gnu/release/libgraft_ext.so     dist/linux-aarch64/libgraft_ext.so
+          mv builds/x86_64-pc-windows-msvc/release/graft_ext.dll          dist/windows-x86_64/graft_ext.dll
+          mv builds/aarch64-pc-windows-msvc/release/graft_ext.dll         dist/windows-aarch64/graft_ext.dll
+          mv builds/libgraft_ext.dylib                                    dist/macos-aarch64/libgraft_ext.dylib
 
       - name: Run SQLite dist
         run: |
