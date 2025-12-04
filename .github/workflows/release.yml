@@ -7,6 +7,17 @@ on:
     branches:
       - "release/**"
 
+  workflow_dispatch:
+    inputs:
+      head_sha:
+        description: "The commit to release"
+        required: true
+        type: string
+      run_id:
+        description: "The corresponding release-prep run ID"
+        required: true
+        type: string
+
 concurrency:
   group: release-publish
   cancel-in-progress: true
@@ -14,25 +25,54 @@ concurrency:
 jobs:
   notify:
     # Only continue if the upstream workflow finished without errors
+    # Or if this was a manual dispatch
     if: |
       github.event.workflow_run.conclusion == 'success'
+      || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     permissions:
       checks: write
+    outputs:
+      head_sha: ${{ steps.config.outputs.head_sha }}
+      run_id: ${{ steps.config.outputs.run_id }}
     steps:
+      - name: Configure Release
+        id: config
+        run: |
+          case "${{ github.event_name }}" in
+            workflow_run)
+              echo "head_sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+              echo "run_id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+              ;;
+            workflow_dispatch)
+              echo "head_sha=${{ inputs.head_sha }}" >> "$GITHUB_OUTPUT"
+              echo "run_id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "ERROR: unsupported github event"
+              echo "event: ${{ github.event_name }}"
+              exit 1
+              ;;
+          esac
+
       - name: Update summary
         run: |
-          echo 'Triggered by commit: ${{ github.event.workflow_run.head_sha }}' >> $GITHUB_STEP_SUMMARY
-          COMMIT_URL="${{ github.event.workflow_run.head_repository.html_url }}/commit/${{ github.event.workflow_run.head_sha }}"
+          echo 'Triggered by commit: ${{ steps.config.outputs.head_sha }}' >> $GITHUB_STEP_SUMMARY
+          COMMIT_URL="https://github.com/orbitinghail/graft/commit/${{ steps.config.outputs.head_sha }}"
           echo "$COMMIT_URL" >>"$GITHUB_STEP_SUMMARY"
+          RUN_URL="https://github.com/orbitinghail/graft/actions/runs/${{ steps.config.outputs.run_id }}"
+          echo "$RUN_URL" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Post GitHub check
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          HEAD_SHA: ${{ steps.config.outputs.head_sha }}
         with:
           script: |
-            const { owner, repo } = context.repo;
-            const sha = context.payload.workflow_run.head_sha;
-            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+            // the sha we are releasing
+            const sha = process.env.HEAD_SHA;
+            // the url of *this* run
+            const runUrl = `https://github.com/orbitinghail/graft/actions/runs/${context.runId}`;
 
             await github.rest.checks.create({
               owner,
@@ -72,7 +112,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           token: ${{ steps.app-token.outputs.token }}
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ needs.notify.outputs.head_sha }}
           fetch-tags: true
           fetch-depth: 0
 
@@ -80,7 +120,7 @@ jobs:
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: distx
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ needs.notify.outputs.run_id }}
           path: distx/
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
