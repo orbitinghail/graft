@@ -58,10 +58,12 @@ jobs:
       - name: Update summary
         run: |
           echo 'Triggered by commit: ${{ steps.config.outputs.head_sha }}' >> $GITHUB_STEP_SUMMARY
+          echo 'Run ID: ${{ steps.config.outputs.run_id }}' >> $GITHUB_STEP_SUMMARY
+          echo >> $GITHUB_STEP_SUMMARY
           COMMIT_URL="https://github.com/orbitinghail/graft/commit/${{ steps.config.outputs.head_sha }}"
-          echo "$COMMIT_URL" >>"$GITHUB_STEP_SUMMARY"
+          echo "Commit: $COMMIT_URL" >>"$GITHUB_STEP_SUMMARY"
           RUN_URL="https://github.com/orbitinghail/graft/actions/runs/${{ steps.config.outputs.run_id }}"
-          echo "$RUN_URL" >>"$GITHUB_STEP_SUMMARY"
+          echo "Run: $RUN_URL" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Post GitHub check
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
@@ -75,8 +77,8 @@ jobs:
             const runUrl = `https://github.com/orbitinghail/graft/actions/runs/${context.runId}`;
 
             await github.rest.checks.create({
-              owner,
-              repo,
+              owner: "orbitinghail",
+              repo: "graft",
               name: "Ready to release",
               head_sha: sha,
               status: "completed",
@@ -104,7 +106,7 @@ jobs:
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          owner: orbitinghail
           repositories: |
             graft
             Graft.swift
