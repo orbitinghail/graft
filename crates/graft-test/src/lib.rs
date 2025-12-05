@@ -1,3 +1,5 @@
+pub mod workload;
+
 use std::{
     ffi::CString,
     ops::{Deref, DerefMut},

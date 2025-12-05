@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 use crate::{PageHash, Ticker};
 
 use super::{PageTracker, PageTrackerErr};
@@ -254,4 +255,196 @@ pub fn load_tracker(
     );
 
     Ok(page_tracker)
+||||||| parent of 073ea35 (make workloads reusable)
+=======
+use culprit::{Culprit, ResultExt};
+use graft::{
+    GraftErr, LogicalErr,
+    core::{LogId, VolumeId},
+    rt::runtime::Runtime,
+};
+use rand::Rng;
+use rusqlite::Connection;
+
+#[derive(Debug, thiserror::Error)]
+pub enum WorkloadErr {
+    #[error(transparent)]
+    GraftErr(#[from] GraftErr),
+
+    #[error(transparent)]
+    RusqliteErr(#[from] rusqlite::Error),
+}
+
+pub struct Env<R> {
+    pub rng: R,
+    pub runtime: Runtime,
+    pub vid: VolumeId,
+    pub log: LogId,
+    pub sqlite: Connection,
+}
+
+const NUM_ACCOUNTS: usize = 100_000;
+const INITIAL_BALANCE: u64 = 1_000;
+const TOTAL_BALANCE: u64 = NUM_ACCOUNTS as u64 * INITIAL_BALANCE;
+
+pub fn bank_setup<R: Rng>(env: Env<R>) -> Result<(), Culprit<WorkloadErr>> {
+    let Env { mut sqlite, runtime, vid, .. } = env;
+
+    tracing::info!("setting up bank workload with {} accounts", NUM_ACCOUNTS);
+
+    // start a sql tx
+    let tx = sqlite.transaction().or_into_ctx()?;
+
+    tx.execute("DROP TABLE if exists accounts", [])
+        .or_into_ctx()?;
+
+    // create an accounts table with an integer primary key and a balance
+    tx.execute(
+        "CREATE TABLE accounts (id INTEGER PRIMARY KEY, balance INTEGER NOT NULL)",
+        [],
+    )
+    .or_into_ctx()?;
+
+    // initialize the accounts table with NUM_ACCOUNTS each starting with INITIAL_BALANCE
+    let mut stmt = tx
+        .prepare("INSERT OR IGNORE INTO accounts (id, balance) VALUES (?, ?)")
+        .or_into_ctx()?;
+    for id in 0..NUM_ACCOUNTS {
+        stmt.execute([id as i64, INITIAL_BALANCE as i64])
+            .or_into_ctx()?;
+    }
+    drop(stmt);
+
+    tx.commit().or_into_ctx()?;
+
+    // run runtime.volume_push
+    runtime.volume_push(vid).or_into_ctx()?;
+
+    Ok(())
+}
+
+fn run_bank_transactions(
+    rng: &mut impl Rng,
+    sqlite: &mut Connection,
+    runtime: &Runtime,
+    vid: &VolumeId,
+) -> Result<(), Culprit<WorkloadErr>> {
+    // randomly choose a number of transactions to make
+    let num_transactions = rng.random_range(1..=100);
+
+    tracing::info!("performing {} bank transactions", num_transactions);
+
+    for _ in 0..num_transactions {
+        // randomly pick two account ids (they are between 0 and NUM_ACCOUNTS)
+        let id_a = rng.random_range(0..NUM_ACCOUNTS) as i64;
+        let id_b = rng.random_range(0..NUM_ACCOUNTS) as i64;
+        if id_a == id_b {
+            continue;
+        }
+
+        // start a sql tx
+        let tx = sqlite.transaction().or_into_ctx()?;
+
+        // check both account balances
+        let balance_a: i64 = tx
+            .query_row("SELECT balance FROM accounts WHERE id = ?", [id_a], |row| {
+                row.get(0)
+            })
+            .or_into_ctx()?;
+        let balance_b: i64 = tx
+            .query_row("SELECT balance FROM accounts WHERE id = ?", [id_b], |row| {
+                row.get(0)
+            })
+            .or_into_ctx()?;
+
+        // send half of the balance of the larger account to the smaller account
+        let (from_id, to_id, transfer_amount) = if balance_a > balance_b {
+            (id_a, id_b, balance_a / 2)
+        } else {
+            (id_b, id_a, balance_b / 2)
+        };
+
+        if transfer_amount > 0 {
+            tx.execute(
+                "UPDATE accounts SET balance = balance - ? WHERE id = ?",
+                [transfer_amount, from_id],
+            )
+            .or_into_ctx()?;
+            tx.execute(
+                "UPDATE accounts SET balance = balance + ? WHERE id = ?",
+                [transfer_amount, to_id],
+            )
+            .or_into_ctx()?;
+        }
+
+        // commit the tx
+        tx.commit().or_into_ctx()?;
+    }
+
+    // attempt to push
+    runtime.volume_push(vid.clone()).or_into_ctx()?;
+
+    Ok(())
+}
+
+pub fn bank_tx<R: Rng>(env: Env<R>) -> Result<(), Culprit<WorkloadErr>> {
+    let Env {
+        mut rng,
+        mut sqlite,
+        runtime,
+        mut vid,
+        log,
+    } = env;
+
+    loop {
+        match run_bank_transactions(&mut rng, &mut sqlite, &runtime, &vid) {
+            Ok(()) => return Ok(()),
+            Err(err) => match err.ctx() {
+                WorkloadErr::GraftErr(GraftErr::Logical(LogicalErr::VolumeDiverged(_))) => {
+                    tracing::warn!("volume diverged, performing recovery and retrying");
+                    // close the sqlite connection to release the volume
+                    drop(sqlite);
+
+                    // reopen the remote and update the tag
+                    let volume = runtime
+                        .volume_open(None, None, Some(log.clone()))
+                        .or_into_ctx()?;
+                    runtime
+                        .tag_replace("main", volume.vid.clone())
+                        .or_into_ctx()?;
+                    vid = volume.vid;
+
+                    // make sure we are up to date with the remote
+                    runtime.volume_pull(vid.clone()).or_into_ctx()?;
+
+                    // reopen sqlite connection with new volume
+                    sqlite = Connection::open("main").or_into_ctx()?;
+                }
+                _ => return Err(err),
+            },
+        }
+    }
+}
+
+pub fn bank_validate<R: Rng>(env: Env<R>) -> Result<(), Culprit<WorkloadErr>> {
+    let Env { sqlite, runtime, vid, .. } = env;
+
+    tracing::info!("validating bank workload");
+
+    // pull the database
+    runtime.volume_pull(vid).or_into_ctx()?;
+
+    // verify that the total balance (sum(balance)) is equal to TOTAL_BALANCE
+    let total: i64 = sqlite
+        .query_row("SELECT SUM(balance) FROM accounts", [], |row| row.get(0))
+        .or_into_ctx()?;
+
+    assert_eq!(
+        total as u64, TOTAL_BALANCE,
+        "total balance mismatch: expected {}, got {}",
+        TOTAL_BALANCE, total
+    );
+
+    Ok(())
+>>>>>>> 073ea35 (make workloads reusable)
 }
