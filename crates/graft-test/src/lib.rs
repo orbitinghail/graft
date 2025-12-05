@@ -154,6 +154,12 @@ impl DerefMut for GraftSqliteConn {
     }
 }
 
+impl Into<rusqlite::Connection> for GraftSqliteConn {
+    fn into(self) -> rusqlite::Connection {
+        self.conn
+    }
+}
+
 impl GraftSqliteConn {
     pub fn graft_pragma(&self, suffix: &str) {
         let pragma = format!("graft_{suffix}");

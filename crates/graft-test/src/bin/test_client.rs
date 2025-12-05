@@ -154,11 +154,11 @@ fn main() -> Result<(), Culprit<TestErr>> {
     // open a sqlite connection
     let sqlite = Connection::open("main").or_into_ctx()?;
 
-    let env = Env { rng, runtime, vid, log: args.log, sqlite };
+    let mut env = Env { rng, runtime, vid, log: args.log, sqlite };
     match args.workload {
-        Workload::BankSetup => bank_setup(env).or_into_ctx()?,
-        Workload::BankTx => bank_tx(env).or_into_ctx()?,
-        Workload::BankValidate => bank_validate(env).or_into_ctx()?,
+        Workload::BankSetup => bank_setup(&mut env).or_into_ctx()?,
+        Workload::BankTx => bank_tx(&mut env).or_into_ctx()?,
+        Workload::BankValidate => bank_validate(&mut env).or_into_ctx()?,
     }
 
     Ok(())

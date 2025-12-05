@@ -287,8 +287,8 @@ const NUM_ACCOUNTS: usize = 100_000;
 const INITIAL_BALANCE: u64 = 1_000;
 const TOTAL_BALANCE: u64 = NUM_ACCOUNTS as u64 * INITIAL_BALANCE;
 
-pub fn bank_setup<R: Rng>(env: Env<R>) -> Result<(), Culprit<WorkloadErr>> {
-    let Env { mut sqlite, runtime, vid, .. } = env;
+pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), Culprit<WorkloadErr>> {
+    let Env { sqlite, runtime, vid, .. } = env;
 
     tracing::info!("setting up bank workload with {} accounts", NUM_ACCOUNTS);
 
@@ -318,7 +318,7 @@ pub fn bank_setup<R: Rng>(env: Env<R>) -> Result<(), Culprit<WorkloadErr>> {
     tx.commit().or_into_ctx()?;
 
     // run runtime.volume_push
-    runtime.volume_push(vid).or_into_ctx()?;
+    runtime.volume_push(vid.clone()).or_into_ctx()?;
 
     Ok(())
 }
@@ -387,38 +387,29 @@ fn run_bank_transactions(
     Ok(())
 }
 
-pub fn bank_tx<R: Rng>(env: Env<R>) -> Result<(), Culprit<WorkloadErr>> {
-    let Env {
-        mut rng,
-        mut sqlite,
-        runtime,
-        mut vid,
-        log,
-    } = env;
-
+pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), Culprit<WorkloadErr>> {
     loop {
-        match run_bank_transactions(&mut rng, &mut sqlite, &runtime, &vid) {
+        match run_bank_transactions(&mut env.rng, &mut env.sqlite, &env.runtime, &env.vid) {
             Ok(()) => return Ok(()),
             Err(err) => match err.ctx() {
                 WorkloadErr::GraftErr(GraftErr::Logical(LogicalErr::VolumeDiverged(_))) => {
                     tracing::warn!("volume diverged, performing recovery and retrying");
-                    // close the sqlite connection to release the volume
-                    drop(sqlite);
 
                     // reopen the remote and update the tag
-                    let volume = runtime
-                        .volume_open(None, None, Some(log.clone()))
+                    let volume = env
+                        .runtime
+                        .volume_open(None, None, Some(env.log.clone()))
                         .or_into_ctx()?;
-                    runtime
+                    env.runtime
                         .tag_replace("main", volume.vid.clone())
                         .or_into_ctx()?;
-                    vid = volume.vid;
+                    env.vid = volume.vid;
 
                     // make sure we are up to date with the remote
-                    runtime.volume_pull(vid.clone()).or_into_ctx()?;
+                    env.runtime.volume_pull(env.vid.clone()).or_into_ctx()?;
 
                     // reopen sqlite connection with new volume
-                    sqlite = Connection::open("main").or_into_ctx()?;
+                    env.sqlite = Connection::open("main").or_into_ctx()?;
                 }
                 _ => return Err(err),
             },
@@ -426,16 +417,15 @@ pub fn bank_tx<R: Rng>(env: Env<R>) -> Result<(), Culprit<WorkloadErr>> {
     }
 }
 
-pub fn bank_validate<R: Rng>(env: Env<R>) -> Result<(), Culprit<WorkloadErr>> {
-    let Env { sqlite, runtime, vid, .. } = env;
-
+pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), Culprit<WorkloadErr>> {
     tracing::info!("validating bank workload");
 
     // pull the database
-    runtime.volume_pull(vid).or_into_ctx()?;
+    env.runtime.volume_pull(env.vid.clone()).or_into_ctx()?;
 
     // verify that the total balance (sum(balance)) is equal to TOTAL_BALANCE
-    let total: i64 = sqlite
+    let total: i64 = env
+        .sqlite
         .query_row("SELECT SUM(balance) FROM accounts", [], |row| row.get(0))
         .or_into_ctx()?;
 
