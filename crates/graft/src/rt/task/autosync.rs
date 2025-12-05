@@ -67,6 +67,7 @@ impl Task for AutosyncTask {
                     } else if remote_changes {
                         actions.push(Subtask::Pull { vid: volume.vid })
                     } else if local_changes {
+                        fetches.insert(volume.remote);
                         actions.push(Subtask::Push { vid: volume.vid })
                     } else {
                         fetches.insert(volume.remote);
