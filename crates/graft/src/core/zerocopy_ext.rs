@@ -31,7 +31,6 @@ pub enum ZerocopyErr {
 
 impl<A, S, V> From<ConvertError<A, S, V>> for ZerocopyErr {
     #[inline]
-    #[track_caller]
     fn from(value: ConvertError<A, S, V>) -> Self {
         match value {
             ConvertError::Alignment(_) => Self::InvalidAlignment,
@@ -43,7 +42,6 @@ impl<A, S, V> From<ConvertError<A, S, V>> for ZerocopyErr {
 
 impl<A, B: ?Sized> From<SizeError<A, B>> for ZerocopyErr {
     #[inline]
-    #[track_caller]
     fn from(_: SizeError<A, B>) -> Self {
         Self::InvalidSize
     }
@@ -51,7 +49,6 @@ impl<A, B: ?Sized> From<SizeError<A, B>> for ZerocopyErr {
 
 impl<A, B: ?Sized + TryFromBytes> From<ValidityError<A, B>> for ZerocopyErr {
     #[inline]
-    #[track_caller]
     fn from(_: ValidityError<A, B>) -> Self {
         Self::InvalidData
     }
