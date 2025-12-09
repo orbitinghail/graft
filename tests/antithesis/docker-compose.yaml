@@ -2,7 +2,7 @@ services:
   client:
     container_name: client
     hostname: client
-    image: test_workload:latest
+    image: test_client:latest
     environment:
       - RUST_BACKTRACE=1
       - AWS_ENDPOINT_URL=http://minio:9000

@@ -1,2 +1,2 @@
 #!/busybox/sh
-/test_client bank-validate --remote s3-compatible
+/test_client --remote s3-compatible bank-validate

@@ -46,50 +46,15 @@ jobs:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
 
-      - name: Build metastore image
+      - name: Build test client image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
         with:
           context: .
+          file: Dockerfile.antithesis
           pull: true
           push: true
-          tags: ${{env.REGISTRY}}/metastore:${{github.sha}}
-          cache-from: type=registry,ref=${{env.REGISTRY}}/layercache
-          cache-to: type=registry,ref=${{env.REGISTRY}}/layercache,mode=max,image-manifest=true
-          platforms: linux/amd64
-          target: metastore
-          build-args: INSTRUMENTED=1
-
-      - name: Build pagestore image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
-        with:
-          context: .
-          pull: true
-          push: true
-          tags: ${{env.REGISTRY}}/pagestore:${{github.sha}}
-          platforms: linux/amd64
-          target: pagestore
-          build-args: INSTRUMENTED=1
-
-      - name: Build test workload image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
-        with:
-          context: .
-          pull: true
-          push: true
-          tags: ${{env.REGISTRY}}/test_workload:${{github.sha}}
-          platforms: linux/amd64
-          target: test_workload
-          build-args: INSTRUMENTED=1
-
-      - name: Build minio image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
-        with:
-          context: tests/antithesis/minio
-          pull: true
-          push: true
-          tags: ${{env.REGISTRY}}/minio:${{github.sha}}
-          platforms: linux/amd64
-          build-args: INSTRUMENTED=1
+          tags: ${{env.REGISTRY}}/test_client:${{github.sha}}
+          target: test_client
 
       - name: Build antithesis config image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
@@ -98,9 +63,7 @@ jobs:
           pull: true
           push: true
           tags: ${{env.REGISTRY}}/config:${{github.sha}}
-          platforms: linux/amd64
           build-args: |
-            INSTRUMENTED=1
             TAG=${{github.sha}}
 
       - name: Get Commit Summary
@@ -116,7 +79,7 @@ jobs:
           password: ${{ secrets.ANTITHESIS_PASSWORD }}
           github_token: ${{ secrets.GH_ANTITHESIS_PAT }}
           config_image: ${{ env.REGISTRY }}/config:${{github.sha}}
-          images: ${{ env.REGISTRY }}/metastore:${{github.sha}};${{ env.REGISTRY }}/pagestore:${{github.sha}};${{ env.REGISTRY }}/test_workload:${{github.sha}};${{ env.REGISTRY }}/minio:${{github.sha}}
+          images: ${{ env.REGISTRY }}/test_client:${{github.sha}}
           test_name: "github actions: antithesis nightly test run"
           description: "github actions: ${{ github.sha }}: ${{ steps.commit_summary.outputs.COMMIT_SUMMARY }}"
           email_recipients: antithesis-results@orbitinghail.dev
