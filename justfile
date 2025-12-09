@@ -3,8 +3,8 @@ set unstable
 GIT_SHA := `git describe --abbrev=40 --always --dirty --match=nevermatch 2>/dev/null`
 GIT_SUMMARY := `git show --no-patch 2>/dev/null`
 
+DOCKER_PLATFORM := "linux/amd64"
 ANTITHESIS_REGISTRY := "us-central1-docker.pkg.dev/molten-verve-216720/orbitinghail-repository"
-
 CONFIG_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "config:" + GIT_SHA
 TEST_CLIENT_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "test_client:" + GIT_SHA
 
@@ -60,6 +60,7 @@ build-all:
 
 test-workload-image:
   docker build \
+    --platform {{DOCKER_PLATFORM}} \
     --target test_client \
     -t test_client \
     -t {{TEST_CLIENT_ANTITHESIS_TAG}} \
@@ -68,6 +69,7 @@ test-workload-image:
 
 antithesis-config-image:
   docker build \
+    --platform {{DOCKER_PLATFORM}} \
     -t antithesis-config \
     -t {{CONFIG_ANTITHESIS_TAG}} \
     --build-arg TAG={{GIT_SHA}} \

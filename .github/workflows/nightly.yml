@@ -53,6 +53,8 @@ jobs:
           file: Dockerfile.antithesis
           pull: true
           push: true
+          cache-from: type=registry,ref=${{env.REGISTRY}}/layercache
+          cache-to: type=registry,ref=${{env.REGISTRY}}/layercache,mode=max,image-manifest=true
           tags: ${{env.REGISTRY}}/test_client:${{github.sha}}
           target: test_client
 
