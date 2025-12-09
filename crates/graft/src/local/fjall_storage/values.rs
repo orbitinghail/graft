@@ -45,7 +45,7 @@ macro_rules! impl_fjallrepr_for_bilrost {
 
             impl FjallRepr for $ty {
                 #[inline]
-                fn try_from_slice(slice: fjall::Slice) -> std::result::Result<Self, DecodeErr> {
+                fn try_from_slice(slice: fjall::Slice) -> Result<Self, DecodeErr> {
                     Ok(<$ty>::decode(Bytes::from(slice))?)
                 }
             }

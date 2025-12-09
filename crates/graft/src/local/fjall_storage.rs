@@ -543,8 +543,7 @@ impl<'a> WriteBatch<'a> {
     }
 
     pub fn commit(self) -> Result<(), FjallStorageErr> {
-        self.batch.commit()?;
-        Ok(())
+        Ok(self.batch.commit()?)
     }
 }
 

@@ -25,7 +25,7 @@ impl FjallReprRef for VolumeId {
 
 impl FjallRepr for VolumeId {
     #[inline]
-    fn try_from_slice(slice: Slice) -> std::result::Result<Self, DecodeErr> {
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
         Ok(VolumeId::try_from(Bytes::from(slice))?)
     }
 }
@@ -39,7 +39,7 @@ impl FjallReprRef for LogId {
 
 impl FjallRepr for LogId {
     #[inline]
-    fn try_from_slice(slice: Slice) -> std::result::Result<Self, DecodeErr> {
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
         Ok(LogId::try_from(Bytes::from(slice))?)
     }
 }
@@ -53,7 +53,7 @@ impl FjallReprRef for ByteString {
 
 impl FjallRepr for ByteString {
     #[inline]
-    fn try_from_slice(slice: Slice) -> std::result::Result<Self, DecodeErr> {
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
         let bytes: Bytes = slice.into();
         Ok(ByteString::try_from(bytes)?)
     }

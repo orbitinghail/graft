@@ -48,7 +48,7 @@ pub trait FjallReprRef {
 
 pub trait FjallRepr: FjallReprRef + Clone {
     /// Converts a Fjall Slice into Self.
-    fn try_from_slice(slice: Slice) -> std::result::Result<Self, DecodeErr>;
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr>;
 }
 
 impl FjallReprRef for str {
@@ -85,8 +85,7 @@ macro_rules! proxy_to_fjall_repr {
             #[inline]
             fn try_from_slice(
                 slice: Slice,
-            ) -> std::result::Result<Self, $crate::local::fjall_storage::fjall_repr::DecodeErr>
-            {
+            ) -> Result<Self, $crate::local::fjall_storage::fjall_repr::DecodeErr> {
                 let $iproxy: &$proxy = <$proxy>::try_ref_from_unaligned_bytes(&slice)?;
                 $from_proxy
             }

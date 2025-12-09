@@ -195,7 +195,7 @@ impl VfsFile for VolFile {
                         .runtime
                         .snapshot_is_latest(&self.vid, reader.snapshot())?
                     {
-                        tracing::error!("unable to lock: Shared -> Reserved: snapshot changed");
+                        tracing::trace!("unable to lock: Shared -> Reserved: snapshot changed");
                         return Err(ErrCtx::BusySnapshot);
                     }
 
