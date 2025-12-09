@@ -35,7 +35,7 @@ pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     // start a sql tx
     let tx = sqlite.transaction()?;
 
-    tx.execute("DROP TABLE if exists accounts", [])?;
+    tx.execute("DROP TABLE IF EXISTS accounts", [])?;
 
     // create an accounts table with an integer primary key and a balance
     tx.execute(
