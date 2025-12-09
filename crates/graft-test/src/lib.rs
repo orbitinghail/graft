@@ -154,9 +154,9 @@ impl DerefMut for GraftSqliteConn {
     }
 }
 
-impl Into<rusqlite::Connection> for GraftSqliteConn {
-    fn into(self) -> rusqlite::Connection {
-        self.conn
+impl From<GraftSqliteConn> for rusqlite::Connection {
+    fn from(conn: GraftSqliteConn) -> rusqlite::Connection {
+        conn.conn
     }
 }
 
