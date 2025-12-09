@@ -195,7 +195,7 @@ impl Remote {
     pub async fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>> {
         let path = RemotePath::Commit(log, lsn).build();
         match self.store.get(&path).await {
-            Ok(res) => Ok(Commit::decode(res.bytes().await?).map(Some)?),
+            Ok(res) => Ok(Some(Commit::decode(res.bytes().await?)?)),
             Err(object_store::Error::NotFound { .. }) => Ok(None),
             Err(err) => Err(err.into()),
         }
