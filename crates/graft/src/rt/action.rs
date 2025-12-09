@@ -14,7 +14,7 @@ action!(fetch_log, FetchLog);
 action!(hydrate_snapshot, HydrateSnapshot);
 action!(remote_commit, RemoteCommit);
 
-pub type Result<T> = culprit::Result<T, GraftErr>;
+pub type Result<T> = std::result::Result<T, GraftErr>;
 
 /// A one-off async action.
 pub trait Action: Debug {

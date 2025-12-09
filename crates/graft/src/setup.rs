@@ -1,6 +1,5 @@
 use std::{future::pending, num::NonZero, path::PathBuf, sync::Arc, time::Duration};
 
-use culprit::{Result, ResultExt};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -53,8 +52,8 @@ pub fn setup_graft(config: GraftConfig) -> Result<Runtime, InitErr> {
             rt.block_on(pending::<()>())
         })?;
 
-    let remote = Arc::new(config.remote.build().or_into_ctx()?);
-    let storage = Arc::new(FjallStorage::open(config.data_dir).or_into_ctx()?);
+    let remote = Arc::new(config.remote.build()?);
+    let storage = Arc::new(FjallStorage::open(config.data_dir)?);
     let autosync = config.autosync.map(|s| Duration::from_secs(s.get()));
     Ok(Runtime::new(tokio_handle, remote, storage, autosync))
 }

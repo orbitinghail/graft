@@ -2,7 +2,6 @@ use crate::{PageHash, Ticker};
 
 use super::{PageTracker, PageTrackerErr};
 use config::ConfigError;
-use culprit::{Culprit, ResultExt};
 use enum_dispatch::enum_dispatch;
 use graft::core::{gid::ClientId, page::PageSizeErr, zerocopy_ext::ZerocopyErr};
 use precept::expect_always_or_unreachable;
@@ -136,11 +135,11 @@ pub struct WorkloadEnv<R: Rng> {
 #[enum_dispatch]
 #[allow(unused_variables)]
 pub trait Workload {
-    fn setup<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>> {
+    fn setup<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), WorkloadErr> {
         Ok(())
     }
 
-    fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>>;
+    fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), WorkloadErr>;
 }
 
 #[enum_dispatch(Workload)]
@@ -159,7 +158,7 @@ impl WorkloadConfig {
         runtime: Runtime,
         rng: R,
         ticker: Ticker,
-    ) -> Result<(), Culprit<WorkloadErr>> {
+    ) -> Result<(), WorkloadErr> {
         let mut env = WorkloadEnv { cid, runtime, rng, ticker };
 
         self.setup(&mut env)?;
@@ -179,12 +178,9 @@ impl WorkloadConfig {
     }
 }
 
-pub fn recover_and_sync_volume(
-    cid: &ClientId,
-    handle: &VolumeHandle,
-) -> Result<(), Culprit<WorkloadErr>> {
+pub fn recover_and_sync_volume(cid: &ClientId, handle: &VolumeHandle) -> Result<(), WorkloadErr> {
     let vid = handle.vid();
-    let status = handle.status().or_into_ctx()?;
+    let status = handle.status()?;
     let span = tracing::info_span!(
         "recover_and_sync_volume",
         ?status,
@@ -206,12 +202,12 @@ pub fn recover_and_sync_volume(
             if let Err(err) = handle.sync_with_remote(SyncDirection::Both) {
                 match err.ctx() {
                     ClientErr::GraftErr(err) if err.code() == GraftErrCode::CommitRejected => {
-                        handle.reset_to_remote().or_into_ctx()?;
+                        handle.reset_to_remote()?;
                     }
                     ClientErr::StorageErr(
                         StorageErr::VolumeIsSyncing | StorageErr::RemoteConflict,
                     ) => {
-                        handle.reset_to_remote().or_into_ctx()?;
+                        handle.reset_to_remote()?;
                     }
                     _ => return Err(err.map_ctx(WorkloadErr::from)),
                 }
@@ -222,11 +218,11 @@ pub fn recover_and_sync_volume(
                 "vid": handle.vid(), "cid": cid, "status": status
             });
             // reset the volume to the latest remote snapshot
-            handle.reset_to_remote().or_into_ctx()?;
+            handle.reset_to_remote()?;
         }
     }
 
-    span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
+    span.record("result", format!("{:?}", handle.snapshot()?));
 
     Ok(())
 }
@@ -235,12 +231,12 @@ pub fn load_tracker(
     oracle: &mut impl Oracle,
     reader: &VolumeReader,
     cid: &ClientId,
-) -> Result<PageTracker, Culprit<WorkloadErr>> {
+) -> Result<PageTracker, WorkloadErr> {
     let span = tracing::info_span!("load_tracker", snapshot=?reader.snapshot(), hash=field::Empty)
         .entered();
 
     // load the page tracker from the volume
-    let first_page = reader.read(oracle, PageTracker::PAGEIDX).or_into_ctx()?;
+    let first_page = reader.read(oracle, PageTracker::PAGEIDX)?;
 
     // record the hash of the page tracker for debugging
     span.record("hash", PageHash::new(&first_page).to_string());

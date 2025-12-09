@@ -1,4 +1,3 @@
-use culprit::{Result, ResultExt};
 use graft::core::{ClientId, VolumeId};
 use graft_client::runtime::storage::volume_state::{SyncDirection, VolumeConfig, VolumeStatus};
 use graft_sqlite::vfs::GraftVfs;
@@ -59,10 +58,9 @@ impl Workload for SqliteSanity {
 
         let handle = env
             .runtime
-            .open_volume(vid, VolumeConfig::new(SyncDirection::Both))
-            .or_into_ctx()?;
+            .open_volume(vid, VolumeConfig::new(SyncDirection::Both))?;
 
-        let status = handle.status().or_into_ctx()?;
+        let status = handle.status()?;
         expect_sometimes!(
             status != VolumeStatus::Ok,
             "volume is not ok when workload starts",
@@ -70,7 +68,7 @@ impl Workload for SqliteSanity {
         );
 
         // ensure the volume is recovered and synced with the server
-        recover_and_sync_volume(&env.cid, &handle).or_into_ctx()?;
+        recover_and_sync_volume(&env.cid, &handle)?;
 
         // if the snapshot is empty attempt to initialize the schema and initial accounts
         let txn = sqlite.transaction()?;
@@ -112,7 +110,7 @@ impl Workload for SqliteSanity {
 
         while env.ticker.tick() {
             // check the volume status to see if we need to reset
-            let status = handle.status().or_into_ctx()?;
+            let status = handle.status()?;
             if status != VolumeStatus::Ok {
                 let span = tracing::info_span!("reset_volume", ?status, vid=?handle.vid(), result=field::Empty).entered();
                 precept::expect_always_or_unreachable!(
@@ -121,8 +119,8 @@ impl Workload for SqliteSanity {
                     { "cid": env.cid, "vid": vid, "status": status }
                 );
                 // reset the volume to the latest remote snapshot
-                handle.reset_to_remote().or_into_ctx()?;
-                span.record("result", format!("{:?}", handle.snapshot().or_into_ctx()?));
+                handle.reset_to_remote()?;
+                span.record("result", format!("{:?}", handle.snapshot()?));
                 drop(span);
 
                 // perform a balance and corruption check after resetting the volume
@@ -135,9 +133,7 @@ impl Workload for SqliteSanity {
             let snapshot = get_snapshot(&txn)?;
             let action = Actions::random(&mut env.rng);
             let span = tracing::info_span!("running action", ?vid, ?action, ?snapshot).entered();
-            action
-                .run(vid, env, &txn)
-                .or_into_culprit(format!("txn snapshot: {snapshot:?}"))?;
+            action.run(vid, env, &txn)?;
             txn.commit()?;
             drop(span);
 
@@ -338,7 +334,7 @@ fn check_db<R: rand::Rng>(
     let checks = [Actions::CheckBalance, Actions::IntegrityCheck];
     for action in &checks {
         let _span = tracing::info_span!("running action", ?action).entered();
-        action.run(vid, env, txn).or_into_ctx()?;
+        action.run(vid, env, txn)?;
     }
     Ok(())
 }

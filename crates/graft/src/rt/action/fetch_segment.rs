@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
 use crate::core::commit::SegmentRangeRef;
-use culprit::ResultExt;
 
 use crate::{
     local::fjall_storage::FjallStorage,
@@ -19,14 +18,13 @@ impl Action for FetchSegment {
     async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<()> {
         let bytes = remote
             .get_segment_range(&self.range.sid, &self.range.bytes)
-            .await
-            .or_into_ctx()?;
+            .await?;
         let pages = segment_frame_iter(self.range.pageset.iter(), &bytes);
         let mut batch = storage.batch();
         for (pageidx, page) in pages {
             batch.write_page(self.range.sid.clone(), pageidx, page);
         }
-        batch.commit().or_into_ctx()?;
+        batch.commit()?;
         Ok(())
     }
 }

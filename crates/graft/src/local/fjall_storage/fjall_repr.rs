@@ -3,7 +3,6 @@ use std::str::Utf8Error;
 use crate::core::{
     lsn::InvalidLSN, page::PageSizeErr, pageidx::ConvertToPageIdxErr, zerocopy_ext::ZerocopyErr,
 };
-use culprit::Result;
 use fjall::Slice;
 
 use crate::core::gid::GidParseErr;
@@ -49,7 +48,7 @@ pub trait FjallReprRef {
 
 pub trait FjallRepr: FjallReprRef + Clone {
     /// Converts a Fjall Slice into Self.
-    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr>;
+    fn try_from_slice(slice: Slice) -> std::result::Result<Self, DecodeErr>;
 }
 
 impl FjallReprRef for str {
@@ -86,9 +85,9 @@ macro_rules! proxy_to_fjall_repr {
             #[inline]
             fn try_from_slice(
                 slice: Slice,
-            ) -> Result<Self, $crate::local::fjall_storage::fjall_repr::DecodeErr> {
-                let $iproxy: &$proxy =
-                    <$proxy>::try_ref_from_unaligned_bytes(&slice).or_into_ctx()?;
+            ) -> std::result::Result<Self, $crate::local::fjall_storage::fjall_repr::DecodeErr>
+            {
+                let $iproxy: &$proxy = <$proxy>::try_ref_from_unaligned_bytes(&slice)?;
                 $from_proxy
             }
         }

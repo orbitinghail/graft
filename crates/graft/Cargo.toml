@@ -22,7 +22,6 @@ bs58 = { workspace = true }
 bytes = { workspace = true }
 bytestring = { workspace = true }
 circular-buffer = { workspace = true }
-culprit = { workspace = true }
 event-listener = { workspace = true }
 fjall = { workspace = true }
 foldhash = { workspace = true }

@@ -1,7 +1,6 @@
 use std::{collections::HashSet, fmt::Debug};
 
 use crate::core::VolumeId;
-use culprit::ResultExt;
 use futures::stream::FuturesUnordered;
 use tokio::time::Interval;
 use tokio_stream::StreamExt;
@@ -56,12 +55,10 @@ impl Task for AutosyncTask {
             // collect actions
             {
                 let reader = storage.read();
-                let mut volumes = reader
-                    .iter_volumes()
-                    .map_err(|err| err.map_ctx(GraftErr::from));
+                let mut volumes = reader.iter_volumes().map_err(GraftErr::from);
                 while let Some(volume) = volumes.try_next()? {
-                    let latest_local = reader.latest_lsn(&volume.local).or_into_ctx()?;
-                    let latest_remote = reader.latest_lsn(&volume.remote).or_into_ctx()?;
+                    let latest_local = reader.latest_lsn(&volume.local)?;
+                    let latest_remote = reader.latest_lsn(&volume.remote)?;
                     let local_changes = volume.local_changes(latest_local).is_some();
                     let remote_changes = volume.remote_changes(latest_remote).is_some();
 
@@ -95,10 +92,9 @@ impl Task for AutosyncTask {
                 .map(|action| async {
                     match action {
                         Subtask::Push { vid } => RemoteCommit { vid }.run(storage, remote).await,
-                        Subtask::Pull { vid } => storage
-                            .read_write()
-                            .sync_remote_to_local(vid)
-                            .or_into_culprit("syncing changes from remote"),
+                        Subtask::Pull { vid } => {
+                            Ok(storage.read_write().sync_remote_to_local(vid)?)
+                        }
                     }
                 })
                 .collect();

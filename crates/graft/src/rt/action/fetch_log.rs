@@ -3,7 +3,6 @@ use crate::core::{
     checkpoints::Checkpoints,
     lsn::{LSN, LSNRangeExt},
 };
-use culprit::ResultExt;
 use itertools::{EitherOrBoth, Itertools};
 use range_set_blaze::RangeOnce;
 use tokio_stream::StreamExt;
@@ -31,8 +30,7 @@ impl Action for FetchLog {
 
         // calculate the lsn range to retrieve
         let start = reader
-            .latest_lsn(&self.log)
-            .or_into_ctx()?
+            .latest_lsn(&self.log)?
             .map_or(LSN::FIRST, |lsn| lsn.next());
         let end = self.max_lsn.unwrap_or(LSN::LAST);
         let lsns = start..=end;
@@ -40,17 +38,17 @@ impl Action for FetchLog {
         tracing::debug!(log = ?self.log, lsns = %lsns.to_string(), "fetching log");
 
         // figure out which lsns we are missing
-        let existing_lsns = storage.read().lsns(&self.log, &lsns).or_into_ctx()?;
+        let existing_lsns = storage.read().lsns(&self.log, &lsns)?;
         let missing_lsns =
             (RangeOnce::new(lsns) - existing_lsns.into_ranges()).flat_map(|r| r.iter());
 
         // fetch missing lsns
         let mut commits = remote.stream_commits_ordered(&self.log, missing_lsns);
-        while let Some(commit) = commits.try_next().await.or_into_ctx()? {
+        while let Some(commit) = commits.try_next().await? {
             batch.write_commit(commit);
         }
 
-        batch.commit().or_into_ctx()
+        Ok(batch.commit()?)
     }
 }
 
@@ -60,7 +58,7 @@ async fn refresh_checkpoint_commits(
     remote: &Remote,
     log: &LogId,
 ) -> Result<()> {
-    let cached_checkpoints = reader.checkpoints(log).or_into_ctx()?;
+    let cached_checkpoints = reader.checkpoints(log)?;
     let (old_etag, old_checkpoints) = match &cached_checkpoints {
         Some(c) => (c.etag().map(|e| e.to_string()), c.checkpoints()),
         None => (None, &Checkpoints::EMPTY),
@@ -68,8 +66,8 @@ async fn refresh_checkpoint_commits(
 
     let new_checkpoints = match remote.get_checkpoints(log, old_etag).await {
         Ok(c) => c,
-        Err(err) if err.ctx().is_not_modified() || err.ctx().is_not_found() => return Ok(()),
-        Err(err) => Err(err).or_into_ctx()?,
+        Err(err) if err.is_not_modified() || err.is_not_found() => return Ok(()),
+        Err(err) => Err(err)?,
     };
 
     // Checkpoints are sorted, thus we can merge join the two lists of LSNs to
@@ -84,7 +82,7 @@ async fn refresh_checkpoint_commits(
         .collect();
 
     let mut commits = remote.stream_commits_ordered(log, added);
-    while let Some(commit) = commits.try_next().await.or_into_ctx()? {
+    while let Some(commit) = commits.try_next().await? {
         batch.write_commit(commit);
     }
     Ok(())

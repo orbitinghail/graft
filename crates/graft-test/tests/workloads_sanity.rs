@@ -4,7 +4,6 @@
 // };
 
 // use config::File;
-// use culprit::{Culprit, ResultExt};
 // use graft_client::{
 //     ClientPair,
 //     runtime::{runtime::Runtime, storage::Storage},
@@ -50,13 +49,13 @@
 //         clients: ClientPair,
 //         ticker: Ticker,
 //         workload_conf: &str,
-//     ) -> Result<Self, Culprit<WorkloadErr>> {
+//     ) -> Result<Self, WorkloadErr> {
 //         let cid = ClientId::random();
-//         let storage = Storage::open_temporary().or_into_ctx()?;
+//         let storage = Storage::open_temporary()?;
 //         let runtime = Runtime::new(cid.clone(), clients, storage);
 //         runtime
 //             .start_sync_task(Duration::from_millis(100), 8, true, &format!("{name}-sync"))
-//             .or_into_ctx()?;
+//             ?;
 //         let workload: WorkloadConfig = config::Config::builder()
 //             .add_source(File::from_str(workload_conf, config::FileFormat::Toml))
 //             .build()?
@@ -70,7 +69,7 @@
 //     }
 // }
 
-// fn test_runners(runners: Vec<WorkloadRunner>) -> Result<(), Culprit<WorkloadErr>> {
+// fn test_runners(runners: Vec<WorkloadRunner>) -> Result<(), WorkloadErr> {
 //     // run all workloads to completion or timeout
 //     let deadline = Instant::now() + Duration::from_secs(30);
 //     let mut finished = false;
@@ -89,14 +88,14 @@
 //         runner
 //             .runtime
 //             .shutdown_sync_task(Duration::from_secs(5))
-//             .or_into_ctx()?;
+//             ?;
 //     }
 
 //     Ok(())
 // }
 
 // #[graft_test::test]
-// fn test_workloads_sanity() -> Result<(), Culprit<WorkloadErr>> {
+// fn test_workloads_sanity() -> Result<(), WorkloadErr> {
 //     let (backend, clients) = start_graft_backend();
 
 //     let ticker = Ticker::new(50);
@@ -110,13 +109,13 @@
 //     test_runners(runners)?;
 
 //     // shutdown backend
-//     backend.shutdown(Duration::from_secs(5)).or_into_ctx()?;
+//     backend.shutdown(Duration::from_secs(5))?;
 
 //     Ok(())
 // }
 
 // #[graft_test::test]
-// fn test_sqlite_sanity() -> Result<(), Culprit<WorkloadErr>> {
+// fn test_sqlite_sanity() -> Result<(), WorkloadErr> {
 //     let (backend, clients) = start_graft_backend();
 
 //     let ticker = Ticker::new(50);
@@ -139,7 +138,7 @@
 //     test_runners(runners)?;
 
 //     // shutdown backend
-//     backend.shutdown(Duration::from_secs(5)).or_into_ctx()?;
+//     backend.shutdown(Duration::from_secs(5))?;
 
 //     Ok(())
 // }

@@ -1,6 +1,5 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Debug, sync::Arc};
 
-use culprit::{Culprit, ResultExt};
 use graft::{GraftErr, LogicalErr, rt::runtime::Runtime};
 use parking_lot::Mutex;
 use sqlite_plugin::{
@@ -53,10 +52,10 @@ pub enum ErrCtx {
 
 impl ErrCtx {
     #[inline]
-    fn wrap<T>(cb: impl FnOnce() -> culprit::Result<T, ErrCtx>) -> VfsResult<T> {
+    fn wrap<T>(cb: impl FnOnce() -> Result<T, ErrCtx>) -> VfsResult<T> {
         match cb() {
             Ok(t) => Ok(t),
-            Err(err) => Err(err.ctx().sqlite_err()),
+            Err(err) => Err(err.sqlite_err()),
         }
     }
 
@@ -83,12 +82,6 @@ impl ErrCtx {
                 | LogicalErr::VolumeRemoteMismatch { .. } => SQLITE_INTERNAL,
             },
         }
-    }
-}
-
-impl<T> From<ErrCtx> for culprit::Result<T, ErrCtx> {
-    fn from(err: ErrCtx) -> culprit::Result<T, ErrCtx> {
-        Err(Culprit::new(err))
     }
 }
 
@@ -126,7 +119,7 @@ impl Vfs for GraftVfs {
 
     fn access(&self, path: &str, flags: AccessFlags) -> VfsResult<bool> {
         tracing::trace!("access: path={path:?}; flags={flags:?}");
-        ErrCtx::wrap(move || self.runtime.tag_exists(path).or_into_ctx())
+        ErrCtx::wrap(move || Ok(self.runtime.tag_exists(path)?))
     }
 
     fn open(&self, path: Option<&str>, opts: OpenOpts) -> VfsResult<Self::Handle> {
@@ -145,21 +138,16 @@ impl Vfs for GraftVfs {
 
                 let vid = if can_create {
                     // create the volume if needed
-                    if let Some(vid) = self.runtime.tag_get(tag).or_into_ctx()? {
+                    if let Some(vid) = self.runtime.tag_get(tag)? {
                         vid
                     } else {
-                        let volume = self.runtime.volume_open(None, None, None).or_into_ctx()?;
-                        self.runtime
-                            .tag_replace(tag, volume.vid.clone())
-                            .or_into_ctx()?;
+                        let volume = self.runtime.volume_open(None, None, None)?;
+                        self.runtime.tag_replace(tag, volume.vid.clone())?;
                         volume.vid
                     }
                 } else {
                     // just get the existing volume
-                    self.runtime
-                        .tag_get(tag)
-                        .or_into_ctx()?
-                        .ok_or(ErrCtx::TagNotFound)?
+                    self.runtime.tag_get(tag)?.ok_or(ErrCtx::TagNotFound)?
                 };
 
                 // get or create a reserved lock for this Volume
@@ -227,10 +215,7 @@ impl Vfs for GraftVfs {
         if let FileHandle::VolFile(file) = handle {
             match GraftPragma::try_from(&pragma)?.eval(&self.runtime, file) {
                 Ok(val) => Ok(val),
-                Err(err) => Err(PragmaErr::Fail(
-                    err.ctx().sqlite_err(),
-                    Some(format!("{err}")),
-                )),
+                Err(err) => Err(PragmaErr::Fail(err.sqlite_err(), Some(format!("{err}")))),
             }
         } else {
             Err(PragmaErr::NotFound)

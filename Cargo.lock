@@ -1122,7 +1122,6 @@ dependencies = [
  "bytes",
  "bytestring",
  "circular-buffer",
- "culprit",
  "event-listener",
  "fjall",
  "foldhash 0.2.0",
@@ -1175,7 +1174,6 @@ version = "0.2.1"
 dependencies = [
  "bytes",
  "bytestring",
- "culprit",
  "enum_dispatch",
  "graft",
  "indoc",
@@ -1200,7 +1198,6 @@ dependencies = [
  "clap",
  "config",
  "crossbeam",
- "culprit",
  "enum_dispatch",
  "file-lock",
  "graft",

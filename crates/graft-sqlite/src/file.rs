@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use culprit::Result;
 use enum_dispatch::enum_dispatch;
 use mem_file::MemFile;
 use sqlite_plugin::{flags::LockLevel, vfs::VfsHandle};

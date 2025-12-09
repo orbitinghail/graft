@@ -6,7 +6,6 @@ use crate::{
 };
 
 use crossbeam::channel::RecvTimeoutError;
-use culprit::{Culprit, ResultExt};
 use graft::core::{VolumeId, page_idx::PageIdxRangeExt};
 use precept::{expect_always_or_unreachable, expect_reachable, expect_sometimes};
 use rand::{Rng, distr::uniform::SampleRange, seq::IndexedRandom};
@@ -33,7 +32,7 @@ pub struct SimpleReader {
 }
 
 impl Workload for SimpleReader {
-    fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), Culprit<WorkloadErr>> {
+    fn run<R: Rng>(&mut self, env: &mut WorkloadEnv<R>) -> Result<(), WorkloadErr> {
         let recv_timeout = Duration::from_millis(self.recv_timeout_ms);
 
         // pick volume id randomly on first run, and store in self.vid
@@ -45,11 +44,10 @@ impl Workload for SimpleReader {
         let mut oracle = LeapOracle::default();
         let handle = env
             .runtime
-            .open_volume(vid, VolumeConfig::new(SyncDirection::Pull))
-            .or_into_ctx()?;
+            .open_volume(vid, VolumeConfig::new(SyncDirection::Pull))?;
 
         // ensure the volume is recovered and synced with the server
-        recover_and_sync_volume(&env.cid, &handle).or_into_ctx()?;
+        recover_and_sync_volume(&env.cid, &handle)?;
 
         let subscription = handle.subscribe_to_remote_changes();
 
@@ -72,7 +70,7 @@ impl Workload for SimpleReader {
                 { "cid": env.cid, "vid": vid }
             );
 
-            let reader = handle.reader().or_into_ctx()?;
+            let reader = handle.reader()?;
             let snapshot = reader.snapshot().expect("snapshot missing");
 
             tracing::info!(snapshot=?snapshot, "received commit for volume {:?}", vid);
@@ -102,7 +100,7 @@ impl Workload for SimpleReader {
             }
 
             // load the page index
-            let page_tracker = load_tracker(&mut oracle, &reader, &env.cid).or_into_ctx()?;
+            let page_tracker = load_tracker(&mut oracle, &reader, &env.cid)?;
 
             // pick a random subset of pages to read starting from the second
             // page, ending at the last page, and always at least one page
@@ -127,7 +125,7 @@ impl Workload for SimpleReader {
                 let span =
                     tracing::info_span!("read_page", ?pageidx, hash = field::Empty).entered();
 
-                let page = reader.read(&mut oracle, pageidx).or_into_ctx()?;
+                let page = reader.read(&mut oracle, pageidx)?;
                 let actual_hash = PageHash::new(&page);
                 span.record("hash", actual_hash.to_string());
 

@@ -6,7 +6,6 @@ use std::{
 };
 
 use bytes::{Bytes, BytesMut};
-use culprit::{Culprit, ResultExt};
 use graft::core::{
     LogId, PageCount, PageIdx, VolumeId,
     lsn::LSNRangeExt,
@@ -178,16 +177,12 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
 
 macro_rules! pragma_err {
     ($msg:expr) => {
-        Err(Culprit::new(ErrCtx::PragmaErr($msg.into())))
+        Err(ErrCtx::PragmaErr($msg.into()))
     };
 }
 
 impl GraftPragma {
-    pub fn eval(
-        self,
-        runtime: &Runtime,
-        file: &mut VolFile,
-    ) -> Result<Option<String>, Culprit<ErrCtx>> {
+    pub fn eval(self, runtime: &Runtime, file: &mut VolFile) -> Result<Option<String>, ErrCtx> {
         match self {
             GraftPragma::Volumes => Ok(Some(format_volumes(runtime, file)?)),
             GraftPragma::Tags => Ok(Some(format_tags(runtime, file)?)),
@@ -199,11 +194,9 @@ impl GraftPragma {
 
                 let remote = match remote {
                     Some(remote) => remote,
-                    None => runtime.volume_get(&file.vid).or_into_ctx()?.remote,
+                    None => runtime.volume_get(&file.vid)?.remote,
                 };
-                let volume = runtime
-                    .volume_open(None, None, Some(remote))
-                    .or_into_ctx()?;
+                let volume = runtime.volume_open(None, None, Some(remote))?;
                 file.switch_volume(&volume.vid)?;
 
                 Ok(Some(format!(
@@ -218,9 +211,9 @@ impl GraftPragma {
                 }
 
                 let snapshot = file.snapshot_or_latest()?;
-                let missing = runtime.snapshot_missing_pages(&snapshot).or_into_ctx()?;
+                let missing = runtime.snapshot_missing_pages(&snapshot)?;
                 if missing.is_empty() {
-                    let volume = runtime.volume_from_snapshot(&snapshot).or_into_ctx()?;
+                    let volume = runtime.volume_from_snapshot(&snapshot)?;
                     file.switch_volume(&volume.vid)?;
 
                     Ok(Some(format!(
@@ -237,9 +230,7 @@ impl GraftPragma {
                     return pragma_err!("cannot switch while there is an open transaction");
                 }
 
-                let volume = runtime
-                    .volume_open(Some(vid), local, remote)
-                    .or_into_ctx()?;
+                let volume = runtime.volume_open(Some(vid), local, remote)?;
                 file.switch_volume(&volume.vid)?;
 
                 Ok(Some(format!(
@@ -265,7 +256,7 @@ impl GraftPragma {
 
             GraftPragma::Hydrate => {
                 let snapshot = file.snapshot_or_latest()?;
-                runtime.snapshot_hydrate(snapshot).or_into_ctx()?;
+                runtime.snapshot_hydrate(snapshot)?;
                 Ok(None)
             }
 
@@ -280,15 +271,15 @@ impl GraftPragma {
             }
 
             GraftPragma::Import(path) => {
-                let writer = runtime.volume_writer(file.vid.clone()).or_into_ctx()?;
+                let writer = runtime.volume_writer(file.vid.clone())?;
                 volume_import(writer, path).map(Some)
             }
 
             GraftPragma::Export(path) => volume_export(runtime, file, path).map(Some),
 
             GraftPragma::DumpSqliteHeader => {
-                let reader = runtime.volume_reader(file.vid.clone()).or_into_ctx()?;
-                let page = reader.read_page(PageIdx::FIRST).or_into_ctx()?;
+                let reader = runtime.volume_reader(file.vid.clone())?;
+                let page = reader.read_page(PageIdx::FIRST)?;
                 let header = SqliteHeader::read_from_bytes(&page[..100])
                     .expect("failed to parse SQLite header");
                 Ok(Some(format!("{header:#?}")))
@@ -303,8 +294,8 @@ macro_rules! pluralize {
     };
 }
 
-fn format_volume_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
-    let state = runtime.volume_get(&file.vid).or_into_ctx()?;
+fn format_volume_info(runtime: &Runtime, file: &VolFile) -> Result<String, ErrCtx> {
+    let state = runtime.volume_get(&file.vid)?;
     let sync = state.sync().map_or_else(
         || "Never synced".into(),
         |sync| match sync.local_watermark {
@@ -332,13 +323,13 @@ fn format_volume_info(runtime: &Runtime, file: &VolFile) -> Result<String, Culpr
     ))
 }
 
-fn format_volume_status(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+fn format_volume_status(runtime: &Runtime, file: &VolFile) -> Result<String, ErrCtx> {
     let mut f = String::new();
 
     let tag = &file.tag;
     writeln!(&mut f, "On tag {tag}")?;
 
-    let status = runtime.volume_status(&file.vid).or_into_ctx()?;
+    let status = runtime.volume_status(&file.vid)?;
     let local_changes = status.local_status.changes();
     let remote_changes = status.remote_status.changes();
 
@@ -393,12 +384,12 @@ fn format_volume_status(runtime: &Runtime, file: &VolFile) -> Result<String, Cul
     Ok(f)
 }
 
-fn format_volume_audit(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+fn format_volume_audit(runtime: &Runtime, file: &VolFile) -> Result<String, ErrCtx> {
     let snapshot = file.snapshot_or_latest()?;
-    let missing_pages = runtime.snapshot_missing_pages(&snapshot).or_into_ctx()?;
-    let pages = file.page_count().or_into_ctx()?.to_usize();
+    let missing_pages = runtime.snapshot_missing_pages(&snapshot)?;
+    let pages = file.page_count()?.to_usize();
     if missing_pages.is_empty() {
-        let checksum = runtime.snapshot_checksum(&snapshot).or_into_ctx()?;
+        let checksum = runtime.snapshot_checksum(&snapshot)?;
         Ok(formatdoc!(
             "
                 Cached {pages} of {pages} {} (100%%) from the remote Log.
@@ -420,18 +411,14 @@ fn format_volume_audit(runtime: &Runtime, file: &VolFile) -> Result<String, Culp
     }
 }
 
-fn fetch_or_pull(
-    runtime: &Runtime,
-    file: &mut VolFile,
-    pull: bool,
-) -> Result<String, Culprit<ErrCtx>> {
-    let pre = runtime.volume_status(&file.vid).or_into_ctx()?;
+fn fetch_or_pull(runtime: &Runtime, file: &mut VolFile, pull: bool) -> Result<String, ErrCtx> {
+    let pre = runtime.volume_status(&file.vid)?;
     if pull {
-        runtime.volume_pull(file.vid.clone()).or_into_ctx()?;
+        runtime.volume_pull(file.vid.clone())?;
     } else {
-        runtime.fetch_log(pre.remote, None).or_into_ctx()?;
+        runtime.fetch_log(pre.remote, None)?;
     }
-    let post = runtime.volume_status(&file.vid).or_into_ctx()?;
+    let post = runtime.volume_status(&file.vid)?;
 
     let mut f = String::new();
 
@@ -450,13 +437,13 @@ fn fetch_or_pull(
     Ok(f)
 }
 
-fn push(runtime: &Runtime, file: &mut VolFile) -> Result<String, Culprit<ErrCtx>> {
-    let pre = runtime.volume_status(&file.vid).or_into_ctx()?;
+fn push(runtime: &Runtime, file: &mut VolFile) -> Result<String, ErrCtx> {
+    let pre = runtime.volume_status(&file.vid)?;
     if let Some(changes) = pre.local_status.changes()
         && !changes.is_empty()
     {
-        runtime.volume_push(file.vid.clone()).or_into_ctx()?;
-        let post = runtime.volume_status(&file.vid).or_into_ctx()?;
+        runtime.volume_push(file.vid.clone())?;
+        let post = runtime.volume_status(&file.vid)?;
 
         let pushed = AheadStatus::new(post.local_status.base, pre.local_status.base).changes();
 
@@ -477,11 +464,11 @@ fn push(runtime: &Runtime, file: &mut VolFile) -> Result<String, Culprit<ErrCtx>
     }
 }
 
-fn format_tags(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+fn format_tags(runtime: &Runtime, file: &VolFile) -> Result<String, ErrCtx> {
     let mut f = String::new();
     let mut tags = runtime.tag_iter();
-    while let Some((tag, vid)) = tags.try_next().or_into_ctx()? {
-        let status = runtime.volume_status(&vid).or_into_ctx()?;
+    while let Some((tag, vid)) = tags.try_next()? {
+        let status = runtime.volume_status(&vid)?;
         let local = &status.local;
         let remote = &status.remote;
 
@@ -500,12 +487,12 @@ fn format_tags(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrC
     Ok(f)
 }
 
-fn format_volumes(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<ErrCtx>> {
+fn format_volumes(runtime: &Runtime, file: &VolFile) -> Result<String, ErrCtx> {
     let mut f = String::new();
     let mut volumes = runtime.volume_iter();
-    while let Some(volume) = volumes.try_next().or_into_ctx()? {
+    while let Some(volume) = volumes.try_next()? {
         let vid = volume.vid;
-        let status = runtime.volume_status(&vid).or_into_ctx()?;
+        let status = runtime.volume_status(&vid)?;
         let local = volume.local;
         let remote = volume.remote;
 
@@ -523,8 +510,8 @@ fn format_volumes(runtime: &Runtime, file: &VolFile) -> Result<String, Culprit<E
     Ok(f)
 }
 
-fn volume_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, Culprit<ErrCtx>> {
-    if writer.page_count().or_into_ctx()? > PageCount::ZERO {
+fn volume_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, ErrCtx> {
+    if writer.page_count()? > PageCount::ZERO {
         return pragma_err!("Refusing to import into a non-empty database.");
     }
 
@@ -557,14 +544,14 @@ fn volume_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, Culp
                 unsafe { Page::from_bytes_unchecked(bytes.freeze()) }
             };
 
-            writer.write_page(page_idx, page).or_into_ctx()?;
+            writer.write_page(page_idx, page)?;
             page_idx = page_idx.saturating_next();
             total_pages += 1;
         }
     }
 
-    let reader = writer.commit().or_into_ctx()?;
-    let page_count = reader.page_count().or_into_ctx()?;
+    let reader = writer.commit()?;
+    let page_count = reader.page_count()?;
     assert_eq!(
         page_count.to_usize(),
         total_pages,
@@ -578,22 +565,18 @@ fn volume_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, Culp
     ))
 }
 
-fn volume_export(
-    _runtime: &Runtime,
-    file: &VolFile,
-    path: PathBuf,
-) -> Result<String, Culprit<ErrCtx>> {
+fn volume_export(_runtime: &Runtime, file: &VolFile, path: PathBuf) -> Result<String, ErrCtx> {
     // Get a reader based on the current state of the VolFile
     let reader = file.reader()?;
 
-    let page_count = reader.page_count().or_into_ctx()?;
+    let page_count = reader.page_count()?;
     let total_pages = page_count.to_usize();
 
     let mut output_file = File::create(&path)?;
 
     // Iterate over all pages and write them to the output file
     for page_idx in page_count.iter() {
-        let page = reader.read_page(page_idx).or_into_ctx()?;
+        let page = reader.read_page(page_idx)?;
         output_file.write_all(page.as_ref())?;
     }
 

@@ -9,7 +9,6 @@ use crate::core::{
 };
 use bilrost::{Message, OwnedMessage};
 use bytes::Bytes;
-use culprit::ResultExt;
 use futures::{
     Stream, StreamExt, TryStreamExt,
     stream::{self, FuturesOrdered},
@@ -86,7 +85,7 @@ impl RemoteErr {
     }
 }
 
-pub type Result<T> = culprit::Result<T, RemoteErr>;
+pub type Result<T> = std::result::Result<T, RemoteErr>;
 
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -196,7 +195,7 @@ impl Remote {
     pub async fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>> {
         let path = RemotePath::Commit(log, lsn).build();
         match self.store.get(&path).await {
-            Ok(res) => Commit::decode(res.bytes().await?).or_into_ctx().map(Some),
+            Ok(res) => Ok(Commit::decode(res.bytes().await?).map(Some)?),
             Err(object_store::Error::NotFound { .. }) => Ok(None),
             Err(err) => Err(err.into()),
         }

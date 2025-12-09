@@ -18,7 +18,6 @@ graft = { path = "../graft", version = "0.2.1" }
 
 bytes = { workspace = true }
 bytestring = { workspace = true }
-culprit = { workspace = true }
 enum_dispatch = { workspace = true }
 indoc = { workspace = true }
 itertools = { workspace = true }

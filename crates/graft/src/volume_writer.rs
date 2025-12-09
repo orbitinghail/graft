@@ -1,5 +1,4 @@
 use crate::core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
-use culprit::{Result, ResultExt};
 
 use crate::{
     GraftErr,
@@ -55,13 +54,13 @@ impl VolumeRead for VolumeWriter {
         if !self.page_count.contains(pageidx) {
             Ok(Page::EMPTY)
         } else if self.segment.contains(pageidx) {
-            self.runtime
+            Ok(self
+                .runtime
                 .storage()
                 .read()
                 .read_page(self.segment.sid().clone(), pageidx)
                 .transpose()
-                .expect("BUG: Staged segment out of sync with storage")
-                .or_into_ctx()
+                .expect("BUG: Staged segment out of sync with storage")?)
         } else {
             self.runtime.read_page(&self.snapshot, pageidx)
         }
@@ -72,10 +71,10 @@ impl VolumeWrite for VolumeWriter {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr> {
         self.page_count = self.page_count.max(pageidx.pages());
         self.segment.insert(pageidx);
-        self.runtime
+        Ok(self
+            .runtime
             .storage()
-            .write_page(self.segment.sid().clone(), pageidx, page)
-            .or_into_ctx()
+            .write_page(self.segment.sid().clone(), pageidx, page)?)
     }
 
     fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr> {
@@ -85,19 +84,19 @@ impl VolumeWrite for VolumeWriter {
             .saturating_next();
         self.page_count = page_count;
         self.segment.remove_page_range(start..=PageIdx::LAST);
-        self.runtime
+        Ok(self
+            .runtime
             .storage()
-            .remove_page_range(self.segment.sid(), start..=PageIdx::LAST)
-            .or_into_ctx()
+            .remove_page_range(self.segment.sid(), start..=PageIdx::LAST)?)
     }
 
     fn commit(self) -> Result<VolumeReader, GraftErr> {
-        let snapshot = self
-            .runtime
-            .storage()
-            .read_write()
-            .commit(&self.vid, self.snapshot, self.page_count, self.segment)
-            .or_into_ctx()?;
+        let snapshot = self.runtime.storage().read_write().commit(
+            &self.vid,
+            self.snapshot,
+            self.page_count,
+            self.segment,
+        )?;
         Ok(VolumeReader::new(self.runtime, self.vid, snapshot))
     }
 }

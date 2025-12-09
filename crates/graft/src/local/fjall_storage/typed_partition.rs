@@ -4,7 +4,6 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
-use culprit::{Culprit, ResultExt};
 use fjall::{Keyspace, PartitionCreateOptions, Slice};
 use tryiter::TryIteratorExt;
 
@@ -16,7 +15,7 @@ use crate::local::fjall_storage::{
 
 pub mod fjall_batch_ext;
 
-type Result<T> = culprit::Result<T, FjallStorageErr>;
+type Result<T> = std::result::Result<T, FjallStorageErr>;
 
 #[derive(Clone)]
 pub struct TypedPartition<K, V> {
@@ -81,7 +80,7 @@ where
         B: FjallReprRef + ?Sized,
         K: Borrow<B>,
     {
-        self.snapshot.contains_key(key.as_slice()).or_into_ctx()
+        Ok(self.snapshot.contains_key(key.as_slice())?)
     }
 
     /// Retrieve the value corresponding to the key
@@ -91,7 +90,7 @@ where
         K: Borrow<B>,
     {
         if let Some(slice) = self.snapshot.get(key.as_slice())? {
-            return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
+            return Ok(Some(V::try_from_slice(slice)?));
         }
         Ok(None)
     }
@@ -99,7 +98,7 @@ where
     /// An optimized version of get when key is owned
     pub fn get_owned(&self, key: K) -> Result<Option<V>> {
         if let Some(slice) = self.snapshot.get(key.into_slice())? {
-            return Ok(Some(V::try_from_slice(slice).or_into_ctx()?));
+            return Ok(Some(V::try_from_slice(slice)?));
         }
         Ok(None)
     }
@@ -114,8 +113,8 @@ where
         );
         self.snapshot
             .range(r)
-            .err_into::<Culprit<FjallStorageErr>>()
-            .map_ok(|(k, _)| K::try_from_slice(k).or_into_ctx())
+            .err_into::<FjallStorageErr>()
+            .map_ok(|(k, _)| Ok(K::try_from_slice(k)?))
     }
 
     pub fn range<R: RangeBounds<K>>(
@@ -128,21 +127,16 @@ where
         );
         self.snapshot
             .range(r)
-            .err_into::<Culprit<FjallStorageErr>>()
-            .map_ok(|(k, v)| {
-                Ok((
-                    K::try_from_slice(k).or_into_ctx()?,
-                    V::try_from_slice(v).or_into_ctx()?,
-                ))
-            })
+            .err_into::<FjallStorageErr>()
+            .map_ok(|(k, v)| Ok((K::try_from_slice(k)?, V::try_from_slice(v)?)))
     }
 
     /// iterate all of the values in the partition
     pub fn values(&self) -> impl Iterator<Item = Result<V>> + use<K, V> {
         self.snapshot
             .values()
-            .err_into::<Culprit<FjallStorageErr>>()
-            .map_ok(|v| V::try_from_slice(v).or_into_ctx())
+            .err_into::<FjallStorageErr>()
+            .map_ok(|v| Ok(V::try_from_slice(v)?))
     }
 
     pub fn prefix<'a, P>(
@@ -155,13 +149,8 @@ where
     {
         self.snapshot
             .prefix(prefix)
-            .err_into::<Culprit<FjallStorageErr>>()
-            .map_ok(|(k, v)| {
-                Ok((
-                    K::try_from_slice(k).or_into_ctx()?,
-                    V::try_from_slice(v).or_into_ctx()?,
-                ))
-            })
+            .err_into::<FjallStorageErr>()
+            .map_ok(|(k, v)| Ok((K::try_from_slice(k)?, V::try_from_slice(v)?)))
     }
 
     pub fn first<P>(&self, prefix: &P) -> Result<Option<(K, V)>>

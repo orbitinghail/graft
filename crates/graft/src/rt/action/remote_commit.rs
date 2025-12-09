@@ -8,7 +8,6 @@ use crate::core::{
     lsn::LSN,
 };
 use bytes::Bytes;
-use culprit::ResultExt;
 use smallvec::SmallVec;
 use splinter_rs::{Optimizable, PartitionRead, Splinter};
 use tryiter::TryIteratorExt;
@@ -29,10 +28,10 @@ pub struct RemoteCommit {
 }
 
 impl Action for RemoteCommit {
-    async fn run(self, storage: &FjallStorage, remote: &Remote) -> culprit::Result<(), GraftErr> {
+    async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<(), GraftErr> {
         // first, check if we need to recover from a pending commit
         // we do this *before* plan since this may modify storage
-        attempt_recovery(storage, &self.vid).or_into_culprit("attempting recovery")?;
+        attempt_recovery(storage, &self.vid)?;
 
         let Some(plan) = plan_commit(storage, &self.vid)? else {
             // nothing to commit
@@ -43,23 +42,19 @@ impl Action for RemoteCommit {
         let (commit_hash, segment_idx, segment_chunks) = build_segment(storage, &plan)?;
         remote
             .put_segment(segment_idx.sid(), segment_chunks)
-            .await
-            .or_into_ctx()?;
+            .await?;
 
         // make final preparations before pushing to the remote.
         // these preparations include checking preconditions and setting
         // pending_commit on the Volume
-        storage
-            .read_write()
-            .remote_commit_prepare(
-                &self.vid,
-                PendingCommit {
-                    local: *plan.lsns.end(),
-                    commit: plan.commit_ref.lsn,
-                    commit_hash: commit_hash.clone(),
-                },
-            )
-            .or_into_ctx()?;
+        storage.read_write().remote_commit_prepare(
+            &self.vid,
+            PendingCommit {
+                local: *plan.lsns.end(),
+                commit: plan.commit_ref.lsn,
+                commit_hash: commit_hash.clone(),
+            },
+        )?;
 
         let commit = Commit::new(
             plan.commit_ref.log().clone(),
@@ -76,11 +71,10 @@ impl Action for RemoteCommit {
             Ok(()) => {
                 storage
                     .read_write()
-                    .remote_commit_success(&self.vid, commit)
-                    .or_into_ctx()?;
+                    .remote_commit_success(&self.vid, commit)?;
                 Ok(())
             }
-            Err(err) if err.ctx().is_already_exists() => {
+            Err(err) if err.is_already_exists() => {
                 // The commit already exists on the remote. This could be because:
                 // 1. Someone (including us) pushed the same commit (idempotency)
                 // 2. Someone (including us) pushed a DIFFERENT commit (divergence)
@@ -92,14 +86,13 @@ impl Action for RemoteCommit {
                 .run(storage, remote)
                 .await?;
                 attempt_recovery(storage, &self.vid)
-                    .or_into_culprit("recovering from existing remote commit")
             }
             Err(err) => {
                 // if any other error occurs, we leave the pending_commit in place and fail the job.
                 // this allows the `recover_pending_commit` job to run at a later
                 // point which will attempt to figure out if the commit was
                 // successful on the remote or not
-                Err(err).or_into_ctx()
+                Err(err.into())
             }
         }
     }
@@ -112,27 +105,23 @@ struct CommitPlan {
     page_count: PageCount,
 }
 
-fn plan_commit(
-    storage: &FjallStorage,
-    vid: &VolumeId,
-) -> culprit::Result<Option<CommitPlan>, GraftErr> {
+fn plan_commit(storage: &FjallStorage, vid: &VolumeId) -> Result<Option<CommitPlan>, GraftErr> {
     let reader = storage.read();
-    let volume = reader.volume(vid).or_into_ctx()?;
+    let volume = reader.volume(vid)?;
 
     if volume.pending_commit().is_some() {
         // this should have been handled earlier
         return Err(LogicalErr::VolumeNeedsRecovery(volume.vid).into());
     }
 
-    let Some(latest_local) = reader.latest_lsn(&volume.local).or_into_ctx()? else {
+    let Some(latest_local) = reader.latest_lsn(&volume.local)? else {
         // nothing to push
         return Ok(None);
     };
-    let latest_remote = reader.latest_lsn(&volume.remote).or_into_ctx()?;
+    let latest_remote = reader.latest_lsn(&volume.remote)?;
 
     let page_count = reader
-        .page_count(&volume.local, latest_local)
-        .or_into_ctx()?
+        .page_count(&volume.local, latest_local)?
         .expect("BUG: no page count for commit");
 
     let Some(sync) = volume.sync() else {
@@ -174,7 +163,7 @@ fn plan_commit(
 fn build_segment(
     storage: &FjallStorage,
     plan: &CommitPlan,
-) -> culprit::Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), GraftErr> {
+) -> Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), GraftErr> {
     let reader = storage.read();
 
     // built a snapshot which only matches the LSNs we want to
@@ -187,7 +176,7 @@ fn build_segment(
     let mut pages = BTreeMap::new();
     let mut pageset = Splinter::default();
     let mut commits = reader.commits(&segment_path);
-    while let Some(commit) = commits.try_next().or_into_ctx()? {
+    while let Some(commit) = commits.try_next()? {
         // if we encounter a smaller commit on our travels, we need to shrink
         // the page_count to ensure that truncation is respected
         page_count = page_count.min(commit.page_count);
@@ -207,7 +196,7 @@ fn build_segment(
                 // SAFETY: outstanding is built from a set of valid PageIdxs
                 let pageidx = unsafe { PageIdx::new_unchecked(pageidx) };
                 debug_assert!(plan.page_count.contains(pageidx));
-                let page = reader.read_page(idx.sid.clone(), pageidx).or_into_ctx()?;
+                let page = reader.read_page(idx.sid.clone(), pageidx)?;
                 pages.insert(pageidx, page.expect("BUG: missing page"));
             }
             // update the pageset accordingly
@@ -242,38 +231,30 @@ fn build_segment(
     let (frames, chunks) = segment_builder.finish();
     let idx = SegmentIdx::new(sid, pageset.into()).with_frames(frames);
 
-    batch.commit().or_into_ctx()?;
+    batch.commit()?;
 
     Ok((commit_hash, idx, chunks))
 }
 
 /// Attempts to recover from a remote commit conflict by checking the remote
 /// for the commit we tried to push.
-fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> culprit::Result<(), GraftErr> {
+fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> Result<(), GraftErr> {
     let reader = storage.read();
-    let volume = reader.volume(vid).or_into_ctx()?;
+    let volume = reader.volume(vid)?;
 
     if let Some(pending) = volume.pending_commit {
         tracing::debug!(?pending, "got pending commit");
-        match storage
-            .read()
-            .get_commit(&volume.remote, pending.commit)
-            .or_into_ctx()?
-        {
+        match storage.read().get_commit(&volume.remote, pending.commit)? {
             Some(commit) if commit.commit_hash() == Some(&pending.commit_hash) => {
                 // It's the same commit. Recovery success!
                 storage
                     .read_write()
-                    .remote_commit_success(&volume.vid, commit)
-                    .or_into_ctx()?;
+                    .remote_commit_success(&volume.vid, commit)?;
                 Ok(())
             }
             Some(commit) => {
                 // Case 2: Divergence detected.
-                storage
-                    .read_write()
-                    .drop_pending_commit(&volume.vid)
-                    .or_into_ctx()?;
+                storage.read_write().drop_pending_commit(&volume.vid)?;
                 tracing::warn!(
                     "remote commit rejected for volume {}, commit {}/{} already exists with different hash: {:?}",
                     volume.vid,

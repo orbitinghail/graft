@@ -1,7 +1,6 @@
 use crate::core::{checkpoints::CachedCheckpoints, commit::Commit, page::Page};
 use bilrost::{Message, OwnedMessage};
 use bytes::Bytes;
-use culprit::ResultExt;
 
 use crate::{
     local::fjall_storage::fjall_repr::{FjallRepr, FjallReprRef},
@@ -24,8 +23,8 @@ impl FjallReprRef for Page {
 
 impl FjallRepr for Page {
     #[inline]
-    fn try_from_slice(slice: fjall::Slice) -> culprit::Result<Self, DecodeErr> {
-        Page::try_from(Bytes::from(slice)).or_into_ctx()
+    fn try_from_slice(slice: fjall::Slice) -> Result<Self, DecodeErr> {
+        Ok(Page::try_from(Bytes::from(slice))?)
     }
 }
 
@@ -46,8 +45,8 @@ macro_rules! impl_fjallrepr_for_bilrost {
 
             impl FjallRepr for $ty {
                 #[inline]
-                fn try_from_slice(slice: fjall::Slice) -> culprit::Result<Self, DecodeErr> {
-                    <$ty>::decode(Bytes::from(slice)).or_into_ctx()
+                fn try_from_slice(slice: fjall::Slice) -> std::result::Result<Self, DecodeErr> {
+                    Ok(<$ty>::decode(Bytes::from(slice))?)
                 }
             }
         )+

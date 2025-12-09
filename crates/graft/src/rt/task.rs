@@ -5,7 +5,7 @@ use crate::{GraftErr, local::fjall_storage::FjallStorage, remote::Remote};
 
 pub mod autosync;
 
-pub type Result<T> = culprit::Result<T, GraftErr>;
+pub type Result<T> = std::result::Result<T, GraftErr>;
 
 /// A long running stateful async background task.
 pub trait Task: Debug {
@@ -38,7 +38,7 @@ pub async fn supervise<T: Task>(
             }
             Err(err) => {
                 tracing::error!("task {:?} failed: {:?}", task, err);
-                if !task.should_restart(err.ctx()) {
+                if !task.should_restart(&err) {
                     return Err(err);
                 }
             }
