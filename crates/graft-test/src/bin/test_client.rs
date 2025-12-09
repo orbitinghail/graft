@@ -4,7 +4,6 @@ use std::{
 };
 
 use clap::{Parser, Subcommand, ValueEnum};
-use culprit::{Culprit, ResultExt};
 use file_lock::{FileLock, FileOptions};
 use graft::{
     GraftErr,
@@ -105,7 +104,7 @@ enum Workload {
     BankValidate,
 }
 
-fn main() -> Result<(), Culprit<TestErr>> {
+fn main() -> Result<(), TestErr> {
     let dispatcher =
         AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
     precept::init_boxed(dispatcher).expect("failed to setup precept");
@@ -118,7 +117,7 @@ fn main() -> Result<(), Culprit<TestErr>> {
     let remote = match args.remote {
         RemoteType::Fs => {
             let remoteroot = rootdir.join("remote");
-            std::fs::create_dir_all(&remoteroot).or_into_ctx()?;
+            std::fs::create_dir_all(&remoteroot)?;
             RemoteConfig::Fs { root: remoteroot }
         }
         RemoteType::S3Compatible => RemoteConfig::S3Compatible {
@@ -131,18 +130,14 @@ fn main() -> Result<(), Culprit<TestErr>> {
     let (data_dir, _lock) = get_or_init_data_dir(&mut rng, &rootdir);
 
     // create the Graft runtime
-    let runtime = setup_graft(GraftConfig { remote, data_dir, autosync: None }).or_into_ctx()?;
+    let runtime = setup_graft(GraftConfig { remote, data_dir, autosync: None })?;
 
     // initialize the main tag if needed
-    let vid = if let Some(vid) = runtime.tag_get("main").or_into_ctx()? {
+    let vid = if let Some(vid) = runtime.tag_get("main")? {
         vid
     } else {
-        let volume = runtime
-            .volume_open(None, None, Some(args.log.clone()))
-            .or_into_ctx()?;
-        runtime
-            .tag_replace("main", volume.vid.clone())
-            .or_into_ctx()?;
+        let volume = runtime.volume_open(None, None, Some(args.log.clone()))?;
+        runtime.tag_replace("main", volume.vid.clone())?;
         volume.vid
     };
 
@@ -152,13 +147,13 @@ fn main() -> Result<(), Culprit<TestErr>> {
         .expect("failed to register vfs with SQLite");
 
     // open a sqlite connection
-    let sqlite = Connection::open("main").or_into_ctx()?;
+    let sqlite = Connection::open("main")?;
 
     let mut env = Env { rng, runtime, vid, log: args.log, sqlite };
     match args.workload {
-        Workload::BankSetup => bank_setup(&mut env).or_into_ctx()?,
-        Workload::BankTx => bank_tx(&mut env).or_into_ctx()?,
-        Workload::BankValidate => bank_validate(&mut env).or_into_ctx()?,
+        Workload::BankSetup => bank_setup(&mut env)?,
+        Workload::BankTx => bank_tx(&mut env)?,
+        Workload::BankValidate => bank_validate(&mut env)?,
     }
 
     Ok(())
