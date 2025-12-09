@@ -1,4 +1,3 @@
-use culprit::{Result, ResultExt};
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 
@@ -20,10 +19,7 @@ pub struct HydrateSnapshot {
 
 impl Action for HydrateSnapshot {
     async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<(), GraftErr> {
-        let missing_frames = storage
-            .read()
-            .find_missing_frames(&self.snapshot)
-            .or_into_ctx()?;
+        let missing_frames = storage.read().find_missing_frames(&self.snapshot)?;
         futures::stream::iter(
             missing_frames
                 .into_iter()

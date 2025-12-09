@@ -1,15 +1,14 @@
 use std::borrow::Cow;
 
 use crate::core::{PageCount, PageIdx, VolumeId, page::Page};
-use culprit::Culprit;
 
 use crate::{GraftErr, rt::runtime::Runtime, snapshot::Snapshot, volume_writer::VolumeWriter};
 
 /// A type which can read from a Volume
 pub trait VolumeRead {
     fn snapshot(&self) -> &Snapshot;
-    fn page_count(&self) -> culprit::Result<PageCount, GraftErr>;
-    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, GraftErr>;
+    fn page_count(&self) -> Result<PageCount, GraftErr>;
+    fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr>;
 }
 
 #[derive(Debug, Clone)]
@@ -26,7 +25,7 @@ impl VolumeReader {
 }
 
 impl TryFrom<VolumeReader> for VolumeWriter {
-    type Error = Culprit<GraftErr>;
+    type Error = GraftErr;
 
     fn try_from(reader: VolumeReader) -> Result<Self, Self::Error> {
         let page_count = reader.page_count()?;
@@ -44,11 +43,11 @@ impl VolumeRead for VolumeReader {
         &self.snapshot
     }
 
-    fn page_count(&self) -> culprit::Result<PageCount, GraftErr> {
+    fn page_count(&self) -> Result<PageCount, GraftErr> {
         self.runtime.snapshot_pages(&self.snapshot)
     }
 
-    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, GraftErr> {
+    fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr> {
         self.runtime.read_page(&self.snapshot, pageidx)
     }
 }
@@ -66,14 +65,14 @@ impl VolumeRead for VolumeReadRef<'_> {
         }
     }
 
-    fn page_count(&self) -> culprit::Result<PageCount, GraftErr> {
+    fn page_count(&self) -> Result<PageCount, GraftErr> {
         match self {
             VolumeReadRef::Reader(r) => r.page_count(),
             VolumeReadRef::Writer(w) => w.page_count(),
         }
     }
 
-    fn read_page(&self, pageidx: PageIdx) -> culprit::Result<Page, GraftErr> {
+    fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr> {
         match self {
             VolumeReadRef::Reader(r) => r.read_page(pageidx),
             VolumeReadRef::Writer(w) => w.read_page(pageidx),

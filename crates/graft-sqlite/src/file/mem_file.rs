@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use culprit::Result;
 use sqlite_plugin::flags::LockLevel;
 
 use crate::vfs::ErrCtx;

@@ -7,7 +7,6 @@ use std::{
 };
 
 use bytes::BytesMut;
-use culprit::{Culprit, Result, ResultExt};
 use graft::core::{
     PageIdx, VolumeId,
     page::{PAGESIZE, Page},
@@ -103,22 +102,22 @@ impl VolFile {
 
     pub fn snapshot_or_latest(&self) -> Result<Snapshot, ErrCtx> {
         match &self.state {
-            VolFileState::Idle => self.runtime.volume_snapshot(&self.vid).or_into_ctx(),
+            VolFileState::Idle => Ok(self.runtime.volume_snapshot(&self.vid)?),
             VolFileState::Shared { reader } => Ok(reader.snapshot().clone()),
             VolFileState::Reserved { writer } => Ok(writer.snapshot().clone()),
-            VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
+            VolFileState::Committing => Err(ErrCtx::InvalidVolumeState),
         }
     }
 
     pub fn page_count(&self) -> Result<PageCount, ErrCtx> {
         match &self.state {
             VolFileState::Idle => {
-                let snapshot = self.runtime.volume_snapshot(&self.vid).or_into_ctx()?;
-                self.runtime.snapshot_pages(&snapshot).or_into_ctx()
+                let snapshot = self.runtime.volume_snapshot(&self.vid)?;
+                Ok(self.runtime.snapshot_pages(&snapshot)?)
             }
-            VolFileState::Shared { reader } => reader.page_count().or_into_ctx(),
-            VolFileState::Reserved { writer } => writer.page_count().or_into_ctx(),
-            VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
+            VolFileState::Shared { reader } => Ok(reader.page_count()?),
+            VolFileState::Reserved { writer } => Ok(writer.page_count()?),
+            VolFileState::Committing => Err(ErrCtx::InvalidVolumeState),
         }
     }
 
@@ -131,9 +130,7 @@ impl VolFile {
     }
 
     pub fn switch_volume(&mut self, vid: &VolumeId) -> Result<(), ErrCtx> {
-        self.runtime
-            .tag_replace(&self.tag, vid.clone())
-            .or_into_ctx()?;
+        self.runtime.tag_replace(&self.tag, vid.clone())?;
         self.vid = vid.clone();
         Ok(())
     }
@@ -141,11 +138,11 @@ impl VolFile {
     pub fn reader(&self) -> Result<VolumeReadRef<'_>, ErrCtx> {
         match &self.state {
             VolFileState::Idle => Ok(VolumeReadRef::Reader(Cow::Owned(
-                self.runtime.volume_reader(self.vid.clone()).or_into_ctx()?,
+                self.runtime.volume_reader(self.vid.clone())?,
             ))),
             VolFileState::Shared { reader, .. } => Ok(VolumeReadRef::Reader(Cow::Borrowed(reader))),
             VolFileState::Reserved { writer, .. } => Ok(VolumeReadRef::Writer(writer)),
-            VolFileState::Committing => ErrCtx::InvalidVolumeState.into(),
+            VolFileState::Committing => Err(ErrCtx::InvalidVolumeState),
         }
     }
 }
@@ -168,13 +165,11 @@ impl VfsFile for VolFile {
             LockLevel::Shared => {
                 if let VolFileState::Idle = self.state {
                     // Transition Idle -> Shared
-                    let reader = self.runtime.volume_reader(self.vid.clone()).or_into_ctx()?;
+                    let reader = self.runtime.volume_reader(self.vid.clone())?;
                     self.state = VolFileState::Shared { reader };
                 } else {
-                    return Err(Culprit::new_with_note(
-                        ErrCtx::InvalidLockTransition,
-                        format!("invalid lock request Shared in state {}", self.state.name()),
-                    ));
+                    tracing::error!("invalid lock request Shared in state {}", self.state.name());
+                    return Err(ErrCtx::InvalidLockTransition);
                 }
             }
             LockLevel::Reserved => {
@@ -183,46 +178,41 @@ impl VfsFile for VolFile {
 
                     // Ensure that this VolFile is not readonly
                     if self.opts.mode().is_readonly() {
-                        return Err(Culprit::new_with_note(
-                            ErrCtx::InvalidLockTransition,
-                            "invalid lock request: Shared -> Reserved: file is read-only",
-                        ));
+                        tracing::error!(
+                            "invalid lock request: Shared -> Reserved: file is read-only"
+                        );
+                        return Err(ErrCtx::InvalidLockTransition);
                     }
 
                     // try to acquire the reserved lock or fail if another thread has it
                     let Some(reserved) = self.reserved.try_lock() else {
-                        return Err(Culprit::new(ErrCtx::Busy));
+                        return Err(ErrCtx::Busy);
                     };
 
                     // check to see if the snapshot is latest. if it
                     // has changed we can immediately reject the lock upgrade
                     if !self
                         .runtime
-                        .snapshot_is_latest(&self.vid, reader.snapshot())
-                        .or_into_ctx()?
+                        .snapshot_is_latest(&self.vid, reader.snapshot())?
                     {
-                        return Err(Culprit::new_with_note(
-                            ErrCtx::BusySnapshot,
-                            "unable to lock: Shared -> Reserved: snapshot changed",
-                        ));
+                        tracing::trace!("unable to lock: Shared -> Reserved: snapshot changed");
+                        return Err(ErrCtx::BusySnapshot);
                     }
 
                     // convert the reader into a writer
                     self.state = VolFileState::Reserved {
-                        writer: VolumeWriter::try_from(reader.clone()).or_into_ctx()?,
+                        writer: VolumeWriter::try_from(reader.clone())?,
                     };
 
                     // Explicitly leak the reserved lock
                     // SAFETY: we depend on SQLite to release the lock when it's done
                     MutexGuard::leak(reserved);
                 } else {
-                    return Err(Culprit::new_with_note(
-                        ErrCtx::InvalidLockTransition,
-                        format!(
-                            "invalid lock request Reserved in state {}",
-                            self.state.name()
-                        ),
-                    ));
+                    tracing::error!(
+                        "invalid lock request Reserved in state {}",
+                        self.state.name()
+                    );
+                    return Err(ErrCtx::InvalidLockTransition);
                 }
             }
             LockLevel::Pending | LockLevel::Exclusive => {
@@ -246,10 +236,8 @@ impl VfsFile for VolFile {
                     self.state = VolFileState::Idle;
                 }
                 VolFileState::Reserved { .. } => {
-                    return Err(Culprit::new_with_note(
-                        ErrCtx::InvalidLockTransition,
-                        "invalid unlock request Unlocked in state Reserved",
-                    ));
+                    tracing::error!("invalid unlock request Unlocked in state Reserved");
+                    return Err(ErrCtx::InvalidLockTransition);
                 }
             },
             LockLevel::Shared => {
@@ -261,7 +249,7 @@ impl VfsFile for VolFile {
                     // Unlocked request after handling the error
 
                     // Commit the writer, downgrading to a reader
-                    let reader = writer.commit().or_into_ctx()?;
+                    let reader = writer.commit()?;
                     self.state = VolFileState::Shared { reader };
 
                     // release the reserved lock
@@ -272,13 +260,11 @@ impl VfsFile for VolFile {
                     // SAFETY: we depend on the connection not being passed
                     unsafe { self.reserved.force_unlock() };
                 } else {
-                    return Err(Culprit::new_with_note(
-                        ErrCtx::InvalidLockTransition,
-                        format!(
-                            "invalid unlock request Shared in state {}",
-                            self.state.name()
-                        ),
-                    ));
+                    tracing::error!(
+                        "invalid unlock request Shared in state {}",
+                        self.state.name()
+                    );
+                    return Err(ErrCtx::InvalidLockTransition);
                 }
             }
             LockLevel::Reserved | LockLevel::Pending | LockLevel::Exclusive => {
@@ -317,12 +303,12 @@ impl VfsFile for VolFile {
                 // sqlite sometimes reads the database header without holding a
                 // lock, in this case we are expected to read from the latest
                 // snapshot
-                let reader = self.runtime.volume_reader(self.vid.clone()).or_into_ctx()?;
-                reader.read_page(pageidx).or_into_ctx()?
+                let reader = self.runtime.volume_reader(self.vid.clone())?;
+                reader.read_page(pageidx)?
             }
-            VolFileState::Shared { reader } => reader.read_page(pageidx).or_into_ctx()?,
-            VolFileState::Reserved { writer } => writer.read_page(pageidx).or_into_ctx()?,
-            VolFileState::Committing => return ErrCtx::InvalidVolumeState.into(),
+            VolFileState::Shared { reader } => reader.read_page(pageidx)?,
+            VolFileState::Reserved { writer } => writer.read_page(pageidx)?,
+            VolFileState::Committing => return Err(ErrCtx::InvalidVolumeState),
         };
 
         let range = local_offset.as_usize()..(local_offset + data.len()).as_usize();
@@ -355,10 +341,8 @@ impl VfsFile for VolFile {
 
     fn truncate(&mut self, size: usize) -> Result<(), ErrCtx> {
         let VolFileState::Reserved { writer, .. } = &mut self.state else {
-            return Err(Culprit::new_with_note(
-                ErrCtx::InvalidVolumeState,
-                "must hold reserved lock to truncate",
-            ));
+            tracing::error!("must hold reserved lock to truncate");
+            return Err(ErrCtx::InvalidVolumeState);
         };
 
         assert_eq!(
@@ -371,16 +355,14 @@ impl VfsFile for VolFile {
             .try_into()
             .expect("size too large");
 
-        writer.truncate(pages).or_into_ctx()?;
+        writer.truncate(pages)?;
         Ok(())
     }
 
     fn write(&mut self, offset: usize, data: &[u8]) -> Result<usize, ErrCtx> {
         let VolFileState::Reserved { writer, .. } = &mut self.state else {
-            return Err(Culprit::new_with_note(
-                ErrCtx::InvalidVolumeState,
-                "must hold reserved lock to write",
-            ));
+            tracing::error!("must hold reserved lock to write");
+            return Err(ErrCtx::InvalidVolumeState);
         };
 
         // locate the requested page index
@@ -398,7 +380,7 @@ impl VfsFile for VolFile {
         // if this is a write to the first page, and the write only changes the
         // file change counter and the version valid for number, we can ignore this write
         if page_idx == PageIdx::FIRST && data.len() == PAGESIZE && local_offset == 0 {
-            let existing: Page = writer.read_page(page_idx).or_into_ctx()?;
+            let existing: Page = writer.read_page(page_idx)?;
 
             debug_assert_eq!(data.len(), existing.len(), "page size mismatch");
 
@@ -429,14 +411,14 @@ impl VfsFile for VolFile {
         } else {
             // writing a partial page
             // we need to read and then update the page
-            let mut page: BytesMut = writer.read_page(page_idx).or_into_ctx()?.into();
+            let mut page: BytesMut = writer.read_page(page_idx)?.into();
             // SAFETY: we already verified that the write does not cross a page boundary
             let range = local_offset.as_usize()..(local_offset + data.len()).as_usize();
             page[range].copy_from_slice(data);
             page.try_into().expect("we did not change the page size")
         };
 
-        writer.write_page(page_idx, page).or_into_ctx()?;
+        writer.write_page(page_idx, page)?;
         Ok(data.len())
     }
 }

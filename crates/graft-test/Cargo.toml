@@ -20,7 +20,6 @@ graft-sqlite = { path = "../graft-sqlite" }
 sqlite-plugin = { workspace = true, features = ["static"] }
 precept = { workspace = true, features = ["antithesis"] }
 enum_dispatch = { workspace = true }
-culprit = { workspace = true }
 crossbeam = { workspace = true }
 file-lock = { workspace = true }
 url = { workspace = true }

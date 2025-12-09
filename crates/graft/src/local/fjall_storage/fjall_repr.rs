@@ -3,7 +3,6 @@ use std::str::Utf8Error;
 use crate::core::{
     lsn::InvalidLSN, page::PageSizeErr, pageidx::ConvertToPageIdxErr, zerocopy_ext::ZerocopyErr,
 };
-use culprit::Result;
 use fjall::Slice;
 
 use crate::core::gid::GidParseErr;
@@ -87,8 +86,7 @@ macro_rules! proxy_to_fjall_repr {
             fn try_from_slice(
                 slice: Slice,
             ) -> Result<Self, $crate::local::fjall_storage::fjall_repr::DecodeErr> {
-                let $iproxy: &$proxy =
-                    <$proxy>::try_ref_from_unaligned_bytes(&slice).or_into_ctx()?;
+                let $iproxy: &$proxy = <$proxy>::try_ref_from_unaligned_bytes(&slice)?;
                 $from_proxy
             }
         }

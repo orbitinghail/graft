@@ -2,7 +2,6 @@
 
 // use clap::Parser;
 // use config::Config;
-// use culprit::{Culprit, ResultExt};
 // use file_lock::{FileLock, FileOptions};
 // use graft::core::gid::ClientId;
 // use graft_test::Ticker;
@@ -59,7 +58,7 @@ fn main() {
     // }
 }
 
-// fn main_inner() -> Result<(), Culprit<WorkloadErr>> {
+// fn main_inner() -> Result<(), WorkloadErr> {
 //     let dispatcher =
 //         AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
 //     precept::init_boxed(dispatcher).expect("failed to setup precept");
@@ -88,11 +87,11 @@ fn main() {
 //     let clients = ClientPair::new(metastore_client, pagestore_client);
 
 //     let storage_path = temp_dir().join("storage").join(cid.pretty());
-//     let storage = Storage::open(storage_path).or_into_ctx()?;
+//     let storage = Storage::open(storage_path)?;
 //     let runtime = Runtime::new(cid.clone(), clients, storage);
 //     runtime
 //         .start_sync_task(Duration::from_secs(1), 8, true, "graft-sync")
-//         .or_into_ctx()?;
+//         ?;
 
 //     precept::setup_complete!({ "workload": workload });
 
@@ -108,11 +107,11 @@ fn main() {
 //     tracing::info!(?ticker, "running test workload");
 //     workload
 //         .execute(cid.clone(), runtime.clone(), rng, ticker)
-//         .or_into_ctx()?;
+//         ?;
 
 //     tracing::info!("workload finished");
 //     tracing::info!("waiting for sync task to shutdown");
-//     runtime.shutdown_sync_task(shutdown_timeout).or_into_ctx()?;
+//     runtime.shutdown_sync_task(shutdown_timeout)?;
 
 //     precept::expect_reachable!("test workload finishes", { "worker": cid });
 

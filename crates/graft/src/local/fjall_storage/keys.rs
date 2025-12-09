@@ -4,7 +4,6 @@ use crate::core::{
 };
 use bytes::Bytes;
 use bytestring::ByteString;
-use culprit::{Result, ResultExt};
 use fjall::Slice;
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
 
@@ -27,7 +26,7 @@ impl FjallReprRef for VolumeId {
 impl FjallRepr for VolumeId {
     #[inline]
     fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-        VolumeId::try_from(Bytes::from(slice)).or_into_ctx()
+        Ok(VolumeId::try_from(Bytes::from(slice))?)
     }
 }
 
@@ -41,7 +40,7 @@ impl FjallReprRef for LogId {
 impl FjallRepr for LogId {
     #[inline]
     fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-        LogId::try_from(Bytes::from(slice)).or_into_ctx()
+        Ok(LogId::try_from(Bytes::from(slice))?)
     }
 }
 
@@ -56,7 +55,7 @@ impl FjallRepr for ByteString {
     #[inline]
     fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
         let bytes: Bytes = slice.into();
-        ByteString::try_from(bytes).or_into_ctx()
+        Ok(ByteString::try_from(bytes)?)
     }
 }
 

@@ -5,7 +5,6 @@ use crate::core::{
     lsn::LSN, page::Page, pageset::PageSet,
 };
 use bytestring::ByteString;
-use culprit::ResultExt;
 use tracing::Instrument;
 use tryiter::TryIteratorExt;
 
@@ -24,7 +23,7 @@ use crate::{
 
 use crate::local::fjall_storage::FjallStorage;
 
-type Result<T> = culprit::Result<T, GraftErr>;
+type Result<T> = std::result::Result<T, GraftErr>;
 
 #[derive(Clone, Debug)]
 pub struct Runtime {
@@ -73,12 +72,12 @@ impl Runtime {
 
     pub(crate) fn read_page(&self, snapshot: &Snapshot, pageidx: PageIdx) -> Result<Page> {
         let reader = self.storage().read();
-        if let Some(commit) = reader.search_page(snapshot, pageidx).or_into_ctx()? {
+        if let Some(commit) = reader.search_page(snapshot, pageidx)? {
             let idx = commit
                 .segment_idx()
                 .expect("BUG: commit claims to contain pageidx");
 
-            if let Some(page) = reader.read_page(idx.sid().clone(), pageidx).or_into_ctx()? {
+            if let Some(page) = reader.read_page(idx.sid().clone(), pageidx)? {
                 return Ok(page);
             }
 
@@ -95,8 +94,7 @@ impl Runtime {
             Ok(self
                 .storage()
                 .read()
-                .read_page(idx.sid.clone(), pageidx)
-                .or_into_ctx()?
+                .read_page(idx.sid.clone(), pageidx)?
                 .expect("BUG: page not found after fetching"))
         } else {
             Ok(Page::EMPTY)
@@ -117,44 +115,35 @@ impl Runtime {
 // tag methods
 impl Runtime {
     pub fn tag_iter(&self) -> impl Iterator<Item = Result<(ByteString, VolumeId)>> {
-        self.storage()
-            .read()
-            .iter_tags()
-            .map_err(|err| err.map_ctx(GraftErr::from))
+        self.storage().read().iter_tags().map_err(GraftErr::from)
     }
 
     pub fn tag_exists(&self, name: &str) -> Result<bool> {
-        self.storage().read().tag_exists(name).or_into_ctx()
+        Ok(self.storage().read().tag_exists(name)?)
     }
 
     pub fn tag_get(&self, tag: &str) -> Result<Option<VolumeId>> {
-        self.storage().read().get_tag(tag).or_into_ctx()
+        Ok(self.storage().read().get_tag(tag)?)
     }
 
     /// retrieves the `VolumeId` for a tag, replacing it with the provided `VolumeId`
     pub fn tag_replace(&self, tag: &str, vid: VolumeId) -> Result<Option<VolumeId>> {
-        self.storage()
-            .read_write()
-            .tag_replace(tag, vid)
-            .or_into_ctx()
+        Ok(self.storage().read_write().tag_replace(tag, vid)?)
     }
 
     pub fn tag_delete(&self, tag: &str) -> Result<()> {
-        self.storage().tag_delete(tag).or_into_ctx()
+        Ok(self.storage().tag_delete(tag)?)
     }
 }
 
 // volume methods
 impl Runtime {
     pub fn volume_iter(&self) -> impl Iterator<Item = Result<Volume>> {
-        self.storage()
-            .read()
-            .iter_volumes()
-            .map_err(|err| err.map_ctx(GraftErr::from))
+        self.storage().read().iter_volumes().map_err(GraftErr::from)
     }
 
     pub fn volume_exists(&self, vid: &VolumeId) -> Result<bool> {
-        self.storage().read().volume_exists(vid).or_into_ctx()
+        Ok(self.storage().read().volume_exists(vid)?)
     }
 
     /// opens a volume. if any id is missing, it will be randomly
@@ -166,35 +155,35 @@ impl Runtime {
         local: Option<LogId>,
         remote: Option<LogId>,
     ) -> Result<Volume> {
-        self.storage()
+        Ok(self
+            .storage()
             .read_write()
-            .volume_open(vid, local, remote)
-            .or_into_ctx()
+            .volume_open(vid, local, remote)?)
     }
 
     /// creates a new volume by forking an existing snapshot
     pub fn volume_from_snapshot(&self, snapshot: &Snapshot) -> Result<Volume> {
-        self.storage().volume_from_snapshot(snapshot).or_into_ctx()
+        Ok(self.storage().volume_from_snapshot(snapshot)?)
     }
 
     /// retrieves an existing volume. returns `LogicalErr::VolumeNotFound` if missing
     pub fn volume_get(&self, vid: &VolumeId) -> Result<Volume> {
-        self.storage().read().volume(vid).or_into_ctx()
+        Ok(self.storage().read().volume(vid)?)
     }
 
     /// removes a volume but leaves the underlying logs in place
     pub fn volume_delete(&self, vid: &VolumeId) -> Result<()> {
-        self.storage().volume_delete(vid).or_into_ctx()
+        Ok(self.storage().volume_delete(vid)?)
     }
 
     /// fetches the latest changes to the remote and then pulls them into the volume
     pub fn volume_pull(&self, vid: VolumeId) -> Result<()> {
-        let volume = self.inner.storage.read().volume(&vid).or_into_ctx()?;
+        let volume = self.inner.storage.read().volume(&vid)?;
         self.fetch_log(volume.remote, None)?;
-        self.storage()
+        Ok(self
+            .storage()
             .read_write()
-            .sync_remote_to_local(volume.vid)
-            .or_into_ctx()
+            .sync_remote_to_local(volume.vid)?)
     }
 
     pub fn volume_push(&self, vid: VolumeId) -> Result<()> {
@@ -203,14 +192,14 @@ impl Runtime {
 
     pub fn volume_status(&self, vid: &VolumeId) -> Result<VolumeStatus> {
         let reader = self.storage().read();
-        let volume = reader.volume(vid).or_into_ctx()?;
-        let latest_local = reader.latest_lsn(&volume.local).or_into_ctx()?;
-        let latest_remote = reader.latest_lsn(&volume.remote).or_into_ctx()?;
+        let volume = reader.volume(vid)?;
+        let latest_local = reader.latest_lsn(&volume.local)?;
+        let latest_remote = reader.latest_lsn(&volume.remote)?;
         Ok(volume.status(latest_local, latest_remote))
     }
 
     pub fn volume_snapshot(&self, vid: &VolumeId) -> Result<Snapshot> {
-        self.storage().read().snapshot(vid).or_into_ctx()
+        Ok(self.storage().read().snapshot(vid)?)
     }
 
     pub fn volume_reader(&self, vid: VolumeId) -> Result<VolumeReader> {
@@ -240,8 +229,7 @@ impl Runtime {
             Ok(self
                 .storage()
                 .read()
-                .page_count(log, lsn)
-                .or_into_ctx()?
+                .page_count(log, lsn)?
                 .expect("BUG: missing head commit for snapshot"))
         } else {
             Ok(PageCount::ZERO)
@@ -249,23 +237,16 @@ impl Runtime {
     }
 
     pub fn snapshot_is_latest(&self, vid: &VolumeId, snapshot: &Snapshot) -> Result<bool> {
-        self.storage()
-            .read()
-            .is_latest_snapshot(vid, snapshot)
-            .or_into_ctx()
+        Ok(self.storage().read().is_latest_snapshot(vid, snapshot)?)
     }
 
     /// returns the checksum of the snapshot
     pub fn snapshot_checksum(&self, snapshot: &Snapshot) -> Result<Checksum> {
-        self.storage().read().checksum(snapshot).or_into_ctx()
+        Ok(self.storage().read().checksum(snapshot)?)
     }
 
     pub fn snapshot_missing_pages(&self, snapshot: &Snapshot) -> Result<PageSet> {
-        let missing_frames = self
-            .storage()
-            .read()
-            .find_missing_frames(snapshot)
-            .or_into_ctx()?;
+        let missing_frames = self.storage().read().find_missing_frames(snapshot)?;
         // merge missing_frames into a single PageSet
         Ok(missing_frames
             .into_iter()

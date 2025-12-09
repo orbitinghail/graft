@@ -4,7 +4,6 @@ use std::{
 };
 
 use bytes::{Buf, Bytes, BytesMut};
-use culprit::Culprit;
 use thiserror::Error;
 
 use crate::core::byte_unit::ByteUnit;
@@ -19,14 +18,10 @@ static STATIC_EMPTY_PAGE: [u8; PAGESIZE.as_usize()] = [0; PAGESIZE.as_usize()];
 pub struct PageSizeErr;
 
 impl PageSizeErr {
-    #[track_caller]
-    fn check(size: usize) -> Result<(), Culprit<Self>> {
+    #[inline]
+    fn check(size: usize) -> Result<(), Self> {
         if size != PAGESIZE.as_usize() {
-            let size = ByteUnit::new(size as u64);
-            Err(Culprit::new_with_note(
-                Self,
-                format!("invalid page size {size}"),
-            ))
+            Err(Self)
         } else {
             Ok(())
         }
@@ -46,7 +41,7 @@ impl Page {
         self.0.as_ref() == STATIC_EMPTY_PAGE
     }
 
-    pub fn from_buf<T: Buf>(mut buf: T) -> Result<Self, Culprit<PageSizeErr>> {
+    pub fn from_buf<T: Buf>(mut buf: T) -> Result<Self, PageSizeErr> {
         PageSizeErr::check(buf.remaining())?;
         Ok(Page(buf.copy_to_bytes(buf.remaining())))
     }
@@ -122,7 +117,7 @@ impl From<Page> for BytesMut {
 }
 
 impl TryFrom<BytesMut> for Page {
-    type Error = Culprit<PageSizeErr>;
+    type Error = PageSizeErr;
 
     #[inline]
     fn try_from(value: BytesMut) -> Result<Self, Self::Error> {
@@ -131,7 +126,7 @@ impl TryFrom<BytesMut> for Page {
 }
 
 impl TryFrom<Bytes> for Page {
-    type Error = Culprit<PageSizeErr>;
+    type Error = PageSizeErr;
 
     #[inline]
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
@@ -141,7 +136,7 @@ impl TryFrom<Bytes> for Page {
 }
 
 impl TryFrom<&[u8]> for Page {
-    type Error = Culprit<PageSizeErr>;
+    type Error = PageSizeErr;
 
     #[inline]
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {

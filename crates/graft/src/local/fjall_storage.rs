@@ -26,8 +26,6 @@ use crate::{
     volume::{PendingCommit, SyncPoint, Volume},
 };
 
-use culprit::{Result, ResultExt};
-
 mod fjall_repr;
 pub mod keys;
 mod typed_partition;
@@ -146,13 +144,11 @@ impl FjallStorage {
         pageidx: PageIdx,
         page: Page,
     ) -> Result<(), FjallStorageErr> {
-        self.pages
-            .insert(PageKey::new(sid, pageidx), page)
-            .or_into_ctx()
+        self.pages.insert(PageKey::new(sid, pageidx), page)
     }
 
     pub fn remove_page(&self, sid: SegmentId, pageidx: PageIdx) -> Result<(), FjallStorageErr> {
-        self.pages.remove(PageKey::new(sid, pageidx)).or_into_ctx()
+        self.pages.remove(PageKey::new(sid, pageidx))
     }
 
     pub fn remove_page_range(
@@ -464,9 +460,7 @@ impl<'a> ReadGuard<'a> {
         sid: SegmentId,
         pageidx: PageIdx,
     ) -> Result<Option<Page>, FjallStorageErr> {
-        self._pages()
-            .get_owned(PageKey::new(sid, pageidx))
-            .or_into_ctx()
+        self._pages().get_owned(PageKey::new(sid, pageidx))
     }
 
     /// Retrieve the `PageCount` of a Volume at a particular LSN.
@@ -549,7 +543,7 @@ impl<'a> WriteBatch<'a> {
     }
 
     pub fn commit(self) -> Result<(), FjallStorageErr> {
-        self.batch.commit().or_into_ctx()
+        Ok(self.batch.commit()?)
     }
 }
 
@@ -759,14 +753,14 @@ impl<'a> ReadWriteGuard<'a> {
         let volume = self.read.volume(&vid)?;
 
         // check to see if we have any changes to sync
-        let latest_remote = self.read.latest_lsn(&volume.remote).or_into_ctx()?;
+        let latest_remote = self.read.latest_lsn(&volume.remote)?;
         let Some(remote_changes) = volume.remote_changes(latest_remote) else {
             // nothing to sync
             return Ok(());
         };
 
         // check for divergence
-        let latest_local = self.read.latest_lsn(&volume.local).or_into_ctx()?;
+        let latest_local = self.read.latest_lsn(&volume.local)?;
         if volume.local_changes(latest_local).is_some() {
             // the remote and local logs have diverged
             let status = volume.status(latest_local, latest_remote);

@@ -11,7 +11,7 @@ pub fn register_static(
     vfs_name: &str,
     make_default: bool,
     config: GraftConfig,
-) -> culprit::Result<(), InitErr> {
+) -> Result<(), InitErr> {
     let vfs_name = CString::new(vfs_name).expect("VFS name must not contain nul (0) bytes");
     let runtime = setup_graft(config)?;
     let vfs = crate::vfs::GraftVfs::new(runtime);

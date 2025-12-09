@@ -29,7 +29,6 @@ circular-buffer = "1.2.0"
 clap = "4.5.49"
 config = { version = "0.15.18", features = ["toml"] }
 crossbeam = "0.8.4"
-culprit = "0.4.0"
 enum_dispatch = "0.3.13"
 event-listener = "5.4.1"
 file-lock = "2.1.11"
