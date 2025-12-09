@@ -28,7 +28,7 @@ COPY . .
 RUN cargo build ${BUILDFLAGS}
 RUN mv ${TARGET_DIR} /artifacts
 
-FROM gcr.io/distroless/cc-debian12:debug@sha256:ab25b6e4beb485344f804f388abc3c4da350131abfb80dccdbf856362f64350a AS runtime
+FROM debian:bullseye-slim AS runtime
 COPY ./tests/antithesis/libvoidstar.so /usr/lib/libvoidstar.so
 ENV LD_LIBRARY_PATH="/usr/lib/libvoidstar.so"
 

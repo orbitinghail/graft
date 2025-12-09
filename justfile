@@ -64,7 +64,7 @@ test-workload-image:
     --target test_client \
     -t test_client \
     -t {{TEST_CLIENT_ANTITHESIS_TAG}} \
-    -f Dockerfile.antithesis \
+    -f antithesis.Dockerfile \
     .
 
 antithesis-config-image:
