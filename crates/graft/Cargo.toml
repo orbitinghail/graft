@@ -15,14 +15,12 @@ workspace = true
 
 [dependencies]
 assert_matches = { workspace = true }
-async-stream = { workspace = true }
 bilrost = { workspace = true, features = ["bytestring", "smallvec"] }
 blake3 = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
 bytestring = { workspace = true }
 circular-buffer = { workspace = true }
-event-listener = { workspace = true }
 fjall = { workspace = true }
 foldhash = { workspace = true }
 futures = { workspace = true }
@@ -50,8 +48,9 @@ zerocopy = { workspace = true }
 zstd = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 graft-test = { path = "../graft-test" }
+
+assert_matches = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
 

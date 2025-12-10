@@ -2,56 +2,17 @@
 
 This file provides guidance when working with code in this repository.
 
-## Common Commands
+## Dev environment tips
 
-**Building and Testing:**
+- Use `just test` to run all tests
+- Use `cargo nextest run` to run Rust tests
+- Use `just run sqlite test` to run SQL tests (./tests/sql/\*.sql)
+- Use `cargo build` to build crates
+- Use `pnpm build` to build docs (in ./docs)
+- Use `cargo check|fmt|clippy` to lint all Rust code
+- Use `just run tool vid|log|sid` to generate a random VolumeId, LogId, or SegmentId for testing
 
-```bash
-# Run all tests
-just test
-
-# Run Rust tests only
-cargo nextest run
-cargo nextest run -p <crate>
-cargo nextest run <test_filter>
-
-# Run SQLite extension tests
-just run sqlite test
-just run sqlite test <filter>
-
-# Build individual components
-cargo build --package graft-sqlite
-
-# Build docs
-cd ./docs && pnpm build
-```
-
-**Development Tools:**
-
-```bash
-# Code quality
-cargo check
-cargo fmt
-cargo clippy
-```
-
-## Coding Guidelines
+## Coding & Collaborating Guidelines
 
 - Refer to CONTRIBUTING.md for coding style guidelines
-
-## Commit Guidelines
-
-- **Never commit without being explicitly asked to**
-- When committing on behalf of the user just sign off with: `Co-Authored-By: Claude <noreply@anthropic.com>`
-
-## Testing Utilities
-
-### Generating VolumeIds or SegmentIds
-
-Run `just run tool [vid|sid]` to randomly generate a new VolumeId or SegmentId if you need one in a test.
-
-You can parse the resulting id like so:
-
-```rust
-let vid: VolumeId = "GonvVp514wF3ifTRoo11vY".parse().unwrap()
-```
+- NEVER commit without being explicitly asked to

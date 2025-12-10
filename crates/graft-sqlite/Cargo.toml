@@ -26,9 +26,9 @@ platform-dirs = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sqlite-plugin = { workspace = true, default-features = false }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 tryiter = { workspace = true }
-tokio = { workspace = true }
 zerocopy = { workspace = true }
 
 [features]

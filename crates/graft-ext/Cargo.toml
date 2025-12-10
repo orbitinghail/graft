@@ -15,13 +15,13 @@ graft = { path = "../graft" }
 graft-sqlite = { path = "../graft-sqlite" }
 graft-tracing = { path = "../graft-tracing" }
 
+config = { workspace = true, features = ["toml"] }
+platform-dirs = { workspace = true }
+precept = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+sqlite-plugin = { workspace = true, default-features = false }
 tokio = { workspace = true }
 tracing = { workspace = true }
-platform-dirs = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-config = { workspace = true, features = ["toml"] }
-sqlite-plugin = { workspace = true, default-features = false }
-precept = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 
 [features]
