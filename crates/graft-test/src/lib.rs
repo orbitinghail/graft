@@ -36,7 +36,7 @@ pub fn setup_test() {
 
 /// require some condition to always be true on this codepath.
 /// equivalent to calling assert! while also triggering (and registering) an
-/// Antithesis always_or_unreachable assertion.
+/// Antithesis `always_or_unreachable` assertion.
 #[macro_export]
 macro_rules! require {
     ($condition:expr, $property:expr$(, $($details:tt)+)?) => {

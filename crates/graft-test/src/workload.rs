@@ -28,25 +28,24 @@ impl WorkloadErr {
             while let Some(next) = source.source() {
                 source = next;
                 if let Some(err) = source.downcast_ref::<HttpError>() {
-                    return match err.kind() {
+                    return matches!(
+                        err.kind(),
                         HttpErrorKind::Connect
-                        | HttpErrorKind::Request
-                        | HttpErrorKind::Timeout
-                        | HttpErrorKind::Interrupted => true,
-                        _ => false,
-                    };
+                            | HttpErrorKind::Request
+                            | HttpErrorKind::Timeout
+                            | HttpErrorKind::Interrupted
+                    );
                 }
             }
             false
         }
 
         match self {
-            WorkloadErr::GraftErr(GraftErr::Logical(err)) => match err {
+            WorkloadErr::GraftErr(GraftErr::Logical(
                 LogicalErr::VolumeConcurrentWrite(_)
                 | LogicalErr::VolumeNeedsRecovery(_)
-                | LogicalErr::VolumeDiverged(_) => true,
-                _ => false,
-            },
+                | LogicalErr::VolumeDiverged(_),
+            )) => true,
             WorkloadErr::GraftErr(GraftErr::Remote(RemoteErr::ObjectStore(err))) => {
                 should_retry_object_store(err)
             }
@@ -174,7 +173,7 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
         tx.commit()?;
     }
 
-    let status = runtime.volume_status(&vid)?;
+    let status = runtime.volume_status(vid)?;
     let changes = status.local_status.changes();
     precept::expect_always_or_unreachable!(
         changes.is_some(),

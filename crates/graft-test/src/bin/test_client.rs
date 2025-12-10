@@ -50,22 +50,22 @@ struct Args {
 #[derive(Debug, thiserror::Error)]
 enum TestErr {
     #[error(transparent)]
-    IoErr(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    GraftErr(#[from] GraftErr),
+    Graft(#[from] GraftErr),
 
     #[error(transparent)]
-    WorkloadErr(#[from] WorkloadErr),
+    Workload(#[from] WorkloadErr),
 
     #[error(transparent)]
-    RemoteErr(#[from] RemoteErr),
+    Remote(#[from] RemoteErr),
 
     #[error(transparent)]
-    InitErr(#[from] InitErr),
+    Init(#[from] InitErr),
 
     #[error(transparent)]
-    RusqliteErr(#[from] rusqlite::Error),
+    Rusqlite(#[from] rusqlite::Error),
 }
 
 fn get_or_init_data_dir(rng: &mut impl Rng, rootdir: &Path) -> (PathBuf, FileLock) {
@@ -101,6 +101,10 @@ fn get_or_init_data_dir(rng: &mut impl Rng, rootdir: &Path) -> (PathBuf, FileLoc
 }
 
 #[derive(Subcommand)]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "designed to support other workloads"
+)]
 enum Workload {
     BankSetup,
     BankTx,
