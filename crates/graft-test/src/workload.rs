@@ -74,6 +74,9 @@ const TOTAL_BALANCE: u64 = NUM_ACCOUNTS as u64 * INITIAL_BALANCE;
 pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     let Env { sqlite, runtime, vid, .. } = env;
 
+    // disable fault injection during setup
+    precept::disable_faults();
+
     tracing::info!("setting up bank workload with {} accounts", NUM_ACCOUNTS);
 
     // start a sql tx
