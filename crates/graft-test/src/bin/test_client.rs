@@ -132,6 +132,12 @@ fn main() -> Result<(), TestErr> {
     let mut rng = precept::random::rng();
     let (data_dir, _lock) = get_or_init_data_dir(&mut rng, &rootdir);
 
+    // 10% of the time disable all precept faults
+    if rng.random_ratio(1, 10) {
+        precept::disable_faults();
+        tracing::warn!("Precept Faults disabled");
+    }
+
     // create the Graft runtime
     let runtime = setup_graft(GraftConfig { remote, data_dir, autosync: None })?;
 
