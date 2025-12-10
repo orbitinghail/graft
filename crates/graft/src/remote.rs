@@ -191,7 +191,7 @@ impl Remote {
     }
 
     /// Fetches a single commit, returning None if the commit is not found.
-    #[tracing::instrument(level = "trace", skip(self, lsn), fields(lsn = %lsn))]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>> {
         let path = RemotePath::Commit(log, lsn).build();
         match self.store.get(&path).await {
@@ -203,7 +203,7 @@ impl Remote {
 
     /// Atomically write a commit to the remote, returning
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
-    #[tracing::instrument(level = "debug", skip(self, commit), fields(lsn = %commit.lsn()))]
+    #[tracing::instrument(level = "debug", skip(self, commit), fields(log = %commit.log, lsn = %commit.lsn))]
     pub async fn put_commit(&self, commit: &Commit) -> Result<()> {
         let path = RemotePath::Commit(commit.log(), commit.lsn()).build();
         let payload = PutPayload::from_bytes(commit.encode_to_bytes());

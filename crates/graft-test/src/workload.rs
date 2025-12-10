@@ -1,6 +1,6 @@
 use graft::{
     GraftErr, LogicalErr,
-    core::{LogId, VolumeId},
+    core::{LogId, PageCount, VolumeId},
     rt::runtime::Runtime,
 };
 use rand::Rng;
@@ -55,6 +55,15 @@ pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     // run runtime.volume_push
     runtime.volume_push(vid.clone())?;
 
+    Ok(())
+}
+
+/// pull the remote log if the local volume is empty
+pub fn pull_if_empty<R: Rng>(env: &Env<R>) -> Result<(), WorkloadErr> {
+    let snapshot = env.runtime.volume_snapshot(&env.vid)?;
+    if snapshot.is_empty() || env.runtime.snapshot_pages(&snapshot)? == PageCount::ZERO {
+        env.runtime.volume_pull(env.vid.clone())?;
+    }
     Ok(())
 }
 

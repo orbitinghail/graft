@@ -12,7 +12,7 @@ use graft::{
     setup::{GraftConfig, InitErr, setup_graft},
 };
 use graft_sqlite::vfs::GraftVfs;
-use graft_test::workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate};
+use graft_test::workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate, pull_if_empty};
 use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rand::{
@@ -149,7 +149,12 @@ fn main() -> Result<(), TestErr> {
     // open a sqlite connection
     let sqlite = Connection::open("main")?;
 
+    // build the test environment
     let mut env = Env { rng, runtime, vid, log: args.log, sqlite };
+
+    // pull the volume if it's empty
+    pull_if_empty(&env)?;
+
     match args.workload {
         Workload::BankSetup => bank_setup(&mut env)?,
         Workload::BankTx => bank_tx(&mut env)?,
