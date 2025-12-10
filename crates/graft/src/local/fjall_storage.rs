@@ -1,43 +1,43 @@
 use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
-use crate::core::{
-    LogId, PageCount, PageIdx, SegmentId, VolumeId,
-    checkpoints::CachedCheckpoints,
-    checksum::{Checksum, ChecksumBuilder},
-    commit::{Commit, SegmentIdx, SegmentRangeRef},
-    commit_hash::CommitHash,
-    logref::LogRef,
-    lsn::{LSN, LSNRangeExt, LSNSet},
-    page::Page,
-    pageset::PageSet,
+use crate::{
+    core::{
+        LogId, PageCount, PageIdx, SegmentId, VolumeId,
+        checkpoints::CachedCheckpoints,
+        checksum::{Checksum, ChecksumBuilder},
+        commit::{Commit, SegmentIdx, SegmentRangeRef},
+        commit_hash::CommitHash,
+        logref::LogRef,
+        lsn::{LSN, LSNRangeExt, LSNSet},
+        page::Page,
+        pageset::PageSet,
+    },
+    local::fjall_storage::fjall_typed::{
+        ReadableExt, TypedIter, TypedKeyspace, TypedValIter, WriteBatchExt,
+    },
 };
 use bytestring::ByteString;
-use fjall::{Batch, Instant, KvSeparationOptions, PartitionCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions, OwnedWriteBatch};
 use parking_lot::{Mutex, MutexGuard};
 use tryiter::TryIteratorExt;
 
 use crate::{
     LogicalErr,
-    local::fjall_storage::{
-        keys::PageKey,
-        typed_partition::{TypedPartition, TypedPartitionSnapshot, fjall_batch_ext::FjallBatchExt},
-    },
+    local::fjall_storage::keys::PageKey,
     snapshot::Snapshot,
     volume::{PendingCommit, SyncPoint, Volume},
 };
 
 mod fjall_repr;
+mod fjall_typed;
 pub mod keys;
-mod typed_partition;
+// mod typed_keyspace;
 mod values;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FjallStorageErr {
     #[error("Fjall error: {0}")]
     FjallErr(#[from] fjall::Error),
-
-    #[error("Fjall LSM Tree error: {0}")]
-    LsmTreeErr(#[from] lsm_tree::Error),
 
     #[error("Failed to decode key: {0}")]
     DecodeErr(#[from] fjall_repr::DecodeErr),
@@ -52,29 +52,47 @@ pub enum FjallStorageErr {
     LogicalErr(#[from] LogicalErr),
 }
 
-pub struct FjallStorage {
-    keyspace: fjall::Keyspace,
-
+struct Keyspaces {
     /// This partition allows volumes to be identified by a tag.
     /// The volume a tag points at can be changed.
-    tags: TypedPartition<ByteString, VolumeId>,
+    tags: TypedKeyspace<ByteString, VolumeId>,
 
     /// This partition stores state regarding each `Volume`
     /// keyed by its `VolumeId`
     /// {`VolumeId`} -> `Volume`
-    volumes: TypedPartition<VolumeId, Volume>,
+    volumes: TypedKeyspace<VolumeId, Volume>,
 
     /// This partition stores `CachedCheckpoints` for each Log
     /// {`LogId`} -> `CachedCheckpoints`
-    checkpoints: TypedPartition<LogId, CachedCheckpoints>,
+    checkpoints: TypedKeyspace<LogId, CachedCheckpoints>,
 
     /// This partition stores commits
     /// {`LogId`} / {lsn} -> Commit
-    log: TypedPartition<LogRef, Commit>,
+    log: TypedKeyspace<LogRef, Commit>,
 
     /// This partition stores Pages
     /// {sid} / {pageidx} -> Page
-    pages: TypedPartition<PageKey, Page>,
+    pages: TypedKeyspace<PageKey, Page>,
+}
+
+impl Keyspaces {
+    fn open(db: &fjall::Database) -> Result<Self, FjallStorageErr> {
+        Ok(Self {
+            tags: TypedKeyspace::open(db, "tags", || Default::default())?,
+            volumes: TypedKeyspace::open(db, "volumes", || Default::default())?,
+            checkpoints: TypedKeyspace::open(db, "checkpoints", || Default::default())?,
+            log: TypedKeyspace::open(db, "log", || Default::default())?,
+            pages: TypedKeyspace::open(db, "pages", || {
+                KeyspaceCreateOptions::default()
+                    .with_kv_separation(Some(KvSeparationOptions::default()))
+            })?,
+        })
+    }
+}
+
+pub struct FjallStorage {
+    db: fjall::Database,
+    ks: Keyspaces,
 
     /// Must be held while performing read+write transactions.
     /// Read-only and write-only transactions don't need to hold the lock as
@@ -92,35 +110,20 @@ impl Debug for FjallStorage {
 
 impl FjallStorage {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, FjallStorageErr> {
-        Self::open_config(fjall::Config::new(path))
+        Self::open_from_builder(Database::builder(path))
     }
 
     pub fn open_temporary() -> Result<Self, FjallStorageErr> {
         let path = tempfile::tempdir()?.keep();
-        Self::open_config(fjall::Config::new(path).temporary(true))
+        Self::open_from_builder(Database::builder(path).temporary(true))
     }
 
-    fn open_config(config: fjall::Config) -> Result<Self, FjallStorageErr> {
-        let keyspace = config.open()?;
-        let tags = TypedPartition::open(&keyspace, "tags", Default::default())?;
-        let volumes = TypedPartition::open(&keyspace, "volumes", Default::default())?;
-        let checkpoints = TypedPartition::open(&keyspace, "checkpoints", Default::default())?;
-        let log = TypedPartition::open(&keyspace, "log", Default::default())?;
-        let pages = TypedPartition::open(
-            &keyspace,
-            "pages",
-            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
-        )?;
-
-        Ok(Self {
-            keyspace,
-            tags,
-            volumes,
-            checkpoints,
-            log,
-            pages,
-            lock: Default::default(),
-        })
+    fn open_from_builder(
+        builder: fjall::DatabaseBuilder<Database>,
+    ) -> Result<Self, FjallStorageErr> {
+        let db = builder.open()?;
+        let ks = Keyspaces::open(&db)?;
+        Ok(Self { db, ks, lock: Default::default() })
     }
 
     pub(crate) fn read(&self) -> ReadGuard<'_> {
@@ -144,11 +147,11 @@ impl FjallStorage {
         pageidx: PageIdx,
         page: Page,
     ) -> Result<(), FjallStorageErr> {
-        self.pages.insert(PageKey::new(sid, pageidx), page)
+        self.ks.pages.insert(PageKey::new(sid, pageidx), page)
     }
 
     pub fn remove_page(&self, sid: SegmentId, pageidx: PageIdx) -> Result<(), FjallStorageErr> {
-        self.pages.remove(PageKey::new(sid, pageidx))
+        self.ks.pages.remove(PageKey::new(sid, pageidx))
     }
 
     pub fn remove_page_range(
@@ -159,21 +162,21 @@ impl FjallStorage {
         // PageKeys are stored in descending order
         let keyrange =
             PageKey::new(sid.clone(), *pages.end())..=PageKey::new(sid.clone(), *pages.start());
-        let mut batch = self.keyspace.batch();
-        let mut iter = self.pages.snapshot().range(keyrange);
+        let mut batch = self.db.batch();
+        let mut iter = self.db.snapshot().range(&self.ks.pages, keyrange);
         while let Some((key, _)) = iter.try_next()? {
-            batch.remove_typed(&self.pages, key);
+            batch.remove_typed(&self.ks.pages, key);
         }
         batch.commit()?;
         Ok(())
     }
 
     pub fn tag_delete(&self, tag: &str) -> Result<(), FjallStorageErr> {
-        self.tags.remove(tag.into())
+        self.ks.tags.remove(tag.into())
     }
 
     pub fn volume_delete(&self, vid: &VolumeId) -> Result<(), FjallStorageErr> {
-        self.volumes.remove(vid.clone())
+        self.ks.volumes.remove(vid.clone())
     }
 
     pub fn write_checkpoints(
@@ -181,7 +184,7 @@ impl FjallStorage {
         log: LogId,
         checkpoints: CachedCheckpoints,
     ) -> Result<(), FjallStorageErr> {
-        self.checkpoints.insert(log, checkpoints)
+        self.ks.checkpoints.insert(log, checkpoints)
     }
 
     pub fn volume_from_snapshot(&self, snapshot: &Snapshot) -> Result<Volume, FjallStorageErr> {
@@ -204,79 +207,52 @@ impl FjallStorage {
 
 pub struct ReadGuard<'a> {
     storage: &'a FjallStorage,
-    seqno: Instant,
-}
-
-impl Drop for ReadGuard<'_> {
-    fn drop(&mut self) {
-        // IMPORTANT: Decrement snapshot count
-        self.storage.keyspace.snapshot_tracker.close(self.seqno);
-    }
+    snapshot: fjall::Snapshot,
 }
 
 impl<'a> ReadGuard<'a> {
-    fn open(storage: &'a FjallStorage) -> ReadGuard<'a> {
-        let seqno = storage.keyspace.instant();
-        // IMPORTANT: Increment snapshot count
-        storage.keyspace.snapshot_tracker.open(seqno);
-        Self { storage, seqno }
+    fn open(storage: &'a FjallStorage) -> Self {
+        let snapshot = storage.db.snapshot();
+        Self { storage, snapshot }
     }
 
-    #[inline]
-    fn _tags(&self) -> TypedPartitionSnapshot<ByteString, VolumeId> {
-        self.storage.tags.snapshot_at(self.seqno)
+    fn ks(&self) -> &'a Keyspaces {
+        &self.storage.ks
     }
 
-    #[inline]
-    fn _volumes(&self) -> TypedPartitionSnapshot<VolumeId, Volume> {
-        self.storage.volumes.snapshot_at(self.seqno)
-    }
-
-    #[inline]
-    fn _checkpoints(&self) -> TypedPartitionSnapshot<LogId, CachedCheckpoints> {
-        self.storage.checkpoints.snapshot_at(self.seqno)
-    }
-
-    #[inline]
-    fn _log(&self) -> TypedPartitionSnapshot<LogRef, Commit> {
-        self.storage.log.snapshot_at(self.seqno)
-    }
-
-    #[inline]
-    fn _pages(&self) -> TypedPartitionSnapshot<PageKey, Page> {
-        self.storage.pages.snapshot_at(self.seqno)
-    }
-
-    pub fn iter_tags(
-        &self,
-    ) -> impl Iterator<Item = Result<(ByteString, VolumeId), FjallStorageErr>> + use<> {
-        self._tags().range(..)
+    pub fn iter_tags(&self) -> TypedIter<ByteString, VolumeId> {
+        self.snapshot.iter(&self.ks().tags)
     }
 
     pub fn tag_exists(&self, tag: &str) -> Result<bool, FjallStorageErr> {
-        self._tags().contains(tag)
+        self.snapshot.contains_key(&self.ks().tags, tag)
     }
 
     pub fn get_tag(&self, tag: &str) -> Result<Option<VolumeId>, FjallStorageErr> {
-        self._tags().get(tag)
+        self.snapshot.get(&self.ks().tags, tag)
     }
 
     /// Lookup the latest LSN for a Log
     pub fn latest_lsn(&self, log: &LogId) -> Result<Option<LSN>, FjallStorageErr> {
-        Ok(self._log().first(log)?.map(|(logref, _)| logref.lsn))
+        Ok(self
+            .snapshot
+            .prefix(&self.ks().log, log)
+            .keys()
+            .try_next()?
+            .map(|logref| logref.lsn))
     }
 
-    pub fn iter_volumes(&self) -> impl Iterator<Item = Result<Volume, FjallStorageErr>> + use<> {
-        self._volumes().values()
+    pub fn iter_volumes(&self) -> TypedValIter<VolumeId, Volume> {
+        self.snapshot.iter(&self.ks().volumes).values()
     }
 
     pub fn volume_exists(&self, vid: &VolumeId) -> Result<bool, FjallStorageErr> {
-        self._volumes().contains(vid)
+        self.snapshot.contains_key(&self.ks().volumes, vid)
     }
 
     pub fn volume(&self, vid: &VolumeId) -> Result<Volume, FjallStorageErr> {
-        self._volumes()
-            .get(vid)?
+        self.snapshot
+            .get(&self.ks().volumes, vid)?
             .ok_or_else(|| LogicalErr::VolumeNotFound(vid.clone()).into())
     }
 
@@ -341,7 +317,8 @@ impl<'a> ReadGuard<'a> {
 
     /// Retrieve a specific commit
     pub fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>, FjallStorageErr> {
-        self._log().get_owned(LogRef::new(log.clone(), lsn))
+        self.snapshot
+            .get_owned(&self.ks().log, LogRef::new(log.clone(), lsn))
     }
 
     /// Iterates through all of the commits reachable by the provided `Snapshot`
@@ -350,8 +327,6 @@ impl<'a> ReadGuard<'a> {
         &self,
         snapshot: &Snapshot,
     ) -> impl Iterator<Item = Result<Commit, FjallStorageErr>> {
-        let log = self._log();
-
         snapshot.iter().flat_map(move |entry| {
             // the snapshot range is in the form `low..=high` but the log orders
             // LSNs in reverse. thus we need to flip the range when passing it
@@ -359,7 +334,7 @@ impl<'a> ReadGuard<'a> {
             let low = entry.start_ref();
             let high = entry.end_ref();
             let range = high..=low;
-            log.range(range).map_ok(|(_, commit)| Ok(commit))
+            self.snapshot.range(&self.ks().log, range).values()
         })
     }
 
@@ -415,8 +390,9 @@ impl<'a> ReadGuard<'a> {
         let low = LogRef::new(log.clone(), *lsns.start());
         let high = LogRef::new(log.clone(), *lsns.end());
         let range = high..=low;
-        self._log()
-            .range_keys(range)
+        self.snapshot
+            .range(&self.ks().log, range)
+            .keys()
             .map_ok(|key| Ok(key.lsn()))
             .collect()
     }
@@ -452,7 +428,8 @@ impl<'a> ReadGuard<'a> {
     }
 
     pub fn has_page(&self, sid: SegmentId, pageidx: PageIdx) -> Result<bool, FjallStorageErr> {
-        self._pages().contains(&PageKey::new(sid, pageidx))
+        self.snapshot
+            .contains_key(&self.ks().pages, &PageKey::new(sid, pageidx))
     }
 
     pub fn read_page(
@@ -460,7 +437,8 @@ impl<'a> ReadGuard<'a> {
         sid: SegmentId,
         pageidx: PageIdx,
     ) -> Result<Option<Page>, FjallStorageErr> {
-        self._pages().get_owned(PageKey::new(sid, pageidx))
+        self.snapshot
+            .get_owned(&self.ks().pages, PageKey::new(sid, pageidx))
     }
 
     /// Retrieve the `PageCount` of a Volume at a particular LSN.
@@ -469,17 +447,16 @@ impl<'a> ReadGuard<'a> {
     }
 
     pub fn checkpoints(&self, log: &LogId) -> Result<Option<CachedCheckpoints>, FjallStorageErr> {
-        self._checkpoints().get(log)
+        self.snapshot.get(&self.ks().checkpoints, log)
     }
 
     pub fn checksum(&self, snapshot: &Snapshot) -> Result<Checksum, FjallStorageErr> {
-        let pages = self._pages();
         let mut builder = ChecksumBuilder::new();
         let mut iter = self.iter_visible_pages(snapshot);
         while let Some((idx, pageset)) = iter.try_next()? {
             for pageidx in pageset.iter() {
                 let key = PageKey::new(idx.sid.clone(), pageidx);
-                if let Some(page) = pages.get(&key)? {
+                if let Some(page) = self.snapshot.get(&self.ks().pages, &key)? {
                     builder.write(&page);
                 }
             }
@@ -492,7 +469,6 @@ impl<'a> ReadGuard<'a> {
         snapshot: &Snapshot,
     ) -> Result<Vec<SegmentRangeRef>, FjallStorageErr> {
         let mut missing_frames = vec![];
-        let pages = self._pages();
         let mut iter = self.iter_visible_pages(snapshot);
         while let Some((idx, pageset)) = iter.try_next()? {
             // find candidate frames (intersects with the visible pageset)
@@ -503,7 +479,10 @@ impl<'a> ReadGuard<'a> {
             // the first page, we are missing all the pages (in the frame)
             for frame in frames {
                 if let Some(first_page) = frame.pageset.first()
-                    && !pages.contains(&PageKey::new(frame.sid.clone(), first_page))?
+                    && !self.snapshot.contains_key(
+                        &self.ks().pages,
+                        &PageKey::new(frame.sid.clone(), first_page),
+                    )?
                 {
                     missing_frames.push(frame);
                 }
@@ -514,32 +493,34 @@ impl<'a> ReadGuard<'a> {
 }
 
 pub struct WriteBatch<'a> {
-    storage: &'a FjallStorage,
-    batch: Batch,
+    ks: &'a Keyspaces,
+    batch: OwnedWriteBatch,
 }
 
 impl<'a> WriteBatch<'a> {
     fn open(storage: &'a FjallStorage) -> Self {
-        Self { storage, batch: storage.keyspace.batch() }
+        let ks = &storage.ks;
+        let batch = storage.db.batch();
+        Self { ks, batch }
     }
 
     pub fn write_tag(&mut self, tag: &str, vid: VolumeId) {
-        self.batch.insert_typed(&self.storage.tags, tag.into(), vid);
+        self.batch.insert_typed(&self.ks.tags, tag.into(), vid);
     }
 
     pub fn write_commit(&mut self, commit: Commit) {
         self.batch
-            .insert_typed(&self.storage.log, commit.logref(), commit);
+            .insert_typed(&self.ks.log, commit.logref(), commit);
     }
 
     pub fn write_volume(&mut self, volume: Volume) {
         self.batch
-            .insert_typed(&self.storage.volumes, volume.vid.clone(), volume);
+            .insert_typed(&self.ks.volumes, volume.vid.clone(), volume);
     }
 
     pub fn write_page(&mut self, sid: SegmentId, pageidx: PageIdx, page: Page) {
         self.batch
-            .insert_typed(&self.storage.pages, PageKey::new(sid, pageidx), page);
+            .insert_typed(&self.ks.pages, PageKey::new(sid, pageidx), page);
     }
 
     pub fn commit(self) -> Result<(), FjallStorageErr> {
@@ -554,15 +535,15 @@ pub struct ReadWriteGuard<'a> {
 
 impl<'a> ReadWriteGuard<'a> {
     fn open(storage: &'a FjallStorage) -> Self {
-        // TODO: consider adding a lock timeout for deadlock detection
+        // TODO: consider adding some kind of deadlock detection
         let _permit = storage.lock.lock();
         // IMPORTANT: take the read snapshot after taking the lock
         let read = storage.read();
         Self { _permit, read }
     }
 
-    fn storage(&self) -> &'a FjallStorage {
-        self.read.storage
+    fn ks(&self) -> &'a Keyspaces {
+        &self.read.ks()
     }
 
     pub fn tag_replace(
@@ -571,7 +552,7 @@ impl<'a> ReadWriteGuard<'a> {
         vid: VolumeId,
     ) -> Result<Option<VolumeId>, FjallStorageErr> {
         let out = self.read.get_tag(tag)?;
-        self.storage().tags.insert(tag.into(), vid)?;
+        self.ks().tags.insert(tag.into(), vid)?;
         Ok(out)
     }
 
@@ -588,7 +569,7 @@ impl<'a> ReadWriteGuard<'a> {
         let vid = vid.unwrap_or_else(VolumeId::random);
 
         // lookup the volume if specified
-        if let Some(volume) = self.read._volumes().get(&vid)? {
+        if let Some(volume) = self.read.snapshot.get(&self.ks().volumes, &vid)? {
             if let Some(remote) = remote
                 && volume.remote != remote
             {
@@ -618,7 +599,7 @@ impl<'a> ReadWriteGuard<'a> {
 
         // create the new volume
         let volume = Volume::new(vid.clone(), local, remote, sync, None);
-        self.storage().volumes.insert(vid, volume.clone())?;
+        self.ks().volumes.insert(vid, volume.clone())?;
 
         tracing::debug!(
             vid = ?volume.vid,
@@ -660,10 +641,13 @@ impl<'a> ReadWriteGuard<'a> {
             .with_segment_idx(Some(segment));
 
         // write the commit to storage
-        self.read.storage.log.insert(commit.logref(), commit)?;
+        self.ks().log.insert(commit.logref(), commit)?;
 
         // open a new ReadGuard to read an updated snapshot
-        ReadGuard::open(self.storage()).snapshot(&volume.vid)
+        // since we are holding a read_write lock, we know that no other thread
+        // is concurrently committing to the volume, so we know this snapshot
+        // will reflect the commit we just executed
+        self.read.storage.read().snapshot(&volume.vid)
     }
 
     /// Verify we are ready to make a remote commit and update the volume
@@ -699,7 +683,7 @@ impl<'a> ReadWriteGuard<'a> {
 
         // save the new pending commit
         let volume = volume.with_pending_commit(Some(pending_commit));
-        self.storage().volumes.insert(volume.vid.clone(), volume)?;
+        self.ks().volumes.insert(volume.vid.clone(), volume)?;
 
         Ok(())
     }
@@ -723,7 +707,11 @@ impl<'a> ReadWriteGuard<'a> {
 
         // if we already know about this remote commit (which can happen during
         // recovery), verify that the commit we have is the same as the remote
-        if let Some(existing_remote) = self.read._log().get(&remote_commit.logref())? {
+        if let Some(existing_remote) = self
+            .read
+            .snapshot
+            .get_owned(&self.ks().log, remote_commit.logref())?
+        {
             assert_eq!(
                 existing_remote.commit_hash, remote_commit.commit_hash,
                 "BUG: remote commit mismatch"
@@ -737,7 +725,7 @@ impl<'a> ReadWriteGuard<'a> {
             ..volume
         };
 
-        let mut batch = self.storage().batch();
+        let mut batch = self.read.storage.batch();
         batch.write_commit(remote_commit);
         batch.write_volume(volume);
         batch.commit()
@@ -747,7 +735,7 @@ impl<'a> ReadWriteGuard<'a> {
     /// after receiving a rejection from the remote.
     pub fn drop_pending_commit(self, vid: &VolumeId) -> Result<(), FjallStorageErr> {
         let volume = self.read.volume(vid)?;
-        self.storage()
+        self.ks()
             .volumes
             .insert(volume.vid.clone(), volume.with_pending_commit(None))
     }
@@ -802,7 +790,7 @@ impl<'a> ReadWriteGuard<'a> {
         };
 
         // update the sync point
-        self.storage()
+        self.ks()
             .volumes
             .insert(volume.vid.clone(), volume.with_sync(Some(new_sync)))
     }

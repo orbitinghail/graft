@@ -7,7 +7,7 @@ authors = ["orbitinghail <hello@orbitinghail.dev>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/orbitinghail/graft"
 homepage = "https://github.com/orbitinghail/graft"
-rust-version = "1.88"
+rust-version = "1.91"
 
 [profile.release]
 opt-level = 3
@@ -26,14 +26,13 @@ clap = "4.5.49"
 config = { version = "0.15.18", features = ["toml"] }
 enum_dispatch = "0.3.13"
 file-lock = "2.1.11"
-fjall = { version = "2.11.2", features = ["bytes", "lz4"] }
+fjall = { version = "3.0.0-rc.6", features = ["bytes_1", "lz4"] }
 foldhash = "0.2.0"
 futures = "0.3.31"
 glob = "0.3.3"
 hashbrown = "0.16.0"
 indoc = "2.0.7"
 itertools = "0.14.0"
-lsm-tree = { version = "2.10.4", features = ["bytes"] }
 object_store = { version = "0.12.4", features = ["aws"] }
 parking_lot = "0.12.5"
 platform-dirs = "0.3.0"
