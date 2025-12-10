@@ -3,7 +3,24 @@
     "allow": [
       "Bash(cargo:*)",
       "Bash(jq:*)",
-      "Bash(just:*)"
+      "Bash(just:*)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(file:*)",
+      "Bash(stat:*)",
+      "Bash(which:*)",
+      "Bash(type:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"
