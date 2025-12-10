@@ -30,7 +30,7 @@ use crate::{
 
 mod fjall_repr;
 mod fjall_typed;
-pub mod keys;
+mod keys;
 mod values;
 
 #[derive(Debug, thiserror::Error)]

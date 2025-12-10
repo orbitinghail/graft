@@ -105,16 +105,6 @@ impl PageKey {
     pub fn new(sid: SegmentId, pageidx: PageIdx) -> Self {
         Self { sid, pageidx }
     }
-
-    #[inline]
-    pub fn sid(&self) -> &SegmentId {
-        &self.sid
-    }
-
-    #[inline]
-    pub fn pageidx(&self) -> &PageIdx {
-        &self.pageidx
-    }
 }
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
