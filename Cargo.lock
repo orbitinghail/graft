@@ -1044,9 +1044,7 @@ dependencies = [
  "precept",
  "serde",
  "sqlite-plugin",
- "tokio",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -1054,17 +1052,13 @@ name = "graft-sqlite"
 version = "0.2.1"
 dependencies = [
  "bytes",
- "bytestring",
  "enum_dispatch",
  "graft",
  "indoc",
  "itertools 0.14.0",
  "parking_lot",
- "platform-dirs",
- "serde",
  "sqlite-plugin",
  "thiserror 2.0.17",
- "tokio",
  "tracing",
  "tryiter",
  "zerocopy",
@@ -1074,11 +1068,7 @@ dependencies = [
 name = "graft-test"
 version = "0.1.0"
 dependencies = [
- "blake3",
- "bs58",
  "clap",
- "config",
- "enum_dispatch",
  "file-lock",
  "graft",
  "graft-sqlite",
@@ -1088,17 +1078,12 @@ dependencies = [
  "precept",
  "rand",
  "rusqlite",
- "serde",
  "sqlite-plugin",
- "static_assertions",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
- "toml",
  "tracing",
  "tracing-subscriber",
- "url",
- "zerocopy",
 ]
 
 [[package]]
@@ -1127,9 +1112,6 @@ dependencies = [
 name = "graft-tracing"
 version = "0.0.0"
 dependencies = [
- "bs58",
- "parking_lot",
- "rand",
  "tracing",
  "tracing-subscriber",
 ]
@@ -3014,12 +2996,10 @@ version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0dc8b1fb61449e27716ec0e1bdf0f6b8f3e8f6b05391e8497b8b6d7804ea6d8"
 dependencies = [
- "indexmap",
  "serde_core",
  "serde_spanned",
  "toml_datetime",
  "toml_parser",
- "toml_writer",
  "winnow",
 ]
 
@@ -3040,12 +3020,6 @@ checksum = "c0cbe268d35bdb4bb5a56a2de88d0ad0eb70af5384a99d648cd4b3d04039800e"
 dependencies = [
  "winnow",
 ]
-
-[[package]]
-name = "toml_writer"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df8b2b54733674ad286d16267dcfc7a71ed5c776e4ac7aa3c3e2561f7c637bf2"
 
 [[package]]
 name = "tower"

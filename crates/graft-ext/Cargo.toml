@@ -20,9 +20,7 @@ platform-dirs = { workspace = true }
 precept = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sqlite-plugin = { workspace = true, default-features = false }
-tokio = { workspace = true }
 tracing = { workspace = true }
-url = { workspace = true, features = ["serde"] }
 
 [features]
 default = ["dynamic"]

@@ -17,16 +17,12 @@ workspace = true
 graft = { path = "../graft", version = "0.2.1" }
 
 bytes = { workspace = true }
-bytestring = { workspace = true }
 enum_dispatch = { workspace = true }
 indoc = { workspace = true }
 itertools = { workspace = true }
 parking_lot = { workspace = true }
-platform-dirs = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
 sqlite-plugin = { workspace = true, default-features = false }
 thiserror = { workspace = true }
-tokio = { workspace = true }
 tracing = { workspace = true }
 tryiter = { workspace = true }
 zerocopy = { workspace = true }

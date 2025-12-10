@@ -17,24 +17,15 @@ graft-sqlite = { path = "../graft-sqlite" }
 graft-test-macro = { path = "../graft-test-macro" }
 graft-tracing = { path = "../graft-tracing" }
 
-blake3 = { workspace = true }
-bs58 = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-config = { workspace = true, features = ["toml"] }
-enum_dispatch = { workspace = true }
 file-lock = { workspace = true }
 object_store = { workspace = true }
 precept = { workspace = true, features = ["antithesis"] }
 rand = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
-serde = { workspace = true, features = ["derive"] }
 sqlite-plugin = { workspace = true, features = ["static"] }
-static_assertions = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
-toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-url = { workspace = true }
-zerocopy = { workspace = true }

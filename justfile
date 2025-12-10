@@ -55,6 +55,7 @@ test:
 
 build-all:
   cargo build
+  cargo build --no-default-features --features register-static --package graft-sqlite
   cargo build --no-default-features --features static --package graft-ext
   cargo build --no-default-features --features dynamic --package graft-ext
 

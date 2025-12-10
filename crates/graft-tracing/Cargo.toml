@@ -11,8 +11,5 @@ rust-version = { workspace = true }
 workspace = true
 
 [dependencies]
-bs58 = { workspace = true }
-parking_lot = { workspace = true }
-rand = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter", "parking_lot"] }
