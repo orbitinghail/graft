@@ -1,18 +1,15 @@
+pub mod workload;
+
 use std::{
     ffi::CString,
-    fmt::{Debug, Display},
     ops::{Deref, DerefMut},
     sync::{Arc, Once},
     thread::JoinHandle,
 };
 
-use graft::core::{
-    LogId, PageCount, PageIdx,
-    page::{PAGESIZE, Page},
-};
+use graft::core::LogId;
 use graft::{
     local::fjall_storage::FjallStorage,
-    pageidx,
     remote::{Remote, RemoteConfig},
     rt::runtime::Runtime,
 };
@@ -21,15 +18,11 @@ use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing_with_write
 use precept::dispatch::test::TestDispatch;
 use rusqlite::{Connection, OpenFlags, ToSql};
 use sqlite_plugin::vfs::{RegisterOpts, register_static};
-use thiserror::Error;
 use tokio::sync::Notify;
 use tracing_subscriber::fmt::TestWriter;
 
 pub use graft_test_macro::datatest;
 pub use graft_test_macro::test;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
-
-// pub mod workload;
 
 // this function is automatically run before each test by the macro graft_test_macro::test
 pub fn setup_test() {
@@ -39,6 +32,17 @@ pub fn setup_test() {
         precept::init(&TestDispatch).expect("failed to setup precept");
         precept::disable_faults();
     });
+}
+
+/// require some condition to always be true on this codepath.
+/// equivalent to calling assert! while also triggering (and registering) an
+/// Antithesis `always_or_unreachable` assertion.
+#[macro_export]
+macro_rules! require {
+    ($condition:expr, $property:expr$(, $($details:tt)+)?) => {
+        precept::expect_always_or_unreachable!($condition, $property $(, $($details)+)?);
+        assert!($condition, $property);
+    }
 }
 
 pub struct GraftTestRuntime {
@@ -161,6 +165,12 @@ impl DerefMut for GraftSqliteConn {
     }
 }
 
+impl From<GraftSqliteConn> for rusqlite::Connection {
+    fn from(conn: GraftSqliteConn) -> rusqlite::Connection {
+        conn.conn
+    }
+}
+
 impl GraftSqliteConn {
     pub fn graft_pragma(&self, suffix: &str) {
         let pragma = format!("graft_{suffix}");
@@ -180,153 +190,5 @@ impl GraftSqliteConn {
             Ok(())
         })
         .unwrap();
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Ticker {
-    remaining: usize,
-}
-
-impl Ticker {
-    pub fn new(remaining: usize) -> Self {
-        Self { remaining }
-    }
-
-    pub fn tick(&mut self) -> bool {
-        self.remaining = self.remaining.saturating_sub(1);
-        self.remaining != 0
-    }
-
-    pub fn finish(&mut self) {
-        self.remaining = 0
-    }
-
-    pub fn is_done(&self) -> bool {
-        self.remaining == 0
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum PageTrackerErr {
-    #[error("failed to serialize page tracker")]
-    Serialize,
-
-    #[error("failed to deserialize page tracker")]
-    Deserialize,
-}
-
-#[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, Unaligned, KnownLayout)]
-#[repr(transparent)]
-pub struct PageTracker {
-    // 128 pages, indexed by page index
-    pages: [PageHash; 128],
-}
-
-// ensure that the size of PageTracker is equal to the size of a page
-static_assertions::const_assert!(std::mem::size_of::<PageTracker>() == PAGESIZE.as_usize());
-
-impl Default for PageTracker {
-    fn default() -> Self {
-        Self { pages: [PageHash::default(); 128] }
-    }
-}
-
-impl PageTracker {
-    // the page tracker is stored after the data pages
-    pub const PAGEIDX: PageIdx = pageidx!(129);
-    pub const MAX_PAGES: PageCount = PageCount::new(128);
-
-    pub fn insert(&mut self, pageidx: PageIdx, hash: PageHash) -> Option<PageHash> {
-        let index = (pageidx.to_u32() - 1) as usize;
-        if index >= self.pages.len() {
-            panic!("page index out of bounds: {index}");
-        }
-
-        let out = std::mem::replace(&mut self.pages[index], hash);
-        (!out.is_empty()).then_some(out)
-    }
-
-    pub fn get_hash(&self, pageidx: PageIdx) -> Option<&PageHash> {
-        let index = (pageidx.to_u32() - 1) as usize;
-        if index >= self.pages.len() {
-            panic!("page index out of bounds: {index}");
-        }
-        if self.pages[index].is_empty() {
-            None
-        } else {
-            Some(&self.pages[index])
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pages.iter().all(|hash| hash.is_empty())
-    }
-}
-
-#[derive(
-    Default, PartialEq, Eq, Clone, Copy, IntoBytes, FromBytes, Immutable, Unaligned, KnownLayout,
-)]
-#[repr(transparent)]
-pub struct PageHash([u8; 32]);
-
-impl PageHash {
-    pub fn new(page: &Page) -> Self {
-        if page.is_empty() {
-            // bs58 encodes to `11111111111111111111111111111111`
-            Self([0; 32])
-        } else {
-            Self(blake3::hash(page.as_ref()).into())
-        }
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.0.iter().all(|&b| b == 0)
-    }
-}
-
-impl Debug for PageHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", bs58::encode(&self.0).into_string())
-    }
-}
-
-impl Display for PageHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", bs58::encode(&self.0).into_string())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use graft::core::{
-        PageIdx,
-        page::{PAGESIZE, Page},
-    };
-    use zerocopy::{FromBytes, IntoBytes};
-
-    use crate::{PageHash, PageTracker};
-
-    #[test]
-    fn exercise_page_tracker() {
-        let pages = (0..PageTracker::MAX_PAGES.to_u32())
-            .map(|_| rand::random::<Page>())
-            .collect::<Vec<_>>();
-
-        let mut tracker = PageTracker::default();
-
-        for (i, page) in pages.into_iter().enumerate() {
-            let hash = PageHash::new(&page);
-            let pageidx = PageIdx::must_new(i as u32 + 1);
-            assert!(tracker.insert(pageidx, hash).is_none());
-            assert_eq!(tracker.get_hash(pageidx), Some(&hash));
-        }
-
-        // round trip tracker
-        let bytes = tracker.as_bytes();
-        assert_eq!(bytes.len(), PAGESIZE.as_usize());
-        let tracker2 = PageTracker::read_from_bytes(tracker.as_bytes()).unwrap();
-        assert_eq!(tracker, tracker2);
     }
 }

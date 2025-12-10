@@ -1,3 +1,0 @@
-type = "SimpleReader"
-vids = [ "GonuUEmt4XLJuHpcg7X35N", "GonuUEmtx9iM4EdCWtg2eK" ]
-recv_timeout_ms = 1000

@@ -5,10 +5,6 @@
 !/Cargo.toml
 !/Cargo.lock
 !/crates
-!/LICENSE-APACHE
-!/LICENSE-MIT
-!/README.md
-
 !/tests/antithesis/libvoidstar.so
+!/tests/antithesis/docker-entrypoint.sh
 !/tests/antithesis/workloads
-!/tests/antithesis/fjall

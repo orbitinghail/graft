@@ -3,16 +3,10 @@ set unstable
 GIT_SHA := `git describe --abbrev=40 --always --dirty --match=nevermatch 2>/dev/null`
 GIT_SUMMARY := `git show --no-patch 2>/dev/null`
 
-# set this argument via: just instrumented=1 ...
-instrumented := ""
-BUILD_ARGS := instrumented && "--build-arg INSTRUMENTED=1" || ""
-
-ANTITHESIS_REGISTRY := "us-central1-docker.pkg.dev/molten-verve-216720/orbitinghail-repository"
 DOCKER_PLATFORM := "linux/amd64"
-
+ANTITHESIS_REGISTRY := "us-central1-docker.pkg.dev/molten-verve-216720/orbitinghail-repository"
 CONFIG_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "config:" + GIT_SHA
-TEST_WORKLOAD_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "test_workload:" + GIT_SHA
-MINIO_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "minio:" + GIT_SHA
+TEST_CLIENT_ANTITHESIS_TAG := ANTITHESIS_REGISTRY / "test_client:" + GIT_SHA
 
 default:
   @just --list
@@ -67,33 +61,27 @@ build-all:
 test-workload-image:
   docker build \
     --platform {{DOCKER_PLATFORM}} \
-    --target test_workload \
-    -t test_workload \
-    -t {{TEST_WORKLOAD_ANTITHESIS_TAG}} \
-    {{BUILD_ARGS}} .
+    --target test_client \
+    -t test_client \
+    -t {{TEST_CLIENT_ANTITHESIS_TAG}} \
+    -f antithesis.Dockerfile \
+    .
 
 antithesis-config-image:
   docker build \
     --platform {{DOCKER_PLATFORM}} \
     -t antithesis-config \
     -t {{CONFIG_ANTITHESIS_TAG}} \
-    {{BUILD_ARGS}} --build-arg TAG={{GIT_SHA}} \
+    --build-arg TAG={{GIT_SHA}} \
     tests/antithesis
 
-minio-image:
-  docker build \
-    --platform {{DOCKER_PLATFORM}} \
-    -t minio \
-    -t {{MINIO_ANTITHESIS_TAG}} \
-    {{BUILD_ARGS}} tests/antithesis/minio
+antithesis-build: antithesis-config-image test-workload-image
 
-antithesis-prep: antithesis-config-image
-  just instrumented=1 build-images test-workload-image minio-image
+antithesis-push: antithesis-build
   docker push {{CONFIG_ANTITHESIS_TAG}}
-  docker push {{TEST_WORKLOAD_ANTITHESIS_TAG}}
-  docker push {{MINIO_ANTITHESIS_TAG}}
+  docker push {{TEST_CLIENT_ANTITHESIS_TAG}}
 
-antithesis-run duration='120': antithesis-prep
+antithesis-run duration='120': antithesis-push
   antithesis run \
     --name='graft test workload' \
     --description='{{GIT_SUMMARY}}' \
@@ -101,7 +89,6 @@ antithesis-run duration='120': antithesis-prep
     --username="${ANTITHESIS_USERNAME}" \
     --password="${ANTITHESIS_PASSWORD}" \
     --config='{{CONFIG_ANTITHESIS_TAG}}' \
-    --image='{{TEST_WORKLOAD_ANTITHESIS_TAG}}' \
-    --image='{{MINIO_ANTITHESIS_TAG}}' \
+    --image='{{TEST_CLIENT_ANTITHESIS_TAG}}' \
     --duration={{duration}} \
     --email='antithesis-results@orbitinghail.dev'

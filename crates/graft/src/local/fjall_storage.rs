@@ -721,11 +721,14 @@ impl<'a> ReadWriteGuard<'a> {
             Some(&pending_commit.commit_hash)
         );
 
-        // fail if we somehow already know about this commit locally
-        assert!(
-            !self.read._log().contains(&remote_commit.logref())?,
-            "BUG: remote commit already exists"
-        );
+        // if we already know about this remote commit (which can happen during
+        // recovery), verify that the commit we have is the same as the remote
+        if let Some(existing_remote) = self.read._log().get(&remote_commit.logref())? {
+            assert_eq!(
+                existing_remote.commit_hash, remote_commit.commit_hash,
+                "BUG: remote commit mismatch"
+            );
+        }
 
         // update the volume with the new sync points and no pending_commit
         let volume = Volume {

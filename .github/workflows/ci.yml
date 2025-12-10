@@ -37,7 +37,7 @@ jobs:
       - name: system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: clang libclang-dev llvm mold libncurses-dev build-essential libreadline-dev
+          packages: clang libclang-dev llvm libncurses-dev build-essential libreadline-dev
           version: 1.0
 
       - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3

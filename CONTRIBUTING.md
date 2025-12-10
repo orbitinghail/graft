@@ -53,7 +53,6 @@ To build and run Graft, ensure you have the following dependencies installed:
 | just          | [just]                 |
 | cargo nextest | [nextest]              |
 | clang + llvm  | System package manager |
-| mold          | System package manager |
 
 [rustup]: https://rustup.rs/
 [just]: https://github.com/casey/just

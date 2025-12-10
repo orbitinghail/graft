@@ -17,25 +17,27 @@ graft-tracing = { path = "../graft-tracing" }
 graft-test-macro = { path = "../graft-test-macro" }
 graft-sqlite = { path = "../graft-sqlite" }
 
-sqlite-plugin = { workspace = true, features = ["static"] }
-precept = { workspace = true, features = ["antithesis"] }
-enum_dispatch = { workspace = true }
-crossbeam = { workspace = true }
-file-lock = { workspace = true }
-url = { workspace = true }
-ureq = { workspace = true }
-tokio = { workspace = true, features = ["full", "test-util"] }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-clap = { workspace = true, features = ["derive"] }
-thiserror = { workspace = true }
-rand = { workspace = true }
-config = { workspace = true, features = ["toml"] }
-toml = { workspace = true }
 blake3 = { workspace = true }
 bs58 = { workspace = true }
-zerocopy = { workspace = true }
-static_assertions = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+config = { workspace = true, features = ["toml"] }
+crossbeam = { workspace = true }
+enum_dispatch = { workspace = true }
+file-lock = { workspace = true }
+object_store = { workspace = true }
+precept = { workspace = true, features = ["antithesis"] }
+rand = { workspace = true }
+reqwest = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
+serde = { workspace = true, features = ["derive"] }
+sqlite-plugin = { workspace = true, features = ["static"] }
+static_assertions = { workspace = true }
 tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full", "test-util"] }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+ureq = { workspace = true }
+url = { workspace = true }
+zerocopy = { workspace = true }

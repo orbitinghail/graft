@@ -1,54 +1,24 @@
 services:
-  test_workload:
-    container_name: test_workload
-    hostname: test_workload
-    image: test_workload:latest
-    stop_signal: SIGKILL
-    networks:
-      basic-net:
-        ipv4_address: 10.20.20.20
+  client:
+    container_name: client
+    hostname: client
+    image: test_client:latest
     environment:
       - RUST_BACKTRACE=1
-
-  metastore:
-    container_name: metastore
-    hostname: metastore
-    image: metastore:latest
-    stop_signal: SIGINT
-    ports:
-      - "3001:3001"
-    networks:
-      basic-net:
-        ipv4_address: 10.20.20.10
-    environment:
+      - AWS_ENDPOINT_URL=http://minio:9000
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=minio-secret
       - AWS_REGION=us-east-1
-      - AWS_ENDPOINT=http://minio:9000
-      - RUST_BACKTRACE=1
-
-  pagestore:
-    container_name: pagestore
-    hostname: pagestore
-    image: pagestore:latest
-    stop_signal: SIGINT
-    ports:
-      - "3000:3000"
-    networks:
-      basic-net:
-        ipv4_address: 10.20.20.11
-    environment:
-      - AWS_ACCESS_KEY_ID=minio
-      - AWS_SECRET_ACCESS_KEY=minio-secret
-      - AWS_REGION=us-east-1
-      - AWS_ENDPOINT=http://minio:9000
-      - PAGESTORE_METASTORE=http://metastore:3001
-      - RUST_BACKTRACE=1
+    command: ["sleep", "infinity"]
 
   minio:
     container_name: minio
     hostname: minio
-    image: minio:latest
+    image: quay.io/minio/minio
+    command: server /data --console-address ":9001"
+    post_start:
+      - user: "root"
+        command: "mkdir -p /data/primary"
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -57,17 +27,7 @@ services:
     environment:
       - MINIO_ROOT_USER=minio
       - MINIO_ROOT_PASSWORD=minio-secret
-      - MINIO_DEFAULT_BUCKETS=graft-primary
-    networks:
-      basic-net:
-        ipv4_address: 10.20.20.12
-
-networks:
-  basic-net:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 10.20.20.0/24
+      - MINIO_DEFAULT_BUCKETS=primary
 
 volumes:
   minio_data:
