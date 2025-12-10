@@ -12,10 +12,6 @@ rust-version = { workspace = true }
 graft = { path = "../graft" }
 
 clap = { workspace = true, features = ["derive"] }
-hex = { workspace = true }
-rand = { workspace = true }
-rusty_paseto = { workspace = true, features = ["batteries_included"] }
-thiserror = { workspace = true }
 
 [lints]
 workspace = true
