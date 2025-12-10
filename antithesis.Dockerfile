@@ -35,5 +35,7 @@ ENV LD_LIBRARY_PATH="/usr/lib/libvoidstar.so"
 FROM runtime AS test_client
 COPY --from=builder /artifacts/test_client /test_client
 COPY ./tests/antithesis/workloads /opt/antithesis/test
-RUN ["sh", "-c", "mkdir /symbols && ln -s /test_client /symbols/test_client"]
-ENTRYPOINT ["sleep", "infinity"]
+RUN mkdir /symbols && ln -s /test_client /symbols/test_client
+
+COPY ./tests/antithesis/docker-entrypoint.sh /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]
