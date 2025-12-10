@@ -1,10 +1,10 @@
-FROM rust:1.91-bookworm@sha256:8fed34f697cc63b2c9bb92233b4c078667786834d94dd51880cd0184285eefcf AS base
+FROM rust:1.91-bullseye AS base
 
 # increment to force rebuild of all layers
 RUN echo "rebuild-deps: 1"
 
 # install deps
-RUN apt-get update && apt-get install -y clang libclang-dev llvm mold && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y clang libclang-dev llvm && rm -rf /var/lib/apt/lists/*
 RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 RUN cargo binstall -y --version 0.1.73 cargo-chef
 
