@@ -31,7 +31,6 @@ use crate::{
 mod fjall_repr;
 mod fjall_typed;
 pub mod keys;
-// mod typed_keyspace;
 mod values;
 
 #[derive(Debug, thiserror::Error)]
