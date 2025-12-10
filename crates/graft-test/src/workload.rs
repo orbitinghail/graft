@@ -1,5 +1,5 @@
 use graft::{
-    GraftErr, LogicalErr,
+    GraftErr,
     core::{LogId, PageCount, VolumeId},
     rt::runtime::Runtime,
 };
@@ -67,12 +67,12 @@ pub fn pull_if_empty<R: Rng>(env: &Env<R>) -> Result<(), WorkloadErr> {
     Ok(())
 }
 
-fn run_bank_transactions(
-    rng: &mut impl Rng,
-    sqlite: &mut Connection,
-    runtime: &Runtime,
-    vid: &VolumeId,
-) -> Result<(), WorkloadErr> {
+pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
+    let rng = &mut env.rng;
+    let sqlite = &mut env.sqlite;
+    let runtime = &env.runtime;
+    let vid = &env.vid;
+
     // randomly choose a number of transactions to make
     let num_transactions = rng.random_range(1..=100);
 
@@ -125,29 +125,6 @@ fn run_bank_transactions(
     runtime.volume_push(vid.clone())?;
 
     Ok(())
-}
-
-pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
-    loop {
-        match run_bank_transactions(&mut env.rng, &mut env.sqlite, &env.runtime, &env.vid) {
-            Ok(()) => return Ok(()),
-            Err(WorkloadErr::GraftErr(GraftErr::Logical(LogicalErr::VolumeDiverged(_)))) => {
-                tracing::warn!("volume diverged, performing recovery and retrying");
-
-                // reopen the remote and update the tag
-                let volume = env.runtime.volume_open(None, None, Some(env.log.clone()))?;
-                env.runtime.tag_replace("main", volume.vid.clone())?;
-                env.vid = volume.vid;
-
-                // make sure we are up to date with the remote
-                env.runtime.volume_pull(env.vid.clone())?;
-
-                // reopen sqlite connection with new volume
-                env.sqlite = Connection::open("main")?;
-            }
-            err => return err,
-        }
-    }
 }
 
 pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {

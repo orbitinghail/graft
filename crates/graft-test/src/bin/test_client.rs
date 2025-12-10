@@ -6,7 +6,7 @@ use std::{
 use clap::{Parser, Subcommand, ValueEnum};
 use file_lock::{FileLock, FileOptions};
 use graft::{
-    GraftErr,
+    GraftErr, LogicalErr,
     core::LogId,
     remote::{RemoteConfig, RemoteErr},
     setup::{GraftConfig, InitErr, setup_graft},
@@ -155,11 +155,31 @@ fn main() -> Result<(), TestErr> {
     // pull the volume if it's empty
     pull_if_empty(&env)?;
 
-    match args.workload {
-        Workload::BankSetup => bank_setup(&mut env)?,
-        Workload::BankTx => bank_tx(&mut env)?,
-        Workload::BankValidate => bank_validate(&mut env)?,
-    }
+    // run the workload until it completes without running into a recovery error
+    loop {
+        let result = match args.workload {
+            Workload::BankSetup => bank_setup(&mut env),
+            Workload::BankTx => bank_tx(&mut env),
+            Workload::BankValidate => bank_validate(&mut env),
+        };
 
-    Ok(())
+        match result {
+            Ok(()) => return Ok(()),
+            Err(WorkloadErr::GraftErr(GraftErr::Logical(LogicalErr::VolumeDiverged(_)))) => {
+                tracing::warn!("volume diverged, performing recovery and retrying");
+
+                // reopen the remote and update the tag
+                let volume = env.runtime.volume_open(None, None, Some(env.log.clone()))?;
+                env.runtime.tag_replace("main", volume.vid.clone())?;
+                env.vid = volume.vid;
+
+                // make sure we are up to date with the remote
+                env.runtime.volume_pull(env.vid.clone())?;
+
+                // reopen sqlite connection with new volume
+                env.sqlite = Connection::open("main")?;
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
 }
