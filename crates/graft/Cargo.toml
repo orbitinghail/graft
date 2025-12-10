@@ -29,7 +29,7 @@ futures = { workspace = true }
 hashbrown = { workspace = true }
 itertools = { workspace = true }
 lsm-tree = { workspace = true }
-object_store = { workspace = true, features = ["aws"] }
+object_store = { workspace = true }
 parking_lot = { workspace = true }
 precept = { workspace = true, features = ["antithesis"] }
 rand = { workspace = true }

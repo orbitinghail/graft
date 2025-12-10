@@ -1,10 +1,16 @@
+use std::error::Error;
+
 use graft::{
-    GraftErr,
+    GraftErr, LogicalErr,
     core::{LogId, PageCount, VolumeId},
+    remote::RemoteErr,
     rt::runtime::Runtime,
 };
+use object_store::client::{HttpError, HttpErrorKind};
 use rand::Rng;
 use rusqlite::Connection;
+
+use crate::require;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorkloadErr {
@@ -13,6 +19,44 @@ pub enum WorkloadErr {
 
     #[error(transparent)]
     RusqliteErr(#[from] rusqlite::Error),
+}
+
+impl WorkloadErr {
+    pub fn should_retry(&self) -> bool {
+        fn should_retry_object_store(err: &object_store::Error) -> bool {
+            let mut source: &dyn Error = err;
+            while let Some(next) = source.source() {
+                source = next;
+                if let Some(err) = source.downcast_ref::<HttpError>() {
+                    return match err.kind() {
+                        HttpErrorKind::Connect
+                        | HttpErrorKind::Request
+                        | HttpErrorKind::Timeout
+                        | HttpErrorKind::Interrupted => true,
+                        _ => false,
+                    };
+                }
+            }
+            false
+        }
+
+        match self {
+            WorkloadErr::GraftErr(GraftErr::Logical(err)) => match err {
+                LogicalErr::VolumeConcurrentWrite(_)
+                | LogicalErr::VolumeNeedsRecovery(_)
+                | LogicalErr::VolumeDiverged(_) => true,
+                _ => false,
+            },
+            WorkloadErr::GraftErr(GraftErr::Remote(RemoteErr::ObjectStore(err))) => {
+                should_retry_object_store(err)
+            }
+            WorkloadErr::RusqliteErr(rusqlite::Error::SqliteFailure(err, _)) => matches!(
+                err.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::SystemIoFailure
+            ),
+            _ => false,
+        }
+    }
 }
 
 pub struct Env<R> {
@@ -62,9 +106,12 @@ pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
 pub fn pull_if_empty<R: Rng>(env: &Env<R>) -> Result<(), WorkloadErr> {
     let snapshot = env.runtime.volume_snapshot(&env.vid)?;
     if snapshot.is_empty() || env.runtime.snapshot_pages(&snapshot)? == PageCount::ZERO {
-        env.runtime.volume_pull(env.vid.clone())?;
+        precept::expect_reachable!("pull_if_empty triggers");
+        Ok(env.runtime.volume_pull(env.vid.clone())?)
+    } else {
+        precept::expect_reachable!("pull_if_empty doesn't trigger");
+        Ok(())
     }
-    Ok(())
 }
 
 pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
@@ -74,11 +121,12 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     let vid = &env.vid;
 
     // randomly choose a number of transactions to make
-    let num_transactions = rng.random_range(1..=100);
+    let total_txns = rng.random_range(1..=100);
+    let mut valid_txns = 0;
 
-    tracing::info!("performing {} bank transactions", num_transactions);
+    tracing::info!("performing {} bank transactions", total_txns);
 
-    for _ in 0..num_transactions {
+    while valid_txns < total_txns {
         // randomly pick two account ids (they are between 0 and NUM_ACCOUNTS)
         let id_a = rng.random_range(0..NUM_ACCOUNTS) as i64;
         let id_b = rng.random_range(0..NUM_ACCOUNTS) as i64;
@@ -107,6 +155,8 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
         };
 
         if transfer_amount > 0 {
+            valid_txns += 1;
+
             tx.execute(
                 "UPDATE accounts SET balance = balance - ? WHERE id = ?",
                 [transfer_amount, from_id],
@@ -120,6 +170,13 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
         // commit the tx
         tx.commit()?;
     }
+
+    let status = runtime.volume_status(&vid)?;
+    let changes = status.local_status.changes();
+    precept::expect_always_or_unreachable!(
+        changes.is_some(),
+        "bank tx always pushes some valid txns"
+    );
 
     // attempt to push
     runtime.volume_push(vid.clone())?;
@@ -138,10 +195,22 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
         .sqlite
         .query_row("SELECT SUM(balance) FROM accounts", [], |row| row.get(0))?;
 
-    assert_eq!(
-        total as u64, TOTAL_BALANCE,
-        "total balance mismatch: expected {}, got {}",
-        TOTAL_BALANCE, total
+    require!(
+        total as u64 == TOTAL_BALANCE,
+        "validate: bank is balanced",
+        { "expected": TOTAL_BALANCE, "actual":  total }
+    );
+
+    // run SQLite integrity check
+    let mut results: Vec<String> = vec![];
+    env.sqlite.pragma_query(None, "integrity_check", |r| {
+        results.push(r.get(0)?);
+        Ok(())
+    })?;
+    require!(
+        results == ["ok"],
+        "validate: sqlite database is not corrupt",
+        { "vid": env.vid, "results": results }
     );
 
     Ok(())

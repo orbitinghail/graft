@@ -12,7 +12,10 @@ use graft::{
     setup::{GraftConfig, InitErr, setup_graft},
 };
 use graft_sqlite::vfs::GraftVfs;
-use graft_test::workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate, pull_if_empty};
+use graft_test::{
+    require,
+    workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate, pull_if_empty},
+};
 use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rand::{
@@ -155,7 +158,8 @@ fn main() -> Result<(), TestErr> {
     // pull the volume if it's empty
     pull_if_empty(&env)?;
 
-    // run the workload until it completes without running into a recovery error
+    // run the workload until it completes without running into a retryable or
+    // recoverable error
     loop {
         let result = match args.workload {
             Workload::BankSetup => bank_setup(&mut env),
@@ -168,6 +172,8 @@ fn main() -> Result<(), TestErr> {
             Err(WorkloadErr::GraftErr(GraftErr::Logical(LogicalErr::VolumeDiverged(_)))) => {
                 tracing::warn!("volume diverged, performing recovery and retrying");
 
+                precept::expect_reachable!("volume diverged");
+
                 // reopen the remote and update the tag
                 let volume = env.runtime.volume_open(None, None, Some(env.log.clone()))?;
                 env.runtime.tag_replace("main", volume.vid.clone())?;
@@ -176,9 +182,17 @@ fn main() -> Result<(), TestErr> {
                 // make sure we are up to date with the remote
                 env.runtime.volume_pull(env.vid.clone())?;
 
+                // verify no divergence in status
+                let status = env.runtime.volume_status(&env.vid)?;
+                require!(
+                    !status.has_diverged(),
+                    "volume is not diverged post recovery"
+                );
+
                 // reopen sqlite connection with new volume
                 env.sqlite = Connection::open("main")?;
             }
+            Err(err) if err.should_retry() => (),
             Err(err) => return Err(err.into()),
         }
     }
