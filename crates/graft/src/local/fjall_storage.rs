@@ -77,10 +77,10 @@ struct Keyspaces {
 impl Keyspaces {
     fn open(db: &fjall::Database) -> Result<Self, FjallStorageErr> {
         Ok(Self {
-            tags: TypedKeyspace::open(db, "tags", || Default::default())?,
-            volumes: TypedKeyspace::open(db, "volumes", || Default::default())?,
-            checkpoints: TypedKeyspace::open(db, "checkpoints", || Default::default())?,
-            log: TypedKeyspace::open(db, "log", || Default::default())?,
+            tags: TypedKeyspace::open(db, "tags", Default::default)?,
+            volumes: TypedKeyspace::open(db, "volumes", Default::default)?,
+            checkpoints: TypedKeyspace::open(db, "checkpoints", Default::default)?,
+            log: TypedKeyspace::open(db, "log", Default::default)?,
             pages: TypedKeyspace::open(db, "pages", || {
                 KeyspaceCreateOptions::default()
                     .with_kv_separation(Some(KvSeparationOptions::default()))
@@ -542,7 +542,7 @@ impl<'a> ReadWriteGuard<'a> {
     }
 
     fn ks(&self) -> &'a Keyspaces {
-        &self.read.ks()
+        self.read.ks()
     }
 
     pub fn tag_replace(

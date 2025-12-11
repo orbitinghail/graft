@@ -124,7 +124,7 @@ where
     }
 
     /// Returns an iterator over keys which start with the provided prefix
-    fn prefix<'a, P>(&self, ks: &TypedKeyspace<K, V>, prefix: &'a P) -> TypedIter<K, V>
+    fn prefix<P>(&self, ks: &TypedKeyspace<K, V>, prefix: &P) -> TypedIter<K, V>
     where
         K: FjallKeyPrefix<Prefix = P>,
         P: AsRef<[u8]>,
