@@ -38,8 +38,8 @@ pub enum TracingConsumer {
 
 /// Initializes tracing with stdout as the output.
 #[must_use]
-pub fn setup_tracing(consumer: TracingConsumer) -> impl SubscriberExt {
-    setup_tracing_with_writer(consumer, std::io::stdout)
+pub fn setup_tracing(consumer: TracingConsumer, prefix: Option<String>) -> impl SubscriberExt {
+    setup_tracing_with_writer(consumer, std::io::stdout, prefix)
 }
 
 /// Initializes tracing with a custom writer for output.
@@ -51,7 +51,11 @@ pub fn setup_tracing(consumer: TracingConsumer) -> impl SubscriberExt {
 /// # Type Parameters
 /// * `W` - Writer type that implements the [`tracing_subscriber::fmt::MakeWriter`] trait
 #[must_use]
-pub fn setup_tracing_with_writer<W>(consumer: TracingConsumer, writer: W) -> impl SubscriberExt
+pub fn setup_tracing_with_writer<W>(
+    consumer: TracingConsumer,
+    writer: W,
+    prefix: Option<String>,
+) -> impl SubscriberExt
 where
     W: for<'writer> MakeWriter<'writer> + 'static + Send + Sync,
 {
@@ -62,10 +66,13 @@ where
     let color = !antithesis && !std::env::var("NO_COLOR").is_ok_and(|s| !s.is_empty());
     let no_time = std::env::var("NO_TIME").is_ok_and(|s| !s.is_empty());
 
-    // allow a log prefix to be injected from the environment
-    let prefix = std::env::var("GRAFT_LOG_PREFIX")
-        .ok()
-        .and_then(|s| (!s.trim().is_empty()).then_some(s.trim().to_string()));
+    // allow a log prefix to be injected from the environment if it's not
+    // provided directly
+    let prefix = prefix.or_else(|| {
+        std::env::var("GRAFT_LOG_PREFIX")
+            .ok()
+            .and_then(|s| (!s.trim().is_empty()).then_some(s.trim().to_string()))
+    });
 
     let default_level = match consumer {
         TracingConsumer::Test => LevelFilter::INFO,

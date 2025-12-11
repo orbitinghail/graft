@@ -62,7 +62,7 @@ fn setup_log_file(path: &Path) {
         .open(path)
         .expect("failed to open log file");
 
-    setup_tracing_with_writer(TracingConsumer::Tool, Mutex::new(file)).init();
+    setup_tracing_with_writer(TracingConsumer::Tool, Mutex::new(file), None).init();
 
     tracing::info!("Log file opened");
 }
@@ -152,7 +152,7 @@ fn setup_logger(logger: SqliteLogger) {
     let writer = Writer(Arc::new(Mutex::new(logger)));
     let make_writer = move || writer.clone();
 
-    setup_tracing_with_writer(TracingConsumer::Tool, make_writer).init();
+    setup_tracing_with_writer(TracingConsumer::Tool, make_writer, None).init();
 }
 
 #[cfg(feature = "dynamic")]

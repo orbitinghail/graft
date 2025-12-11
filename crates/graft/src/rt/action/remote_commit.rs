@@ -31,7 +31,7 @@ impl Action for RemoteCommit {
     async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<(), GraftErr> {
         // first, check if we need to recover from a pending commit
         // we do this *before* plan since this may modify storage
-        attempt_recovery(storage, &self.vid)?;
+        attempt_recovery(storage, remote, &self.vid).await?;
 
         let Some(plan) = plan_commit(storage, &self.vid)? else {
             // nothing to commit
@@ -99,14 +99,7 @@ impl Action for RemoteCommit {
                 // The commit already exists on the remote. This could be because:
                 // 1. Someone (including us) pushed the same commit (idempotency)
                 // 2. Someone (including us) pushed a DIFFERENT commit (divergence)
-                // To resolve this, refetch the remote and attempt recovery.
-                FetchLog {
-                    log: commit.log,
-                    max_lsn: Some(commit.lsn),
-                }
-                .run(storage, remote)
-                .await?;
-                attempt_recovery(storage, &self.vid)
+                attempt_recovery(storage, remote, &self.vid).await
             }
             Err(err) => {
                 // if any other error occurs, we leave the pending_commit in place and fail the job.
@@ -266,7 +259,11 @@ fn build_segment(
 
 /// Attempts to recover from a remote commit conflict by checking the remote
 /// for the commit we tried to push.
-fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> Result<(), GraftErr> {
+async fn attempt_recovery(
+    storage: &FjallStorage,
+    remote: &Remote,
+    vid: &VolumeId,
+) -> Result<(), GraftErr> {
     let reader = storage.read();
     let volume = reader.volume(vid)?;
 
@@ -278,43 +275,19 @@ fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> Result<(), GraftE
     );
 
     if let Some(pending) = volume.pending_commit {
-        tracing::debug!(?pending, "got pending commit");
-        match storage.read().get_commit(&volume.remote, pending.commit)? {
-            Some(commit) if commit.commit_hash() == Some(&pending.commit_hash) => {
-                #[cfg(feature = "precept")]
-                precept::expect_reachable!("RemoteCommit: recovery success", { "vid": vid });
+        tracing::debug!(?pending, "attemping to recover pending commit");
 
-                // It's the same commit. Recovery success!
-                storage
-                    .read_write()
-                    .remote_commit_success(&volume.vid, commit)?;
-                Ok(())
-            }
-            Some(commit) => {
-                // Case 2: Divergence detected.
-                #[cfg(feature = "precept")]
-                precept::expect_reachable!("RemoteCommit: divergence detected during recovery", { "vid": vid });
-
-                storage.read_write().drop_pending_commit(&volume.vid)?;
-                tracing::warn!(
-                    "remote commit rejected for volume {}, commit {}/{} already exists with different hash: {:?}",
-                    volume.vid,
-                    volume.remote,
-                    pending.commit,
-                    commit.commit_hash
-                );
-                Err(LogicalErr::VolumeDiverged(volume.vid).into())
-            }
-            None => {
-                // No commit found. The pending commit failed to push.
-                // Drop the pending commit so we can try again.
-                #[cfg(feature = "precept")]
-                precept::expect_reachable!("RemoteCommit: recovered from failed push", { "vid": vid });
-
-                storage.read_write().drop_pending_commit(&volume.vid)?;
-                Ok(())
-            }
+        // If we have a pending commit, we need to fetch the remote log to see
+        // if our pending commit already landed.
+        FetchLog {
+            log: volume.remote.clone(),
+            max_lsn: Some(pending.commit),
         }
+        .run(storage, remote)
+        .await?;
+
+        storage.read_write().recover_pending_commit(&vid)?;
+        Ok(())
     } else {
         // recovery not needed
         Ok(())

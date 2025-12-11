@@ -546,7 +546,7 @@ impl<'a> ReadWriteGuard<'a> {
     }
 
     pub fn tag_replace(
-        &self,
+        self,
         tag: &str,
         vid: VolumeId,
     ) -> Result<Option<VolumeId>, FjallStorageErr> {
@@ -690,7 +690,7 @@ impl<'a> ReadWriteGuard<'a> {
     /// Finish the remote commit process by writing out an updated volume
     /// and recording the remote commit locally
     pub fn remote_commit_success(
-        self,
+        &self,
         vid: &VolumeId,
         remote_commit: Commit,
     ) -> Result<(), FjallStorageErr> {
@@ -732,11 +732,63 @@ impl<'a> ReadWriteGuard<'a> {
 
     /// Drop a pending commit without applying it. This should only be called
     /// after receiving a rejection from the remote.
-    pub fn drop_pending_commit(self, vid: &VolumeId) -> Result<(), FjallStorageErr> {
+    pub fn drop_pending_commit(&self, vid: &VolumeId) -> Result<(), FjallStorageErr> {
         let volume = self.read.volume(vid)?;
         self.ks()
             .volumes
             .insert(volume.vid.clone(), volume.with_pending_commit(None))
+    }
+
+    /// Attempt to recover a pending commit by checking to see if it's included in the remote log.
+    /// There are three outcomes:
+    /// 1. the remote log contains a commit with the pending LSN and commit hash -> remote_commit_success
+    /// 2. the remote log contains a commit with the pending LSN and different commit hash -> drop_pending_commit
+    /// 3. the remote log doesn't contain a commit with the pending LSN -> drop_pending_commit
+    ///
+    /// Notably, this function ALWAYS drops the pending commit. So make sure you fetch the log before calling this function
+    pub fn recover_pending_commit(self, vid: &VolumeId) -> Result<(), FjallStorageErr> {
+        let volume = self.read.volume(vid)?;
+        if let Some(pending) = volume.pending_commit {
+            tracing::debug!(?pending, "attemping to recover pending commit");
+
+            match self.read.get_commit(&volume.remote, pending.commit)? {
+                Some(commit) if commit.commit_hash() == Some(&pending.commit_hash) => {
+                    // case 1: remote contains the commit
+                    #[cfg(feature = "precept")]
+                    precept::expect_reachable!("recover pending commit: success", { "vid": vid });
+                    self.remote_commit_success(&volume.vid, commit)?;
+                    tracing::debug!("recovery success");
+                    Ok(())
+                }
+                Some(commit) => {
+                    // Case 2: remote contains a different commit
+                    #[cfg(feature = "precept")]
+                    precept::expect_reachable!("recover pending commit: diverged", { "vid": vid });
+                    self.drop_pending_commit(&volume.vid)?;
+                    tracing::warn!(
+                        "pending commit recovery failed for volume {}, commit {}/{} already exists with different hash: {:?}",
+                        volume.vid,
+                        volume.remote,
+                        pending.commit,
+                        commit.commit_hash
+                    );
+                    Err(LogicalErr::VolumeDiverged(volume.vid).into())
+                }
+                None => {
+                    // Case 3: remote doesn't contain the commit
+                    #[cfg(feature = "precept")]
+                    precept::expect_reachable!("recover pending commit: push failed", { "vid": vid });
+                    self.drop_pending_commit(&volume.vid)?;
+                    tracing::debug!(
+                        "recovered from failed push; dropped uncommitted pending commit"
+                    );
+                    Ok(())
+                }
+            }
+        } else {
+            // recovery not needed
+            Ok(())
+        }
     }
 
     pub fn sync_remote_to_local(self, vid: VolumeId) -> Result<(), FjallStorageErr> {

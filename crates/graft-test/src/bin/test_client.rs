@@ -1,6 +1,7 @@
 use std::{
     env::temp_dir,
     path::{Path, PathBuf},
+    process::ExitCode,
 };
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -93,7 +94,7 @@ fn get_or_init_data_dir(rng: &mut impl Rng, rootdir: &Path) -> (PathBuf, FileLoc
     }
 
     // we were unable to reuse an existing datadir, create a new one
-    let name = Alphabetic.sample_string(rng, 16);
+    let name = Alphabetic.sample_string(rng, 8);
     let path = rootdir.join(name);
     let lock_path = path.join("test_lock");
     std::fs::create_dir_all(&path).expect("failed to create client directory");
@@ -114,16 +115,41 @@ enum Workload {
     BankValidate,
 }
 
-fn main() -> Result<(), TestErr> {
+fn main() -> ExitCode {
+    match main_inner() {
+        Ok(()) => {
+            tracing::debug!("test client completed without error");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            tracing::error!(%err, "test client failed");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn main_inner() -> Result<(), TestErr> {
+    let mut rng = precept::random::rng();
     let dispatcher =
         AntithesisDispatch::try_load_boxed().unwrap_or_else(|| NoopDispatch::new_boxed());
     precept::init_boxed(dispatcher).expect("failed to setup precept");
-    setup_tracing(TracingConsumer::Test).init();
 
     let args = Args::parse();
     let rootdir = args
         .rootdir
         .unwrap_or_else(|| temp_dir().join("graft_test_root"));
+
+    let (data_dir, _lock) = get_or_init_data_dir(&mut rng, &rootdir);
+
+    setup_tracing(
+        TracingConsumer::Test,
+        data_dir
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string()),
+    )
+    .init();
+
     let remote = match args.remote {
         RemoteType::Fs => {
             let remoteroot = rootdir.join("remote");
@@ -135,9 +161,6 @@ fn main() -> Result<(), TestErr> {
             prefix: None,
         },
     };
-
-    let mut rng = precept::random::rng();
-    let (data_dir, _lock) = get_or_init_data_dir(&mut rng, &rootdir);
 
     if args.disable_faults {
         precept::fault::disable_all();
@@ -203,7 +226,9 @@ fn main() -> Result<(), TestErr> {
                 // reopen sqlite connection with new volume
                 env.sqlite = Connection::open("main")?;
             }
-            Err(err) if err.should_retry() => (),
+            Err(err) if err.should_retry() => {
+                tracing::debug!(%err, "encountered retryable error, retrying");
+            }
             Err(err) => return Err(err.into()),
         }
     }

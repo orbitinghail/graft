@@ -88,3 +88,57 @@ fn test_bank_balance_skip_seg_cache() {
     bank_tx(&mut env).unwrap();
     bank_validate(&mut env).unwrap();
 }
+
+#[test]
+fn test_crash_after_commit_recovery() {
+    graft_test::setup_precept_and_disable_faults();
+    graft::fault::set_crash_mode(true);
+
+    let mut runtime = GraftTestRuntime::with_memory_remote();
+
+    // setup the main tag
+    let log = LogId::random();
+    let volume = runtime.volume_open(None, None, Some(log.clone())).unwrap();
+    runtime.tag_replace("main", volume.vid.clone()).unwrap();
+
+    // create test env
+    let sqlite = runtime.open_sqlite("main", None).into();
+    let rng = rand::rng();
+    let mut env = Env {
+        rng,
+        runtime: runtime.clone(),
+        vid: volume.vid.clone(),
+        log: log.clone(),
+        sqlite,
+    };
+
+    // Run bank_setup (faults disabled)
+    bank_setup(&mut env).unwrap();
+    bank_validate(&mut env).unwrap();
+
+    // Do a first round of bank_tx (faults disabled) to establish some baseline transactions
+    bank_tx(&mut env).unwrap();
+    bank_validate(&mut env).unwrap();
+
+    // Set up faults
+    // let skip_cache_fault =
+    //     precept::fault::get_fault_by_name("RemoteCommit: skipping segment cache").unwrap();
+    // skip_cache_fault.set_pending(10000);
+    let after_commit_fault =
+        precept::fault::get_fault_by_name("RemoteCommit: after commit").unwrap();
+    after_commit_fault.set_pending(1);
+
+    // This bank_tx should panic during its push (after the remote commit but before handling it locally)
+    let err = catch_unwind(AssertUnwindSafe(|| bank_tx(&mut env)))
+        .expect_err("expected bank_tx to panic during push");
+    tracing::info!("caught panic as expected: {:?}", err);
+
+    // The push failed. but the local state should be fine
+    bank_validate(&mut env).unwrap();
+
+    // Now retry the push which should recover from the aborted push and re-use the remote commit
+    runtime.volume_push(env.vid.clone()).unwrap();
+
+    // final validate should be ok
+    bank_validate(&mut env).unwrap();
+}

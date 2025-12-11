@@ -85,12 +85,15 @@ pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
 
     // create an accounts table with an integer primary key and a balance
     tx.execute(
-        "CREATE TABLE accounts (id INTEGER PRIMARY KEY, balance INTEGER NOT NULL)",
+        "CREATE TABLE accounts (
+            id INTEGER PRIMARY KEY,
+            balance INTEGER NOT NULL CHECK (balance >= 0)
+        )",
         [],
     )?;
 
     // initialize the accounts table with NUM_ACCOUNTS each starting with INITIAL_BALANCE
-    let mut stmt = tx.prepare("INSERT OR IGNORE INTO accounts (id, balance) VALUES (?, ?)")?;
+    let mut stmt = tx.prepare("INSERT INTO accounts (id, balance) VALUES (?, ?)")?;
     for id in 0..NUM_ACCOUNTS {
         stmt.execute([id as i64, INITIAL_BALANCE as i64])?;
     }
@@ -149,12 +152,15 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
                 row.get(0)
             })?;
 
-        // send half of the balance of the larger account to the smaller account
-        let (from_id, to_id, transfer_amount) = if balance_a > balance_b {
-            (id_a, id_b, balance_a / 2)
+        // we always transfer from the larger account to the smaller account
+        let (from_id, to_id, from_balance) = if balance_a > balance_b {
+            (id_a, id_b, balance_a)
         } else {
-            (id_b, id_a, balance_b / 2)
+            (id_b, id_a, balance_b)
         };
+
+        // transfer up to $50 or the entire balance
+        let transfer_amount = 50.min(from_balance);
 
         if transfer_amount > 0 {
             valid_txns += 1;
