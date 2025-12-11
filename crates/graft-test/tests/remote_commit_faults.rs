@@ -120,15 +120,12 @@ fn test_crash_after_commit_recovery() {
     bank_tx(&mut env).unwrap();
     bank_validate(&mut env).unwrap();
 
-    // Set up faults
-    // let skip_cache_fault =
-    //     precept::fault::get_fault_by_name("RemoteCommit: skipping segment cache").unwrap();
-    // skip_cache_fault.set_pending(10000);
+    // cause a crash right after we commit to the remote but before we handle the commit
     let after_commit_fault =
         precept::fault::get_fault_by_name("RemoteCommit: after commit").unwrap();
     after_commit_fault.set_pending(1);
 
-    // This bank_tx should panic during its push (after the remote commit but before handling it locally)
+    // This bank_tx should panic during its push due to the fault
     let err = catch_unwind(AssertUnwindSafe(|| bank_tx(&mut env)))
         .expect_err("expected bank_tx to panic during push");
     tracing::info!("caught panic as expected: {:?}", err);
