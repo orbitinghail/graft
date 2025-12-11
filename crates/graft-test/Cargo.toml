@@ -12,15 +12,14 @@ rust-version = { workspace = true }
 workspace = true
 
 [dependencies]
-graft = { path = "../graft", features = ["testutil"] }
+graft = { path = "../graft", features = ["testutil", "precept"] }
 graft-sqlite = { path = "../graft-sqlite" }
-graft-test-macro = { path = "../graft-test-macro" }
 graft-tracing = { path = "../graft-tracing" }
 
 clap = { workspace = true, features = ["derive"] }
 file-lock = { workspace = true }
 object_store = { workspace = true }
-precept = { workspace = true, features = ["antithesis"] }
+precept = { workspace = true, features = ["antithesis", "enabled"] }
 rand = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
 sqlite-plugin = { workspace = true, features = ["static"] }

@@ -327,7 +327,7 @@ mod tests {
         bytes
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_mkgid() {
         let gid = mkgid(prefix::Volume::Value as u8, SystemTime::UNIX_EPOCH, 0);
         let gid = VolumeId::try_read_from_bytes(&gid).unwrap();
@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(gid.random, GidRandom::DEFAULT);
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_serialize_short() {
         // short is always substr of serialize
         for _ in 0..100 {
@@ -360,14 +360,14 @@ mod tests {
         }
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_ts() {
         let vid = LogId::random();
         let ts = vid.as_time();
         assert!(ts.duration_since(UNIX_EPOCH).unwrap().as_millis() > 0)
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_size() {
         let g = SegmentId::default();
         println!("gid: {}", g.serialize());
@@ -382,7 +382,7 @@ mod tests {
         assert!(g.serialize().len() == ENCODED_LEN);
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_parse_round_trip() {
         let id = SegmentId::random();
 
@@ -398,7 +398,7 @@ mod tests {
         assert_eq!(id, parsed);
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_invalid_parse() {
         // wrong lengths
         let cases = [
@@ -454,7 +454,7 @@ mod tests {
         );
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_bilrost() {
         #[derive(Message, Debug, PartialEq, Eq)]
         struct TestMsg {
@@ -475,7 +475,7 @@ mod tests {
         assert_eq!(decoded, msg, "Decoded message does not match original");
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_gid_alphanumeric_sort() {
         // generate 10 gids separated by random times from 1ms to 1000ms
         // then verify that they sort in order

@@ -152,7 +152,7 @@ mod tests {
 
     use super::*;
 
-    #[graft_test::test]
+    #[test]
     fn test_volume_id() {
         test_roundtrip(VolumeId::random());
         test_roundtrip(VolumeId::EMPTY);
@@ -161,7 +161,7 @@ mod tests {
         test_invalid::<VolumeId>(SegmentId::random().as_bytes());
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_log_id() {
         test_roundtrip(LogId::random());
         test_roundtrip(LogId::EMPTY);
@@ -170,7 +170,7 @@ mod tests {
         test_invalid::<LogId>(SegmentId::random().as_bytes());
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_commit_key() {
         test_roundtrip(LogRef::new(LogId::random(), lsn!(123)));
 
@@ -195,7 +195,7 @@ mod tests {
         ]);
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_page_key() {
         test_roundtrip(PageKey::new(SegmentId::random(), pageidx!(42)));
 

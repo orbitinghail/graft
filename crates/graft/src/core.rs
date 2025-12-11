@@ -23,9 +23,6 @@ pub use gid::{LogId, SegmentId, VolumeId};
 pub use page_count::PageCount;
 pub use pageidx::PageIdx;
 
-#[cfg(any(test, feature = "testutil"))]
-pub mod testutil;
-
 // Export NewTypeProxyTag so we can use derive_newtype_proxy in graft
 #[doc(hidden)]
 pub struct NewTypeProxyTag;

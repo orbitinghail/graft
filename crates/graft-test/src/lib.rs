@@ -21,16 +21,14 @@ use sqlite_plugin::vfs::{RegisterOpts, register_static};
 use tokio::sync::Notify;
 use tracing_subscriber::fmt::TestWriter;
 
-pub use graft_test_macro::datatest;
-pub use graft_test_macro::test;
-
-// this function is automatically run before each test by the macro graft_test_macro::test
-pub fn setup_test() {
+/// This function should be run at the start of all integration tests in ./tests/*.
+/// Faults may be re-enabled via precept APIs if needed.
+pub fn setup_precept_and_disable_faults() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         setup_tracing_with_writer(TracingConsumer::Test, TestWriter::default()).init();
         precept::init(&TestDispatch).expect("failed to setup precept");
-        precept::disable_faults();
+        precept::fault::disable_all();
     });
 }
 
@@ -136,7 +134,7 @@ impl GraftTestRuntime {
         .unwrap();
         let conn = GraftSqliteConn { conn };
         if let Some(remote) = remote {
-            conn.graft_pragma_arg("clone", remote.serialize());
+            conn.graft_pragma_arg("clone", remote.serialize()).unwrap();
         }
         conn
     }
@@ -172,23 +170,21 @@ impl From<GraftSqliteConn> for rusqlite::Connection {
 }
 
 impl GraftSqliteConn {
-    pub fn graft_pragma(&self, suffix: &str) {
+    pub fn graft_pragma(&self, suffix: &str) -> rusqlite::Result<()> {
         let pragma = format!("graft_{suffix}");
         self.pragma_query(None, &pragma, |row| {
             let output: String = row.get(0).unwrap();
             tracing::debug!("{pragma} output: {output}");
             Ok(())
         })
-        .unwrap();
     }
 
-    pub fn graft_pragma_arg<T: ToSql>(&self, suffix: &str, arg: T) {
+    pub fn graft_pragma_arg<T: ToSql>(&self, suffix: &str, arg: T) -> rusqlite::Result<()> {
         let pragma = format!("graft_{suffix}");
         self.pragma(None, &pragma, arg, |row| {
             let output: String = row.get(0).unwrap();
             tracing::debug!("{pragma} output: {output}");
             Ok(())
         })
-        .unwrap();
     }
 }

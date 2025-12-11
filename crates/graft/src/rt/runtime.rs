@@ -273,7 +273,7 @@ mod tests {
         volume_reader::VolumeRead, volume_writer::VolumeWrite,
     };
 
-    #[graft_test::test]
+    #[test]
     fn runtime_sanity() {
         let tokio_rt = tokio::runtime::Builder::new_current_thread()
             .start_paused(true)

@@ -54,7 +54,7 @@ macro_rules! derive_newtype_proxy {
         mod newtype_encoding_tests {
             use super::*;
 
-            #[graft_test::test]
+            #[test]
             fn test_newtype_encoding() {
                 #[derive(::bilrost::Message, Debug, PartialEq, Eq)]
                 struct TestMsg {

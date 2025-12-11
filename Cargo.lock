@@ -891,7 +891,6 @@ dependencies = [
  "fjall",
  "foldhash 0.2.0",
  "futures",
- "graft-test",
  "hashbrown 0.16.1",
  "itertools 0.14.0",
  "object_store",
@@ -955,7 +954,6 @@ dependencies = [
  "file-lock",
  "graft",
  "graft-sqlite",
- "graft-test-macro",
  "graft-tracing",
  "object_store",
  "precept",
@@ -967,16 +965,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "graft-test-macro"
-version = "0.1.0"
-dependencies = [
- "glob",
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -1414,9 +1402,9 @@ checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
 
 [[package]]
 name = "libloading"
-version = "0.8.9"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
 dependencies = [
  "cfg-if",
  "windows-link",
@@ -1851,9 +1839,9 @@ dependencies = [
 
 [[package]]
 name = "precept"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b5ceb1c2c9efde920195f281289b3802d9e39bbcbf7328e7c01e51cc217f169"
+checksum = "07e39f743b571267837753816ad6bc341f54d139bbecc5efc13affb7dfd9ee5c"
 dependencies = [
  "libloading",
  "linkme",

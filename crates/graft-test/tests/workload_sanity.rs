@@ -2,8 +2,10 @@ use graft::core::LogId;
 use graft_test::GraftTestRuntime;
 use graft_test::workload::{Env, bank_setup, bank_tx, bank_validate};
 
-#[graft_test::test]
+#[test]
 fn test_bank_workload() {
+    graft_test::setup_precept_and_disable_faults();
+
     let mut runtime = GraftTestRuntime::with_memory_remote();
 
     // setup the main tag

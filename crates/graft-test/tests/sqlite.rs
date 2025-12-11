@@ -2,8 +2,10 @@ use graft::core::{LogId, PageCount};
 use graft_test::GraftTestRuntime;
 use rusqlite::Connection;
 
-#[graft_test::test]
+#[test]
 fn test_sync_and_reset() {
+    graft_test::setup_precept_and_disable_faults();
+
     // create two nodes connected to the same remote
     let remote = LogId::random();
     let mut runtime1 = GraftTestRuntime::with_memory_remote();
@@ -24,23 +26,23 @@ fn test_sync_and_reset() {
         .unwrap();
 
     // sync the changes from node 1 to node 2
-    sqlite1.graft_pragma("push");
-    sqlite2.graft_pragma("pull");
+    sqlite1.graft_pragma("push").unwrap();
+    sqlite2.graft_pragma("pull").unwrap();
 
     // write to both nodes, creating a conflict
     sqlite1.execute("update t1 set counter = 1", []).unwrap();
     sqlite2.execute("update t2 set counter = 1", []).unwrap();
 
     // sync the changes from node 1
-    sqlite1.graft_pragma("push");
+    sqlite1.graft_pragma("push").unwrap();
 
     // attempt to push from node 2, which should detect the conflict
     let result = sqlite2.pragma_query(None, "graft_push", |_| Ok(()));
     assert!(result.is_err(), "push should fail due to divergence");
 
     // force reset node 2 to the latest remote
-    sqlite2.graft_pragma("fetch");
-    sqlite2.graft_pragma("clone");
+    sqlite2.graft_pragma("fetch").unwrap();
+    sqlite2.graft_pragma("clone").unwrap();
 
     // verify both nodes are now pointing at the same remote LSN
     // and they have no outstanding local changes
@@ -68,8 +70,10 @@ fn test_sync_and_reset() {
     runtime2.shutdown().unwrap();
 }
 
-#[graft_test::test]
+#[test]
 fn test_import_export() {
+    graft_test::setup_precept_and_disable_faults();
+
     let mut runtime = GraftTestRuntime::with_memory_remote();
     let sqlite = runtime.open_sqlite("main", None);
 
@@ -102,7 +106,7 @@ fn test_import_export() {
     let export_path_str = export_path.to_str().unwrap();
 
     // Export the database
-    sqlite.graft_pragma_arg("export", export_path_str);
+    sqlite.graft_pragma_arg("export", export_path_str).unwrap();
 
     // Verify the exported file exists
     assert!(export_path.exists());
@@ -128,7 +132,7 @@ fn test_import_export() {
 
     // Create a new volume and import the exported database
     let sqlite2 = runtime.open_sqlite("imported", None);
-    sqlite2.graft_pragma_arg("import", export_path_str);
+    sqlite2.graft_pragma_arg("import", export_path_str).unwrap();
 
     // Verify the imported data
     let count: i64 = sqlite2
@@ -153,8 +157,10 @@ fn test_import_export() {
     runtime.shutdown().unwrap();
 }
 
-#[graft_test::test]
+#[test]
 fn test_sqlite_query_only_fetches_needed_pages() {
+    graft_test::setup_precept_and_disable_faults();
+
     let log = LogId::random();
 
     // create a writer
@@ -174,7 +180,7 @@ fn test_sqlite_query_only_fetches_needed_pages() {
         writer_sql
             .execute("insert into t values (printf('%0*d', 4096, 0))", [])
             .unwrap();
-        writer_sql.graft_pragma("push");
+        writer_sql.graft_pragma("push").unwrap();
     }
 
     let snapshot = writer.volume_snapshot(&writer_vid).unwrap();
@@ -184,7 +190,7 @@ fn test_sqlite_query_only_fetches_needed_pages() {
     );
 
     // pull changes into the reader
-    reader_sql.graft_pragma("pull");
+    reader_sql.graft_pragma("pull").unwrap();
 
     // all pages missing
     let snapshot = reader.volume_snapshot(&reader_vid).unwrap();

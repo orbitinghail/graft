@@ -28,7 +28,7 @@ hashbrown = { workspace = true }
 itertools = { workspace = true }
 object_store = { workspace = true }
 parking_lot = { workspace = true }
-precept = { workspace = true, features = ["antithesis"] }
+precept = { workspace = true, optional = true }
 rand = { workspace = true }
 range-set-blaze = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -47,8 +47,6 @@ zerocopy = { workspace = true }
 zstd = { workspace = true }
 
 [dev-dependencies]
-graft-test = { path = "../graft-test" }
-
 assert_matches = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
@@ -56,3 +54,4 @@ tokio = { workspace = true, features = ["full", "test-util"] }
 [features]
 default = []
 testutil = []
+precept = ["dep:precept"]

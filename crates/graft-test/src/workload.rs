@@ -74,7 +74,7 @@ pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     let Env { sqlite, runtime, vid, .. } = env;
 
     // disable fault injection during setup
-    precept::disable_faults();
+    precept::fault::disable_all();
 
     tracing::info!("setting up bank workload with {} accounts", NUM_ACCOUNTS);
 
@@ -188,6 +188,9 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
 
 pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     tracing::info!("validating bank workload");
+
+    // disable fault injection during validation
+    precept::fault::disable_all();
 
     // pull the database
     env.runtime.volume_pull(env.vid.clone())?;
