@@ -1839,7 +1839,9 @@ dependencies = [
 
 [[package]]
 name = "precept"
-version = "0.1.0"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07e39f743b571267837753816ad6bc341f54d139bbecc5efc13affb7dfd9ee5c"
 dependencies = [
  "libloading",
  "linkme",

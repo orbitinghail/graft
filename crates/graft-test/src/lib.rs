@@ -134,7 +134,7 @@ impl GraftTestRuntime {
         .unwrap();
         let conn = GraftSqliteConn { conn };
         if let Some(remote) = remote {
-            conn.graft_pragma_arg("clone", remote.serialize());
+            conn.graft_pragma_arg("clone", remote.serialize()).unwrap();
         }
         conn
     }
@@ -170,23 +170,21 @@ impl From<GraftSqliteConn> for rusqlite::Connection {
 }
 
 impl GraftSqliteConn {
-    pub fn graft_pragma(&self, suffix: &str) {
+    pub fn graft_pragma(&self, suffix: &str) -> rusqlite::Result<()> {
         let pragma = format!("graft_{suffix}");
         self.pragma_query(None, &pragma, |row| {
             let output: String = row.get(0).unwrap();
             tracing::debug!("{pragma} output: {output}");
             Ok(())
         })
-        .unwrap();
     }
 
-    pub fn graft_pragma_arg<T: ToSql>(&self, suffix: &str, arg: T) {
+    pub fn graft_pragma_arg<T: ToSql>(&self, suffix: &str, arg: T) -> rusqlite::Result<()> {
         let pragma = format!("graft_{suffix}");
         self.pragma(None, &pragma, arg, |row| {
             let output: String = row.get(0).unwrap();
             tracing::debug!("{pragma} output: {output}");
             Ok(())
         })
-        .unwrap();
     }
 }

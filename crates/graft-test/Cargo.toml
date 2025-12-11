@@ -12,7 +12,7 @@ rust-version = { workspace = true }
 workspace = true
 
 [dependencies]
-graft = { path = "../graft", features = ["testutil"] }
+graft = { path = "../graft", features = ["testutil", "precept"] }
 graft-sqlite = { path = "../graft-sqlite" }
 graft-tracing = { path = "../graft-tracing" }
 

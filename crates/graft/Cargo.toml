@@ -28,7 +28,7 @@ hashbrown = { workspace = true }
 itertools = { workspace = true }
 object_store = { workspace = true }
 parking_lot = { workspace = true }
-precept = { workspace = true }
+precept = { workspace = true, optional = true }
 rand = { workspace = true }
 range-set-blaze = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -54,3 +54,4 @@ tokio = { workspace = true, features = ["full", "test-util"] }
 [features]
 default = []
 testutil = []
+precept = ["dep:precept"]

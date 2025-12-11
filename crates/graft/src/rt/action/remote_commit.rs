@@ -44,7 +44,12 @@ impl Action for RemoteCommit {
             .put_segment(segment_idx.sid(), segment_chunks)
             .await?;
 
-        precept::sometimes_fault!("RemoteCommit: before prepare", precept::fault::fault_powerloss(), { "vid": self.vid });
+        #[cfg(feature = "precept")]
+        precept::sometimes_fault!(
+            "RemoteCommit: before prepare",
+            crate::fault::fault_crash(),
+            { "vid": self.vid }
+        );
 
         // make final preparations before pushing to the remote.
         // these preparations include checking preconditions and setting
@@ -66,12 +71,22 @@ impl Action for RemoteCommit {
         .with_commit_hash(Some(commit_hash.clone()))
         .with_segment_idx(Some(segment_idx));
 
-        precept::sometimes_fault!("RemoteCommit: before commit", precept::fault::fault_powerloss(), { "vid": self.vid });
+        #[cfg(feature = "precept")]
+        precept::sometimes_fault!(
+            "RemoteCommit: before commit",
+            crate::fault::fault_crash(),
+            { "vid": self.vid }
+        );
 
         // issue the remote commit!
         let result = remote.put_commit(&commit).await;
 
-        precept::sometimes_fault!("RemoteCommit: after commit", precept::fault::fault_powerloss(), { "vid": self.vid });
+        #[cfg(feature = "precept")]
+        precept::sometimes_fault!(
+            "RemoteCommit: after commit",
+            crate::fault::fault_crash(),
+            { "vid": self.vid }
+        );
 
         match result {
             Ok(()) => {
@@ -227,9 +242,12 @@ fn build_segment(
         commithash_builder.write_page(pageidx, &page);
         segment_builder.write(pageidx, &page);
 
-        precept::sometimes_fault!("RemoteCommit: skipping segment cache", {
-            continue;
-        }, { "sid": sid });
+        #[cfg(feature = "precept")]
+        precept::sometimes_fault!(
+            "RemoteCommit: skipping segment cache",
+            continue,
+            { "sid": sid }
+        );
 
         // we immediately cache the new segment's pages into storage, as new
         // Snapshots will read from the new commits rather than the local
@@ -252,13 +270,20 @@ fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> Result<(), GraftE
     let reader = storage.read();
     let volume = reader.volume(vid)?;
 
-    precept::sometimes_fault!("RemoteCommit: attempting recovery", precept::fault::fault_powerloss(), { "vid": vid });
+    #[cfg(feature = "precept")]
+    precept::sometimes_fault!(
+        "RemoteCommit: attempting recovery",
+        crate::fault::fault_crash(),
+        { "vid": vid }
+    );
 
     if let Some(pending) = volume.pending_commit {
         tracing::debug!(?pending, "got pending commit");
         match storage.read().get_commit(&volume.remote, pending.commit)? {
             Some(commit) if commit.commit_hash() == Some(&pending.commit_hash) => {
+                #[cfg(feature = "precept")]
                 precept::expect_reachable!("RemoteCommit: recovery success", { "vid": vid });
+
                 // It's the same commit. Recovery success!
                 storage
                     .read_write()
@@ -267,7 +292,9 @@ fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> Result<(), GraftE
             }
             Some(commit) => {
                 // Case 2: Divergence detected.
+                #[cfg(feature = "precept")]
                 precept::expect_reachable!("RemoteCommit: divergence detected during recovery", { "vid": vid });
+
                 storage.read_write().drop_pending_commit(&volume.vid)?;
                 tracing::warn!(
                     "remote commit rejected for volume {}, commit {}/{} already exists with different hash: {:?}",
@@ -281,7 +308,9 @@ fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> Result<(), GraftE
             None => {
                 // No commit found. The pending commit failed to push.
                 // Drop the pending commit so we can try again.
+                #[cfg(feature = "precept")]
                 precept::expect_reachable!("RemoteCommit: recovered from failed push", { "vid": vid });
+
                 storage.read_write().drop_pending_commit(&volume.vid)?;
                 Ok(())
             }

@@ -189,6 +189,9 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
 pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     tracing::info!("validating bank workload");
 
+    // disable fault injection during validation
+    precept::fault::disable_all();
+
     // pull the database
     env.runtime.volume_pull(env.vid.clone())?;
 

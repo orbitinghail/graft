@@ -19,4 +19,10 @@ pub mod volume;
 pub mod volume_reader;
 pub mod volume_writer;
 
+#[cfg(any(test, feature = "testutil"))]
+pub mod testutil;
+
+#[cfg(feature = "precept")]
+pub mod fault;
+
 pub use err::{GraftErr, LogicalErr};
