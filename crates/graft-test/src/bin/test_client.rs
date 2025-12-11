@@ -43,6 +43,9 @@ struct Args {
     #[clap(long, default_value = "74ggciv9wN-3y7Sx8h6qCJmt")]
     log: LogId,
 
+    #[clap(long)]
+    disable_faults: bool,
+
     #[command(subcommand)]
     workload: Workload,
 }
@@ -136,10 +139,8 @@ fn main() -> Result<(), TestErr> {
     let mut rng = precept::random::rng();
     let (data_dir, _lock) = get_or_init_data_dir(&mut rng, &rootdir);
 
-    // 10% of the time disable all precept faults
-    if rng.random_ratio(1, 10) {
-        precept::disable_faults();
-        tracing::warn!("Precept Faults disabled");
+    if args.disable_faults {
+        precept::fault::disable_all();
     }
 
     // create the Graft runtime

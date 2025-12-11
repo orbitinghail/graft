@@ -2,8 +2,10 @@ use graft::core::{LogId, PageCount};
 use graft_test::GraftTestRuntime;
 use rusqlite::Connection;
 
-#[graft_test::test]
+#[test]
 fn test_sync_and_reset() {
+    graft_test::setup_precept_and_disable_faults();
+
     // create two nodes connected to the same remote
     let remote = LogId::random();
     let mut runtime1 = GraftTestRuntime::with_memory_remote();
@@ -68,8 +70,10 @@ fn test_sync_and_reset() {
     runtime2.shutdown().unwrap();
 }
 
-#[graft_test::test]
+#[test]
 fn test_import_export() {
+    graft_test::setup_precept_and_disable_faults();
+
     let mut runtime = GraftTestRuntime::with_memory_remote();
     let sqlite = runtime.open_sqlite("main", None);
 
@@ -153,8 +157,10 @@ fn test_import_export() {
     runtime.shutdown().unwrap();
 }
 
-#[graft_test::test]
+#[test]
 fn test_sqlite_query_only_fetches_needed_pages() {
+    graft_test::setup_precept_and_disable_faults();
+
     let log = LogId::random();
 
     // create a writer

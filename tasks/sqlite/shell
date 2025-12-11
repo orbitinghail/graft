@@ -79,7 +79,7 @@ export GRAFT_DATA_DIR="${DATA_ROOT}/clients/${CLIENT_ID}"
 
 mkdir -p "${GRAFT_REMOTE__ROOT}" "${GRAFT_DATA_DIR}"
 
-cargo build ${BUILD_FLAGS} --features precept/disabled --package graft-ext
+cargo build ${BUILD_FLAGS} --package graft-ext
 
 # Discover the path to the VFS depending on platform
 LIB_PATH="${GIT_ROOT}/target/${TARGET}"

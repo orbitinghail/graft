@@ -44,7 +44,7 @@ impl Action for RemoteCommit {
             .put_segment(segment_idx.sid(), segment_chunks)
             .await?;
 
-        precept::maybe_fault!(0.1, "RemoteCommit: before prepare", std::process::exit(0), { "vid": self.vid });
+        precept::sometimes_fault!("RemoteCommit: before prepare", std::process::exit(0), { "vid": self.vid });
 
         // make final preparations before pushing to the remote.
         // these preparations include checking preconditions and setting
@@ -66,12 +66,12 @@ impl Action for RemoteCommit {
         .with_commit_hash(Some(commit_hash.clone()))
         .with_segment_idx(Some(segment_idx));
 
-        precept::maybe_fault!(0.1, "RemoteCommit: before commit", std::process::exit(0), { "vid": self.vid });
+        precept::sometimes_fault!("RemoteCommit: before commit", std::process::exit(0), { "vid": self.vid });
 
         // issue the remote commit!
         let result = remote.put_commit(&commit).await;
 
-        precept::maybe_fault!(0.1, "RemoteCommit: after commit", std::process::exit(0), { "vid": self.vid });
+        precept::sometimes_fault!("RemoteCommit: after commit", std::process::exit(0), { "vid": self.vid });
 
         match result {
             Ok(()) => {
@@ -227,7 +227,7 @@ fn build_segment(
         commithash_builder.write_page(pageidx, &page);
         segment_builder.write(pageidx, &page);
 
-        precept::maybe_fault!(0.1, "RemoteCommit: skipping segment cache", {
+        precept::sometimes_fault!("RemoteCommit: skipping segment cache", {
             continue;
         }, { "sid": sid });
 
@@ -252,7 +252,7 @@ fn attempt_recovery(storage: &FjallStorage, vid: &VolumeId) -> Result<(), GraftE
     let reader = storage.read();
     let volume = reader.volume(vid)?;
 
-    precept::maybe_fault!(0.1, "RemoteCommit: attempting recovery", std::process::exit(0), { "vid": vid });
+    precept::sometimes_fault!("RemoteCommit: attempting recovery", std::process::exit(0), { "vid": vid });
 
     if let Some(pending) = volume.pending_commit {
         tracing::debug!(?pending, "got pending commit");

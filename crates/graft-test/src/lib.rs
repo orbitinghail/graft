@@ -21,16 +21,14 @@ use sqlite_plugin::vfs::{RegisterOpts, register_static};
 use tokio::sync::Notify;
 use tracing_subscriber::fmt::TestWriter;
 
-pub use graft_test_macro::datatest;
-pub use graft_test_macro::test;
-
-// this function is automatically run before each test by the macro graft_test_macro::test
-pub fn setup_test() {
+/// This function should be run at the start of all integration tests in ./tests/*.
+/// Faults may be re-enabled via precept APIs if needed.
+pub fn setup_precept_and_disable_faults() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         setup_tracing_with_writer(TracingConsumer::Test, TestWriter::default()).init();
         precept::init(&TestDispatch).expect("failed to setup precept");
-        precept::disable_faults();
+        precept::fault::disable_all();
     });
 }
 

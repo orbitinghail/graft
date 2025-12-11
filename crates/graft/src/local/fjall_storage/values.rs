@@ -68,14 +68,14 @@ mod tests {
         test_empty_default, test_invalid, test_roundtrip,
     };
 
-    #[graft_test::test]
+    #[test]
     fn test_page() {
         test_roundtrip(Page::test_filled(123));
         test_roundtrip(Page::EMPTY);
         test_invalid::<Page>(&b"a".repeat(PAGESIZE.as_usize() + 1));
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_volume() {
         test_roundtrip(Volume::new(
             VolumeId::random(),
@@ -88,7 +88,7 @@ mod tests {
         test_invalid::<Volume>(&b"abc".repeat(123));
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_checkpoints() {
         test_roundtrip(CachedCheckpoints::new(
             Checkpoints::from([lsn!(123)].as_slice()),
@@ -98,7 +98,7 @@ mod tests {
         test_invalid::<CachedCheckpoints>(&b"abc".repeat(123));
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_commit() {
         test_roundtrip(Commit::new(LogId::random(), lsn!(123), PageCount::new(456)));
         test_empty_default::<Commit>();

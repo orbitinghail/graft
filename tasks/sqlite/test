@@ -15,7 +15,7 @@ FILTER="${1:-}"
 # build libgraft if it's not specified
 LIBGRAFT="${LIBGRAFT:-}"
 if [ -z "${LIBGRAFT}" ]; then
-    cargo build --features precept/disabled --package graft-ext
+    cargo build --package graft-ext
     if [ $? -ne 0 ]; then
         echo "Cargo build failed"
         exit 1

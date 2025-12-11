@@ -199,7 +199,7 @@ mod tests {
     use crate::{lsn, pageidx};
     use bilrost::{Message, OwnedMessage};
 
-    #[graft_test::test]
+    #[test]
     fn test_commit_hash_bilrost() {
         #[derive(Message, Debug, PartialEq, Eq)]
         struct TestMsg {
@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(decoded, msg, "Decoded message does not match original");
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_commit_hash_builder_table() {
         let log: LogId = "74ggbzxuMf-2uAmM7FwXntwW".parse().unwrap();
 
@@ -288,7 +288,7 @@ mod tests {
         }
     }
 
-    #[graft_test::test]
+    #[test]
     #[should_panic(expected = "Pages must be written in order by pageidx")]
     fn test_commit_hash_builder_page_order_panic() {
         let mut builder = CommitHashBuilder::new(LogId::random(), LSN::FIRST, PageCount::ZERO);
@@ -296,7 +296,6 @@ mod tests {
         builder.write_page(pageidx!(1), &Page::test_filled(0x11)); // This should panic
     }
 
-    #[graft_test::test]
     #[test]
     fn test_commit_hash_from_str() {
         let hash: CommitHash = "5aNs8RN7tSRqfi66ubcPqSVqrWBGbaPU6C4mBVp6NYgo"
@@ -307,7 +306,7 @@ mod tests {
         assert_eq!(hash, decoded);
     }
 
-    #[graft_test::test]
+    #[test]
     fn test_commit_hash_from_str_invalid() {
         // Test various invalid inputs
         let invalid_cases = vec![
