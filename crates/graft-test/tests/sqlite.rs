@@ -198,7 +198,8 @@ fn test_sqlite_query_only_fetches_needed_pages() {
         reader
             .snapshot_missing_pages(&snapshot)
             .unwrap()
-            .cardinality(),
+            .cardinality()
+            .to_usize(),
         14
     );
 
@@ -213,7 +214,8 @@ fn test_sqlite_query_only_fetches_needed_pages() {
         reader
             .snapshot_missing_pages(&snapshot)
             .unwrap()
-            .cardinality(),
+            .cardinality()
+            .to_usize(),
         9
     );
 
@@ -228,7 +230,8 @@ fn test_sqlite_query_only_fetches_needed_pages() {
         reader
             .snapshot_missing_pages(&snapshot)
             .unwrap()
-            .cardinality(),
+            .cardinality()
+            .to_usize(),
         0
     );
 }

@@ -1,4 +1,4 @@
-use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
+use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc, time::SystemTime};
 
 use crate::{
     core::{
@@ -297,18 +297,38 @@ impl<'a> ReadGuard<'a> {
 
         let mut snapshot = Snapshot::EMPTY;
 
-        if let Some(latest) = self.latest_lsn(&volume.local)? {
-            if let Some(watermark) = volume.sync().and_then(|s| s.local_watermark) {
-                if watermark < latest {
-                    snapshot.append(volume.local, watermark..=latest);
-                }
+        let local_range = if let Some(latest) = self.latest_lsn(&volume.local)? {
+            if let Some(watermark) = volume.sync().and_then(|s| s.local_watermark)
+                && watermark < latest
+            {
+                Some(watermark..=latest)
             } else {
-                snapshot.append(volume.local, LSN::FIRST..=latest);
+                Some(LSN::FIRST..=latest)
+            }
+        } else {
+            None
+        };
+
+        if let Some(range) = local_range {
+            let local_checkpoints = self.checkpoints(&volume.local)?;
+            if let Some(checkpoint) = local_checkpoints.checkpoint_for(*range.end()) {
+                if range.contains(&checkpoint) {
+                    snapshot.append(volume.local, checkpoint..=*range.end());
+                    // checkpoint found, early exit
+                    return Ok(snapshot);
+                } else {
+                    snapshot.append(volume.local, range);
+                }
             }
         }
 
         if let Some(remote) = volume.sync.map(|s| s.remote) {
-            snapshot.append(volume.remote, LSN::FIRST..=remote);
+            let remote_checkpoints = self.checkpoints(&volume.remote)?;
+            if let Some(checkpoint) = remote_checkpoints.checkpoint_for(remote) {
+                snapshot.append(volume.remote, checkpoint..=remote);
+            } else {
+                snapshot.append(volume.remote, LSN::FIRST..=remote);
+            }
         }
 
         Ok(snapshot)
@@ -445,8 +465,11 @@ impl<'a> ReadGuard<'a> {
         Ok(self.get_commit(log, lsn)?.map(|c| c.page_count()))
     }
 
-    pub fn checkpoints(&self, log: &LogId) -> Result<Option<CachedCheckpoints>, FjallStorageErr> {
-        self.snapshot.get(&self.ks().checkpoints, log)
+    pub fn checkpoints(&self, log: &LogId) -> Result<CachedCheckpoints, FjallStorageErr> {
+        Ok(self
+            .snapshot
+            .get(&self.ks().checkpoints, log)?
+            .unwrap_or_default())
     }
 
     pub fn checksum(&self, snapshot: &Snapshot) -> Result<Checksum, FjallStorageErr> {
@@ -520,6 +543,11 @@ impl<'a> WriteBatch<'a> {
     pub fn write_page(&mut self, sid: SegmentId, pageidx: PageIdx, page: Page) {
         self.batch
             .insert_typed(&self.ks.pages, PageKey::new(sid, pageidx), page);
+    }
+
+    pub fn write_checkpoints(&mut self, log: LogId, checkpoints: CachedCheckpoints) {
+        self.batch
+            .insert_typed(&self.ks.checkpoints, log, checkpoints);
     }
 
     pub fn commit(self) -> Result<(), FjallStorageErr> {
@@ -634,13 +662,27 @@ impl<'a> ReadWriteGuard<'a> {
             .latest_lsn(&volume.local)?
             .map_or(LSN::FIRST, |lsn| lsn.next());
 
+        // this commit represents a checkpoint if the segment's page_count equals the volume's page_count
+        let maybe_checkpoint = (page_count == segment.page_count()).then(|| SystemTime::now());
+
         tracing::debug!(vid=?volume.vid, log=?volume.local, %commit_lsn, "local commit");
 
         let commit = Commit::new(volume.local.clone(), commit_lsn, page_count)
+            .with_checkpointed_at(maybe_checkpoint)
             .with_segment_idx(Some(segment));
 
         // write the commit to storage
-        self.ks().log.insert(commit.logref(), commit)?;
+        let mut batch = self.read.storage.batch();
+
+        // if this commit is a checkpoint, update checkpoints
+        if commit.is_checkpoint() {
+            let mut checkpoints = self.read.checkpoints(&commit.log)?;
+            checkpoints.insert(commit.lsn);
+            batch.write_checkpoints(commit.log.clone(), checkpoints);
+        }
+
+        batch.write_commit(commit);
+        batch.commit()?;
 
         // open a new ReadGuard to read an updated snapshot
         // since we are holding a read_write lock, we know that no other thread

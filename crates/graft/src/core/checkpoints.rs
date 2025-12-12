@@ -18,6 +18,15 @@ pub struct Checkpoints {
 impl Checkpoints {
     pub const EMPTY: Checkpoints = Checkpoints { lsns: SmallVec::new_const() };
 
+    /// Inserts an LSN into the set of checkpoints.
+    pub fn insert(&mut self, lsn: LSN) {
+        // Ensure that self.lsns is always sorted ascending
+        match self.lsns.binary_search(&lsn) {
+            Ok(_) => {} // already present
+            Err(idx) => self.lsns.insert(idx, lsn),
+        }
+    }
+
     /// Returns the largest LSN which is <= the provided lsn in the set
     pub fn checkpoint_for(&self, target: LSN) -> Option<LSN> {
         // self.lsns is sorted ascending, so search for the lsn in reverse
@@ -69,5 +78,9 @@ impl CachedCheckpoints {
 
     pub fn checkpoint_for(&self, lsn: LSN) -> Option<LSN> {
         self.checkpoints.checkpoint_for(lsn)
+    }
+
+    pub fn insert(&mut self, lsn: LSN) {
+        self.checkpoints.insert(lsn);
     }
 }

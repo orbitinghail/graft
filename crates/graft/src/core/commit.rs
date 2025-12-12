@@ -146,6 +146,10 @@ impl SegmentIdx {
         &self.pageset
     }
 
+    pub fn page_count(&self) -> PageCount {
+        self.pageset.cardinality()
+    }
+
     pub fn iter_frames(
         &self,
         mut filter: impl FnMut(&RangeInclusive<PageIdx>) -> bool,
