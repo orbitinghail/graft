@@ -311,14 +311,14 @@ impl<'a> ReadGuard<'a> {
 
         if let Some(range) = local_range {
             let local_checkpoints = self.checkpoints(&volume.local)?;
-            if let Some(checkpoint) = local_checkpoints.checkpoint_for(*range.end()) {
-                if range.contains(&checkpoint) {
-                    snapshot.append(volume.local, checkpoint..=*range.end());
-                    // checkpoint found, early exit
-                    return Ok(snapshot);
-                } else {
-                    snapshot.append(volume.local, range);
-                }
+            if let Some(checkpoint) = local_checkpoints.checkpoint_for(*range.end())
+                && range.contains(&checkpoint)
+            {
+                snapshot.append(volume.local, checkpoint..=*range.end());
+                // checkpoint found, early exit
+                return Ok(snapshot);
+            } else {
+                snapshot.append(volume.local, range);
             }
         }
 
@@ -663,7 +663,7 @@ impl<'a> ReadWriteGuard<'a> {
             .map_or(LSN::FIRST, |lsn| lsn.next());
 
         // this commit represents a checkpoint if the segment's page_count equals the volume's page_count
-        let maybe_checkpoint = (page_count == segment.page_count()).then(|| SystemTime::now());
+        let maybe_checkpoint = (page_count == segment.page_count()).then(SystemTime::now);
 
         tracing::debug!(vid=?volume.vid, log=?volume.local, %commit_lsn, "local commit");
 

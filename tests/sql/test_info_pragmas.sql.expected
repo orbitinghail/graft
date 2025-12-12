@@ -72,11 +72,11 @@ pragma graft_status;
 |   (use 'pragma graft_push' to push changes)      |
 +--------------------------------------------------+
 pragma graft_snapshot;
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-+---------------------------------+
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
++----------------------------------+
 pragma graft_audit;
 +--------------------------------------------------------+
 |   Cached 14 of 14 pages (100%) from the remote Log.    |
@@ -85,17 +85,17 @@ pragma graft_audit;
 | Checksum: 2FpLPEqwTAbQR14Bp84n8NHYPN94RnhnXo6u63js1SSV |
 +--------------------------------------------------------+
 pragma graft_info;
-+-------------------------------------------+
-|     Volume: 5rMJkf2zHE-2xMqqKcN8RLZh      |
-+-------------------------------------------+
-| Volume: 5rMJkf2zHE-2xMqqKcN8RLZh          |
-| Local: 74ggc1B6R4-2kkvcy9fi4CHJ           |
-| Remote: 74ggc1B6jg-2udz14pbDayZC          |
-| Last sync: Never synced                   |
-| Snapshot: Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-| Snapshot pages: 14                        |
-| Snapshot size: 56 KB                      |
-+-------------------------------------------+
++--------------------------------------------+
+|      Volume: 5rMJkf2zHE-2xMqqKcN8RLZh      |
++--------------------------------------------+
+| Volume: 5rMJkf2zHE-2xMqqKcN8RLZh           |
+| Local: 74ggc1B6R4-2kkvcy9fi4CHJ            |
+| Remote: 74ggc1B6jg-2udz14pbDayZC           |
+| Last sync: Never synced                    |
+| Snapshot: Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
+| Snapshot pages: 14                         |
+| Snapshot size: 56 KB                       |
++--------------------------------------------+
 
 -- check pragmas on connection 1
 .connection 1
@@ -111,11 +111,11 @@ pragma graft_status;
 |   (use 'pragma graft_push' to push changes)      |
 +--------------------------------------------------+
 pragma graft_snapshot;
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-+---------------------------------+
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
++----------------------------------+
 pragma graft_audit;
 +--------------------------------------------------------+
 |   Cached 14 of 14 pages (100%) from the remote Log.    |
@@ -124,17 +124,17 @@ pragma graft_audit;
 | Checksum: 2FpLPEqwTAbQR14Bp84n8NHYPN94RnhnXo6u63js1SSV |
 +--------------------------------------------------------+
 pragma graft_info;
-+-------------------------------------------+
-|     Volume: 5rMJkf2zHE-2xMqqKcN8RLZh      |
-+-------------------------------------------+
-| Volume: 5rMJkf2zHE-2xMqqKcN8RLZh          |
-| Local: 74ggc1B6R4-2kkvcy9fi4CHJ           |
-| Remote: 74ggc1B6jg-2udz14pbDayZC          |
-| Last sync: Never synced                   |
-| Snapshot: Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-| Snapshot pages: 14                        |
-| Snapshot size: 56 KB                      |
-+-------------------------------------------+
++--------------------------------------------+
+|      Volume: 5rMJkf2zHE-2xMqqKcN8RLZh      |
++--------------------------------------------+
+| Volume: 5rMJkf2zHE-2xMqqKcN8RLZh           |
+| Local: 74ggc1B6R4-2kkvcy9fi4CHJ            |
+| Remote: 74ggc1B6jg-2udz14pbDayZC           |
+| Last sync: Never synced                    |
+| Snapshot: Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
+| Snapshot pages: 14                         |
+| Snapshot size: 56 KB                       |
++--------------------------------------------+
 
 -- open a snapshot on connection 1
 begin;
@@ -145,30 +145,30 @@ select count(*) from ledger;
 | 1000     |
 +----------+
 pragma graft_snapshot;
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-+---------------------------------+
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
++----------------------------------+
 
 -- switch to connection 0, write something, check snapshot, switch back
 .connection 0
 INSERT INTO ledger (account_id, amount) VALUES (1, -10), (2, 10);
 pragma graft_snapshot;
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=7]]) |
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=7]]) |
-+---------------------------------+
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=7]]) |
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=7]]) |
++----------------------------------+
 .connection 1
 
 -- check that connection 1 pragmas can't see the new snapshot
 pragma graft_snapshot;
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-+---------------------------------+
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
++----------------------------------+
 pragma graft_audit;
 +--------------------------------------------------------+
 |   Cached 14 of 14 pages (100%) from the remote Log.    |
@@ -177,27 +177,27 @@ pragma graft_audit;
 | Checksum: 2FpLPEqwTAbQR14Bp84n8NHYPN94RnhnXo6u63js1SSV |
 +--------------------------------------------------------+
 pragma graft_info;
-+-------------------------------------------+
-|     Volume: 5rMJkf2zHE-2xMqqKcN8RLZh      |
-+-------------------------------------------+
-| Volume: 5rMJkf2zHE-2xMqqKcN8RLZh          |
-| Local: 74ggc1B6R4-2kkvcy9fi4CHJ           |
-| Remote: 74ggc1B6jg-2udz14pbDayZC          |
-| Last sync: Never synced                   |
-| Snapshot: Snapshot([2kkvcy9fi4CHJ[..=6]]) |
-| Snapshot pages: 14                        |
-| Snapshot size: 56 KB                      |
-+-------------------------------------------+
++--------------------------------------------+
+|      Volume: 5rMJkf2zHE-2xMqqKcN8RLZh      |
++--------------------------------------------+
+| Volume: 5rMJkf2zHE-2xMqqKcN8RLZh           |
+| Local: 74ggc1B6R4-2kkvcy9fi4CHJ            |
+| Remote: 74ggc1B6jg-2udz14pbDayZC           |
+| Last sync: Never synced                    |
+| Snapshot: Snapshot([2kkvcy9fi4CHJ[6..=6]]) |
+| Snapshot pages: 14                         |
+| Snapshot size: 56 KB                       |
++--------------------------------------------+
 
 -- close the snapshot and check that we can see the latest snapshot
 commit;
 
 pragma graft_snapshot;
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=7]]) |
-+---------------------------------+
-| Snapshot([2kkvcy9fi4CHJ[..=7]]) |
-+---------------------------------+
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=7]]) |
++----------------------------------+
+| Snapshot([2kkvcy9fi4CHJ[6..=7]]) |
++----------------------------------+
 pragma graft_audit;
 +--------------------------------------------------------+
 |   Cached 14 of 14 pages (100%) from the remote Log.    |
@@ -206,16 +206,16 @@ pragma graft_audit;
 | Checksum: BKmJp5EaFm8LVjNqMhYffRkzztBphJ6vb9dYfannr3DY |
 +--------------------------------------------------------+
 pragma graft_info;
-+-------------------------------------------+
-|     Volume: 5rMJkf2zHE-2xMqqKcN8RLZh      |
-+-------------------------------------------+
-| Volume: 5rMJkf2zHE-2xMqqKcN8RLZh          |
-| Local: 74ggc1B6R4-2kkvcy9fi4CHJ           |
-| Remote: 74ggc1B6jg-2udz14pbDayZC          |
-| Last sync: Never synced                   |
-| Snapshot: Snapshot([2kkvcy9fi4CHJ[..=7]]) |
-| Snapshot pages: 14                        |
-| Snapshot size: 56 KB                      |
-+-------------------------------------------+
++--------------------------------------------+
+|      Volume: 5rMJkf2zHE-2xMqqKcN8RLZh      |
++--------------------------------------------+
+| Volume: 5rMJkf2zHE-2xMqqKcN8RLZh           |
+| Local: 74ggc1B6R4-2kkvcy9fi4CHJ            |
+| Remote: 74ggc1B6jg-2udz14pbDayZC           |
+| Last sync: Never synced                    |
+| Snapshot: Snapshot([2kkvcy9fi4CHJ[6..=7]]) |
+| Snapshot pages: 14                         |
+| Snapshot size: 56 KB                       |
++--------------------------------------------+
 
 SQLite Exit Code = 0
