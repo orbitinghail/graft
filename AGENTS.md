@@ -17,7 +17,7 @@ This file provides guidance when working with code in this repository.
 When searching for a particular function, struct, enum, trait, etc. always look for a matching file first before using general pattern search tools.
 
 Use the mgrep tool for semantic search of the codebase.
-Use the built in Search tool for searching for exact maches like usages of a particular function, struct, enum, trait, etc.
+Use the built in Search tool for searching for exact matches like usages of a particular function, struct, enum, trait, etc.
 
 ## Coding & Collaborating Guidelines
 
