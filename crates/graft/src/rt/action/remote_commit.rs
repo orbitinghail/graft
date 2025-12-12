@@ -275,7 +275,7 @@ async fn attempt_recovery(
     );
 
     if let Some(pending) = volume.pending_commit {
-        tracing::debug!(?pending, "attemping to recover pending commit");
+        tracing::debug!(?pending, "attempting to recover pending commit");
 
         // If we have a pending commit, we need to fetch the remote log to see
         // if our pending commit already landed.

@@ -749,7 +749,7 @@ impl<'a> ReadWriteGuard<'a> {
     pub fn recover_pending_commit(self, vid: &VolumeId) -> Result<(), FjallStorageErr> {
         let volume = self.read.volume(vid)?;
         if let Some(pending) = volume.pending_commit {
-            tracing::debug!(?pending, "attemping to recover pending commit");
+            tracing::debug!(?pending, "attempting to recover pending commit");
 
             match self.read.get_commit(&volume.remote, pending.commit)? {
                 Some(commit) if commit.commit_hash() == Some(&pending.commit_hash) => {
