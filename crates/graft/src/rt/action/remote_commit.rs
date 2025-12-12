@@ -286,7 +286,7 @@ async fn attempt_recovery(
         .run(storage, remote)
         .await?;
 
-        storage.read_write().recover_pending_commit(&vid)?;
+        storage.read_write().recover_pending_commit(vid)?;
         Ok(())
     } else {
         // recovery not needed

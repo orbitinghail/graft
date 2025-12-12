@@ -741,9 +741,9 @@ impl<'a> ReadWriteGuard<'a> {
 
     /// Attempt to recover a pending commit by checking to see if it's included in the remote log.
     /// There are three outcomes:
-    /// 1. the remote log contains a commit with the pending LSN and commit hash -> remote_commit_success
-    /// 2. the remote log contains a commit with the pending LSN and different commit hash -> drop_pending_commit
-    /// 3. the remote log doesn't contain a commit with the pending LSN -> drop_pending_commit
+    /// 1. the remote log contains a commit with the pending LSN and commit hash -> `remote_commit_success`
+    /// 2. the remote log contains a commit with the pending LSN and different commit hash -> `drop_pending_commit`
+    /// 3. the remote log doesn't contain a commit with the pending LSN -> `drop_pending_commit`
     ///
     /// Notably, this function ALWAYS drops the pending commit. So make sure you fetch the log before calling this function
     pub fn recover_pending_commit(self, vid: &VolumeId) -> Result<(), FjallStorageErr> {
