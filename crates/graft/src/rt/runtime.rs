@@ -180,6 +180,9 @@ impl Runtime {
     pub fn volume_pull(&self, vid: VolumeId) -> Result<()> {
         let volume = self.inner.storage.read().volume(&vid)?;
         self.fetch_log(volume.remote, None)?;
+        if volume.pending_commit.is_some() {
+            self.storage().read_write().recover_pending_commit(&vid)?;
+        }
         Ok(self
             .storage()
             .read_write()

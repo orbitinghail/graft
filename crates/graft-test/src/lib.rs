@@ -26,7 +26,7 @@ use tracing_subscriber::fmt::TestWriter;
 pub fn setup_precept_and_disable_faults() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        setup_tracing_with_writer(TracingConsumer::Test, TestWriter::default()).init();
+        setup_tracing_with_writer(TracingConsumer::Test, TestWriter::default(), None).init();
         precept::init(&TestDispatch).expect("failed to setup precept");
         precept::fault::disable_all();
     });
