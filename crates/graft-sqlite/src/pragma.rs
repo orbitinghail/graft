@@ -398,7 +398,7 @@ fn format_volume_audit(runtime: &Runtime, file: &VolFile) -> Result<String, ErrC
             pluralize!(pages, "page"),
         ))
     } else {
-        let missing = missing_pages.cardinality();
+        let missing = missing_pages.cardinality().to_usize();
         let have = pages - missing;
         let pct = (have as f64) / (pages as f64) * 100.0;
         Ok(formatdoc!(

@@ -319,9 +319,9 @@ mod tests {
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i);
-            assert_eq!(
-                reader.read_page(pageidx).unwrap().into_bytes(),
-                page.into_bytes()
+            assert!(
+                reader.read_page(pageidx).unwrap().into_bytes() == page.into_bytes(),
+                "pages aren't equal"
             );
         }
 

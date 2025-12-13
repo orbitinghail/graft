@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::RangeInclusive};
+use std::{collections::BTreeMap, ops::RangeInclusive, time::SystemTime};
 
 use crate::core::{
     CommitHashBuilder, LogId, PageCount, PageIdx, SegmentId, VolumeId,
@@ -63,13 +63,17 @@ impl Action for RemoteCommit {
             },
         )?;
 
+        // detect implicit checkpoint: if we're uploading all pages, this is a checkpoint
+        let is_implicit_checkpoint = segment_idx.page_count() == plan.page_count;
+
         let commit = Commit::new(
             plan.commit_ref.log().clone(),
             plan.commit_ref.lsn(),
             plan.page_count,
         )
         .with_commit_hash(Some(commit_hash.clone()))
-        .with_segment_idx(Some(segment_idx));
+        .with_segment_idx(Some(segment_idx))
+        .with_checkpointed_at(is_implicit_checkpoint.then(SystemTime::now));
 
         #[cfg(feature = "precept")]
         precept::sometimes_fault!(

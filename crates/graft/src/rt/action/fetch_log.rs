@@ -1,6 +1,5 @@
 use crate::core::{
     LogId,
-    checkpoints::Checkpoints,
     lsn::{LSN, LSNRangeExt},
 };
 use itertools::{EitherOrBoth, Itertools};
@@ -59,10 +58,10 @@ async fn refresh_checkpoint_commits(
     log: &LogId,
 ) -> Result<()> {
     let cached_checkpoints = reader.checkpoints(log)?;
-    let (old_etag, old_checkpoints) = match &cached_checkpoints {
-        Some(c) => (c.etag().map(|e| e.to_string()), c.checkpoints()),
-        None => (None, &Checkpoints::EMPTY),
-    };
+    let (old_etag, old_checkpoints) = (
+        cached_checkpoints.etag().map(|e| e.to_string()),
+        cached_checkpoints.checkpoints(),
+    );
 
     let new_checkpoints = match remote.get_checkpoints(log, old_etag).await {
         Ok(c) => c,

@@ -37,8 +37,8 @@ impl PageSet {
     }
 
     #[inline]
-    pub fn cardinality(&self) -> usize {
-        self.splinter.cardinality()
+    pub fn cardinality(&self) -> PageCount {
+        PageCount::from(self.splinter.cardinality() as u32)
     }
 
     #[inline]
