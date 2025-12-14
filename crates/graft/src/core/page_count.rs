@@ -1,7 +1,7 @@
 use std::{fmt::Display, num::TryFromIntError, ops::RangeInclusive};
 
 use serde::{Deserialize, Serialize};
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::core::{
     byte_unit::ByteUnit,
@@ -25,6 +25,7 @@ use crate::derive_newtype_proxy;
     Immutable,
     Serialize,
     Deserialize,
+    ByteHash,
 )]
 #[repr(transparent)]
 /// The number of pages in a volume.

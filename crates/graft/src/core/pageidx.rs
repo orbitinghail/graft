@@ -39,7 +39,7 @@ macro_rules! pageidx {
     ($v:expr) => {{
         // force $v to be u32
         const V: u32 = $v;
-        static_assertions::const_assert!(V > 0 && V <= u32::MAX);
+        $crate::static_assertions::const_assert!(V > 0 && V <= u32::MAX);
         // SAFETY: V is checked at compile time to be > 0
         unsafe { $crate::core::PageIdx::new_unchecked(V) }
     }};

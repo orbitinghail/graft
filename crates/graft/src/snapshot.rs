@@ -1,17 +1,18 @@
 use std::ops::RangeInclusive;
 
 use crate::core::{
-    LogId,
+    LogId, PageCount,
     logref::LogRef,
     lsn::{LSN, LSNRangeExt},
 };
-use smallvec::SmallVec;
+use thin_vec::{ThinVec, thin_vec};
 
 /// A `Snapshot` represents a logical view of a Volume, possibly made
 /// up of LSN ranges from multiple Logs.
 #[derive(Clone, Hash)]
 pub struct Snapshot {
-    path: SmallVec<[LogRangeRef; 1]>,
+    pub page_count: PageCount,
+    path: ThinVec<LogRangeRef>,
 }
 
 /// A reference to a Log and a range of LSNs within that Log.
@@ -38,12 +39,18 @@ impl LogRangeRef {
 }
 
 impl Snapshot {
-    pub const EMPTY: Self = Self { path: SmallVec::new_const() };
-
-    pub fn new(log: LogId, lsns: RangeInclusive<LSN>) -> Self {
+    pub fn new(log: LogId, lsns: RangeInclusive<LSN>, page_count: PageCount) -> Self {
         assert!(!lsns.is_empty());
         Self {
-            path: SmallVec::from_const([LogRangeRef { log, lsns }]),
+            page_count,
+            path: thin_vec![LogRangeRef { log, lsns }],
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            page_count: PageCount::ZERO,
+            path: thin_vec![],
         }
     }
 
@@ -70,7 +77,7 @@ impl Snapshot {
 
 impl IntoIterator for Snapshot {
     type Item = LogRangeRef;
-    type IntoIter = smallvec::IntoIter<[LogRangeRef; 1]>;
+    type IntoIter = thin_vec::IntoIter<LogRangeRef>;
     fn into_iter(self) -> Self::IntoIter {
         self.path.into_iter()
     }

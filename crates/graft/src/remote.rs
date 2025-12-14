@@ -1,12 +1,6 @@
 use std::{future, ops::Range, path::PathBuf};
 
-use crate::core::{
-    LogId, SegmentId,
-    cbe::CBE64,
-    checkpoints::{CachedCheckpoints, Checkpoints},
-    commit::Commit,
-    lsn::LSN,
-};
+use crate::core::{LogId, SegmentId, cbe::CBE64, commit::Commit, lsn::LSN};
 use bilrost::{Message, OwnedMessage};
 use bytes::Bytes;
 use futures::{
@@ -25,9 +19,6 @@ pub mod segment;
 const FETCH_COMMITS_CONCURRENCY: usize = 5;
 
 enum RemotePath<'a> {
-    /// `CheckpointSets` are stored at `/logs/{logid}/checkpoints`
-    CheckpointSet(&'a LogId),
-
     /// Commits are stored at `/logs/{logid}/commits/{CBE64 hex LSN}`
     Commit(&'a LogId, LSN),
 
@@ -38,7 +29,6 @@ enum RemotePath<'a> {
 impl RemotePath<'_> {
     fn build(self) -> object_store::path::Path {
         match self {
-            Self::CheckpointSet(log) => Path::from_iter(["logs", &log.serialize(), "checkpoints"]),
             Self::Commit(log, lsn) => Path::from_iter([
                 "logs",
                 &log.serialize(),
@@ -138,27 +128,6 @@ impl Remote {
         };
 
         Ok(Self { store })
-    }
-
-    /// Fetches checkpoints for the specified Log. If `etag` is not `None`
-    /// then this method will return a not modified error.
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn get_checkpoints(
-        &self,
-        log: &LogId,
-        etag: Option<String>,
-    ) -> Result<CachedCheckpoints> {
-        let path = RemotePath::CheckpointSet(log).build();
-        let opts = GetOptions {
-            if_none_match: etag,
-            ..GetOptions::default()
-        };
-
-        let result = self.store.get_opts(&path, opts).await?;
-        let etag = result.meta.e_tag.clone();
-        let bytes = result.bytes().await?;
-
-        Ok(CachedCheckpoints::new(Checkpoints::decode(bytes)?, etag))
     }
 
     /// Streams commits by LSN in the same order as the input iterator.

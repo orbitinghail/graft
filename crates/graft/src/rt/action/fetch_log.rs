@@ -1,13 +1,14 @@
+use std::collections::HashSet;
+
 use crate::core::{
     LogId,
     lsn::{LSN, LSNRangeExt},
 };
-use itertools::{EitherOrBoth, Itertools};
 use range_set_blaze::RangeOnce;
 use tokio_stream::StreamExt;
 
 use crate::{
-    local::fjall_storage::{FjallStorage, ReadGuard, WriteBatch},
+    local::fjall_storage::FjallStorage,
     remote::Remote,
     rt::action::{Action, Result},
 };
@@ -24,9 +25,6 @@ impl Action for FetchLog {
         let reader = storage.read();
         let mut batch = storage.batch();
 
-        // refresh checkpoint commits if needed
-        refresh_checkpoint_commits(&reader, &mut batch, remote, &self.log).await?;
-
         // calculate the lsn range to retrieve
         let start = reader
             .latest_lsn(&self.log)?
@@ -41,48 +39,32 @@ impl Action for FetchLog {
         let missing_lsns =
             (RangeOnce::new(lsns) - existing_lsns.into_ranges()).flat_map(|r| r.iter());
 
+        let mut seen_lsns = HashSet::new();
+        let mut checkpoints = HashSet::new();
+
         // fetch missing lsns
         let mut commits = remote.stream_commits_ordered(&self.log, missing_lsns);
         while let Some(commit) = commits.try_next().await? {
+            seen_lsns.insert(commit.lsn);
+            // keep track of checkpoints that we need to re-fetch
+            checkpoints.extend(
+                commit
+                    .checkpoints
+                    .iter()
+                    .copied()
+                    .filter(|lsn| !seen_lsns.contains(lsn)),
+            );
             batch.write_commit(commit);
+        }
+
+        // fetch missing checkpoints
+        if !checkpoints.is_empty() {
+            let mut commits = remote.stream_commits_ordered(&self.log, checkpoints);
+            while let Some(commit) = commits.try_next().await? {
+                batch.write_commit(commit);
+            }
         }
 
         Ok(batch.commit()?)
     }
-}
-
-async fn refresh_checkpoint_commits(
-    reader: &ReadGuard<'_>,
-    batch: &mut WriteBatch<'_>,
-    remote: &Remote,
-    log: &LogId,
-) -> Result<()> {
-    let cached_checkpoints = reader.checkpoints(log)?;
-    let (old_etag, old_checkpoints) = (
-        cached_checkpoints.etag().map(|e| e.to_string()),
-        cached_checkpoints.checkpoints(),
-    );
-
-    let new_checkpoints = match remote.get_checkpoints(log, old_etag).await {
-        Ok(c) => c,
-        Err(err) if err.is_not_modified() || err.is_not_found() => return Ok(()),
-        Err(err) => Err(err)?,
-    };
-
-    // Checkpoints are sorted, thus we can merge join the two lists of LSNs to
-    // figure out which ones were added.
-    let added: Vec<LSN> = old_checkpoints
-        .iter()
-        .merge_join_by(new_checkpoints.checkpoints().iter(), Ord::cmp)
-        .filter_map(|join| match join {
-            EitherOrBoth::Right(v) => Some(*v),
-            _ => None,
-        })
-        .collect();
-
-    let mut commits = remote.stream_commits_ordered(log, added);
-    while let Some(commit) = commits.try_next().await? {
-        batch.write_commit(commit);
-    }
-    Ok(())
 }

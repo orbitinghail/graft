@@ -511,7 +511,7 @@ fn format_volumes(runtime: &Runtime, file: &VolFile) -> Result<String, ErrCtx> {
 }
 
 fn volume_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, ErrCtx> {
-    if writer.page_count()? > PageCount::ZERO {
+    if writer.page_count() > PageCount::ZERO {
         return pragma_err!("Refusing to import into a non-empty database.");
     }
 
@@ -551,7 +551,7 @@ fn volume_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, ErrC
     }
 
     let reader = writer.commit()?;
-    let page_count = reader.page_count()?;
+    let page_count = reader.page_count();
     assert_eq!(
         page_count.to_usize(),
         total_pages,
@@ -569,7 +569,7 @@ fn volume_export(_runtime: &Runtime, file: &VolFile, path: PathBuf) -> Result<St
     // Get a reader based on the current state of the VolFile
     let reader = file.reader()?;
 
-    let page_count = reader.page_count()?;
+    let page_count = reader.page_count();
     let total_pages = page_count.to_usize();
 
     let mut output_file = File::create(&path)?;

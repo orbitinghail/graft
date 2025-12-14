@@ -127,9 +127,9 @@ where
     fn prefix<P>(&self, ks: &TypedKeyspace<K, V>, prefix: &P) -> TypedIter<K, V>
     where
         K: FjallKeyPrefix<Prefix = P>,
-        P: AsRef<[u8]>,
+        P: FjallReprRef,
     {
-        let inner = Readable::prefix(self, ks.inner(), prefix);
+        let inner = Readable::prefix(self, ks.inner(), prefix.as_slice());
         TypedIter { inner, _phantom: PhantomData }
     }
 }

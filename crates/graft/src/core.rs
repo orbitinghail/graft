@@ -7,7 +7,6 @@ pub mod page_count;
 pub mod pageidx;
 pub mod pageset;
 
-pub mod checkpoints;
 pub mod commit;
 pub mod logref;
 

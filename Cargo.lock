@@ -77,6 +77,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+
+[[package]]
 name = "arraydeque"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -139,7 +145,6 @@ dependencies = [
  "bilrost-derive",
  "bytes",
  "bytestring",
- "smallvec",
  "thin-vec",
 ]
 
@@ -899,11 +904,11 @@ dependencies = [
  "rand",
  "range-set-blaze",
  "serde",
- "smallvec",
  "splinter-rs",
  "static_assertions",
  "tempfile",
  "text_trees",
+ "thin-vec",
  "thiserror 2.0.17",
  "tokio",
  "tokio-stream",
@@ -950,6 +955,7 @@ dependencies = [
 name = "graft-test"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "file-lock",
  "graft",

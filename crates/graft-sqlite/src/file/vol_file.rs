@@ -115,8 +115,8 @@ impl VolFile {
                 let snapshot = self.runtime.volume_snapshot(&self.vid)?;
                 Ok(self.runtime.snapshot_pages(&snapshot)?)
             }
-            VolFileState::Shared { reader } => Ok(reader.page_count()?),
-            VolFileState::Reserved { writer } => Ok(writer.page_count()?),
+            VolFileState::Shared { reader } => Ok(reader.page_count()),
+            VolFileState::Reserved { writer } => Ok(writer.page_count()),
             VolFileState::Committing => Err(ErrCtx::InvalidVolumeState),
         }
     }
@@ -201,7 +201,7 @@ impl VfsFile for VolFile {
 
                     // convert the reader into a writer
                     self.state = VolFileState::Reserved {
-                        writer: VolumeWriter::try_from(reader.clone())?,
+                        writer: VolumeWriter::from(reader.clone()),
                     };
 
                     // Explicitly leak the reserved lock
@@ -355,7 +355,7 @@ impl VfsFile for VolFile {
             .try_into()
             .expect("size too large");
 
-        writer.truncate(pages)?;
+        writer.soft_truncate(pages)?;
         Ok(())
     }
 

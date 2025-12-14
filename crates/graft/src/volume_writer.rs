@@ -10,7 +10,17 @@ use crate::{
 /// A type which can write to a Volume
 pub trait VolumeWrite {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr>;
-    fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr>;
+
+    /// Soft truncates the Volume to the given PageCount.
+    ///
+    /// It's important to understand that this operation does not actually write
+    /// any pages to the Volume. It simply updates the page count.
+    ///
+    /// This means that truncation is soft. If you truncate to a smaller size
+    /// and then truncate to a larger size later, pages that were previously
+    /// hidden by the smaller page count will be visible again.
+    fn soft_truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr>;
+
     fn commit(self) -> Result<VolumeReader, GraftErr>;
 }
 
@@ -19,25 +29,13 @@ pub struct VolumeWriter {
     runtime: Runtime,
     vid: VolumeId,
     snapshot: Snapshot,
-    page_count: PageCount,
     segment: SegmentIdx,
 }
 
 impl VolumeWriter {
-    pub(crate) fn new(
-        runtime: Runtime,
-        vid: VolumeId,
-        snapshot: Snapshot,
-        page_count: PageCount,
-    ) -> Self {
+    pub(crate) fn new(runtime: Runtime, vid: VolumeId, snapshot: Snapshot) -> Self {
         let segment = runtime.create_staged_segment();
-        Self {
-            runtime,
-            vid,
-            snapshot,
-            page_count,
-            segment,
-        }
+        Self { runtime, vid, snapshot, segment }
     }
 }
 
@@ -46,12 +44,12 @@ impl VolumeRead for VolumeWriter {
         &self.snapshot
     }
 
-    fn page_count(&self) -> Result<PageCount, GraftErr> {
-        Ok(self.page_count)
+    fn page_count(&self) -> PageCount {
+        self.snapshot.page_count
     }
 
     fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr> {
-        if !self.page_count.contains(pageidx) {
+        if !self.page_count().contains(pageidx) {
             Ok(Page::EMPTY)
         } else if self.segment.contains(pageidx) {
             Ok(self
@@ -69,7 +67,7 @@ impl VolumeRead for VolumeWriter {
 
 impl VolumeWrite for VolumeWriter {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr> {
-        self.page_count = self.page_count.max(pageidx.pages());
+        self.snapshot.page_count = self.snapshot.page_count.max(pageidx.pages());
         self.segment.insert(pageidx);
         Ok(self
             .runtime
@@ -77,24 +75,27 @@ impl VolumeWrite for VolumeWriter {
             .write_page(self.segment.sid().clone(), pageidx, page)?)
     }
 
-    fn truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr> {
-        let start = page_count
-            .last_pageidx()
-            .unwrap_or_default()
-            .saturating_next();
-        self.page_count = page_count;
-        self.segment.remove_page_range(start..=PageIdx::LAST);
-        Ok(self
-            .runtime
-            .storage()
-            .remove_page_range(self.segment.sid(), start..=PageIdx::LAST)?)
+    fn soft_truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr> {
+        if page_count < self.page_count() {
+            let start = page_count
+                .last_pageidx()
+                .unwrap_or_default()
+                .saturating_next();
+            self.segment.remove_page_range(start..=PageIdx::LAST);
+            self.runtime
+                .storage()
+                .remove_page_range(self.segment.sid(), start..=PageIdx::LAST)?;
+        }
+        self.snapshot.page_count = page_count;
+        Ok(())
     }
 
     fn commit(self) -> Result<VolumeReader, GraftErr> {
+        let page_count = self.snapshot.page_count;
         let snapshot = self.runtime.storage().read_write().commit(
             &self.vid,
             self.snapshot,
-            self.page_count,
+            page_count,
             self.segment,
         )?;
         Ok(VolumeReader::new(self.runtime, self.vid, snapshot))
