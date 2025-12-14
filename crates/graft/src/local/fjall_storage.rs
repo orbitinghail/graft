@@ -302,41 +302,41 @@ impl<'a> ReadGuard<'a> {
     pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
         let volume = self.volume(vid)?;
 
-        let mut snapshot = Snapshot::default();
+        let remote_lsn = volume.sync().map(|s| s.remote);
 
-        let local_range = if let Some(latest) = self.latest_lsn(&volume.local)? {
-            if let Some(watermark) = volume.sync().and_then(|s| s.local_watermark)
-                && watermark < latest
-            {
-                Some(watermark..=latest)
-            } else {
-                Some(LSN::FIRST..=latest)
+        if let Some(latest) = self.latest_commit(&volume.local)? {
+            let watermark = volume
+                .sync()
+                .and_then(|s| s.local_watermark)
+                .filter(|&w| w < latest.lsn)
+                .unwrap_or(LSN::FIRST);
+
+            let mut snapshot =
+                Snapshot::new(volume.local, watermark..=latest.lsn, latest.page_count);
+            if let Some(lsn) = remote_lsn {
+                snapshot.append(volume.remote, LSN::FIRST..=lsn);
             }
+            Ok(snapshot)
+        } else if let Some(remote_lsn) = remote_lsn
+            && let Some(remote) = self.get_commit(&volume.remote, remote_lsn)?
+        {
+            Ok(Snapshot::new(
+                volume.remote,
+                LSN::FIRST..=remote.lsn,
+                remote.page_count,
+            ))
         } else {
-            None
-        };
-
-        if let Some(range) = local_range {
-            if let Some(checkpoint) = self.checkpoint_for(&volume.local, *range.end())?
-                && range.contains(&checkpoint)
-            {
-                snapshot.append(volume.local, checkpoint..=*range.end());
-                // checkpoint found, early exit
-                return Ok(snapshot);
-            } else {
-                snapshot.append(volume.local, range);
-            }
+            Ok(Snapshot::empty())
         }
+    }
 
-        if let Some(remote) = volume.sync.map(|s| s.remote) {
-            if let Some(checkpoint) = self.checkpoint_for(&volume.remote, remote)? {
-                snapshot.append(volume.remote, checkpoint..=remote);
-            } else {
-                snapshot.append(volume.remote, LSN::FIRST..=remote);
-            }
-        }
-
-        Ok(snapshot)
+    /// Lookup the latest commit for a Log
+    pub fn latest_commit(&self, log: &LogId) -> Result<Option<Commit>, FjallStorageErr> {
+        self.snapshot
+            .prefix(&self.ks().log, log)
+            .values()
+            .err_into()
+            .try_next()
     }
 
     /// Retrieve a specific commit
@@ -371,8 +371,6 @@ impl<'a> ReadGuard<'a> {
         // the set of pages we are searching for.
         // we remove pages from this set as we iterate through commits.
         let mut pages = PageSet::FULL;
-        // we keep track of the smallest page count as we iterate through commits
-        let mut page_count = PageCount::MAX;
 
         self.commits(snapshot).try_filter_map(move |commit| {
             // if we have found all pages, we are done
@@ -380,19 +378,12 @@ impl<'a> ReadGuard<'a> {
                 return Ok(None);
             }
 
-            // if we encounter a smaller commit on our travels, we need to shrink
-            // the page_count to ensure that truncation is respected
-            if commit.page_count < page_count {
-                page_count = commit.page_count;
-                pages.truncate(page_count);
-            }
-
             if let Some(idx) = commit.segment_idx {
                 let mut commit_pages = idx.pageset.clone();
 
-                if commit_pages.last().map(|idx| idx.pages()) > Some(page_count) {
+                if commit_pages.last().map(|idx| idx.pages()) > Some(snapshot.page_count) {
                     // truncate any pages in this commit that extend beyond the page count
-                    commit_pages.truncate(page_count);
+                    commit_pages.truncate(snapshot.page_count);
                 }
 
                 // figure out which pages we need from this commit
@@ -426,27 +417,27 @@ impl<'a> ReadGuard<'a> {
         snapshot: &Snapshot,
         pageidx: PageIdx,
     ) -> Result<Option<Commit>, FjallStorageErr> {
-        let mut commits = self.commits(snapshot);
+        for entry in snapshot.iter() {
+            let log = &entry.log;
+            let lsns = &entry.lsns;
+            // the snapshot range is in the form `low..=high` but the page
+            // version index orders LSNs in reverse. thus we need to flip the
+            // range when passing it down to the underlying scan.
+            let low = PageVersion::new(log.clone(), pageidx, *lsns.start());
+            let high = PageVersion::new(log.clone(), pageidx, *lsns.end());
 
-        while let Some(commit) = commits.try_next()? {
-            if !commit.page_count().contains(pageidx) {
-                // the volume is smaller than the requested page idx.
-                // this also handles the case that a volume is truncated and
-                // then subsequently extended at a later time.
-                break;
+            if let Some(pv) = self
+                .snapshot
+                .range(&self.ks().page_versions, high..=low)
+                .keys()
+                .try_next()?
+            {
+                // return the commit associated with this page version
+                return Ok(Some(
+                    self.get_commit(log, pv.lsn)?
+                        .expect("BUG: page version index references non-existing commit"),
+                ));
             }
-
-            let Some(idx) = commit.segment_idx() else {
-                // this commit contains no pages
-                continue;
-            };
-
-            if !idx.contains(pageidx) {
-                // this commit does not contain the requested pageidx
-                continue;
-            }
-
-            return Ok(Some(commit));
         }
         Ok(None)
     }

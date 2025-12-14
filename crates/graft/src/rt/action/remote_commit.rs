@@ -190,19 +190,15 @@ fn build_segment(
 
     // built a snapshot which only matches the LSNs we want to
     // include in the segment
-    let segment_path = Snapshot::new(plan.local.clone(), plan.lsns.clone());
+    let snapshot = Snapshot::new(plan.local.clone(), plan.lsns.clone(), plan.page_count);
 
     // collect all of the segment pages, only keeping the newest (first) page
     // for each unique pageidx
-    let mut page_count = plan.page_count;
+    let page_count = plan.page_count;
     let mut pages = BTreeMap::new();
     let mut pageset = Splinter::default();
-    let mut commits = reader.commits(&segment_path);
+    let mut commits = reader.commits(&snapshot);
     while let Some(commit) = commits.try_next()? {
-        // if we encounter a smaller commit on our travels, we need to shrink
-        // the page_count to ensure that truncation is respected
-        page_count = page_count.min(commit.page_count);
-
         if let Some(idx) = commit.segment_idx {
             let mut commit_pages = idx.pageset;
 

@@ -95,56 +95,12 @@ proxy_to_fjall_repr!(
     }
 );
 
-/// A reference to a page in a log
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PageRef {
-    log: LogId,
-    pageidx: PageIdx,
-}
-
-impl PageRef {
-    #[inline]
-    pub fn new(log: LogId, pageidx: PageIdx) -> Self {
-        Self { log, pageidx }
-    }
-}
-
-#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
-#[repr(C)]
-struct SerializedPageRef {
-    log: LogId,
-    pageidx: U32<BigEndian>,
-}
-
-impl AsRef<[u8]> for SerializedPageRef {
-    #[inline]
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
-
-proxy_to_fjall_repr!(
-    encode (PageRef) using proxy (SerializedPageRef)
-    into_proxy(me) {
-        SerializedPageRef {
-            log: me.log,
-            pageidx: me.pageidx.into(),
-        }
-    }
-    from_proxy(proxy) {
-        Ok(PageRef {
-            log: proxy.log.clone(),
-            pageidx: PageIdx::try_from(proxy.pageidx)?,
-        })
-    }
-);
-
 /// A reference to a specific version of a page in a log
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PageVersion {
-    log: LogId,
-    pageidx: PageIdx,
-    lsn: LSN,
+    pub log: LogId,
+    pub pageidx: PageIdx,
+    pub lsn: LSN,
 }
 
 impl PageVersion {
@@ -152,10 +108,6 @@ impl PageVersion {
     pub fn new(log: LogId, pageidx: PageIdx, lsn: LSN) -> Self {
         Self { log, pageidx, lsn }
     }
-}
-
-impl FjallKeyPrefix for PageVersion {
-    type Prefix = PageRef;
 }
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]

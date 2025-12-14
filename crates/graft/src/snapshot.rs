@@ -1,7 +1,7 @@
 use std::ops::RangeInclusive;
 
 use crate::core::{
-    LogId,
+    LogId, PageCount,
     logref::LogRef,
     lsn::{LSN, LSNRangeExt},
 };
@@ -9,8 +9,9 @@ use thin_vec::{ThinVec, thin_vec};
 
 /// A `Snapshot` represents a logical view of a Volume, possibly made
 /// up of LSN ranges from multiple Logs.
-#[derive(Clone, Hash, Default)]
+#[derive(Clone, Hash)]
 pub struct Snapshot {
+    pub page_count: PageCount,
     path: ThinVec<LogRangeRef>,
 }
 
@@ -38,10 +39,18 @@ impl LogRangeRef {
 }
 
 impl Snapshot {
-    pub fn new(log: LogId, lsns: RangeInclusive<LSN>) -> Self {
+    pub fn new(log: LogId, lsns: RangeInclusive<LSN>, page_count: PageCount) -> Self {
         assert!(!lsns.is_empty());
         Self {
+            page_count,
             path: thin_vec![LogRangeRef { log, lsns }],
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            page_count: PageCount::ZERO,
+            path: thin_vec![],
         }
     }
 
