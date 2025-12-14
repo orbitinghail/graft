@@ -1,9 +1,8 @@
-use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc, time::SystemTime};
+use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
 use crate::{
     core::{
         LogId, PageCount, PageIdx, SegmentId, VolumeId,
-        checkpoints::CachedCheckpoints,
         checksum::{Checksum, ChecksumBuilder},
         commit::{Commit, SegmentIdx, SegmentRangeRef},
         commit_hash::CommitHash,
@@ -12,13 +11,15 @@ use crate::{
         page::Page,
         pageset::PageSet,
     },
-    local::fjall_storage::fjall_typed::{
-        ReadableExt, TypedIter, TypedKeyspace, TypedValIter, WriteBatchExt,
+    local::fjall_storage::{
+        fjall_typed::{ReadableExt, TypedIter, TypedKeyspace, TypedValIter, WriteBatchExt},
+        keys::PageVersion,
     },
 };
 use bytestring::ByteString;
 use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions, OwnedWriteBatch};
 use parking_lot::{Mutex, MutexGuard};
+use thin_vec::thin_vec;
 use tryiter::TryIteratorExt;
 
 use crate::{
@@ -52,25 +53,24 @@ pub enum FjallStorageErr {
 }
 
 struct Keyspaces {
-    /// This partition allows volumes to be identified by a tag.
-    /// The volume a tag points at can be changed.
+    /// This keyspace maps tags to volumes
     tags: TypedKeyspace<ByteString, VolumeId>,
 
-    /// This partition stores state regarding each `Volume`
+    /// This keyspace stores state regarding each `Volume`
     /// keyed by its `VolumeId`
-    /// {`VolumeId`} -> `Volume`
     volumes: TypedKeyspace<VolumeId, Volume>,
 
-    /// This partition stores `CachedCheckpoints` for each Log
-    /// {`LogId`} -> `CachedCheckpoints`
-    checkpoints: TypedKeyspace<LogId, CachedCheckpoints>,
+    /// This keyspace is an index tracking which LSNs are checkpoints.
+    checkpoints: TypedKeyspace<LogRef, ()>,
 
-    /// This partition stores commits
-    /// {`LogId`} / {lsn} -> Commit
+    /// This keyspace stores commits
     log: TypedKeyspace<LogRef, Commit>,
 
-    /// This partition stores Pages
-    /// {sid} / {pageidx} -> Page
+    /// This keyspace is an index mapping pages to the latest commit that
+    /// modified said page.
+    page_versions: TypedKeyspace<PageVersion, ()>,
+
+    /// This keyspace stores Pages
     pages: TypedKeyspace<PageKey, Page>,
 }
 
@@ -81,6 +81,7 @@ impl Keyspaces {
             volumes: TypedKeyspace::open(db, "volumes", Default::default)?,
             checkpoints: TypedKeyspace::open(db, "checkpoints", Default::default)?,
             log: TypedKeyspace::open(db, "log", Default::default)?,
+            page_versions: TypedKeyspace::open(db, "page_versions", Default::default)?,
             pages: TypedKeyspace::open(db, "pages", || {
                 KeyspaceCreateOptions::default()
                     .with_kv_separation(Some(KvSeparationOptions::default()))
@@ -178,14 +179,6 @@ impl FjallStorage {
         self.ks.volumes.remove(vid.clone())
     }
 
-    pub fn write_checkpoints(
-        &self,
-        log: LogId,
-        checkpoints: CachedCheckpoints,
-    ) -> Result<(), FjallStorageErr> {
-        self.ks.checkpoints.insert(log, checkpoints)
-    }
-
     pub fn volume_from_snapshot(&self, snapshot: &Snapshot) -> Result<Volume, FjallStorageErr> {
         let volume = Volume::new_random();
         let commits = self
@@ -239,6 +232,20 @@ impl<'a> ReadGuard<'a> {
             .keys()
             .try_next()?
             .map(|logref| logref.lsn))
+    }
+
+    /// Retrieve the LSN of the most recent checkpoint as of the provided LSN.
+    pub fn checkpoint_for(&self, log: &LogId, lsn: LSN) -> Result<Option<LSN>, FjallStorageErr> {
+        // The checkpoint index orders LSNs in reverse, thus we need to search
+        // from the provided LSN back to the first LSN
+        let high = LogRef::new(log.clone(), lsn);
+        let low = LogRef::new(log.clone(), LSN::FIRST);
+        Ok(self
+            .snapshot
+            .range(&self.ks().checkpoints, high..=low)
+            .keys()
+            .try_next()?
+            .map(|lr| lr.lsn))
     }
 
     pub fn iter_volumes(&self) -> TypedValIter<VolumeId, Volume> {
@@ -295,7 +302,7 @@ impl<'a> ReadGuard<'a> {
     pub fn snapshot(&self, vid: &VolumeId) -> Result<Snapshot, FjallStorageErr> {
         let volume = self.volume(vid)?;
 
-        let mut snapshot = Snapshot::EMPTY;
+        let mut snapshot = Snapshot::default();
 
         let local_range = if let Some(latest) = self.latest_lsn(&volume.local)? {
             if let Some(watermark) = volume.sync().and_then(|s| s.local_watermark)
@@ -310,8 +317,7 @@ impl<'a> ReadGuard<'a> {
         };
 
         if let Some(range) = local_range {
-            let local_checkpoints = self.checkpoints(&volume.local)?;
-            if let Some(checkpoint) = local_checkpoints.checkpoint_for(*range.end())
+            if let Some(checkpoint) = self.checkpoint_for(&volume.local, *range.end())?
                 && range.contains(&checkpoint)
             {
                 snapshot.append(volume.local, checkpoint..=*range.end());
@@ -323,8 +329,7 @@ impl<'a> ReadGuard<'a> {
         }
 
         if let Some(remote) = volume.sync.map(|s| s.remote) {
-            let remote_checkpoints = self.checkpoints(&volume.remote)?;
-            if let Some(checkpoint) = remote_checkpoints.checkpoint_for(remote) {
+            if let Some(checkpoint) = self.checkpoint_for(&volume.remote, remote)? {
                 snapshot.append(volume.remote, checkpoint..=remote);
             } else {
                 snapshot.append(volume.remote, LSN::FIRST..=remote);
@@ -465,13 +470,6 @@ impl<'a> ReadGuard<'a> {
         Ok(self.get_commit(log, lsn)?.map(|c| c.page_count()))
     }
 
-    pub fn checkpoints(&self, log: &LogId) -> Result<CachedCheckpoints, FjallStorageErr> {
-        Ok(self
-            .snapshot
-            .get(&self.ks().checkpoints, log)?
-            .unwrap_or_default())
-    }
-
     pub fn checksum(&self, snapshot: &Snapshot) -> Result<Checksum, FjallStorageErr> {
         let mut builder = ChecksumBuilder::new();
         let mut iter = self.iter_visible_pages(snapshot);
@@ -531,6 +529,26 @@ impl<'a> WriteBatch<'a> {
     }
 
     pub fn write_commit(&mut self, commit: Commit) {
+        // keep the checkpoint index up to date
+        for &checkpoint in commit.checkpoints() {
+            self.batch.insert_typed(
+                &self.ks.checkpoints,
+                LogRef::new(commit.log.clone(), checkpoint),
+                (),
+            );
+        }
+
+        // keep the page version index up to date
+        if let Some(segment_idx) = commit.segment_idx() {
+            for pageidx in segment_idx.pageset.iter() {
+                self.batch.insert_typed(
+                    &self.ks.page_versions,
+                    PageVersion::new(commit.log.clone(), pageidx, commit.lsn),
+                    (),
+                );
+            }
+        }
+
         self.batch
             .insert_typed(&self.ks.log, commit.logref(), commit);
     }
@@ -543,11 +561,6 @@ impl<'a> WriteBatch<'a> {
     pub fn write_page(&mut self, sid: SegmentId, pageidx: PageIdx, page: Page) {
         self.batch
             .insert_typed(&self.ks.pages, PageKey::new(sid, pageidx), page);
-    }
-
-    pub fn write_checkpoints(&mut self, log: LogId, checkpoints: CachedCheckpoints) {
-        self.batch
-            .insert_typed(&self.ks.checkpoints, log, checkpoints);
     }
 
     pub fn commit(self) -> Result<(), FjallStorageErr> {
@@ -662,25 +675,21 @@ impl<'a> ReadWriteGuard<'a> {
             .latest_lsn(&volume.local)?
             .map_or(LSN::FIRST, |lsn| lsn.next());
 
-        // this commit represents a checkpoint if the segment's page_count equals the volume's page_count
-        let maybe_checkpoint = (page_count == segment.page_count()).then(SystemTime::now);
+        let maybe_checkpoint = if page_count == segment.page_count() {
+            thin_vec![commit_lsn]
+        } else {
+            thin_vec![]
+        };
 
         tracing::debug!(vid=?volume.vid, log=?volume.local, %commit_lsn, "local commit");
 
         let commit = Commit::new(volume.local.clone(), commit_lsn, page_count)
-            .with_checkpointed_at(maybe_checkpoint)
+            .with_checkpoints(maybe_checkpoint)
             .with_segment_idx(Some(segment));
 
-        // write the commit to storage
+        // write the commit to storage using a batch to
+        // ensure indexes are updated
         let mut batch = self.read.storage.batch();
-
-        // if this commit is a checkpoint, update checkpoints
-        if commit.is_checkpoint() {
-            let mut checkpoints = self.read.checkpoints(&commit.log)?;
-            checkpoints.insert(commit.lsn);
-            batch.write_checkpoints(commit.log.clone(), checkpoints);
-        }
-
         batch.write_commit(commit);
         batch.commit()?;
 

@@ -139,7 +139,6 @@ dependencies = [
  "bilrost-derive",
  "bytes",
  "bytestring",
- "smallvec",
  "thin-vec",
 ]
 
@@ -899,11 +898,11 @@ dependencies = [
  "rand",
  "range-set-blaze",
  "serde",
- "smallvec",
  "splinter-rs",
  "static_assertions",
  "tempfile",
  "text_trees",
+ "thin-vec",
  "thiserror 2.0.17",
  "tokio",
  "tokio-stream",

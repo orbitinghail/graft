@@ -1,62 +1,16 @@
 use crate::core::{
-    LogId, PageIdx, SegmentId, VolumeId, cbe::CBE64, logref::LogRef, lsn::LSN,
-    zerocopy_ext::TryFromBytesExt,
+    LogId, PageIdx, SegmentId, cbe::CBE64, logref::LogRef, lsn::LSN, zerocopy_ext::TryFromBytesExt,
 };
-use bytes::Bytes;
-use bytestring::ByteString;
 use fjall::Slice;
 use zerocopy::{BigEndian, Immutable, IntoBytes, KnownLayout, TryFromBytes, U32, Unaligned};
 
 use crate::{
-    local::fjall_storage::fjall_repr::{DecodeErr, FjallRepr, FjallReprRef},
+    local::fjall_storage::fjall_repr::{FjallRepr, FjallReprRef},
     proxy_to_fjall_repr,
 };
 
 pub trait FjallKeyPrefix {
-    type Prefix: AsRef<[u8]>;
-}
-
-impl FjallReprRef for VolumeId {
-    #[inline]
-    fn as_slice(&self) -> impl AsRef<[u8]> {
-        self.as_bytes()
-    }
-}
-
-impl FjallRepr for VolumeId {
-    #[inline]
-    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-        Ok(VolumeId::try_from(Bytes::from(slice))?)
-    }
-}
-
-impl FjallReprRef for LogId {
-    #[inline]
-    fn as_slice(&self) -> impl AsRef<[u8]> {
-        self.as_bytes()
-    }
-}
-
-impl FjallRepr for LogId {
-    #[inline]
-    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-        Ok(LogId::try_from(Bytes::from(slice))?)
-    }
-}
-
-impl FjallReprRef for ByteString {
-    #[inline]
-    fn as_slice(&self) -> impl AsRef<[u8]> {
-        self
-    }
-}
-
-impl FjallRepr for ByteString {
-    #[inline]
-    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
-        let bytes: Bytes = slice.into();
-        Ok(ByteString::try_from(bytes)?)
-    }
+    type Prefix: FjallReprRef;
 }
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
@@ -93,7 +47,7 @@ proxy_to_fjall_repr!(
     }
 );
 
-/// Key for the `pages` partition
+/// Key for the `pages` keyspace
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PageKey {
     sid: SegmentId,
@@ -141,9 +95,106 @@ proxy_to_fjall_repr!(
     }
 );
 
+/// A reference to a page in a log
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PageRef {
+    log: LogId,
+    pageidx: PageIdx,
+}
+
+impl PageRef {
+    #[inline]
+    pub fn new(log: LogId, pageidx: PageIdx) -> Self {
+        Self { log, pageidx }
+    }
+}
+
+#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct SerializedPageRef {
+    log: LogId,
+    pageidx: U32<BigEndian>,
+}
+
+impl AsRef<[u8]> for SerializedPageRef {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+proxy_to_fjall_repr!(
+    encode (PageRef) using proxy (SerializedPageRef)
+    into_proxy(me) {
+        SerializedPageRef {
+            log: me.log,
+            pageidx: me.pageidx.into(),
+        }
+    }
+    from_proxy(proxy) {
+        Ok(PageRef {
+            log: proxy.log.clone(),
+            pageidx: PageIdx::try_from(proxy.pageidx)?,
+        })
+    }
+);
+
+/// A reference to a specific version of a page in a log
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PageVersion {
+    log: LogId,
+    pageidx: PageIdx,
+    lsn: LSN,
+}
+
+impl PageVersion {
+    #[inline]
+    pub fn new(log: LogId, pageidx: PageIdx, lsn: LSN) -> Self {
+        Self { log, pageidx, lsn }
+    }
+}
+
+impl FjallKeyPrefix for PageVersion {
+    type Prefix = PageRef;
+}
+
+#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct SerializedPageVersion {
+    log: LogId,
+    pageidx: U32<BigEndian>,
+    lsn: CBE64,
+}
+
+impl AsRef<[u8]> for SerializedPageVersion {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+proxy_to_fjall_repr!(
+    encode (PageVersion) using proxy (SerializedPageVersion)
+    into_proxy(me) {
+        SerializedPageVersion {
+            log: me.log,
+            pageidx: me.pageidx.into(),
+            lsn: me.lsn.into(),
+        }
+    }
+    from_proxy(proxy) {
+        Ok(PageVersion {
+            log: proxy.log.clone(),
+            pageidx: PageIdx::try_from(proxy.pageidx)?,
+            lsn: LSN::try_from(proxy.lsn)?,
+        })
+    }
+);
+
 #[cfg(test)]
 mod tests {
     use crate::{
+        core::VolumeId,
         local::fjall_storage::fjall_repr::testutil::{
             test_invalid, test_roundtrip, test_serialized_order,
         },

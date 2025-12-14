@@ -1,4 +1,4 @@
-use crate::core::{checkpoints::CachedCheckpoints, commit::Commit, page::Page};
+use crate::core::{commit::Commit, page::Page};
 use bilrost::{Message, OwnedMessage};
 use bytes::Bytes;
 
@@ -15,14 +15,12 @@ impl FjallReprRef for Page {
         self
     }
 
-    #[inline]
     fn into_slice(self) -> fjall::Slice {
         self.into_bytes().into()
     }
 }
 
 impl FjallRepr for Page {
-    #[inline]
     fn try_from_slice(slice: fjall::Slice) -> Result<Self, DecodeErr> {
         Ok(Page::try_from(Bytes::from(slice))?)
     }
@@ -53,14 +51,38 @@ macro_rules! impl_fjallrepr_for_bilrost {
     };
 }
 
-impl_fjallrepr_for_bilrost!(Volume, CachedCheckpoints, Commit);
+impl_fjallrepr_for_bilrost!(Volume, Commit);
+
+impl FjallReprRef for () {
+    #[inline]
+    fn as_slice(&self) -> impl AsRef<[u8]> {
+        []
+    }
+
+    #[inline]
+    fn into_slice(self) -> fjall::Slice
+    where
+        Self: Sized,
+    {
+        Bytes::new().into()
+    }
+}
+
+impl FjallRepr for () {
+    fn try_from_slice(slice: fjall::Slice) -> Result<Self, DecodeErr> {
+        if slice.is_empty() {
+            Ok(())
+        } else {
+            Err(DecodeErr::NonemptyValue(slice.len()))
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use crate::core::VolumeId;
-    use crate::core::checkpoints::Checkpoints;
     use crate::core::{LogId, PageCount, page::PAGESIZE};
     use crate::lsn;
 
@@ -86,16 +108,6 @@ mod tests {
         ));
         test_empty_default::<Volume>();
         test_invalid::<Volume>(&b"abc".repeat(123));
-    }
-
-    #[test]
-    fn test_checkpoints() {
-        test_roundtrip(CachedCheckpoints::new(
-            Checkpoints::from([lsn!(123)].as_slice()),
-            Some("asdf"),
-        ));
-        test_empty_default::<CachedCheckpoints>();
-        test_invalid::<CachedCheckpoints>(&b"abc".repeat(123));
     }
 
     #[test]

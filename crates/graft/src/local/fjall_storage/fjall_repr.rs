@@ -1,9 +1,16 @@
 use std::str::Utf8Error;
 
 use crate::core::{
-    lsn::InvalidLSN, page::PageSizeErr, pageidx::ConvertToPageIdxErr, zerocopy_ext::ZerocopyErr,
+    gid::{self, Gid},
+    lsn::InvalidLSN,
+    page::PageSizeErr,
+    pageidx::ConvertToPageIdxErr,
+    zerocopy_ext::ZerocopyErr,
 };
+use bytes::Bytes;
+use bytestring::ByteString;
 use fjall::Slice;
+use zerocopy::IntoBytes;
 
 use crate::core::gid::GidParseErr;
 
@@ -29,6 +36,9 @@ pub enum DecodeErr {
 
     #[error(transparent)]
     PageSizeErr(#[from] PageSizeErr),
+
+    #[error("Expected empty value; got value of size {0}")]
+    NonemptyValue(usize),
 }
 
 pub trait FjallReprRef {
@@ -54,6 +64,34 @@ pub trait FjallRepr: FjallReprRef + Clone {
 impl FjallReprRef for str {
     fn as_slice(&self) -> impl AsRef<[u8]> {
         self
+    }
+}
+
+impl<P: gid::prefix::Prefix> FjallReprRef for Gid<P> {
+    #[inline]
+    fn as_slice(&self) -> impl AsRef<[u8]> {
+        self.as_bytes()
+    }
+}
+
+impl<P: gid::prefix::Prefix> FjallRepr for Gid<P> {
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
+        Ok(Self::try_from(Bytes::from(slice))?)
+    }
+}
+
+impl FjallReprRef for ByteString {
+    #[inline]
+    fn as_slice(&self) -> impl AsRef<[u8]> {
+        self
+    }
+}
+
+impl FjallRepr for ByteString {
+    #[inline]
+    fn try_from_slice(slice: Slice) -> Result<Self, DecodeErr> {
+        let bytes: Bytes = slice.into();
+        Ok(ByteString::try_from(bytes)?)
     }
 }
 

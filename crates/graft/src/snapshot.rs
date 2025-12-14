@@ -5,13 +5,13 @@ use crate::core::{
     logref::LogRef,
     lsn::{LSN, LSNRangeExt},
 };
-use smallvec::SmallVec;
+use thin_vec::{ThinVec, thin_vec};
 
 /// A `Snapshot` represents a logical view of a Volume, possibly made
 /// up of LSN ranges from multiple Logs.
-#[derive(Clone, Hash)]
+#[derive(Clone, Hash, Default)]
 pub struct Snapshot {
-    path: SmallVec<[LogRangeRef; 1]>,
+    path: ThinVec<LogRangeRef>,
 }
 
 /// A reference to a Log and a range of LSNs within that Log.
@@ -38,12 +38,10 @@ impl LogRangeRef {
 }
 
 impl Snapshot {
-    pub const EMPTY: Self = Self { path: SmallVec::new_const() };
-
     pub fn new(log: LogId, lsns: RangeInclusive<LSN>) -> Self {
         assert!(!lsns.is_empty());
         Self {
-            path: SmallVec::from_const([LogRangeRef { log, lsns }]),
+            path: thin_vec![LogRangeRef { log, lsns }],
         }
     }
 
@@ -70,7 +68,7 @@ impl Snapshot {
 
 impl IntoIterator for Snapshot {
     type Item = LogRangeRef;
-    type IntoIter = smallvec::IntoIter<[LogRangeRef; 1]>;
+    type IntoIter = thin_vec::IntoIter<LogRangeRef>;
     fn into_iter(self) -> Self::IntoIter {
         self.path.into_iter()
     }

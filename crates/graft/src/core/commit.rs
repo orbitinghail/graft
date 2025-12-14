@@ -1,11 +1,8 @@
-use std::{
-    ops::{Deref, DerefMut, Range, RangeInclusive},
-    time::SystemTime,
-};
+use std::ops::{Deref, DerefMut, Range, RangeInclusive};
 
 use bilrost::Message;
-use smallvec::SmallVec;
 use splinter_rs::Splinter;
+use thin_vec::ThinVec;
 
 use crate::core::{
     LogId, PageCount, PageIdx, SegmentId, commit_hash::CommitHash, logref::LogRef, lsn::LSN,
@@ -15,6 +12,7 @@ use crate::core::{
 /// A Commit tracks which pages have changed in a volume at a particular point in time (LSN).
 /// A commit's `SegmentIdx` may be omitted if only the Volume's `PageCount` has changed.
 #[derive(Debug, Clone, Message, PartialEq, Eq, Default)]
+#[bilrost(reserved_tags(6))]
 pub struct Commit {
     /// The ID of the Log which this Commit is part of.
     #[bilrost(1)]
@@ -39,10 +37,13 @@ pub struct Commit {
     #[bilrost(5)]
     pub segment_idx: Option<SegmentIdx>,
 
-    /// If this commit is a checkpoint, this timestamp is set and records the time
-    /// the commit was made a checkpoint.
-    #[bilrost(6)]
-    pub checkpointed_at: Option<SystemTime>,
+    /// Some commits are used to track the addition of new checkpoints. LSNs
+    /// referred to by this field have been upgraded into Checkpoint Commits and
+    /// should be re-fetched by clients.
+    ///
+    /// If this commit is a checkpoint, it will store its own LSN in this field.
+    #[bilrost(7)]
+    pub checkpoints: ThinVec<LSN>,
 }
 
 impl Commit {
@@ -54,7 +55,7 @@ impl Commit {
             page_count,
             commit_hash: None,
             segment_idx: None,
-            checkpointed_at: None,
+            checkpoints: Default::default(),
         }
     }
 
@@ -75,9 +76,12 @@ impl Commit {
         Self { segment_idx, ..self }
     }
 
-    /// Sets the checkpointed timestamp for this commit.
-    pub fn with_checkpointed_at(self, checkpointed_at: Option<SystemTime>) -> Self {
-        Self { checkpointed_at, ..self }
+    /// Tracks the provided checkpoint LSNs in this commit.
+    ///
+    /// To mark this commit as a checkpoint, include this
+    /// commit's LSN in the list.
+    pub fn with_checkpoints(self, checkpoints: ThinVec<LSN>) -> Self {
+        Self { checkpoints, ..self }
     }
 
     pub fn log(&self) -> &LogId {
@@ -104,12 +108,12 @@ impl Commit {
         self.segment_idx.as_ref()
     }
 
-    pub fn checkpointed_at(&self) -> Option<&SystemTime> {
-        self.checkpointed_at.as_ref()
+    pub fn checkpoints(&self) -> &ThinVec<LSN> {
+        &self.checkpoints
     }
 
     pub fn is_checkpoint(&self) -> bool {
-        self.checkpointed_at.is_some()
+        self.checkpoints.contains(&self.lsn)
     }
 }
 
@@ -126,15 +130,15 @@ pub struct SegmentIdx {
     /// An index of `SegmentFrameIdxs` contained by this Segment.
     /// Empty on local Segments which have not been encoded and uploaded to object storage.
     #[bilrost(3)]
-    pub frames: SmallVec<[SegmentFrameIdx; 1]>,
+    pub frames: ThinVec<SegmentFrameIdx>,
 }
 
 impl SegmentIdx {
     pub fn new(sid: SegmentId, pageset: PageSet) -> Self {
-        SegmentIdx { sid, pageset, frames: SmallVec::new() }
+        SegmentIdx { sid, pageset, frames: Default::default() }
     }
 
-    pub fn with_frames(self, frames: SmallVec<[SegmentFrameIdx; 1]>) -> Self {
+    pub fn with_frames(self, frames: ThinVec<SegmentFrameIdx>) -> Self {
         Self { frames, ..self }
     }
 
@@ -286,7 +290,7 @@ mod tests {
     #[test]
     fn test_frame_for_pageidx() {
         let pageset = PageSet::from_range(pageidx!(5)..=pageidx!(25));
-        let mut frames = SmallVec::new();
+        let mut frames = ThinVec::new();
         frames.push(SegmentFrameIdx {
             frame_size: 100,
             last_pageidx: pageidx!(10),
@@ -362,7 +366,7 @@ mod tests {
         let segment_idx = SegmentIdx {
             sid: SegmentId::random(),
             pageset: PageSet::EMPTY,
-            frames: SmallVec::new(),
+            frames: ThinVec::new(),
         };
 
         let result = segment_idx.frame_for_pageidx(pageidx!(1));
@@ -446,7 +450,7 @@ mod tests {
     #[test]
     fn test_iter_frames_no_filter() {
         let pageset = PageSet::from_range(pageidx!(5)..=pageidx!(25));
-        let mut frames = SmallVec::new();
+        let mut frames = ThinVec::new();
         frames.push(SegmentFrameIdx {
             frame_size: 100,
             last_pageidx: pageidx!(10),
@@ -492,7 +496,7 @@ mod tests {
     #[test]
     fn test_iter_frames_with_filter() {
         let pageset = PageSet::from_range(pageidx!(5)..=pageidx!(25));
-        let mut frames = SmallVec::new();
+        let mut frames = ThinVec::new();
         frames.push(SegmentFrameIdx {
             frame_size: 100,
             last_pageidx: pageidx!(10),
@@ -529,7 +533,7 @@ mod tests {
         let segment_idx = SegmentIdx {
             sid: SegmentId::random(),
             pageset: PageSet::EMPTY,
-            frames: SmallVec::new(),
+            frames: ThinVec::new(),
         };
 
         let frames: Vec<_> = segment_idx.iter_frames(|_| true).collect();
