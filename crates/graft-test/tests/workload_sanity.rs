@@ -4,7 +4,7 @@ use graft_test::workload::{Env, bank_setup, bank_tx, bank_validate};
 
 #[test]
 fn test_bank_workload() {
-    graft_test::setup_precept_and_disable_faults();
+    graft_test::ensure_test_env();
 
     let mut runtime = GraftTestRuntime::with_memory_remote();
 

@@ -268,6 +268,7 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use crate::core::{LogId, PageIdx, page::Page};
+    use test_log::test;
     use tokio::time::sleep;
 
     use crate::{
@@ -314,7 +315,7 @@ mod tests {
 
         // sanity check volume reader semantics
         let reader = runtime.volume_reader(vid.clone()).unwrap();
-        tracing::debug!("got snapshot {:?}", reader.snapshot());
+        tracing::info!("got snapshot {:?}", reader.snapshot());
         for i in [1u8, 2, 5, 9] {
             let pageidx = PageIdx::must_new(i as u32);
             let page = Page::test_filled(i);

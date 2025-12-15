@@ -45,6 +45,7 @@ splinter-rs = "0.10.0"
 sqlite-plugin = { version = "0.5.0", default-features = false }
 static_assertions = "1.1.0"
 tempfile = "3.23.0"
+test-log = "0.2.19"
 text_trees = "0.1.2"
 thin-vec = "0.2.14"
 thiserror = "2.0.17"

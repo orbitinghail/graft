@@ -4,7 +4,7 @@ use rusqlite::Connection;
 
 #[test]
 fn test_sync_and_reset() {
-    graft_test::setup_precept_and_disable_faults();
+    graft_test::ensure_test_env();
 
     // create two nodes connected to the same remote
     let remote = LogId::random();
@@ -72,7 +72,7 @@ fn test_sync_and_reset() {
 
 #[test]
 fn test_import_export() {
-    graft_test::setup_precept_and_disable_faults();
+    graft_test::ensure_test_env();
 
     let mut runtime = GraftTestRuntime::with_memory_remote();
     let sqlite = runtime.open_sqlite("main", None);
@@ -159,7 +159,7 @@ fn test_import_export() {
 
 #[test]
 fn test_sqlite_query_only_fetches_needed_pages() {
-    graft_test::setup_precept_and_disable_faults();
+    graft_test::ensure_test_env();
 
     let log = LogId::random();
 

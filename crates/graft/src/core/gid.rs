@@ -310,12 +310,12 @@ derive_zerocopy_encoding!(
 
 #[cfg(test)]
 mod tests {
-
     use std::time::UNIX_EPOCH;
 
     use assert_matches::assert_matches;
     use bilrost::{Message, OwnedMessage};
     use rand::random;
+    use test_log::test;
 
     use super::*;
 

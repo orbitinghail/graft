@@ -12,7 +12,7 @@ use graft_test::{
 
 #[test]
 fn test_skip_segment_cache() {
-    graft_test::setup_precept_and_disable_faults();
+    graft_test::ensure_test_env();
     graft::fault::set_crash_mode(true);
 
     let runtime = GraftTestRuntime::with_memory_remote();
@@ -57,7 +57,7 @@ fn test_skip_segment_cache() {
 
 #[test]
 fn test_bank_balance_skip_seg_cache() {
-    graft_test::setup_precept_and_disable_faults();
+    graft_test::ensure_test_env();
     let mut runtime = GraftTestRuntime::with_memory_remote();
 
     // setup the main tag
@@ -91,7 +91,7 @@ fn test_bank_balance_skip_seg_cache() {
 
 #[test]
 fn test_crash_after_commit_recovery() {
-    graft_test::setup_precept_and_disable_faults();
+    graft_test::ensure_test_env();
     graft::fault::set_crash_mode(true);
 
     let mut runtime = GraftTestRuntime::with_memory_remote();

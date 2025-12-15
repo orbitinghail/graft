@@ -13,10 +13,7 @@ use graft::{
     setup::{GraftConfig, InitErr, setup_graft},
 };
 use graft_sqlite::vfs::GraftVfs;
-use graft_test::{
-    require,
-    workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate, pull_if_empty},
-};
+use graft_test::workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate, pull_if_empty};
 use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rand::{
@@ -123,6 +120,7 @@ fn main() -> ExitCode {
         }
         Err(err) => {
             tracing::error!(%err, "test client failed");
+            precept::expect_unreachable!("unhandled error in test client", { "err": err.to_string() });
             ExitCode::FAILURE
         }
     }
@@ -218,7 +216,7 @@ fn main_inner() -> Result<(), TestErr> {
 
                 // verify no divergence in status
                 let status = env.runtime.volume_status(&env.vid)?;
-                require!(
+                precept::expect_always_or_unreachable!(
                     !status.has_diverged(),
                     "volume is not diverged post recovery"
                 );

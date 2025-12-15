@@ -50,6 +50,7 @@ zstd = { workspace = true }
 assert_matches = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
+test-log = { workspace = true, features = ["trace"] }
 
 [features]
 default = []

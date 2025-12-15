@@ -11,7 +11,7 @@ use graft_test::GraftTestRuntime;
 /// and then larger, pages from before the first resize may become visible.
 #[test]
 fn test_soft_truncate() -> anyhow::Result<()> {
-    graft_test::setup_precept_and_disable_faults();
+    graft_test::ensure_test_env();
 
     // create two nodes connected to the same remote
     let remote = LogId::random();

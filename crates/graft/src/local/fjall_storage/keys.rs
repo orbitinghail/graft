@@ -152,6 +152,7 @@ mod tests {
         },
         lsn, pageidx,
     };
+    use test_log::test;
 
     use super::*;
 

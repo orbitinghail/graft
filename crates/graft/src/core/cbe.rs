@@ -94,6 +94,7 @@ define_cbe!(CBE64, u64, 8, 16);
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use test_log::test;
 
     #[test]
     fn test_cbe64() {

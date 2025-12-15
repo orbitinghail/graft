@@ -11,7 +11,7 @@ use crate::{
 pub trait VolumeWrite {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr>;
 
-    /// Soft truncates the Volume to the given PageCount.
+    /// Soft truncates the Volume to the given `PageCount`.
     ///
     /// It's important to understand that this operation does not actually write
     /// any pages to the Volume. It simply updates the page count.
