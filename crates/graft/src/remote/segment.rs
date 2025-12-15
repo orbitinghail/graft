@@ -195,6 +195,7 @@ pub fn segment_frame_iter<'a>(
 #[cfg(test)]
 mod test {
     use crate::pageidx;
+    use test_log::test;
 
     use super::*;
 

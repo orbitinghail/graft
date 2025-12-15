@@ -208,6 +208,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use test_log::test;
 
     use super::*;
 

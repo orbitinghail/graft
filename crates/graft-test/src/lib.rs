@@ -23,7 +23,7 @@ use tracing_subscriber::fmt::TestWriter;
 
 /// This function should be run at the start of all integration tests in ./tests/*.
 /// Faults may be re-enabled via precept APIs if needed.
-pub fn setup_precept_and_disable_faults() {
+pub fn ensure_test_env() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         setup_tracing_with_writer(TracingConsumer::Test, TestWriter::default(), None).init();

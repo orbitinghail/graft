@@ -198,6 +198,7 @@ mod tests {
     use super::*;
     use crate::{lsn, pageidx};
     use bilrost::{Message, OwnedMessage};
+    use test_log::test;
 
     #[test]
     fn test_commit_hash_bilrost() {

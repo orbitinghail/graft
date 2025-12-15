@@ -56,6 +56,7 @@ impl<P: Prefix> From<SystemTime> for GidTimestamp<P> {
 #[cfg(test)]
 mod tests {
     use crate::core::gid::prefix::Log;
+    use test_log::test;
 
     use super::*;
 

@@ -53,6 +53,7 @@ macro_rules! derive_newtype_proxy {
         #[cfg(test)]
         mod newtype_encoding_tests {
             use super::*;
+            use test_log::test;
 
             #[test]
             fn test_newtype_encoding() {

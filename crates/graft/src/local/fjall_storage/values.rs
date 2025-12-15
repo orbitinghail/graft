@@ -81,6 +81,7 @@ impl FjallRepr for () {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
     use crate::core::VolumeId;
     use crate::core::{LogId, PageCount, page::PAGESIZE};

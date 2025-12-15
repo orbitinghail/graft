@@ -126,8 +126,8 @@ impl Sum for ChecksumBuilder {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
+    use test_log::test;
 
     #[test]
     fn test_order_independence_two_items() {

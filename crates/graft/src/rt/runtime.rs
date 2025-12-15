@@ -268,6 +268,7 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use crate::core::{LogId, PageIdx, page::Page};
+    use test_log::test;
     use tokio::time::sleep;
 
     use crate::{

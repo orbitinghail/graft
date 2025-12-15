@@ -284,6 +284,7 @@ impl SegmentRangeRef {
 #[cfg(test)]
 mod tests {
     use crate::pageidx;
+    use test_log::test;
 
     use super::*;
 

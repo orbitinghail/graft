@@ -303,17 +303,18 @@ impl<'a> ReadGuard<'a> {
         let volume = self.volume(vid)?;
 
         let remote_lsn = volume.sync().map(|s| s.remote);
-        let local_watermark = volume
-            .sync()
-            .and_then(|s| s.local_watermark)
-            .unwrap_or(LSN::FIRST);
+        let local_watermark = volume.sync().and_then(|s| s.local_watermark);
 
+        // IMPORTANT: we only can use the local log if the local watermark is
+        // strictly earlier than the latest local LSN. If they are equal, then
+        // the local log has been entirely pushed to the remote, and we should
+        // only read from the remote log.
         if let Some(latest) = self.latest_commit(&volume.local)?
-            && local_watermark < latest.lsn
+            && local_watermark < Some(latest.lsn)
         {
             let mut snapshot = Snapshot::new(
                 volume.local,
-                local_watermark..=latest.lsn,
+                local_watermark.unwrap_or(LSN::FIRST)..=latest.lsn,
                 latest.page_count,
             );
             if let Some(lsn) = remote_lsn {
