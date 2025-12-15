@@ -1,4 +1,3 @@
-use anyhow::Ok;
 use graft::{
     core::{LogId, PageCount, page::Page},
     pageidx,
