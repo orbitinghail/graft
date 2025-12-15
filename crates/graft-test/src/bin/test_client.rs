@@ -120,6 +120,7 @@ fn main() -> ExitCode {
         }
         Err(err) => {
             tracing::error!(%err, "test client failed");
+            precept::expect_unreachable!("unhandled error in test client", { "err": err.to_string() });
             ExitCode::FAILURE
         }
     }
