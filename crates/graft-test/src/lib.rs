@@ -32,17 +32,6 @@ pub fn setup_precept_and_disable_faults() {
     });
 }
 
-/// require some condition to always be true on this codepath.
-/// equivalent to calling assert! while also triggering (and registering) an
-/// Antithesis `always_or_unreachable` assertion.
-#[macro_export]
-macro_rules! require {
-    ($condition:expr, $property:expr$(, $($details:tt)+)?) => {
-        precept::expect_always_or_unreachable!($condition, $property $(, $($details)+)?);
-        assert!($condition, $property);
-    }
-}
-
 pub struct GraftTestRuntime {
     thread: JoinHandle<()>,
     runtime: Runtime,

@@ -10,8 +10,6 @@ use object_store::client::{HttpError, HttpErrorKind};
 use rand::Rng;
 use rusqlite::Connection;
 
-use crate::require;
-
 #[derive(Debug, thiserror::Error)]
 pub enum WorkloadErr {
     #[error(transparent)]
@@ -206,7 +204,7 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
         .sqlite
         .query_row("SELECT SUM(balance) FROM accounts", [], |row| row.get(0))?;
 
-    require!(
+    precept::expect_always_or_unreachable!(
         total as u64 == TOTAL_BALANCE,
         "validate: bank is balanced",
         { "expected": TOTAL_BALANCE, "actual":  total }
@@ -218,7 +216,7 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
         results.push(r.get(0)?);
         Ok(())
     })?;
-    require!(
+    precept::expect_always_or_unreachable!(
         results == ["ok"],
         "validate: sqlite database is not corrupt",
         { "vid": env.vid, "results": results }

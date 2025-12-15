@@ -35,6 +35,7 @@ serde = { workspace = true, features = ["derive"] }
 splinter-rs = { workspace = true }
 static_assertions = { workspace = true }
 tempfile = { workspace = true }
+test-log = { workspace = true }
 text_trees = { workspace = true }
 thin-vec = { workspace = true }
 thiserror = { workspace = true }
