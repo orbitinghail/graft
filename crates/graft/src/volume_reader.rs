@@ -7,7 +7,7 @@ use crate::{GraftErr, rt::runtime::Runtime, snapshot::Snapshot, volume_writer::V
 /// A type which can read from a Volume
 pub trait VolumeRead {
     fn snapshot(&self) -> &Snapshot;
-    fn page_count(&self) -> Result<PageCount, GraftErr>;
+    fn page_count(&self) -> PageCount;
     fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr>;
 }
 
@@ -24,17 +24,9 @@ impl VolumeReader {
     }
 }
 
-impl TryFrom<VolumeReader> for VolumeWriter {
-    type Error = GraftErr;
-
-    fn try_from(reader: VolumeReader) -> Result<Self, Self::Error> {
-        let page_count = reader.page_count()?;
-        Ok(Self::new(
-            reader.runtime,
-            reader.vid,
-            reader.snapshot,
-            page_count,
-        ))
+impl From<VolumeReader> for VolumeWriter {
+    fn from(reader: VolumeReader) -> Self {
+        Self::new(reader.runtime, reader.vid, reader.snapshot)
     }
 }
 
@@ -43,8 +35,8 @@ impl VolumeRead for VolumeReader {
         &self.snapshot
     }
 
-    fn page_count(&self) -> Result<PageCount, GraftErr> {
-        self.runtime.snapshot_pages(&self.snapshot)
+    fn page_count(&self) -> PageCount {
+        self.snapshot.page_count
     }
 
     fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr> {
@@ -65,7 +57,7 @@ impl VolumeRead for VolumeReadRef<'_> {
         }
     }
 
-    fn page_count(&self) -> Result<PageCount, GraftErr> {
+    fn page_count(&self) -> PageCount {
         match self {
             VolumeReadRef::Reader(r) => r.page_count(),
             VolumeReadRef::Writer(w) => w.page_count(),

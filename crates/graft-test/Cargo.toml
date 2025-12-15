@@ -16,6 +16,7 @@ graft = { path = "../graft", features = ["testutil", "precept"] }
 graft-sqlite = { path = "../graft-sqlite" }
 graft-tracing = { path = "../graft-tracing" }
 
+anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 file-lock = { workspace = true }
 object_store = { workspace = true }

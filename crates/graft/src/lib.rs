@@ -26,3 +26,7 @@ pub mod testutil;
 pub mod fault;
 
 pub use err::{GraftErr, LogicalErr};
+
+// re-export static_assertions for macros
+#[doc(hidden)]
+pub use static_assertions;

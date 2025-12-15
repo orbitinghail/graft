@@ -212,8 +212,7 @@ impl Runtime {
 
     pub fn volume_writer(&self, vid: VolumeId) -> Result<VolumeWriter> {
         let snapshot = self.volume_snapshot(&vid)?;
-        let page_count = self.snapshot_pages(&snapshot)?;
-        Ok(VolumeWriter::new(self.clone(), vid, snapshot, page_count))
+        Ok(VolumeWriter::new(self.clone(), vid, snapshot))
     }
 }
 

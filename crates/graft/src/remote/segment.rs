@@ -9,7 +9,7 @@ use crate::core::{
     page::{PAGESIZE, Page},
 };
 use bytes::{Bytes, BytesMut};
-use smallvec::SmallVec;
+use thin_vec::ThinVec;
 use zstd::zstd_safe::{CCtx, CParameter, DCtx, InBuffer, OutBuffer, zstd_sys::ZSTD_EndDirective};
 
 /// The maximum number of pages per Frame.
@@ -21,11 +21,11 @@ const ZSTD_COMPRESSION_LEVEL: i32 = 3;
 
 pub struct SegmentBuilder {
     /// index of compressed frames
-    frames: SmallVec<[SegmentFrameIdx; 1]>,
+    frames: ThinVec<SegmentFrameIdx>,
 
     /// chunks of the resulting segment. each chunk represents a portion of the
     /// compressed stream of frames
-    chunks: SmallVec<[Bytes; 1]>,
+    chunks: Vec<Bytes>,
 
     /// the compression context
     cctx: CCtx<'static>,
@@ -146,7 +146,7 @@ impl SegmentBuilder {
             .expect("BUG: failed to reset context");
     }
 
-    pub fn finish(mut self) -> (SmallVec<[SegmentFrameIdx; 1]>, SmallVec<[Bytes; 1]>) {
+    pub fn finish(mut self) -> (ThinVec<SegmentFrameIdx>, Vec<Bytes>) {
         // flush the last frame if needed
         if self.current_frame_pages > 0 {
             self.end_frame();

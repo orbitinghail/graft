@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::RangeInclusive, time::SystemTime};
+use std::{collections::BTreeMap, ops::RangeInclusive};
 
 use crate::core::{
     CommitHashBuilder, LogId, PageCount, PageIdx, SegmentId, VolumeId,
@@ -8,8 +8,8 @@ use crate::core::{
     lsn::LSN,
 };
 use bytes::Bytes;
-use smallvec::SmallVec;
 use splinter_rs::{Optimizable, PartitionRead, Splinter};
+use thin_vec::thin_vec;
 use tryiter::TryIteratorExt;
 
 use crate::{
@@ -64,7 +64,11 @@ impl Action for RemoteCommit {
         )?;
 
         // detect implicit checkpoint: if we're uploading all pages, this is a checkpoint
-        let is_implicit_checkpoint = segment_idx.page_count() == plan.page_count;
+        let maybe_checkpoint = if segment_idx.page_count() == plan.page_count {
+            thin_vec![plan.commit_ref.lsn]
+        } else {
+            thin_vec![]
+        };
 
         let commit = Commit::new(
             plan.commit_ref.log().clone(),
@@ -73,7 +77,7 @@ impl Action for RemoteCommit {
         )
         .with_commit_hash(Some(commit_hash.clone()))
         .with_segment_idx(Some(segment_idx))
-        .with_checkpointed_at(is_implicit_checkpoint.then(SystemTime::now));
+        .with_checkpoints(maybe_checkpoint);
 
         #[cfg(feature = "precept")]
         precept::sometimes_fault!(
@@ -181,24 +185,20 @@ fn plan_commit(storage: &FjallStorage, vid: &VolumeId) -> Result<Option<CommitPl
 fn build_segment(
     storage: &FjallStorage,
     plan: &CommitPlan,
-) -> Result<(CommitHash, SegmentIdx, SmallVec<[Bytes; 1]>), GraftErr> {
+) -> Result<(CommitHash, SegmentIdx, Vec<Bytes>), GraftErr> {
     let reader = storage.read();
 
     // built a snapshot which only matches the LSNs we want to
     // include in the segment
-    let segment_path = Snapshot::new(plan.local.clone(), plan.lsns.clone());
+    let snapshot = Snapshot::new(plan.local.clone(), plan.lsns.clone(), plan.page_count);
 
     // collect all of the segment pages, only keeping the newest (first) page
     // for each unique pageidx
-    let mut page_count = plan.page_count;
+    let page_count = plan.page_count;
     let mut pages = BTreeMap::new();
     let mut pageset = Splinter::default();
-    let mut commits = reader.commits(&segment_path);
+    let mut commits = reader.commits(&snapshot);
     while let Some(commit) = commits.try_next()? {
-        // if we encounter a smaller commit on our travels, we need to shrink
-        // the page_count to ensure that truncation is respected
-        page_count = page_count.min(commit.page_count);
-
         if let Some(idx) = commit.segment_idx {
             let mut commit_pages = idx.pageset;
 

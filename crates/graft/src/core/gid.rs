@@ -46,7 +46,7 @@ const ENCODED_TIME_LEN: usize = 10;
 const ENCODED_RANDOM_LEN: usize = 13;
 const ENCODED_LEN: usize = ENCODED_TIME_LEN + 1 + ENCODED_RANDOM_LEN;
 
-mod prefix;
+pub(crate) mod prefix;
 mod random;
 mod time;
 
