@@ -127,7 +127,9 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     let total_txns = rng.random_range(1..=100);
     let mut valid_txns = 0;
 
-    tracing::info!("performing {} bank transactions", total_txns);
+    let status = env.runtime.volume_status(&env.vid)?;
+    let snapshot = env.runtime.volume_snapshot(&env.vid)?;
+    tracing::info!(%status, ?snapshot, "performing {} bank transactions", total_txns);
 
     while valid_txns < total_txns {
         // randomly pick two account ids (they are between 0 and NUM_ACCOUNTS)
@@ -198,6 +200,10 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
 
     // pull the database
     env.runtime.volume_pull(env.vid.clone())?;
+
+    let status = env.runtime.volume_status(&env.vid)?;
+    let snapshot = env.runtime.volume_snapshot(&env.vid)?;
+    tracing::info!(%status, ?snapshot, "volume state");
 
     // verify that the total balance (sum(balance)) is equal to TOTAL_BALANCE
     let total: i64 = env
