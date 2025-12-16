@@ -196,6 +196,7 @@ impl Remote {
                     // Perform an atomic write operation, returning
                     // AlreadyExists if the commit already exists
                     if_not_exists: true,
+                    concurrent: REMOTE_CONCURRENCY,
                     ..WriteOptions::default()
                 },
             )
@@ -218,10 +219,6 @@ impl Remote {
                 &path,
                 buffer,
                 WriteOptions {
-                    // we never expect to write to an existing segment, so let's
-                    // fail if it ever happens to protect against silent
-                    // corruption
-                    if_not_exists: true,
                     concurrent: REMOTE_CONCURRENCY,
                     ..WriteOptions::default()
                 },
