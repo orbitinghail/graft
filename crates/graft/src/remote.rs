@@ -120,7 +120,7 @@ impl Remote {
                 if let Some(prefix) = prefix {
                     builder = builder.root(&prefix);
                 }
-                if let Some(endpoint) = std::env::var("AWS_ENDPOINT_URL").ok() {
+                if let Ok(endpoint) = std::env::var("AWS_ENDPOINT_URL") {
                     builder = builder.endpoint(&endpoint);
                 }
                 let client = reqwest::ClientBuilder::new()
