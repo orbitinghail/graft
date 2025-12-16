@@ -19,7 +19,7 @@ graft-tracing = { path = "../graft-tracing" }
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 file-lock = { workspace = true }
-object_store = { workspace = true }
+opendal = { workspace = true }
 precept = { workspace = true, features = ["antithesis", "enabled"] }
 rand = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }

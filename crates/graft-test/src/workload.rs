@@ -1,12 +1,9 @@
-use std::error::Error;
-
 use graft::{
     GraftErr, LogicalErr,
     core::{LogId, PageCount, VolumeId},
     remote::RemoteErr,
     rt::runtime::Runtime,
 };
-use object_store::client::{HttpError, HttpErrorKind};
 use rand::Rng;
 use rusqlite::Connection;
 
@@ -21,23 +18,6 @@ pub enum WorkloadErr {
 
 impl WorkloadErr {
     pub fn should_retry(&self) -> bool {
-        fn should_retry_object_store(err: &object_store::Error) -> bool {
-            let mut source: &dyn Error = err;
-            while let Some(next) = source.source() {
-                source = next;
-                if let Some(err) = source.downcast_ref::<HttpError>() {
-                    return matches!(
-                        err.kind(),
-                        HttpErrorKind::Connect
-                            | HttpErrorKind::Request
-                            | HttpErrorKind::Timeout
-                            | HttpErrorKind::Interrupted
-                    );
-                }
-            }
-            false
-        }
-
         match self {
             WorkloadErr::GraftErr(GraftErr::Logical(
                 LogicalErr::VolumeConcurrentWrite(_)
@@ -45,7 +25,7 @@ impl WorkloadErr {
                 | LogicalErr::VolumeDiverged(_),
             )) => true,
             WorkloadErr::GraftErr(GraftErr::Remote(RemoteErr::ObjectStore(err))) => {
-                should_retry_object_store(err)
+                err.is_temporary() || err.is_persistent()
             }
             WorkloadErr::RusqliteErr(rusqlite::Error::SqliteFailure(err, _)) => matches!(
                 err.code,

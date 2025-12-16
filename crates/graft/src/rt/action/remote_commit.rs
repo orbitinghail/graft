@@ -103,7 +103,7 @@ impl Action for RemoteCommit {
                     .remote_commit_success(&self.vid, commit)?;
                 Ok(())
             }
-            Err(err) if err.is_already_exists() => {
+            Err(err) if err.precondition_failed() => {
                 // The commit already exists on the remote. This could be because:
                 // 1. Someone (including us) pushed the same commit (idempotency)
                 // 2. Someone (including us) pushed a DIFFERENT commit (divergence)

@@ -1,5 +1,6 @@
 use std::{
     env::temp_dir,
+    fmt::Debug,
     path::{Path, PathBuf},
     process::ExitCode,
 };
@@ -120,7 +121,7 @@ fn main() -> ExitCode {
         }
         Err(err) => {
             tracing::error!(%err, "test client failed");
-            precept::expect_unreachable!("unhandled error in test client", { "err": err.to_string() });
+            precept::expect_unreachable!("unhandled error in test client", { "err": format!("{err:?}") });
             ExitCode::FAILURE
         }
     }
@@ -152,7 +153,9 @@ fn main_inner() -> Result<(), TestErr> {
         RemoteType::Fs => {
             let remoteroot = rootdir.join("remote");
             std::fs::create_dir_all(&remoteroot)?;
-            RemoteConfig::Fs { root: remoteroot }
+            RemoteConfig::Fs {
+                root: remoteroot.to_str().unwrap().to_string(),
+            }
         }
         RemoteType::S3Compatible => RemoteConfig::S3Compatible {
             bucket: "primary".to_string(),

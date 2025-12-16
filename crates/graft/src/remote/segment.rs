@@ -38,7 +38,7 @@ pub struct SegmentBuilder {
     current_frame_pages: PageCount,
 
     /// the compressed size of current frame
-    current_frame_bytes: usize,
+    current_frame_bytes: u64,
 
     /// the active chunk
     chunk: Vec<u8>,
@@ -96,7 +96,7 @@ impl SegmentBuilder {
                 )
                 .expect("BUG: failed to compress frame");
 
-            self.current_frame_bytes += out_buf.pos() - start_pos;
+            self.current_frame_bytes += (out_buf.pos() - start_pos) as u64;
 
             if pending_flush > 0 && out_buf.pos() == out_buf.capacity() {
                 // output buffer is full, swap chunks
@@ -122,7 +122,7 @@ impl SegmentBuilder {
                 .compress_stream2(&mut out_buf, &mut in_buf, ZSTD_EndDirective::ZSTD_e_end)
                 .expect("BUG: failed to compress frame");
 
-            self.current_frame_bytes += out_buf.pos() - start_pos;
+            self.current_frame_bytes += (out_buf.pos() - start_pos) as u64;
 
             if pending_flush > 0 && out_buf.pos() == out_buf.capacity() {
                 // output buffer is full, swap chunks
@@ -225,7 +225,7 @@ mod test {
         assert_eq!(frames[1].last_pageidx(), pageidx!(96));
         assert_eq!(chunks.len(), 1);
         assert_eq!(
-            chunks[0].len(),
+            chunks[0].len() as u64,
             frames[0].frame_size() + frames[1].frame_size()
         );
     }
