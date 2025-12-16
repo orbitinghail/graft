@@ -26,11 +26,12 @@ foldhash = { workspace = true }
 futures = { workspace = true }
 hashbrown = { workspace = true }
 itertools = { workspace = true }
-object_store = { workspace = true }
+opendal = { workspace = true }
 parking_lot = { workspace = true }
 precept = { workspace = true, optional = true }
 rand = { workspace = true }
 range-set-blaze = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 splinter-rs = { workspace = true }
 static_assertions = { workspace = true }

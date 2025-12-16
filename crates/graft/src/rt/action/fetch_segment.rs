@@ -17,7 +17,7 @@ pub struct FetchSegment {
 impl Action for FetchSegment {
     async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<()> {
         let bytes = remote
-            .get_segment_range(&self.range.sid, &self.range.bytes)
+            .get_segment_range(&self.range.sid, self.range.bytes)
             .await?;
         let pages = segment_frame_iter(self.range.pageset.iter(), &bytes);
         let mut batch = storage.batch();

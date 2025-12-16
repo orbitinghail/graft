@@ -208,7 +208,7 @@ impl DerefMut for SegmentIdx {
 pub struct SegmentFrameIdx {
     /// The length of the compressed frame in bytes.
     #[bilrost(1)]
-    frame_size: usize,
+    frame_size: u64,
 
     /// The last `PageIdx` contained by this `SegmentFrame`.
     #[bilrost(2)]
@@ -216,11 +216,11 @@ pub struct SegmentFrameIdx {
 }
 
 impl SegmentFrameIdx {
-    pub fn new(frame_size: usize, last_pageidx: PageIdx) -> Self {
+    pub fn new(frame_size: u64, last_pageidx: PageIdx) -> Self {
         Self { frame_size, last_pageidx }
     }
 
-    pub fn frame_size(&self) -> usize {
+    pub fn frame_size(&self) -> u64 {
         self.frame_size
     }
 
@@ -235,7 +235,7 @@ impl SegmentFrameIdx {
 #[derive(Clone, PartialEq, Eq)]
 pub struct SegmentRangeRef {
     pub sid: SegmentId,
-    pub bytes: Range<usize>,
+    pub bytes: Range<u64>,
     pub pageset: PageSet,
 }
 
@@ -251,7 +251,7 @@ impl std::fmt::Debug for SegmentRangeRef {
 
 impl SegmentRangeRef {
     /// The size of the frame in bytes
-    pub fn size(&self) -> usize {
+    pub fn size(&self) -> u64 {
         self.bytes.end - self.bytes.start
     }
 

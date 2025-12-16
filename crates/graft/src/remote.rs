@@ -1,4 +1,4 @@
-use std::{future, ops::Range, path::PathBuf};
+use std::{future, ops::Range, time::Duration};
 
 use crate::core::{LogId, SegmentId, cbe::CBE64, commit::Commit, lsn::LSN};
 use bilrost::{Message, OwnedMessage};
@@ -7,16 +7,19 @@ use futures::{
     Stream, StreamExt, TryStreamExt,
     stream::{self, FuturesOrdered},
 };
-use object_store::{
-    GetOptions, GetRange, ObjectStore, PutOptions, PutPayload, aws::S3ConditionalPut,
-    local::LocalFileSystem, memory::InMemory, path::Path, prefix::PrefixStore,
+use opendal::{
+    Buffer, ErrorKind, Operator,
+    layers::{HttpClientLayer, RetryLayer},
+    options::{ReadOptions, WriteOptions},
+    raw::HttpClient,
+    services::{Fs, Memory, S3},
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod segment;
 
-const FETCH_COMMITS_CONCURRENCY: usize = 5;
+const REMOTE_CONCURRENCY: usize = 5;
 
 enum RemotePath<'a> {
     /// Commits are stored at `/logs/{logid}/commits/{CBE64 hex LSN}`
@@ -27,15 +30,14 @@ enum RemotePath<'a> {
 }
 
 impl RemotePath<'_> {
-    fn build(self) -> object_store::path::Path {
+    fn build(self) -> String {
         match self {
-            Self::Commit(log, lsn) => Path::from_iter([
-                "logs",
+            Self::Commit(log, lsn) => format!(
+                "logs/{}/commits/{}",
                 &log.serialize(),
-                "commits",
                 &CBE64::from(lsn).to_string(),
-            ]),
-            Self::Segment(sid) => Path::from_iter(["segments", &sid.serialize()]),
+            ),
+            Self::Segment(sid) => format!("segments/{}", &sid.serialize(),),
         }
     }
 }
@@ -43,34 +45,35 @@ impl RemotePath<'_> {
 #[derive(Error, Debug)]
 pub enum RemoteErr {
     #[error("Object store error: {0}")]
-    ObjectStore(#[from] object_store::Error),
+    ObjectStore(#[from] opendal::Error),
 
-    #[error("Invalid path: {0}")]
-    Path(#[from] object_store::path::Error),
+    #[error("HTTP client setup error: {0}")]
+    SetupHttp(#[from] reqwest::Error),
 
     #[error("Failed to decode file: {0}")]
     Decode(#[from] bilrost::DecodeError),
 }
 
 impl RemoteErr {
-    pub fn is_already_exists(&self) -> bool {
+    fn objectstore_err_kind(&self) -> Option<opendal::ErrorKind> {
+        if let RemoteErr::ObjectStore(err) = self {
+            Some(err.kind())
+        } else {
+            None
+        }
+    }
+
+    pub fn precondition_failed(&self) -> bool {
         matches!(
-            self,
-            Self::ObjectStore(object_store::Error::AlreadyExists { .. })
+            self.objectstore_err_kind(),
+            Some(opendal::ErrorKind::ConditionNotMatch)
         )
     }
 
     pub fn is_not_found(&self) -> bool {
         matches!(
-            self,
-            Self::ObjectStore(object_store::Error::NotFound { .. })
-        )
-    }
-
-    pub fn is_not_modified(&self) -> bool {
-        matches!(
-            self,
-            Self::ObjectStore(object_store::Error::NotModified { .. })
+            self.objectstore_err_kind(),
+            Some(opendal::ErrorKind::NotFound)
         )
     }
 }
@@ -85,7 +88,7 @@ pub enum RemoteConfig {
     Memory,
 
     /// On disk object store
-    Fs { root: PathBuf },
+    Fs { root: String },
 
     /// S3 compatible object store
     /// Can load most config and secrets from environment variables
@@ -104,26 +107,36 @@ impl RemoteConfig {
 
 #[derive(Debug)]
 pub struct Remote {
-    store: Box<dyn ObjectStore>,
+    store: Operator,
 }
 
 impl Remote {
     pub fn with_config(config: RemoteConfig) -> Result<Self> {
-        let store: Box<dyn ObjectStore> = match config {
-            RemoteConfig::Memory => Box::new(InMemory::new()),
-            RemoteConfig::Fs { root } => Box::new(LocalFileSystem::new_with_prefix(root)?),
+        let store = match config {
+            RemoteConfig::Memory => Operator::new(Memory::default())?.finish(),
+            RemoteConfig::Fs { root } => Operator::new(Fs::default().root(&root))?.finish(),
             RemoteConfig::S3Compatible { bucket, prefix } => {
-                let store = object_store::aws::AmazonS3Builder::from_env()
-                    .with_allow_http(true)
-                    .with_bucket_name(bucket)
-                    .with_conditional_put(S3ConditionalPut::ETagMatch)
-                    .build()?;
+                let mut builder = S3::default().bucket(&bucket);
                 if let Some(prefix) = prefix {
-                    let prefix = Path::parse(prefix)?;
-                    Box::new(PrefixStore::new(store, prefix))
-                } else {
-                    Box::new(store)
+                    builder = builder.root(&prefix);
                 }
+                if let Ok(endpoint) = std::env::var("AWS_ENDPOINT_URL") {
+                    builder = builder.endpoint(&endpoint);
+                }
+                let client = reqwest::ClientBuilder::new()
+                    // use http1 to maximize throughput
+                    // http2 routes all requests through a single connection
+                    .http1_only()
+                    // enable hickory DNS resolver for DNS caching
+                    .hickory_dns(true)
+                    .connect_timeout(Duration::from_secs(5))
+                    .timeout(Duration::from_secs(60))
+                    .build()?;
+
+                Operator::new(builder)?
+                    .layer(HttpClientLayer::new(HttpClient::with(client)))
+                    .layer(RetryLayer::new())
+                    .finish()
             }
         };
 
@@ -148,7 +161,7 @@ impl Remote {
             None => vec![],
         };
         stream::once(future::ready(first_chunk))
-            .chain(stream::iter(lsns).chunks(FETCH_COMMITS_CONCURRENCY))
+            .chain(stream::iter(lsns).chunks(REMOTE_CONCURRENCY))
             .flat_map(|chunk| {
                 chunk
                     .into_iter()
@@ -163,9 +176,9 @@ impl Remote {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>> {
         let path = RemotePath::Commit(log, lsn).build();
-        match self.store.get(&path).await {
-            Ok(res) => Ok(Some(Commit::decode(res.bytes().await?)?)),
-            Err(object_store::Error::NotFound { .. }) => Ok(None),
+        match self.store.read(&path).await {
+            Ok(res) => Ok(Some(Commit::decode(res)?)),
+            Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err.into()),
         }
     }
@@ -175,16 +188,16 @@ impl Remote {
     #[tracing::instrument(level = "debug", skip(self, commit), fields(log = %commit.log, lsn = %commit.lsn))]
     pub async fn put_commit(&self, commit: &Commit) -> Result<()> {
         let path = RemotePath::Commit(commit.log(), commit.lsn()).build();
-        let payload = PutPayload::from_bytes(commit.encode_to_bytes());
         self.store
-            .put_opts(
+            .write_options(
                 &path,
-                payload,
-                PutOptions {
+                commit.encode_to_bytes(),
+                WriteOptions {
                     // Perform an atomic write operation, returning
                     // AlreadyExists if the commit already exists
-                    mode: object_store::PutMode::Create,
-                    ..PutOptions::default()
+                    if_not_exists: true,
+                    concurrent: REMOTE_CONCURRENCY,
+                    ..WriteOptions::default()
                 },
             )
             .await?;
@@ -199,22 +212,37 @@ impl Remote {
         chunks: I,
     ) -> Result<()> {
         let path = RemotePath::Segment(sid).build();
-        let payload = PutPayload::from_iter(chunks);
-        tracing::Span::current().record("size", payload.content_length());
-        self.store.put(&path, payload).await?;
+        let buffer = Buffer::from_iter(chunks);
+        tracing::Span::current().record("size", buffer.len());
+        self.store
+            .write_options(
+                &path,
+                buffer,
+                WriteOptions {
+                    concurrent: REMOTE_CONCURRENCY,
+                    ..WriteOptions::default()
+                },
+            )
+            .await?;
         Ok(())
     }
 
     /// Reads a byte range of a segment
     #[tracing::instrument(level = "debug", skip(self))]
-    pub async fn get_segment_range(&self, sid: &SegmentId, bytes: &Range<usize>) -> Result<Bytes> {
+    pub async fn get_segment_range(&self, sid: &SegmentId, bytes: Range<u64>) -> Result<Bytes> {
         let path = RemotePath::Segment(sid).build();
-        let get_opts = GetOptions {
-            range: Some(GetRange::Bounded(bytes.start as u64..bytes.end as u64)),
-            ..GetOptions::default()
-        };
-        let result = self.store.get_opts(&path, get_opts).await?;
-        Ok(result.bytes().await?)
+        let buffer = self
+            .store
+            .read_options(
+                &path,
+                ReadOptions {
+                    range: bytes.into(),
+                    concurrent: REMOTE_CONCURRENCY,
+                    ..ReadOptions::default()
+                },
+            )
+            .await?;
+        Ok(buffer.to_bytes())
     }
 
     /// TESTONLY: list contents of this remote in a tree-like format
@@ -226,13 +254,14 @@ impl Remote {
             AnchorPosition, FormatCharacters, TreeFormatting, TreeNode, TreeOrientation,
         };
 
-        let paths = self.store.list(None).map_ok(|obj| {
-            obj.location
-                .parts()
-                .map(|p| p.as_ref().to_string())
-                .collect_vec()
-        });
-        let paths: Vec<_> = paths.try_collect().await.unwrap();
+        let paths = self
+            .store
+            .list("")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.path().split("/").map(|s| s.to_string()).collect_vec())
+            .collect_vec();
 
         #[derive(Default)]
         struct TreeBuilder {
@@ -271,7 +300,7 @@ impl Remote {
             root.insert(&path);
         }
 
-        root.to_tree_node(self.store.to_string())
+        root.to_tree_node(format!("{:?}", self.store))
             .to_string_with_format(&TreeFormatting {
                 prefix_str: None,
                 orientation: TreeOrientation::TopDown,
