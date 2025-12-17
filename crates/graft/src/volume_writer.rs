@@ -1,4 +1,6 @@
-use crate::core::{PageCount, PageIdx, VolumeId, commit::SegmentIdx, page::Page};
+use std::collections::BTreeMap;
+
+use crate::core::{PageCount, PageIdx, VolumeId, page::Page};
 
 use crate::{
     GraftErr,
@@ -29,13 +31,17 @@ pub struct VolumeWriter {
     runtime: Runtime,
     vid: VolumeId,
     snapshot: Snapshot,
-    segment: SegmentIdx,
+    pages: BTreeMap<PageIdx, Page>,
 }
 
 impl VolumeWriter {
     pub(crate) fn new(runtime: Runtime, vid: VolumeId, snapshot: Snapshot) -> Self {
-        let segment = runtime.create_staged_segment();
-        Self { runtime, vid, snapshot, segment }
+        Self {
+            runtime,
+            vid,
+            snapshot,
+            pages: Default::default(),
+        }
     }
 }
 
@@ -51,14 +57,8 @@ impl VolumeRead for VolumeWriter {
     fn read_page(&self, pageidx: PageIdx) -> Result<Page, GraftErr> {
         if !self.page_count().contains(pageidx) {
             Ok(Page::EMPTY)
-        } else if self.segment.contains(pageidx) {
-            Ok(self
-                .runtime
-                .storage()
-                .read()
-                .read_page(self.segment.sid().clone(), pageidx)
-                .transpose()
-                .expect("BUG: Staged segment out of sync with storage")?)
+        } else if let Some(page) = self.pages.get(&pageidx) {
+            Ok(page.clone())
         } else {
             self.runtime.read_page(&self.snapshot, pageidx)
         }
@@ -68,23 +68,13 @@ impl VolumeRead for VolumeWriter {
 impl VolumeWrite for VolumeWriter {
     fn write_page(&mut self, pageidx: PageIdx, page: Page) -> Result<(), GraftErr> {
         self.snapshot.page_count = self.snapshot.page_count.max(pageidx.pages());
-        self.segment.insert(pageidx);
-        Ok(self
-            .runtime
-            .storage()
-            .write_page(self.segment.sid().clone(), pageidx, page)?)
+        self.pages.insert(pageidx, page);
+        Ok(())
     }
 
     fn soft_truncate(&mut self, page_count: PageCount) -> Result<(), GraftErr> {
         if page_count < self.page_count() {
-            let start = page_count
-                .last_pageidx()
-                .unwrap_or_default()
-                .saturating_next();
-            self.segment.remove_page_range(start..=PageIdx::LAST);
-            self.runtime
-                .storage()
-                .remove_page_range(self.segment.sid(), start..=PageIdx::LAST)?;
+            self.pages.retain(|&k, _| page_count.contains(k));
         }
         self.snapshot.page_count = page_count;
         Ok(())
@@ -96,7 +86,7 @@ impl VolumeWrite for VolumeWriter {
             &self.vid,
             self.snapshot,
             page_count,
-            self.segment,
+            self.pages,
         )?;
         Ok(VolumeReader::new(self.runtime, self.vid, snapshot))
     }
