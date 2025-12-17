@@ -25,13 +25,13 @@ use rand::{
 use rusqlite::Connection;
 use sqlite_plugin::vfs::RegisterOpts;
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, ValueEnum, Debug)]
 enum RemoteType {
     Fs,
     S3Compatible,
 }
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 struct Args {
     #[clap(long)]
     rootdir: Option<PathBuf>,
@@ -102,7 +102,7 @@ fn get_or_init_data_dir(rng: &mut impl Rng, rootdir: &Path) -> (PathBuf, FileLoc
     (path, lock)
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 #[allow(
     clippy::enum_variant_names,
     reason = "designed to support other workloads"
@@ -136,6 +136,7 @@ fn main_inner() -> Result<(), TestErr> {
     let args = Args::parse();
     let rootdir = args
         .rootdir
+        .clone()
         .unwrap_or_else(|| temp_dir().join("graft_test_root"));
 
     let (data_dir, _lock) = get_or_init_data_dir(&mut rng, &rootdir);
@@ -148,6 +149,8 @@ fn main_inner() -> Result<(), TestErr> {
             .map(|s| s.to_string()),
     )
     .init();
+
+    tracing::info!(?args, "starting test client");
 
     let remote = match args.remote {
         RemoteType::Fs => {

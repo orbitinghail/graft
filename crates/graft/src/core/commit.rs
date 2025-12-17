@@ -108,6 +108,10 @@ impl Commit {
         self.segment_idx.as_ref()
     }
 
+    pub fn segment_id(&self) -> Option<&SegmentId> {
+        self.segment_idx().map(|idx| &idx.sid)
+    }
+
     pub fn checkpoints(&self) -> &ThinVec<LSN> {
         &self.checkpoints
     }

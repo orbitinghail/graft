@@ -104,6 +104,10 @@ impl Action for RemoteCommit {
                 Ok(())
             }
             Err(err) if err.precondition_failed() => {
+                tracing::debug!(
+                    ?err,
+                    "RemoteCommit: precondition failed, attempting recovery"
+                );
                 // The commit already exists on the remote. This could be because:
                 // 1. Someone (including us) pushed the same commit (idempotency)
                 // 2. Someone (including us) pushed a DIFFERENT commit (divergence)
@@ -279,8 +283,6 @@ async fn attempt_recovery(
     );
 
     if let Some(pending) = volume.pending_commit {
-        tracing::debug!(?pending, "attempting to recover pending commit");
-
         // If we have a pending commit, we need to fetch the remote log to see
         // if our pending commit already landed.
         FetchLog {

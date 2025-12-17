@@ -172,7 +172,7 @@ impl Remote {
     }
 
     /// Fetches a single commit, returning None if the commit is not found.
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "trace", err, skip(self))]
     pub async fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>> {
         let path = RemotePath::Commit(log, lsn).build();
         match self.store.read(&path).await {
@@ -184,7 +184,9 @@ impl Remote {
 
     /// Atomically write a commit to the remote, returning
     /// `RemoteErr::ObjectStore(Error::AlreadyExists)` on a collision
-    #[tracing::instrument(level = "debug", skip(self, commit), fields(log = %commit.log, lsn = %commit.lsn))]
+    #[tracing::instrument(level = "debug", err, skip(self, commit),
+        fields(log = %commit.log, lsn = %commit.lsn, sid = ?commit.segment_id())
+    )]
     pub async fn put_commit(&self, commit: &Commit) -> Result<()> {
         let path = RemotePath::Commit(commit.log(), commit.lsn()).build();
         self.store
@@ -204,7 +206,7 @@ impl Remote {
     }
 
     /// Uploads a segment to this Remote
-    #[tracing::instrument(level = "debug", skip(self, chunks), fields(size))]
+    #[tracing::instrument(level = "debug", err, skip(self, chunks), fields(size))]
     pub async fn put_segment<I: IntoIterator<Item = Bytes>>(
         &self,
         sid: &SegmentId,
@@ -227,7 +229,7 @@ impl Remote {
     }
 
     /// Reads a byte range of a segment
-    #[tracing::instrument(level = "debug", skip(self))]
+    #[tracing::instrument(level = "debug", err, skip(self))]
     pub async fn get_segment_range(&self, sid: &SegmentId, bytes: Range<u64>) -> Result<Bytes> {
         let path = RemotePath::Segment(sid).build();
         let buffer = self
