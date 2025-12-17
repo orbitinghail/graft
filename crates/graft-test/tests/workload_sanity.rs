@@ -17,6 +17,7 @@ fn test_bank_workload() {
     let sqlite = runtime.open_sqlite("main", None).into();
     let rng = rand::rng();
     let mut env = Env {
+        cid: "client".to_string(),
         rng,
         runtime: runtime.clone(),
         vid: volume.vid,

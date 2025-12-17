@@ -37,6 +37,7 @@ impl WorkloadErr {
 }
 
 pub struct Env<R> {
+    pub cid: String,
     pub rng: R,
     pub runtime: Runtime,
     pub vid: VolumeId,
@@ -198,7 +199,7 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     precept::expect_always_or_unreachable!(
         total as u64 == TOTAL_BALANCE,
         "validate: bank is balanced",
-        { "expected": TOTAL_BALANCE, "actual":  total }
+        { "expected": TOTAL_BALANCE, "actual": total, "cid": env.cid }
     );
 
     // run SQLite integrity check

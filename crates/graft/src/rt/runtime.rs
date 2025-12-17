@@ -1,8 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::core::{
-    LogId, PageCount, PageIdx, SegmentId, VolumeId, checksum::Checksum, commit::SegmentIdx,
-    lsn::LSN, page::Page, pageset::PageSet,
+    LogId, PageCount, PageIdx, VolumeId, checksum::Checksum, lsn::LSN, page::Page, pageset::PageSet,
 };
 use bytestring::ByteString;
 use tracing::Instrument;

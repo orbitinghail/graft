@@ -171,7 +171,11 @@ fn main_inner() -> Result<(), TestErr> {
     }
 
     // create the Graft runtime
-    let runtime = setup_graft(GraftConfig { remote, data_dir, autosync: None })?;
+    let runtime = setup_graft(GraftConfig {
+        remote,
+        data_dir: data_dir.clone(),
+        autosync: None,
+    })?;
 
     // initialize the main tag if needed
     let vid = if let Some(vid) = runtime.tag_get("main")? {
@@ -190,8 +194,17 @@ fn main_inner() -> Result<(), TestErr> {
     // open a sqlite connection
     let sqlite = Connection::open("main")?;
 
+    let cid = data_dir.to_str().unwrap().to_string();
+
     // build the test environment
-    let mut env = Env { rng, runtime, vid, log: args.log, sqlite };
+    let mut env = Env {
+        cid,
+        rng,
+        runtime,
+        vid,
+        log: args.log,
+        sqlite,
+    };
 
     // pull the volume if it's empty
     pull_if_empty(&env)?;

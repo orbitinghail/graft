@@ -69,6 +69,7 @@ fn test_bank_balance_skip_seg_cache() {
     let sqlite = runtime.open_sqlite("main", None).into();
     let rng = rand::rng();
     let mut env = Env {
+        cid: "client".to_string(),
         rng,
         runtime: runtime.clone(),
         vid: volume.vid,
@@ -105,6 +106,7 @@ fn test_crash_after_commit_recovery() {
     let sqlite = runtime.open_sqlite("main", None).into();
     let rng = rand::rng();
     let mut env = Env {
+        cid: "client".to_string(),
         rng,
         runtime: runtime.clone(),
         vid: volume.vid.clone(),
