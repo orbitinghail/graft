@@ -1,6 +1,6 @@
 use graft::{
     GraftErr, LogicalErr,
-    core::{LogId, VolumeId},
+    core::{LogId, PageCount, VolumeId},
     remote::RemoteErr,
     rt::runtime::Runtime,
 };
@@ -85,6 +85,18 @@ pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     Ok(())
 }
 
+/// pull the remote log if the local volume is empty
+pub fn pull_if_empty<R: Rng>(env: &Env<R>) -> Result<(), WorkloadErr> {
+    let snapshot = env.runtime.volume_snapshot(&env.vid)?;
+    if snapshot.is_empty() || env.runtime.snapshot_pages(&snapshot)? == PageCount::ZERO {
+        precept::expect_reachable!("pull_if_empty triggers");
+        Ok(env.runtime.volume_pull(env.vid.clone())?)
+    } else {
+        precept::expect_reachable!("pull_if_empty doesn't trigger");
+        Ok(())
+    }
+}
+
 pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     let rng = &mut env.rng;
     let sqlite = &mut env.sqlite;
@@ -165,6 +177,9 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
 
     // disable fault injection during validation
     precept::fault::disable_all();
+
+    // pull the database
+    env.runtime.volume_pull(env.vid.clone())?;
 
     let status = env.runtime.volume_status(&env.vid)?;
     let snapshot = env.runtime.volume_snapshot(&env.vid)?;

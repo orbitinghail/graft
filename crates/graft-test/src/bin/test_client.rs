@@ -14,7 +14,7 @@ use graft::{
     setup::{GraftConfig, InitErr, setup_graft},
 };
 use graft_sqlite::vfs::GraftVfs;
-use graft_test::workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate};
+use graft_test::workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate, pull_if_empty};
 use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rand::{
@@ -179,9 +179,6 @@ fn main_inner() -> Result<(), TestErr> {
         volume.vid
     };
 
-    // pull the volume to make sure we have the latest volume
-    runtime.volume_pull(vid.clone())?;
-
     // register the Graft VFS with SQLite
     let vfs = GraftVfs::new(runtime.clone());
     sqlite_plugin::vfs::register_static(c"graft".into(), vfs, RegisterOpts { make_default: true })
@@ -192,6 +189,9 @@ fn main_inner() -> Result<(), TestErr> {
 
     // build the test environment
     let mut env = Env { rng, runtime, vid, log: args.log, sqlite };
+
+    // pull the volume if it's empty
+    pull_if_empty(&env)?;
 
     // run the workload until it completes without running into a retryable or
     // recoverable error
