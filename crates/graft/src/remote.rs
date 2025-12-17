@@ -37,7 +37,7 @@ impl RemotePath<'_> {
                 &log.serialize(),
                 &CBE64::from(lsn).to_string(),
             ),
-            Self::Segment(sid) => format!("segments/{}", &sid.serialize(),),
+            Self::Segment(sid) => format!("segments/{}", &sid.serialize()),
         }
     }
 }
@@ -91,8 +91,7 @@ pub enum RemoteConfig {
     Fs { root: String },
 
     /// S3 compatible object store
-    /// Can load most config and secrets from environment variables
-    /// See `object_store::aws::builder::AmazonS3Builder` for env variable names
+    /// Can load most config and secrets from standard AWS environment variables
     S3Compatible {
         bucket: String,
         prefix: Option<String>,
@@ -194,7 +193,7 @@ impl Remote {
                 commit.encode_to_bytes(),
                 WriteOptions {
                     // Perform an atomic write operation, returning
-                    // AlreadyExists if the commit already exists
+                    // a precondition error if the commit already exists
                     if_not_exists: true,
                     concurrent: REMOTE_CONCURRENCY,
                     ..WriteOptions::default()

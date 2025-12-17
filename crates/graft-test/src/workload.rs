@@ -183,7 +183,12 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
 
     let status = env.runtime.volume_status(&env.vid)?;
     let snapshot = env.runtime.volume_snapshot(&env.vid)?;
-    tracing::info!(%status, ?snapshot, "volume state");
+
+    // hydrate and checksum the database
+    env.runtime.snapshot_hydrate(snapshot.clone())?;
+    let checksum = env.runtime.snapshot_checksum(&snapshot)?;
+
+    tracing::info!(%status, ?snapshot, %checksum, "volume state");
 
     // verify that the total balance (sum(balance)) is equal to TOTAL_BALANCE
     let total: i64 = env

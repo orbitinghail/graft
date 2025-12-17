@@ -124,11 +124,11 @@ impl SegmentBuilder {
 
             self.current_frame_bytes += (out_buf.pos() - start_pos) as u64;
 
-            if pending_flush > 0 && out_buf.pos() == out_buf.capacity() {
+            if pending_flush == 0 {
+                break;
+            } else if out_buf.pos() == out_buf.capacity() {
                 // output buffer is full, swap chunks
                 self.flush_chunk();
-            } else if pending_flush == 0 {
-                break;
             }
         }
 
@@ -163,32 +163,25 @@ impl SegmentBuilder {
     }
 }
 
-pub fn segment_frame_iter<'a>(
-    mut pages: impl Iterator<Item = PageIdx> + 'a,
-    frame: &'a [u8],
-) -> impl Iterator<Item = (PageIdx, Page)> + 'a {
+pub fn segment_frame_iter<'a>(frame: &'a [u8]) -> impl Iterator<Item = Page> + 'a {
     let mut dctx = DCtx::create();
     let mut in_buf = InBuffer::around(frame);
 
     std::iter::from_fn(move || {
-        if let Some(pageidx) = pages.next() {
-            let mut page = BytesMut::zeroed(PAGESIZE.as_usize());
-            let mut out_buf = OutBuffer::around(page.as_mut());
+        let mut page = BytesMut::zeroed(PAGESIZE.as_usize());
+        let mut out_buf = OutBuffer::around(page.as_mut());
 
-            while out_buf.pos() < out_buf.capacity() {
-                let n = dctx
-                    .decompress_stream(&mut out_buf, &mut in_buf)
-                    .expect("BUG: failed to decompress segment frame");
-                assert!(
-                    n > 0 || out_buf.pos() == out_buf.capacity(),
-                    "BUG: reached end of frame before filling page"
-                );
-            }
-
-            Some((pageidx, Page::try_from(page).expect("BUG: invalid page")))
-        } else {
-            None
+        while out_buf.pos() < out_buf.capacity() {
+            let n = dctx
+                .decompress_stream(&mut out_buf, &mut in_buf)
+                .expect("BUG: failed to decompress segment frame");
+            assert!(
+                n > 0 || out_buf.pos() == out_buf.capacity(),
+                "BUG: reached end of frame before filling page"
+            );
         }
+
+        Some(Page::try_from(page).expect("BUG: invalid page"))
     })
 }
 

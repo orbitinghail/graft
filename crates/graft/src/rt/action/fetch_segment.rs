@@ -19,9 +19,10 @@ impl Action for FetchSegment {
         let bytes = remote
             .get_segment_range(&self.range.sid, self.range.bytes)
             .await?;
-        let pages = segment_frame_iter(self.range.pageset.iter(), &bytes);
+        let pageidxs = self.range.pageset.iter();
+        let pages = segment_frame_iter(&bytes);
         let mut batch = storage.batch();
-        for (pageidx, page) in pages {
+        for (pageidx, page) in pageidxs.zip(pages) {
             batch.write_page(self.range.sid.clone(), pageidx, page);
         }
         batch.commit()?;
