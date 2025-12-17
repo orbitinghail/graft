@@ -1,4 +1,4 @@
-use std::{fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
+use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
 
 use crate::{
     core::{
@@ -19,6 +19,7 @@ use crate::{
 use bytestring::ByteString;
 use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions, OwnedWriteBatch};
 use parking_lot::{Mutex, MutexGuard};
+use splinter_rs::Splinter;
 use thin_vec::thin_vec;
 use tryiter::TryIteratorExt;
 
@@ -654,7 +655,7 @@ impl<'a> ReadWriteGuard<'a> {
         vid: &VolumeId,
         snapshot: Snapshot,
         page_count: PageCount,
-        segment: SegmentIdx,
+        pages: BTreeMap<PageIdx, Page>,
     ) -> Result<Snapshot, FjallStorageErr> {
         // Verify that the commit was constructed using the latest snapshot for
         // the volume.
@@ -670,7 +671,7 @@ impl<'a> ReadWriteGuard<'a> {
             .latest_lsn(&volume.local)?
             .map_or(LSN::FIRST, |lsn| lsn.next());
 
-        let maybe_checkpoint = if page_count == segment.page_count() {
+        let maybe_checkpoint = if page_count.to_usize() == pages.len() {
             thin_vec![commit_lsn]
         } else {
             thin_vec![]
@@ -678,13 +679,21 @@ impl<'a> ReadWriteGuard<'a> {
 
         tracing::debug!(vid=?volume.vid, log=?volume.local, %commit_lsn, "local commit");
 
+        // build the segment index
+        let pageset = PageSet::from(Splinter::from_iter(pages.keys().map(|&k| k.to_u32())));
+        let sid = SegmentId::random();
+        let segment = SegmentIdx::new(sid.clone(), pageset);
+
+        // build the commit
         let commit = Commit::new(volume.local.clone(), commit_lsn, page_count)
             .with_checkpoints(maybe_checkpoint)
             .with_segment_idx(Some(segment));
 
-        // write the commit to storage using a batch to
-        // ensure indexes are updated
+        // write out the segment and commit to storage
         let mut batch = self.read.storage.batch();
+        for (pageidx, page) in pages {
+            batch.write_page(sid.clone(), pageidx, page);
+        }
         batch.write_commit(commit);
         batch.commit()?;
 

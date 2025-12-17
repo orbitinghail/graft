@@ -11,7 +11,7 @@ main: main r/w
 .vfsinfo
 vfs.zName      = "graft"
 vfs.iVersion   = 3
-vfs.szOsFile   = 184
+vfs.szOsFile   = 144
 vfs.mxPathname = 512
 pragma graft_status;
 +--------------------------------------------------+
