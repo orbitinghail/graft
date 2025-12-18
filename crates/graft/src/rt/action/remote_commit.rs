@@ -163,7 +163,10 @@ fn plan_commit(storage: &FjallStorage, vid: &VolumeId) -> Result<Option<CommitPl
 
     let Some(sync) = volume.sync() else {
         // this is the first time we are pushing this volume to the remote
-        assert_eq!(latest_remote, None, "BUG: remote should be empty");
+        assert_eq!(
+            latest_remote, None,
+            "BUG: latest_remote exists, but no sync point in Volume"
+        );
         return Ok(Some(CommitPlan {
             local: volume.local.clone(),
             lsns: LSN::FIRST..=latest_local,
@@ -172,19 +175,19 @@ fn plan_commit(storage: &FjallStorage, vid: &VolumeId) -> Result<Option<CommitPl
         }));
     };
 
-    // check for divergence
-    if volume.remote_changes(latest_remote).is_some() {
-        // the remote and local logs have diverged
-        let status = volume.status(Some(latest_local), latest_remote);
-        tracing::debug!("volume {} has diverged; status=`{status}`", volume.local);
-        return Err(LogicalErr::VolumeDiverged(volume.vid).into());
-    }
-
     // calculate which LSNs we need to sync
     let Some(local_lsns) = volume.local_changes(Some(latest_local)) else {
         // nothing to push
         return Ok(None);
     };
+
+    // check for divergence
+    if volume.remote_changes(latest_remote).is_some() {
+        // the remote and local logs have diverged
+        let status = volume.status(Some(latest_local), latest_remote);
+        tracing::debug!(%status, "volume {} has diverged`", volume.local);
+        return Err(LogicalErr::VolumeDiverged(volume.vid).into());
+    }
 
     // calculate the commit lsn
     let commit_lsn = sync.remote.next();
@@ -223,7 +226,7 @@ fn build_segment(
             }
 
             // figure out which pages we haven't seen
-            let outstanding = Splinter::from(commit_pages) - &pageset;
+            let outstanding = commit_pages.inner() - &pageset;
             // load all of the outstanding pages
             for pageidx in outstanding.iter() {
                 // SAFETY: outstanding is built from a set of valid PageIdxs
@@ -234,6 +237,12 @@ fn build_segment(
             }
             // update the pageset accordingly
             pageset |= outstanding;
+        }
+
+        // we can early-terminate if we happen to see the entire volume.
+        // this can happen if this push includes a checkpoint.
+        if pageset.cardinality() == page_count.to_usize() {
+            break;
         }
     }
 
