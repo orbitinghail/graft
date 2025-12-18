@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Debug};
+use std::{collections::HashSet, fmt::Debug, sync::Arc};
 
 use crate::core::VolumeId;
 use futures::stream::FuturesUnordered;
@@ -37,7 +37,7 @@ impl Debug for AutosyncTask {
 impl Task for AutosyncTask {
     const NAME: &'static str = "autosync";
 
-    async fn run(&mut self, storage: &FjallStorage, remote: &Remote) -> Result<()> {
+    async fn run(&mut self, storage: Arc<FjallStorage>, remote: Arc<Remote>) -> Result<()> {
         loop {
             // wait for the next tick
             self.ticker.tick().await;
@@ -79,7 +79,7 @@ impl Task for AutosyncTask {
             // execute all scheduled fetches
             let mut futures: FuturesUnordered<_> = fetches
                 .into_iter()
-                .map(|log| FetchLog { log, max_lsn: None }.run(storage, remote))
+                .map(|log| FetchLog { log, max_lsn: None }.run(storage.clone(), remote.clone()))
                 .collect();
             while let Some(result) = futures.next().await {
                 if let Err(err) = result {
@@ -92,7 +92,11 @@ impl Task for AutosyncTask {
                 .into_iter()
                 .map(|action| async {
                     match action {
-                        Subtask::Push { vid } => RemoteCommit { vid }.run(storage, remote).await,
+                        Subtask::Push { vid } => {
+                            RemoteCommit { vid }
+                                .run(storage.clone(), remote.clone())
+                                .await
+                        }
                         Subtask::Pull { vid } => {
                             Ok(storage.read_write().sync_remote_to_local(vid)?)
                         }

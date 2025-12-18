@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::RangeInclusive};
+use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc};
 
 use crate::core::{
     CommitHashBuilder, LogId, PageCount, PageIdx, SegmentId, VolumeId,
@@ -10,6 +10,7 @@ use crate::core::{
 use bytes::Bytes;
 use splinter_rs::{Optimizable, PartitionRead, Splinter};
 use thin_vec::thin_vec;
+use tokio::task::spawn_blocking;
 use tryiter::TryIteratorExt;
 
 use crate::{
@@ -28,18 +29,27 @@ pub struct RemoteCommit {
 }
 
 impl Action for RemoteCommit {
-    async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<(), GraftErr> {
+    async fn run(self, storage: Arc<FjallStorage>, remote: Arc<Remote>) -> Result<(), GraftErr> {
         // first, check if we need to recover from a pending commit
         // we do this *before* plan since this may modify storage
-        attempt_recovery(storage, remote, &self.vid).await?;
+        attempt_recovery(&storage, &remote, &self.vid).await?;
 
-        let Some(plan) = plan_commit(storage, &self.vid)? else {
+        let Some(plan) = plan_commit(&storage, &self.vid)? else {
             // nothing to commit
             return Ok(());
         };
 
+        tracing::debug!(?plan, "RemoteCommit plan");
+
         // build & upload segment
-        let (commit_hash, segment_idx, segment_chunks) = build_segment(storage, &plan)?;
+        let (commit_hash, segment_idx, segment_chunks) = {
+            let plan = plan.clone();
+            let storage = storage.clone();
+            spawn_blocking(move || build_segment(storage, plan))
+                .await
+                .unwrap()?
+        };
+
         remote
             .put_segment(segment_idx.sid(), segment_chunks)
             .await?;
@@ -111,7 +121,7 @@ impl Action for RemoteCommit {
                 // The commit already exists on the remote. This could be because:
                 // 1. Someone (including us) pushed the same commit (idempotency)
                 // 2. Someone (including us) pushed a DIFFERENT commit (divergence)
-                attempt_recovery(storage, remote, &self.vid).await
+                attempt_recovery(&storage, &remote, &self.vid).await
             }
             Err(err) => {
                 // if any other error occurs, we leave the pending_commit in place and fail the job.
@@ -124,6 +134,7 @@ impl Action for RemoteCommit {
     }
 }
 
+#[derive(Debug, Clone)]
 struct CommitPlan {
     local: LogId,
     lsns: RangeInclusive<LSN>,
@@ -187,8 +198,8 @@ fn plan_commit(storage: &FjallStorage, vid: &VolumeId) -> Result<Option<CommitPl
 }
 
 fn build_segment(
-    storage: &FjallStorage,
-    plan: &CommitPlan,
+    storage: Arc<FjallStorage>,
+    plan: CommitPlan,
 ) -> Result<(CommitHash, SegmentIdx, Vec<Bytes>), GraftErr> {
     let reader = storage.read();
 
@@ -268,8 +279,8 @@ fn build_segment(
 /// Attempts to recover from a remote commit conflict by checking the remote
 /// for the commit we tried to push.
 async fn attempt_recovery(
-    storage: &FjallStorage,
-    remote: &Remote,
+    storage: &Arc<FjallStorage>,
+    remote: &Arc<Remote>,
     vid: &VolumeId,
 ) -> Result<(), GraftErr> {
     let reader = storage.read();
@@ -289,7 +300,7 @@ async fn attempt_recovery(
             log: volume.remote.clone(),
             max_lsn: Some(pending.commit),
         }
-        .run(storage, remote)
+        .run(storage.clone(), remote.clone())
         .await?;
 
         storage.read_write().recover_pending_commit(vid)?;

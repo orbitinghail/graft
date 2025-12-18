@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use crate::core::commit::SegmentRangeRef;
 
@@ -15,7 +16,7 @@ pub struct FetchSegment {
 }
 
 impl Action for FetchSegment {
-    async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<()> {
+    async fn run(self, storage: Arc<FjallStorage>, remote: Arc<Remote>) -> Result<()> {
         let bytes = remote
             .get_segment_range(&self.range.sid, self.range.bytes)
             .await?;

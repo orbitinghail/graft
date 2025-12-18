@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
+use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive, path::Path};
 
 use crate::{
     core::{
@@ -100,7 +100,7 @@ pub struct FjallStorage {
     /// long as they are safe:
     /// To make read-only txns safe, use the same snapshot for all reads
     /// To make write-only txns safe, they must be monotonic
-    lock: Arc<Mutex<()>>,
+    lock: Mutex<()>,
 }
 
 impl Debug for FjallStorage {

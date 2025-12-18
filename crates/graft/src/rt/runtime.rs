@@ -100,7 +100,7 @@ impl Runtime {
 
         self.inner.tokio.block_on(
             action
-                .run(&self.inner.storage, &self.inner.remote)
+                .run(self.inner.storage.clone(), self.inner.remote.clone())
                 .instrument(span),
         )
     }
