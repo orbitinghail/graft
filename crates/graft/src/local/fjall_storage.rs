@@ -609,7 +609,7 @@ impl<'a> ReadWriteGuard<'a> {
         local: Option<LogId>,
         remote: Option<LogId>,
     ) -> Result<Volume, FjallStorageErr> {
-        // generate the local LogId if it's not specified
+        // generate the VolumeId if it's not specified
         let vid = vid.unwrap_or_else(VolumeId::random);
 
         // lookup the volume if specified
