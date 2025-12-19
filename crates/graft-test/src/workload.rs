@@ -252,8 +252,11 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     // verify that each account balance matches INITIAL_BALANCE adjusted by transfers
     let mismatched_accounts: i64 = env.sqlite.query_row(
         "SELECT COUNT(*) FROM accounts a
-         WHERE a.balance != ? - COALESCE((SELECT SUM(amount) FROM transfers WHERE from_id = a.id), 0)
-                              + COALESCE((SELECT SUM(amount) FROM transfers WHERE to_id = a.id), 0)",
+         LEFT JOIN (SELECT from_id, SUM(amount) as total FROM transfers GROUP BY from_id) sent
+           ON sent.from_id = a.id
+         LEFT JOIN (SELECT to_id, SUM(amount) as total FROM transfers GROUP BY to_id) received
+           ON received.to_id = a.id
+         WHERE a.balance != ? - COALESCE(sent.total, 0) + COALESCE(received.total, 0)",
         [INITIAL_BALANCE as i64],
         |row| row.get(0),
     )?;
