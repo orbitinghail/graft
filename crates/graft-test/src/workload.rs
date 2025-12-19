@@ -99,7 +99,7 @@ pub fn pull_if_empty<R: Rng>(env: &Env<R>) -> Result<(), WorkloadErr> {
 }
 
 pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
-    pull_if_empty(&env)?;
+    pull_if_empty(env)?;
 
     let rng = &mut env.rng;
     let sqlite = &mut env.sqlite;
@@ -194,7 +194,7 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     // disable fault injection during validation
     precept::fault::disable_all();
 
-    pull_if_empty(&env)?;
+    pull_if_empty(env)?;
 
     // pull the database
     env.runtime.volume_pull(env.vid.clone())?;

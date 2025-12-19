@@ -223,7 +223,7 @@ impl Runtime {
     }
 
     pub fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>> {
-        Ok(self.storage().read().get_commit(&log, lsn)?)
+        Ok(self.storage().read().get_commit(log, lsn)?)
     }
 }
 

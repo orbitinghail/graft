@@ -185,7 +185,7 @@ impl FjallStorage {
             return Ok(None);
         };
         let snapshot = Snapshot::new(logref.log, LSN::FIRST..=logref.lsn, commit.page_count);
-        self.volume_from_snapshot(&snapshot).map(|v| Some(v))
+        self.volume_from_snapshot(&snapshot).map(Some)
     }
 
     pub fn volume_from_snapshot(&self, snapshot: &Snapshot) -> Result<Volume, FjallStorageErr> {
