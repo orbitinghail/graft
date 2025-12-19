@@ -188,6 +188,19 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
             );
         }
 
+        // sometimes push to the remote in the middle of the txn loop
+        precept::sometimes_fault!(
+            "bank_tx: push in middle of tx loop",
+            runtime.volume_push(vid.clone())?,
+            { "cid": env.cid }
+        );
+        // sometimes pull from the remote in the middle of the txn loop
+        precept::sometimes_fault!(
+            "bank_tx: pull in middle of tx loop",
+            runtime.volume_pull(vid.clone())?,
+            { "cid": env.cid }
+        );
+
         // commit the tx
         tx.commit()?;
     }
