@@ -54,6 +54,12 @@ impl Action for RemoteCommit {
             .put_segment(segment_idx.sid(), segment_chunks)
             .await?;
 
+        tracing::debug!(
+            sid = %segment_idx.sid(),
+            pages = %segment_idx.pageset().cardinality(),
+            "RemoteCommit: uploaded segment to the remote"
+        );
+
         #[cfg(feature = "precept")]
         precept::sometimes_fault!(
             "RemoteCommit: before prepare",
@@ -239,7 +245,10 @@ fn build_segment(
             for pageidx in outstanding.iter() {
                 // SAFETY: outstanding is built from a set of valid PageIdxs
                 let pageidx = unsafe { PageIdx::new_unchecked(pageidx) };
-                debug_assert!(plan.page_count.contains(pageidx));
+                assert!(
+                    plan.page_count.contains(pageidx),
+                    "BUG: page is out of range for volume"
+                );
                 let page = reader.read_page(idx.sid.clone(), pageidx)?;
                 pages.insert(pageidx, page.expect("BUG: missing page"));
             }
@@ -256,6 +265,12 @@ fn build_segment(
 
     // optimize the pageset
     pageset.optimize();
+
+    assert_eq!(
+        pageset.cardinality(),
+        pages.len(),
+        "BUG: pageset cardinality doesn't match number of pages in segment"
+    );
 
     let mut segment_builder = SegmentBuilder::new();
     let mut commithash_builder = CommitHashBuilder::new(

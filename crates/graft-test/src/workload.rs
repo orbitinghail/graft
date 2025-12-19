@@ -45,7 +45,7 @@ pub struct Env<R> {
     pub sqlite: Connection,
 }
 
-const NUM_ACCOUNTS: usize = 10_000;
+const NUM_ACCOUNTS: usize = 100_000;
 const INITIAL_BALANCE: u64 = 1_000;
 const TOTAL_BALANCE: u64 = NUM_ACCOUNTS as u64 * INITIAL_BALANCE;
 
@@ -234,6 +234,21 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
         total as u64 == TOTAL_BALANCE,
         "validate: bank is balanced",
         { "expected": TOTAL_BALANCE, "actual": total, "cid": env.cid }
+    );
+
+    // verify that each account balance matches INITIAL_BALANCE adjusted by transfers
+    let mismatched_accounts: i64 = env.sqlite.query_row(
+        "SELECT COUNT(*) FROM accounts a
+         WHERE a.balance != ? - COALESCE((SELECT SUM(amount) FROM transfers WHERE from_id = a.id), 0)
+                              + COALESCE((SELECT SUM(amount) FROM transfers WHERE to_id = a.id), 0)",
+        [INITIAL_BALANCE as i64],
+        |row| row.get(0),
+    )?;
+
+    precept::expect_always_or_unreachable!(
+        mismatched_accounts == 0,
+        "validate: account balances match transfers",
+        { "mismatched_accounts": mismatched_accounts, "cid": env.cid }
     );
 
     // run SQLite integrity check

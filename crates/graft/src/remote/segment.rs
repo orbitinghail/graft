@@ -221,5 +221,58 @@ mod test {
             chunks[0].len() as u64,
             frames[0].frame_size() + frames[1].frame_size()
         );
+
+        // Read the pages back out and validate them using segment_frame_iter
+        let data: Vec<u8> = chunks.iter().flat_map(|c| c.iter().copied()).collect();
+
+        // First frame: pages 1-64
+        let frame1 = &data[..frames[0].frame_size() as usize];
+        for (i, page) in segment_frame_iter(frame1).take(64).enumerate() {
+            assert_eq!(page, Page::test_filled((i + 1) as u8));
+        }
+
+        // Second frame: pages 65-96
+        let frame2 = &data[frames[0].frame_size() as usize..];
+        for (i, page) in segment_frame_iter(frame2).take(32).enumerate() {
+            assert_eq!(page, Page::test_filled((i + 65) as u8));
+        }
+    }
+
+    #[test]
+    fn test_segment_with_empty_pages() {
+        let mut segment = SegmentBuilder::new();
+
+        // Push 1.5 frames worth of 0 pages
+        for i in 1..=96 {
+            segment.write(PageIdx::must_new(i), &Page::EMPTY);
+        }
+
+        // Finish the segment
+        let (frames, chunks) = segment.finish();
+
+        // Check the frames and chunks
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].last_pageidx(), pageidx!(64));
+        assert_eq!(frames[1].last_pageidx(), pageidx!(96));
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(
+            chunks[0].len() as u64,
+            frames[0].frame_size() + frames[1].frame_size()
+        );
+
+        // Read the pages back out and validate them using segment_frame_iter
+        let data: Vec<u8> = chunks.iter().flat_map(|c| c.iter().copied()).collect();
+
+        // First frame: pages 1-64
+        let frame1 = &data[..frames[0].frame_size() as usize];
+        for page in segment_frame_iter(frame1).take(64) {
+            assert_eq!(page, Page::EMPTY);
+        }
+
+        // Second frame: pages 65-96
+        let frame2 = &data[frames[0].frame_size() as usize..];
+        for page in segment_frame_iter(frame2).take(32) {
+            assert_eq!(page, Page::EMPTY);
+        }
     }
 }
