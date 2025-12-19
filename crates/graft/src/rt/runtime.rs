@@ -315,7 +315,7 @@ mod tests {
         }
         writer.commit().unwrap();
 
-        assert_eq!(runtime.volume_status(&vid).unwrap().to_string(), "1 r_",);
+        assert_eq!(runtime.volume_status(&vid).unwrap().to_string(), "+1 r_",);
 
         // sanity check volume reader semantics
         let reader = runtime.volume_reader(vid.clone()).unwrap();
