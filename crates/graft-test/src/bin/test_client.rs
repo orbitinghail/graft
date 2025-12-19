@@ -116,7 +116,7 @@ enum Workload {
 fn main() -> ExitCode {
     match main_inner() {
         Ok(()) => {
-            tracing::debug!("test client completed without error");
+            tracing::info!("test client completed without error");
             ExitCode::SUCCESS
         }
         Err(err) => {

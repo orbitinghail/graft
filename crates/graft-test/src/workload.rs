@@ -45,7 +45,7 @@ pub struct Env<R> {
     pub sqlite: Connection,
 }
 
-const NUM_ACCOUNTS: usize = 100_000;
+const NUM_ACCOUNTS: usize = 10_000;
 const INITIAL_BALANCE: u64 = 1_000;
 const TOTAL_BALANCE: u64 = NUM_ACCOUNTS as u64 * INITIAL_BALANCE;
 
@@ -61,12 +61,22 @@ pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     let tx = sqlite.transaction()?;
 
     tx.execute("DROP TABLE IF EXISTS accounts", [])?;
+    tx.execute("DROP TABLE IF EXISTS transfers", [])?;
 
-    // create an accounts table with an integer primary key and a balance
+    // create tables
     tx.execute(
         "CREATE TABLE accounts (
             id INTEGER PRIMARY KEY,
             balance INTEGER NOT NULL CHECK (balance >= 0)
+        )",
+        [],
+    )?;
+    tx.execute(
+        "CREATE TABLE transfers (
+            id INTEGER AUTO INCREMENT PRIMARY KEY,
+            from_id INTEGER NOT NULL,
+            to_id INTEGER NOT NULL,
+            amount INTEGER NOT NULL CHECK (amount > 0)
         )",
         [],
     )?;
@@ -160,6 +170,13 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
                 tx.execute(
                     "UPDATE accounts SET balance = balance + ? WHERE id = ?",
                     [transfer_amount, to_id],
+                )?
+            );
+            assert_eq!(
+                1,
+                tx.execute(
+                    "INSERT INTO transfers (from_id, to_id, amount) VALUES (?, ?, ?)",
+                    [from_id, to_id, transfer_amount],
                 )?
             );
 

@@ -310,7 +310,7 @@ async fn attempt_recovery(
         { "vid": vid }
     );
 
-    if let Some(pending) = volume.pending_commit {
+    if volume.pending_commit.is_some() {
         // If we have a pending commit, we need to fetch the remote log to see
         // if our pending commit already landed.
         FetchLog {
