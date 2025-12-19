@@ -74,7 +74,7 @@ pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     // initialize the accounts table with NUM_ACCOUNTS each starting with INITIAL_BALANCE
     let mut stmt = tx.prepare("INSERT INTO accounts (id, balance) VALUES (?, ?)")?;
     for id in 0..NUM_ACCOUNTS {
-        stmt.execute([id as i64, INITIAL_BALANCE as i64])?;
+        assert_eq!(1, stmt.execute([id as i64, INITIAL_BALANCE as i64])?);
     }
     drop(stmt);
 
@@ -99,6 +99,8 @@ pub fn pull_if_empty<R: Rng>(env: &Env<R>) -> Result<(), WorkloadErr> {
 }
 
 pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
+    pull_if_empty(env)?;
+
     let rng = &mut env.rng;
     let sqlite = &mut env.sqlite;
     let runtime = &env.runtime;
@@ -146,14 +148,27 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
         if transfer_amount > 0 {
             valid_txns += 1;
 
-            tx.execute(
-                "UPDATE accounts SET balance = balance - ? WHERE id = ?",
-                [transfer_amount, from_id],
-            )?;
-            tx.execute(
-                "UPDATE accounts SET balance = balance + ? WHERE id = ?",
-                [transfer_amount, to_id],
-            )?;
+            assert_eq!(
+                1,
+                tx.execute(
+                    "UPDATE accounts SET balance = balance - ? WHERE id = ?",
+                    [transfer_amount, from_id],
+                )?
+            );
+            assert_eq!(
+                1,
+                tx.execute(
+                    "UPDATE accounts SET balance = balance + ? WHERE id = ?",
+                    [transfer_amount, to_id],
+                )?
+            );
+
+            tracing::info!(
+                "transferring ${} from account {} to account {}",
+                transfer_amount,
+                from_id,
+                to_id
+            );
         }
 
         // commit the tx
@@ -178,6 +193,8 @@ pub fn bank_validate<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
 
     // disable fault injection during validation
     precept::fault::disable_all();
+
+    pull_if_empty(env)?;
 
     // pull the database
     env.runtime.volume_pull(env.vid.clone())?;

@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut, Range, RangeInclusive};
 
 use bilrost::Message;
+use itertools::Itertools;
 use splinter_rs::Splinter;
 use thin_vec::ThinVec;
 
@@ -121,7 +122,7 @@ impl Commit {
     }
 }
 
-#[derive(Debug, Clone, Message, PartialEq, Eq)]
+#[derive(Clone, Message, PartialEq, Eq)]
 pub struct SegmentIdx {
     /// The Segment ID
     #[bilrost(1)]
@@ -135,6 +136,24 @@ pub struct SegmentIdx {
     /// Empty on local Segments which have not been encoded and uploaded to object storage.
     #[bilrost(3)]
     pub frames: ThinVec<SegmentFrameIdx>,
+}
+
+impl std::fmt::Debug for SegmentIdx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            f.debug_struct("SegmentIdx")
+                .field("sid", &self.sid)
+                .field("frames", &self.frames)
+                .field("pages", &self.pageset().iter().format(","))
+                .finish()
+        } else {
+            f.debug_struct("SegmentIdx")
+                .field("sid", &self.sid)
+                .field("frames", &self.frames)
+                .field("page_count", &self.pageset().cardinality())
+                .finish()
+        }
+    }
 }
 
 impl SegmentIdx {

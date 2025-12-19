@@ -12,7 +12,7 @@ pub trait Task: Debug {
     const NAME: &'static str;
 
     /// Run the task.
-    async fn run(&mut self, storage: &FjallStorage, remote: &Remote) -> Result<()>;
+    async fn run(&mut self, storage: Arc<FjallStorage>, remote: Arc<Remote>) -> Result<()>;
 
     /// Decide whether or not to restart the task on error.
     #[allow(unused_variables)]
@@ -31,7 +31,11 @@ pub async fn supervise<T: Task>(
 ) -> Result<()> {
     for restarts in 0usize.. {
         let span = tracing::debug_span!("task", t = T::NAME, r = restarts);
-        match task.run(&storage, &remote).instrument(span).await {
+        match task
+            .run(storage.clone(), remote.clone())
+            .instrument(span)
+            .await
+        {
             Ok(()) => {
                 tracing::debug!("task {:?} completed without error; shutting down", task);
                 break;

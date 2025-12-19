@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 
@@ -18,7 +20,7 @@ pub struct HydrateSnapshot {
 }
 
 impl Action for HydrateSnapshot {
-    async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<(), GraftErr> {
+    async fn run(self, storage: Arc<FjallStorage>, remote: Arc<Remote>) -> Result<(), GraftErr> {
         let missing_frames = storage.read().find_missing_frames(&self.snapshot)?;
         futures::stream::iter(
             missing_frames
@@ -28,7 +30,7 @@ impl Action for HydrateSnapshot {
         )
         .map(Ok)
         .try_for_each_concurrent(HYDRATE_CONCURRENCY, |range| {
-            FetchSegment { range }.run(storage, remote)
+            FetchSegment { range }.run(storage.clone(), remote.clone())
         })
         .await
     }

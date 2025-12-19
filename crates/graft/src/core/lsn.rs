@@ -4,6 +4,7 @@ use std::{
     iter::FusedIterator,
     num::{NonZero, ParseIntError},
     ops::{Bound, RangeBounds},
+    str::FromStr,
 };
 
 use crate::core::cbe::CBE64;
@@ -248,6 +249,25 @@ impl PartialOrd<u64> for LSN {
     #[inline]
     fn partial_cmp(&self, other: &u64) -> Option<std::cmp::Ordering> {
         self.0.get().partial_cmp(other)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ParseLSNErr {
+    #[error("invalid LSN value")]
+    InvalidValue(#[from] InvalidLSN),
+
+    #[error("failed to parse LSN: {0}")]
+    ParseInt(#[from] ParseIntError),
+}
+
+impl FromStr for LSN {
+    type Err = ParseLSNErr;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let n: u64 = s.parse()?;
+        Ok(Self::try_from(n)?)
     }
 }
 

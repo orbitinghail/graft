@@ -14,7 +14,7 @@ use graft::{
     setup::{GraftConfig, InitErr, setup_graft},
 };
 use graft_sqlite::vfs::GraftVfs;
-use graft_test::workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate, pull_if_empty};
+use graft_test::workload::{Env, WorkloadErr, bank_setup, bank_tx, bank_validate};
 use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing};
 use precept::dispatch::{antithesis::AntithesisDispatch, noop::NoopDispatch};
 use rand::{
@@ -205,9 +205,6 @@ fn main_inner() -> Result<(), TestErr> {
         log: args.log,
         sqlite,
     };
-
-    // pull the volume if it's empty
-    pull_if_empty(&env)?;
 
     // run the workload until it completes without running into a retryable or
     // recoverable error

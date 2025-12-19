@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive, path::Path, sync::Arc};
+use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive, path::Path};
 
 use crate::{
     core::{
@@ -100,7 +100,7 @@ pub struct FjallStorage {
     /// long as they are safe:
     /// To make read-only txns safe, use the same snapshot for all reads
     /// To make write-only txns safe, they must be monotonic
-    lock: Arc<Mutex<()>>,
+    lock: Mutex<()>,
 }
 
 impl Debug for FjallStorage {
@@ -178,6 +178,14 @@ impl FjallStorage {
 
     pub fn volume_delete(&self, vid: &VolumeId) -> Result<(), FjallStorageErr> {
         self.ks.volumes.remove(vid.clone())
+    }
+
+    pub fn volume_from_logref(&self, logref: LogRef) -> Result<Option<Volume>, FjallStorageErr> {
+        let Some(commit) = self.read().get_commit(&logref.log, logref.lsn)? else {
+            return Ok(None);
+        };
+        let snapshot = Snapshot::new(logref.log, LSN::FIRST..=logref.lsn, commit.page_count);
+        self.volume_from_snapshot(&snapshot).map(Some)
     }
 
     pub fn volume_from_snapshot(&self, snapshot: &Snapshot) -> Result<Volume, FjallStorageErr> {
@@ -782,7 +790,9 @@ impl<'a> ReadWriteGuard<'a> {
         let mut batch = self.read.storage.batch();
         batch.write_commit(remote_commit);
         batch.write_volume(volume);
-        batch.commit()
+        batch.commit()?;
+
+        Ok(())
     }
 
     /// Drop a pending commit without applying it. This should only be called

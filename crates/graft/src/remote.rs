@@ -104,7 +104,7 @@ impl RemoteConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Remote {
     store: Operator,
 }

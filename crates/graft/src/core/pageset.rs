@@ -1,4 +1,4 @@
-use std::ops::{BitOrAssign, RangeBounds, RangeInclusive, SubAssign};
+use std::ops::{BitOrAssign, RangeBounds, RangeInclusive};
 
 use bytes::Bytes;
 use splinter_rs::{CowSplinter, Cut, PartitionRead, PartitionWrite, Splinter};
@@ -133,6 +133,10 @@ impl PageSet {
     pub fn splinter_mut(&mut self) -> &CowSplinter<Bytes> {
         &mut self.splinter
     }
+
+    pub fn inner(self) -> CowSplinter<Bytes> {
+        self.splinter
+    }
 }
 
 impl From<Splinter> for PageSet {
@@ -164,12 +168,6 @@ derive_newtype_proxy!(
         Ok(())
     }
 );
-
-impl SubAssign<&Self> for PageSet {
-    fn sub_assign(&mut self, rhs: &Self) {
-        self.splinter.to_mut().sub_assign(&rhs.splinter);
-    }
-}
 
 impl BitOrAssign<Self> for PageSet {
     fn bitor_assign(&mut self, rhs: Self) {

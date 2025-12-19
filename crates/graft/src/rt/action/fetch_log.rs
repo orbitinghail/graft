@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::core::{
     LogId,
@@ -21,7 +21,7 @@ pub struct FetchLog {
 }
 
 impl Action for FetchLog {
-    async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<()> {
+    async fn run(self, storage: Arc<FjallStorage>, remote: Arc<Remote>) -> Result<()> {
         let reader = storage.read();
         let mut batch = storage.batch();
 

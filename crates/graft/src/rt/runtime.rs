@@ -1,7 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::core::{
-    LogId, PageCount, PageIdx, VolumeId, checksum::Checksum, lsn::LSN, page::Page, pageset::PageSet,
+    LogId, PageCount, PageIdx, VolumeId, checksum::Checksum, commit::Commit, logref::LogRef,
+    lsn::LSN, page::Page, pageset::PageSet,
 };
 use bytestring::ByteString;
 use tracing::Instrument;
@@ -100,7 +101,7 @@ impl Runtime {
 
         self.inner.tokio.block_on(
             action
-                .run(&self.inner.storage, &self.inner.remote)
+                .run(self.inner.storage.clone(), self.inner.remote.clone())
                 .instrument(span),
         )
     }
@@ -153,6 +154,11 @@ impl Runtime {
             .storage()
             .read_write()
             .volume_open(vid, local, remote)?)
+    }
+
+    /// creates a new volume by forking an existing logref
+    pub fn volume_from_logref(&self, logref: LogRef) -> Result<Option<Volume>> {
+        Ok(self.storage().volume_from_logref(logref)?)
     }
 
     /// creates a new volume by forking an existing snapshot
@@ -214,6 +220,10 @@ impl Runtime {
 impl Runtime {
     pub fn fetch_log(&self, log: LogId, max_lsn: Option<LSN>) -> Result<()> {
         self.run_action(FetchLog { log, max_lsn })
+    }
+
+    pub fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>> {
+        Ok(self.storage().read().get_commit(log, lsn)?)
     }
 }
 
@@ -305,7 +315,7 @@ mod tests {
         }
         writer.commit().unwrap();
 
-        assert_eq!(runtime.volume_status(&vid).unwrap().to_string(), "1 r_",);
+        assert_eq!(runtime.volume_status(&vid).unwrap().to_string(), "+1 r_",);
 
         // sanity check volume reader semantics
         let reader = runtime.volume_reader(vid.clone()).unwrap();

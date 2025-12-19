@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 use crate::{GraftErr, local::fjall_storage::FjallStorage, remote::Remote};
 
@@ -19,5 +19,5 @@ pub type Result<T> = std::result::Result<T, GraftErr>;
 /// A one-off async action.
 pub trait Action: Debug {
     /// Run the action.
-    async fn run(self, storage: &FjallStorage, remote: &Remote) -> Result<()>;
+    async fn run(self, storage: Arc<FjallStorage>, remote: Arc<Remote>) -> Result<()>;
 }

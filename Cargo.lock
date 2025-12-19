@@ -2915,9 +2915,9 @@ dependencies = [
 
 [[package]]
 name = "splinter-rs"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "051e5124b901f65f83f952e43e259ec470bb966d72c834a9b8dbeac8b60791d3"
+checksum = "8a514eae77646bc244afcb6559f3ce13624a093b0e7747d9c67a373e100fd641"
 dependencies = [
  "assert_matches",
  "bitvec",
