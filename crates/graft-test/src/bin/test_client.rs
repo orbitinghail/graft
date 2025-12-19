@@ -227,9 +227,6 @@ fn main_inner() -> Result<(), TestErr> {
                 env.runtime.tag_replace("main", volume.vid.clone())?;
                 env.vid = volume.vid;
 
-                // make sure we are up to date with the remote
-                env.runtime.volume_pull(env.vid.clone())?;
-
                 // verify no divergence in status
                 let status = env.runtime.volume_status(&env.vid)?;
                 precept::expect_always_or_unreachable!(
