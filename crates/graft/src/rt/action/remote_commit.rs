@@ -277,6 +277,7 @@ fn build_segment(
         plan.commit_ref.log().clone(),
         plan.commit_ref.lsn(),
         plan.page_count,
+        PageCount::new(pages.len() as u32),
     );
 
     let sid = SegmentId::random();

@@ -156,12 +156,13 @@ pub struct CommitHashBuilder {
 
 impl CommitHashBuilder {
     /// Creates a new `CommitHashBuilder` initialized with the given metadata.
-    pub fn new(log: LogId, lsn: LSN, pages: PageCount) -> Self {
+    pub fn new(log: LogId, lsn: LSN, vol_pages: PageCount, commit_pages: PageCount) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&COMMIT_HASH_MAGIC);
         hasher.update(log.as_bytes());
         hasher.update(CBE64::from(lsn).as_bytes());
-        hasher.update(&pages.to_u32().to_be_bytes());
+        hasher.update(&vol_pages.to_u32().to_be_bytes());
+        hasher.update(&commit_pages.to_u32().to_be_bytes());
         Self { hasher, last_pageidx: None }
     }
 
@@ -235,7 +236,7 @@ mod tests {
                 lsn: lsn!(1),
                 page_count: PageCount::ZERO,
                 pages: vec![],
-                expected_hash: "5ZCKZ9nz14E6kttXgRzGzWPe4iGad8fqE6bADSLxzfXV",
+                expected_hash: "5ZeW3W69UG1jwD4UXA62YJzCogeT5kZsjwfBfiQZCdKq",
             },
             TestCase {
                 name: "single_page",
@@ -243,7 +244,7 @@ mod tests {
                 lsn: lsn!(42),
                 page_count: PageCount::new(1),
                 pages: vec![(pageidx!(1), Page::test_filled(0xAA))],
-                expected_hash: "5Zx7fz5utSpLyJvurgLiQGHzdNHH4Wwk1BoxoyfR3C5j",
+                expected_hash: "5X2JHhaMa9M1XFZ2vBCkd7UP9XtXfijvtSmBhUU4PPvi",
             },
             TestCase {
                 name: "multiple_pages",
@@ -254,13 +255,18 @@ mod tests {
                     (pageidx!(1), Page::test_filled(0x11)),
                     (pageidx!(2), Page::test_filled(0x22)),
                 ],
-                expected_hash: "5Xsk16UBYSSQ75xbikQfTHykWpbVv3az1ncaFGajqjhe",
+                expected_hash: "5YTaLg2LjV7GNc1Q2EZkuRuoKfyCD2qeL17wfVfvQXeU",
             },
         ];
 
         for test_case in test_cases {
-            let mut builder =
-                CommitHashBuilder::new(test_case.log, test_case.lsn, test_case.page_count);
+            let commit_pages = PageCount::new(test_case.pages.len() as u32);
+            let mut builder = CommitHashBuilder::new(
+                test_case.log,
+                test_case.lsn,
+                test_case.page_count,
+                commit_pages,
+            );
 
             for (pageidx, page) in test_case.pages {
                 builder.write_page(pageidx, &page);
@@ -292,7 +298,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "Pages must be written in order by pageidx")]
     fn test_commit_hash_builder_page_order_panic() {
-        let mut builder = CommitHashBuilder::new(LogId::random(), LSN::FIRST, PageCount::ZERO);
+        let mut builder = CommitHashBuilder::new(
+            LogId::random(),
+            LSN::FIRST,
+            PageCount::ZERO,
+            PageCount::ZERO,
+        );
         builder.write_page(pageidx!(2), &Page::test_filled(0x22));
         builder.write_page(pageidx!(1), &Page::test_filled(0x11)); // This should panic
     }
