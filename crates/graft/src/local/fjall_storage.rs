@@ -383,7 +383,7 @@ impl<'a> ReadGuard<'a> {
     ) -> impl Iterator<Item = Result<(SegmentIdx, PageSet), FjallStorageErr>> {
         // the set of pages we are searching for.
         // we remove pages from this set as we iterate through commits.
-        let mut pages = PageSet::FULL;
+        let mut pages = PageSet::from_range(PageIdx::FIRST..=PageIdx::LAST);
 
         self.commits(snapshot).try_filter_map(move |commit| {
             // if we have found all pages, we are done

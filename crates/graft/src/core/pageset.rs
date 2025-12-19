@@ -16,10 +16,6 @@ impl PageSet {
         splinter: CowSplinter::Owned(Splinter::EMPTY),
     };
 
-    pub const FULL: Self = Self {
-        splinter: CowSplinter::Owned(Splinter::FULL),
-    };
-
     #[inline]
     pub fn new(splinter: CowSplinter<Bytes>) -> Self {
         assert!(

@@ -196,12 +196,8 @@ impl SegmentIdx {
             .filter(move |(_, pages)| filter(pages))
             .map(|(bytes, pages)| {
                 let pages = pages.start().to_u32()..=pages.end().to_u32();
-                let graft = (Splinter::from(pages) & self.pageset.splinter()).into();
-                SegmentRangeRef {
-                    sid: self.sid.clone(),
-                    bytes,
-                    pageset: graft,
-                }
+                let pageset = (Splinter::from(pages) & self.pageset.splinter()).into();
+                SegmentRangeRef { sid: self.sid.clone(), bytes, pageset }
             })
     }
 
