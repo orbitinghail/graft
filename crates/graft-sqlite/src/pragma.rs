@@ -1,8 +1,9 @@
 use std::{
-    fmt::Write,
+    fmt::{Display, Write},
     fs::File,
     io::{Read, Write as IoWrite},
     path::PathBuf,
+    str::FromStr,
 };
 
 use bytes::{Bytes, BytesMut};
@@ -10,7 +11,7 @@ use graft::core::{
     LogId, PageCount, PageIdx, VolumeId,
     commit::Commit,
     logref::LogRef,
-    lsn::{LSN, LSNRangeExt},
+    lsn::LSNRangeExt,
     page::{PAGESIZE, Page},
 };
 use graft::{
@@ -20,7 +21,6 @@ use graft::{
     volume_writer::{VolumeWrite, VolumeWriter},
 };
 use indoc::{formatdoc, indoc, writedoc};
-use itertools::Itertools;
 use sqlite_plugin::{
     vars::SQLITE_ERROR,
     vfs::{Pragma, PragmaErr},
@@ -29,6 +29,39 @@ use tryiter::TryIteratorExt;
 use zerocopy::FromBytes;
 
 use crate::{dbg::SqliteHeader, file::vol_file::VolFile, vfs::ErrCtx};
+
+/// Helper to create pragma errors concisely
+fn pragma_fail(msg: impl Display) -> PragmaErr {
+    PragmaErr::Fail(SQLITE_ERROR, Some(msg.to_string()))
+}
+
+/// Helper to parse with automatic error conversion
+fn parse_or_fail<T>(s: &str) -> Result<T, PragmaErr>
+where
+    T: FromStr,
+    T::Err: Display,
+{
+    s.parse().map_err(pragma_fail)
+}
+
+/// Helper to parse an optional value from colon-separated parts
+fn parse_optional<T: FromStr>(s: Option<&&str>) -> Result<Option<T>, PragmaErr>
+where
+    T::Err: Display,
+{
+    s.map(|s| parse_or_fail(s)).transpose()
+}
+
+/// Extension trait for Pragma to get required arguments
+trait PragmaExt<'a> {
+    fn require_arg(&self) -> Result<&'a str, PragmaErr>;
+}
+
+impl<'a> PragmaExt<'a> for Pragma<'a> {
+    fn require_arg(&self) -> Result<&'a str, PragmaErr> {
+        self.arg.ok_or_else(|| PragmaErr::required_arg(self))
+    }
+}
 
 pub enum GraftPragma {
     /// `pragma graft_volumes;`
@@ -104,32 +137,12 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "volumes" => Ok(GraftPragma::Volumes),
                 "tags" => Ok(GraftPragma::Tags),
                 "clone" => {
-                    if let Some(arg) = p.arg {
-                        let remote = arg
-                            .parse::<LogId>()
-                            .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
-                        Ok(GraftPragma::Clone { remote: Some(remote) })
-                    } else {
-                        Ok(GraftPragma::Clone { remote: None })
-                    }
+                    let remote = p.arg.map(parse_or_fail).transpose()?;
+                    Ok(GraftPragma::Clone { remote })
                 }
                 "fork" => Ok(GraftPragma::Fork),
                 "checkout" => {
-                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
-                    let parts = arg.split(":").collect_vec();
-                    if parts.len() != 2 {
-                        return Err(PragmaErr::Fail(
-                            SQLITE_ERROR,
-                            Some("argument must be in the form: `remote:lsn`".to_string()),
-                        ));
-                    }
-                    let log = parts[0]
-                        .parse::<LogId>()
-                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
-                    let lsn = parts[1]
-                        .parse::<LSN>()
-                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
-                    Ok(GraftPragma::Checkout { logref: LogRef::new(log, lsn) })
+                    Ok(GraftPragma::Checkout { logref: parse_or_fail(p.require_arg()?)? })
                 }
                 "new" => Ok(GraftPragma::Switch {
                     vid: VolumeId::random(),
@@ -137,38 +150,17 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     remote: None,
                 }),
                 "switch" => {
-                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
-                    let parts = arg.split(":").collect_vec();
-
+                    let parts: Vec<&str> = p.require_arg()?.split(':').collect();
                     if parts.is_empty() || parts.len() > 3 {
-                        return Err(PragmaErr::Fail(
-                            SQLITE_ERROR,
-                            Some(
-                                "argument must be in the form: `local_vid[:local[:remote]]`"
-                                    .to_string(),
-                            ),
+                        return Err(pragma_fail(
+                            "argument must be in the form: `local_vid[:local[:remote]]`",
                         ));
                     }
-
-                    let vid = parts[0]
-                        .parse::<VolumeId>()
-                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
-                    let local = parts
-                        .get(1)
-                        .map(|s| {
-                            s.parse::<LogId>()
-                                .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))
-                        })
-                        .transpose()?;
-                    let remote = parts
-                        .get(2)
-                        .map(|s| {
-                            s.parse::<LogId>()
-                                .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))
-                        })
-                        .transpose()?;
-
-                    Ok(GraftPragma::Switch { vid, local, remote })
+                    Ok(GraftPragma::Switch {
+                        vid: parse_or_fail(parts[0])?,
+                        local: parse_optional(parts.get(1))?,
+                        remote: parse_optional(parts.get(2))?,
+                    })
                 }
                 "info" => Ok(GraftPragma::Info),
                 "status" => Ok(GraftPragma::Status),
@@ -179,38 +171,13 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                 "audit" => Ok(GraftPragma::Audit),
                 "hydrate" => Ok(GraftPragma::Hydrate),
                 "version" => Ok(GraftPragma::Version),
-                "import" => {
-                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
-                    let path = PathBuf::from(arg);
-                    Ok(GraftPragma::Import(path))
-                }
-                "export" => {
-                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
-                    let path = PathBuf::from(arg);
-                    Ok(GraftPragma::Export(path))
-                }
+                "import" => Ok(GraftPragma::Import(PathBuf::from(p.require_arg()?))),
+                "export" => Ok(GraftPragma::Export(PathBuf::from(p.require_arg()?))),
                 "dump_header" => Ok(GraftPragma::DumpSqliteHeader),
                 "dump_commit" => {
-                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
-                    let parts = arg.split(":").collect_vec();
-                    if parts.len() != 2 {
-                        return Err(PragmaErr::Fail(
-                            SQLITE_ERROR,
-                            Some("argument must be in the form: `remote:lsn`".to_string()),
-                        ));
-                    }
-                    let log = parts[0]
-                        .parse::<LogId>()
-                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
-                    let lsn = parts[1]
-                        .parse::<LSN>()
-                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
-                    Ok(GraftPragma::DumpCommit { logref: LogRef::new(log, lsn) })
+                    Ok(GraftPragma::DumpCommit { logref: parse_or_fail(p.require_arg()?)? })
                 }
-                _ => Err(PragmaErr::Fail(
-                    SQLITE_ERROR,
-                    Some(format!("invalid graft pragma `{}`", p.name)),
-                )),
+                _ => Err(pragma_fail(format!("invalid graft pragma `{}`", p.name))),
             };
         }
         Err(PragmaErr::NotFound)
