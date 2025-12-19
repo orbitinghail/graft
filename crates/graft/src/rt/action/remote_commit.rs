@@ -47,7 +47,7 @@ impl Action for RemoteCommit {
             let storage = storage.clone();
             spawn_blocking(move || build_segment(storage, plan))
                 .await
-                .unwrap()?
+                .expect("build_segment task failed")?
         };
 
         remote
@@ -193,7 +193,7 @@ fn plan_commit(storage: &FjallStorage, vid: &VolumeId) -> Result<Option<CommitPl
     if volume.remote_changes(latest_remote).is_some() {
         // the remote and local logs have diverged
         let status = volume.status(Some(latest_local), latest_remote);
-        tracing::debug!(%status, "volume {} has diverged`", volume.local);
+        tracing::debug!(%status, "volume {} has diverged", volume.local);
         return Err(LogicalErr::VolumeDiverged(volume.vid).into());
     }
 
