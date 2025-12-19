@@ -108,6 +108,14 @@ impl Action for RemoteCommit {
 
         match result {
             Ok(()) => {
+                tracing::debug!(
+                    log = %commit.log,
+                    lsn = %commit.lsn,
+                    page_count = %commit.page_count,
+                    commit_hash = ?commit.commit_hash,
+                    "successfully pushed commit to the remote"
+                );
+
                 storage
                     .read_write()
                     .remote_commit_success(&self.vid, commit)?;

@@ -8,7 +8,9 @@ use std::{
 use bytes::{Bytes, BytesMut};
 use graft::core::{
     LogId, PageCount, PageIdx, VolumeId,
-    lsn::LSNRangeExt,
+    commit::Commit,
+    logref::LogRef,
+    lsn::{LSN, LSNRangeExt},
     page::{PAGESIZE, Page},
 };
 use graft::{
@@ -48,6 +50,9 @@ pub enum GraftPragma {
     /// `pragma graft_fork;`
     Fork,
 
+    /// `pragma graft_checkout = "remote:LSN";`
+    Checkout { logref: LogRef },
+
     /// `pragma graft_info;`
     Info,
 
@@ -83,6 +88,9 @@ pub enum GraftPragma {
 
     /// `pragma graft_dump_header;`
     DumpSqliteHeader,
+
+    /// `pragma graft_dump_commit = "logid:LSN";`
+    DumpCommit { logref: LogRef },
 }
 
 impl TryFrom<&Pragma<'_>> for GraftPragma {
@@ -106,6 +114,23 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     }
                 }
                 "fork" => Ok(GraftPragma::Fork),
+                "checkout" => {
+                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
+                    let parts = arg.split(":").collect_vec();
+                    if parts.len() != 2 {
+                        return Err(PragmaErr::Fail(
+                            SQLITE_ERROR,
+                            Some("argument must be in the form: `remote:lsn`".to_string()),
+                        ));
+                    }
+                    let log = parts[0]
+                        .parse::<LogId>()
+                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
+                    let lsn = parts[1]
+                        .parse::<LSN>()
+                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
+                    Ok(GraftPragma::Checkout { logref: LogRef::new(log, lsn) })
+                }
                 "new" => Ok(GraftPragma::Switch {
                     vid: VolumeId::random(),
                     local: None,
@@ -165,6 +190,23 @@ impl TryFrom<&Pragma<'_>> for GraftPragma {
                     Ok(GraftPragma::Export(path))
                 }
                 "dump_header" => Ok(GraftPragma::DumpSqliteHeader),
+                "dump_commit" => {
+                    let arg = p.arg.ok_or_else(|| PragmaErr::required_arg(p))?;
+                    let parts = arg.split(":").collect_vec();
+                    if parts.len() != 2 {
+                        return Err(PragmaErr::Fail(
+                            SQLITE_ERROR,
+                            Some("argument must be in the form: `remote:lsn`".to_string()),
+                        ));
+                    }
+                    let log = parts[0]
+                        .parse::<LogId>()
+                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
+                    let lsn = parts[1]
+                        .parse::<LSN>()
+                        .map_err(|err| PragmaErr::Fail(SQLITE_ERROR, Some(err.to_string())))?;
+                    Ok(GraftPragma::DumpCommit { logref: LogRef::new(log, lsn) })
+                }
                 _ => Err(PragmaErr::Fail(
                     SQLITE_ERROR,
                     Some(format!("invalid graft pragma `{}`", p.name)),
@@ -223,6 +265,22 @@ impl GraftPragma {
                 } else {
                     pragma_err!("ERROR: must hydrate volume before forking")
                 }
+            }
+
+            GraftPragma::Checkout { logref } => {
+                if !file.is_idle() {
+                    return pragma_err!("cannot checkout while there is an open transaction");
+                }
+
+                let Some(volume) = runtime.volume_from_logref(logref.clone())? else {
+                    return pragma_err!("logref not found");
+                };
+                file.switch_volume(&volume.vid)?;
+
+                Ok(Some(format!(
+                    "Checked out Volume {} at Log {} LSN {}",
+                    file.vid, logref.log, logref.lsn,
+                )))
             }
 
             GraftPragma::Switch { vid, local, remote } => {
@@ -284,6 +342,30 @@ impl GraftPragma {
                     .expect("failed to parse SQLite header");
                 Ok(Some(format!("{header:#?}")))
             }
+
+            GraftPragma::DumpCommit { logref } => {
+                if let Some(commit) = runtime.get_commit(&logref.log, logref.lsn)? {
+                    let Commit {
+                        log,
+                        lsn,
+                        page_count,
+                        commit_hash,
+                        segment_idx,
+                        checkpoints,
+                    } = commit;
+                    Ok(Some(formatdoc!(
+                        "
+                            Commit @ {log}:{lsn}
+                            page_count: {page_count}
+                            commit_hash: {commit_hash:?}
+                            segment_idx: {segment_idx:#?}
+                            checkpoints: {checkpoints:?}
+                        "
+                    )))
+                } else {
+                    pragma_err!("commit not found")
+                }
+            }
         }
     }
 }
@@ -299,7 +381,7 @@ fn format_volume_info(runtime: &Runtime, file: &VolFile) -> Result<String, ErrCt
     let sync = state.sync().map_or_else(
         || "Never synced".into(),
         |sync| match sync.local_watermark {
-            Some(local) => format!("L{local} -> R{}", sync.remote),
+            Some(local) => format!("L{local} | R{}", sync.remote),
             None => format!("R{}", sync.remote),
         },
     );

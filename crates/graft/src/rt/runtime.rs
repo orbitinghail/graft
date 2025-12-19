@@ -1,7 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::core::{
-    LogId, PageCount, PageIdx, VolumeId, checksum::Checksum, lsn::LSN, page::Page, pageset::PageSet,
+    LogId, PageCount, PageIdx, VolumeId, checksum::Checksum, commit::Commit, logref::LogRef,
+    lsn::LSN, page::Page, pageset::PageSet,
 };
 use bytestring::ByteString;
 use tracing::Instrument;
@@ -155,6 +156,11 @@ impl Runtime {
             .volume_open(vid, local, remote)?)
     }
 
+    /// creates a new volume by forking an existing logref
+    pub fn volume_from_logref(&self, logref: LogRef) -> Result<Option<Volume>> {
+        Ok(self.storage().volume_from_logref(logref)?)
+    }
+
     /// creates a new volume by forking an existing snapshot
     pub fn volume_from_snapshot(&self, snapshot: &Snapshot) -> Result<Volume> {
         Ok(self.storage().volume_from_snapshot(snapshot)?)
@@ -214,6 +220,10 @@ impl Runtime {
 impl Runtime {
     pub fn fetch_log(&self, log: LogId, max_lsn: Option<LSN>) -> Result<()> {
         self.run_action(FetchLog { log, max_lsn })
+    }
+
+    pub fn get_commit(&self, log: &LogId, lsn: LSN) -> Result<Option<Commit>> {
+        Ok(self.storage().read().get_commit(&log, lsn)?)
     }
 }
 

@@ -180,6 +180,14 @@ impl FjallStorage {
         self.ks.volumes.remove(vid.clone())
     }
 
+    pub fn volume_from_logref(&self, logref: LogRef) -> Result<Option<Volume>, FjallStorageErr> {
+        let Some(commit) = self.read().get_commit(&logref.log, logref.lsn)? else {
+            return Ok(None);
+        };
+        let snapshot = Snapshot::new(logref.log, LSN::FIRST..=logref.lsn, commit.page_count);
+        self.volume_from_snapshot(&snapshot).map(|v| Some(v))
+    }
+
     pub fn volume_from_snapshot(&self, snapshot: &Snapshot) -> Result<Volume, FjallStorageErr> {
         let volume = Volume::new_random();
         let commits = self
@@ -782,7 +790,9 @@ impl<'a> ReadWriteGuard<'a> {
         let mut batch = self.read.storage.batch();
         batch.write_commit(remote_commit);
         batch.write_volume(volume);
-        batch.commit()
+        batch.commit()?;
+
+        Ok(())
     }
 
     /// Drop a pending commit without applying it. This should only be called
