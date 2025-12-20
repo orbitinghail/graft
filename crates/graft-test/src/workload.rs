@@ -73,10 +73,11 @@ pub fn bank_setup<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     )?;
     tx.execute(
         "CREATE TABLE transfers (
-            id INTEGER AUTO INCREMENT PRIMARY KEY,
             from_id INTEGER NOT NULL,
             to_id INTEGER NOT NULL,
-            amount INTEGER NOT NULL CHECK (amount > 0)
+            amount INTEGER NOT NULL CHECK (amount > 0),
+            cid TEXT NOT NULL,
+            snapshot TEXT NOT NULL
         )",
         [],
     )?;
@@ -135,6 +136,9 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
         // start a sql tx
         let tx = sqlite.transaction()?;
 
+        // get the transaction snapshot
+        let tx_snapshot: String = tx.query_row("pragma graft_snapshot", [], |row| row.get(0))?;
+
         // check both account balances
         let balance_a: i64 =
             tx.query_row("SELECT balance FROM accounts WHERE id = ?", [id_a], |row| {
@@ -175,8 +179,9 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
             assert_eq!(
                 1,
                 tx.execute(
-                    "INSERT INTO transfers (from_id, to_id, amount) VALUES (?, ?, ?)",
-                    [from_id, to_id, transfer_amount],
+                    "INSERT INTO transfers (from_id, to_id, amount, cid, snapshot)
+                     VALUES (?, ?, ?, ?, ?)",
+                    (from_id, to_id, transfer_amount, &env.cid, &tx_snapshot),
                 )?
             );
 
@@ -206,10 +211,12 @@ pub fn bank_tx<R: Rng>(env: &mut Env<R>) -> Result<(), WorkloadErr> {
     }
 
     let status = runtime.volume_status(vid)?;
+    let snapshot = runtime.volume_snapshot(vid)?;
     let changes = status.local_status.changes();
     precept::expect_always_or_unreachable!(
         changes.is_some(),
-        "bank tx always pushes some valid txns"
+        "bank tx always pushes some valid txns",
+        { "snapshot": format!("{snapshot:?}") }
     );
 
     // attempt to push
