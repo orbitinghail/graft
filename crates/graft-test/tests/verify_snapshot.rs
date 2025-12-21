@@ -7,7 +7,7 @@ use graft::{
 use graft_test::GraftTestRuntime;
 
 #[test]
-fn test_snapshot_correct_after_push() -> anyhow::Result<()> {
+fn test_snapshot_correct_after_pull() -> anyhow::Result<()> {
     graft_test::ensure_test_env();
 
     let remote = LogId::random();
@@ -36,8 +36,19 @@ fn test_snapshot_correct_after_push() -> anyhow::Result<()> {
 
     // pull and verify that we see the page in vid1
     runtime.volume_pull(vid1.clone())?;
+    tracing::info!(snapshot=?runtime.volume_snapshot(&vid1)?);
     let reader = runtime.volume_reader(vid1.clone())?;
     let page = reader.read_page(pageidx!(1))?;
+    assert!(page == Page::test_filled(2), "page is correct");
+
+    // write to a different page, and then validate the resulting snapshot
+    let mut writer = runtime.volume_writer(vid1.clone())?;
+    writer.write_page(pageidx!(2), Page::test_filled(2))?;
+    let reader = writer.commit()?;
+    tracing::info!(snapshot=?reader.snapshot());
+    let page = reader.read_page(pageidx!(1))?;
+    assert!(page == Page::test_filled(2), "page is correct");
+    let page = reader.read_page(pageidx!(2))?;
     assert!(page == Page::test_filled(2), "page is correct");
 
     // shutdown the runtime

@@ -321,11 +321,23 @@ impl<'a> ReadGuard<'a> {
         if let Some(latest) = self.latest_commit(&volume.local)?
             && local_watermark < Some(latest.lsn)
         {
-            let mut snapshot = Snapshot::new(
-                volume.local,
-                local_watermark.unwrap_or(LSN::FIRST)..=latest.lsn,
-                latest.page_count,
-            );
+            let local_lsns = if let Some(local_watermark) = local_watermark {
+                // if we have a local watermark, then the local lsn range should
+                // be from local_watermark.next() to latest.
+                // this is correct because:
+                // 1. the local watermark represents the last commit that was successfully pushed to the remote
+                // 2. we already verified that the local_watermark comes
+                // strictly before the latest lsn in the previous if statement
+                assert!(local_watermark < latest.lsn, "BUG: invariant violation");
+                local_watermark.next()..=latest.lsn
+            } else {
+                // if we don't have a local watermark, but we do have a latest
+                // LSN, then we want to include the whole local commit log in
+                // the snapshot
+                LSN::FIRST..=latest.lsn
+            };
+
+            let mut snapshot = Snapshot::new(volume.local, local_lsns, latest.page_count);
             if let Some(lsn) = remote_lsn {
                 snapshot.append(volume.remote, LSN::FIRST..=lsn);
             }
