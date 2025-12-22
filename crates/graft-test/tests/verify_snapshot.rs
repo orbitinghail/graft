@@ -1,3 +1,4 @@
+use anyhow::Ok;
 use graft::{
     core::{LogId, page::Page},
     pageidx,
@@ -53,6 +54,47 @@ fn test_snapshot_correct_after_pull() -> anyhow::Result<()> {
 
     // shutdown the runtime
     runtime.shutdown().unwrap();
+
+    Ok(())
+}
+
+#[test]
+fn test_latest_snapshot_correct_after_pull() -> anyhow::Result<()> {
+    graft_test::ensure_test_env();
+
+    let remote = LogId::random();
+    let runtime = GraftTestRuntime::with_memory_remote();
+
+    // open the same remote in two different volumes
+    let vid1 = runtime.volume_open(None, None, Some(remote.clone()))?.vid;
+    let vid2 = runtime.volume_open(None, None, Some(remote.clone()))?.vid;
+
+    // write a page to vid1
+    let mut writer = runtime.volume_writer(vid1.clone())?;
+    writer.write_page(pageidx!(1), Page::test_filled(1))?;
+    writer.commit()?;
+
+    // push it to the remote
+    runtime.volume_push(vid1.clone())?;
+
+    // pull and update the page in vid2
+    runtime.volume_pull(vid2.clone())?;
+    let mut writer = runtime.volume_writer(vid2.clone())?;
+    writer.write_page(pageidx!(1), Page::test_filled(2))?;
+    writer.commit()?;
+    runtime.volume_push(vid2.clone())?;
+
+    // write a page to vid1 but don't commit
+    let mut writer = runtime.volume_writer(vid1.clone())?;
+    writer.write_page(pageidx!(1), Page::test_filled(3))?;
+    tracing::info!(snapshot=?writer.snapshot());
+
+    // pull the changes from vid2
+    runtime.volume_pull(vid1.clone())?;
+    tracing::info!(snapshot=?runtime.volume_snapshot(&vid1)?);
+
+    // this should fail
+    writer.commit()?;
 
     Ok(())
 }
