@@ -29,6 +29,7 @@ pub fn ensure_test_env() {
         setup_tracing_with_writer(TracingConsumer::Test, TestWriter::default(), None).init();
         precept::init(&TestDispatch).expect("failed to setup precept");
         precept::fault::disable_all();
+        graft::fault::set_crash_mode(true);
     });
 }
 

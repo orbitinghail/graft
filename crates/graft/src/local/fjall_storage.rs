@@ -280,31 +280,35 @@ impl<'a> ReadGuard<'a> {
     ) -> Result<bool, FjallStorageErr> {
         let volume = self.volume(vid)?;
         let latest_local = self.latest_lsn(&volume.local)?;
+        let expected_remote = volume.sync().map(|s| s.remote);
 
-        // The complexity here is that the snapshot may have been taken before
-        // we pushed commits to a remote. When this happens, the snapshot will
-        // be physically different but logically equivalent. We can use the
-        // relationship setup by the SyncPoint to handle this case.
-        Ok(match snapshot.head() {
-            Some((log, lsn)) if log == &volume.local => Some(lsn) == latest_local,
+        // if the snapshot is empty, so must be the volume
+        if snapshot.is_empty() {
+            return Ok(latest_local.is_none() && volume.sync().is_none());
+        }
 
-            Some((log, lsn)) if log == &volume.remote => {
-                if let Some(sync) = volume.sync {
-                    lsn == sync.remote && sync.local_watermark == latest_local
-                } else {
-                    // if volume has no sync point, then a snapshot should not
-                    // include a remote layer, thus this snapshot is from
-                    // another volume
-                    false
+        let mut found_remote = false;
+
+        for logref in snapshot.iter() {
+            if logref.log == volume.local {
+                // if the snapshot references the local log, it must be the latest LSN
+                if Some(*logref.lsns.end()) != latest_local {
+                    return Ok(false);
                 }
+            } else if logref.log == volume.remote {
+                found_remote = true;
+                // if the snapshot references the remote, it must be the expected LSN from the sync point
+                if Some(*logref.lsns.end()) != expected_remote {
+                    return Ok(false);
+                }
+            } else {
+                // snapshot references log from another volume
+                return Ok(false);
             }
+        }
 
-            // Snapshot from another volume
-            Some(_) => false,
-
-            // Snapshot is empty
-            None => latest_local.is_none() && volume.sync().is_none(),
-        })
+        // make sure we find the remote if we expect to be based on a remote
+        Ok(found_remote == expected_remote.is_some())
     }
 
     /// Load the most recent Snapshot for a Volume.
