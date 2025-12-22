@@ -83,6 +83,7 @@ fn test_latest_snapshot_correct_after_pull() -> anyhow::Result<()> {
     let err = catch_unwind(AssertUnwindSafe(|| runtime.volume_push(vid1.clone())))
         .expect_err("expected volume_push to panic");
     tracing::info!("caught panic as expected: {:?}", err);
+    tracing::info!(snapshot=?runtime.volume_snapshot(&vid1)?);
 
     // pull and update the page in vid2
     runtime.volume_pull(vid2.clone())?;
@@ -95,13 +96,13 @@ fn test_latest_snapshot_correct_after_pull() -> anyhow::Result<()> {
     // write a commit to vid1, but dont commit yet
     let mut writer = runtime.volume_writer(vid1.clone())?;
     writer.write_page(pageidx!(1), Page::test_filled(3))?;
-    tracing::info!(snapshot=?writer.snapshot());
 
     // pull the changes from vid2 which also triggers recovery
     runtime.volume_pull(vid1.clone())?;
     tracing::info!(snapshot=?runtime.volume_snapshot(&vid1)?);
 
     // this should fail
+    tracing::info!(snapshot=?writer.snapshot());
     writer
         .commit()
         .expect_err("expected commit to fail with a concurrency error");
