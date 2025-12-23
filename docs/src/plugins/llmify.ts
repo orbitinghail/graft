@@ -40,24 +40,20 @@ interface Frontmatter {
 }
 
 /** Parse YAML frontmatter from markdown content */
-function parseFrontmatter(content: string): Frontmatter {
+function parseFrontmatter(content: string, filePath: string): Frontmatter {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return {};
   try {
     return (yaml.load(match[1]) as Frontmatter) || {};
-  } catch {
-    return {};
+  } catch (err) {
+    throw new Error(`Failed to parse frontmatter in ${filePath}: ${err}`);
   }
 }
 
 /** Read a markdown file and extract its frontmatter */
 async function readFrontmatter(filePath: string): Promise<Frontmatter> {
-  try {
-    const content = await fs.readFile(filePath, "utf-8");
-    return parseFrontmatter(content);
-  } catch {
-    return {};
-  }
+  const content = await fs.readFile(filePath, "utf-8");
+  return parseFrontmatter(content, filePath);
 }
 
 /** Find a markdown file for a given slug, trying common patterns */
@@ -163,7 +159,7 @@ function generateLlmsTxt(baseUrl: string, pages: PageInfo[]): string {
   return GRAFT_DESCRIPTION + lines.join("\n") + "\n";
 }
 
-/** Copy all markdown files from source to dest, converting .mdx to .md and flattening index files */
+/** Copy all markdown files from source to dest, renaming .mdx to .md and flattening index files */
 async function copyMarkdownFiles(
   sourceDir: string,
   destDir: string,
