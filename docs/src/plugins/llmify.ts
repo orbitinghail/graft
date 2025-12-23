@@ -163,7 +163,7 @@ function generateLlmsTxt(baseUrl: string, pages: PageInfo[]): string {
   return GRAFT_DESCRIPTION + lines.join("\n") + "\n";
 }
 
-/** Copy all markdown files from source to dest, converting .mdx to .md */
+/** Copy all markdown files from source to dest, converting .mdx to .md and flattening index files */
 async function copyMarkdownFiles(
   sourceDir: string,
   destDir: string,
@@ -172,7 +172,10 @@ async function copyMarkdownFiles(
 
   for (const file of files) {
     const srcPath = path.join(sourceDir, file);
-    const destPath = path.join(destDir, file.replace(/\.mdx$/, ".md"));
+    // Convert .mdx to .md and flatten index files (e.g., docs/about/index.md -> docs/about.md)
+    let destFile = file.replace(/\.mdx$/, ".md");
+    destFile = destFile.replace(/\/index\.md$/, ".md");
+    const destPath = path.join(destDir, destFile);
     await fs.mkdir(path.dirname(destPath), { recursive: true });
     await fs.copyFile(srcPath, destPath);
   }

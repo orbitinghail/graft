@@ -1,5 +1,10 @@
+[files]
+extend-exclude = [
+ "context7.json"
+]
+
 [default]
 extend-ignore-re = [
   # ignore gids
-  "[1-9A-HJ-NP-Za-km-z]{10}-[1-9A-HJ-NP-Za-km-z]{13}",
+  "[1-9A-HJ-NP-Za-km-z]{10}-[1-9A-HJ-NP-Za-km-z]{13}"
 ]
