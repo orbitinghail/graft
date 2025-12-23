@@ -30,6 +30,7 @@
 
 **Learn more:**
 
+- [SyncConf 2025 Talk](https://www.youtube.com/watch?v=QoKzDyH2MEA)
 - [Blog Post](https://sqlsync.dev/posts/stop-syncing-everything/)
 - [Vancouver Systems Talk](https://www.youtube.com/watch?v=eRsD8uSAi0s)
 - [High Performance SQLite Talk](https://www.youtube.com/watch?v=dJurdmhPLH4)

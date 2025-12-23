@@ -23,6 +23,7 @@ export const sidebar = [
       { label: "Introduction", slug: "docs/about" },
       { label: "Comparison", slug: "docs/about/comparison" },
       { label: "FAQ", slug: "docs/about/faq" },
+      { label: "Resources", slug: "docs/about/resources" },
     ],
   },
   {
