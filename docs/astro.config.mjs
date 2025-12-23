@@ -2,9 +2,10 @@
 import { execSync } from "node:child_process";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
-import starlightLlmsTxt from "starlight-llms-txt";
 import starlightDocSearch from "@astrojs/starlight-docsearch";
 import sitemap from "@astrojs/sitemap";
+import llmifyPlugin from "./src/plugins/llmify";
+import { sidebar } from "./src/config/sidebar";
 
 // find the current branch name
 export function currentBranch() {
@@ -29,7 +30,6 @@ export default defineConfig({
   integrations: [
     starlight({
       plugins: [
-        starlightLlmsTxt(),
         starlightDocSearch({
           clientOptionsModule: "./src/config/docsearch.ts",
         }),
@@ -85,46 +85,9 @@ export default defineConfig({
       editLink: {
         baseUrl: `https://github.com/orbitinghail/graft/blob/${currentBranch()}/docs/`,
       },
-      sidebar: [
-        {
-          label: "About",
-          collapsed: true,
-          items: [
-            { label: "Introduction", slug: "docs/about" },
-            { label: "Comparison", slug: "docs/about/comparison" },
-            { label: "FAQ", slug: "docs/about/faq" },
-          ],
-        },
-        {
-          label: "Concepts",
-          collapsed: true,
-          items: [
-            { label: "Volumes", slug: "docs/concepts/volumes" },
-            { label: "Consistency", slug: "docs/concepts/consistency" },
-          ],
-        },
-        {
-          label: "SQLite extension",
-          collapsed: true,
-          items: [
-            { label: "Overview", slug: "docs/sqlite" },
-            { label: "Compatibility", slug: "docs/sqlite/compatibility" },
-            { label: "Databases", slug: "docs/sqlite/databases" },
-            { label: "Config", slug: "docs/sqlite/config" },
-            { label: "Pragmas", slug: "docs/sqlite/pragmas" },
-            {
-              label: "Using with...",
-              autogenerate: { directory: "docs/sqlite/usage" },
-            },
-          ],
-        },
-        {
-          label: "Internals",
-          collapsed: true,
-          autogenerate: { directory: "docs/internals" },
-        },
-      ],
+      sidebar,
     }),
     sitemap(),
+    llmifyPlugin(),
   ],
 });
