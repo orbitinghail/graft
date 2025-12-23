@@ -1,5 +1,7 @@
 import type { AstroIntegration } from "astro";
+import fg from "fast-glob";
 import * as fs from "fs/promises";
+import yaml from "js-yaml";
 import * as path from "path";
 import {
   sidebar,
@@ -32,80 +34,59 @@ interface PageInfo {
   description?: string;
 }
 
-async function extractFrontmatter(
-  filePath: string,
-): Promise<{ title?: string; description?: string }> {
+interface Frontmatter {
+  title?: string;
+  description?: string;
+}
+
+/** Parse YAML frontmatter from markdown content */
+function parseFrontmatter(content: string): Frontmatter {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return {};
   try {
-    const content = await fs.readFile(filePath, "utf-8");
-    const match = content.match(/^---\n([\s\S]*?)\n---/);
-    if (!match) return {};
-
-    const frontmatter = match[1];
-    const title = frontmatter.match(/^title:\s*(.+)$/m)?.[1]?.trim();
-    const description = frontmatter
-      .match(/^description:\s*(.+)$/m)?.[1]
-      ?.trim();
-
-    return { title, description };
+    return (yaml.load(match[1]) as Frontmatter) || {};
   } catch {
     return {};
   }
 }
 
+/** Read a markdown file and extract its frontmatter */
+async function readFrontmatter(filePath: string): Promise<Frontmatter> {
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    return parseFrontmatter(content);
+  } catch {
+    return {};
+  }
+}
+
+/** Find a markdown file for a given slug, trying common patterns */
 async function findMarkdownFile(
   sourceDir: string,
   slug: string,
 ): Promise<string | null> {
-  const basePath = path.join(sourceDir, slug);
-
-  // Try different file patterns
-  const candidates = [
-    `${basePath}.md`,
-    `${basePath}.mdx`,
-    `${basePath}/index.md`,
-    `${basePath}/index.mdx`,
-    path.join(basePath, "index.md"),
-    path.join(basePath, "index.mdx"),
+  const patterns = [
+    `${slug}.{md,mdx}`,
+    `${slug}/index.{md,mdx}`,
   ];
-
-  for (const candidate of candidates) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {
-      // File doesn't exist, try next
-    }
-  }
-  return null;
+  const files = await fg(patterns, { cwd: sourceDir, absolute: true });
+  return files[0] || null;
 }
 
-async function getFilesInDirectory(dirPath: string): Promise<string[]> {
-  try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
-    const files: string[] = [];
-
-    for (const entry of entries) {
-      if (
-        entry.isFile() &&
-        (entry.name.endsWith(".md") || entry.name.endsWith(".mdx"))
-      ) {
-        files.push(path.join(dirPath, entry.name));
-      }
-    }
-
-    return files.sort();
-  } catch {
-    return [];
-  }
+/** Get all markdown files in a directory (non-recursive) */
+async function getMarkdownFiles(dirPath: string): Promise<string[]> {
+  const files = await fg("*.{md,mdx}", { cwd: dirPath, absolute: true });
+  return files.sort();
 }
 
+/** Collect page info by traversing the sidebar configuration */
 async function collectPages(sourceDir: string): Promise<PageInfo[]> {
   const pages: PageInfo[] = [];
 
   // Add the homepage
   const homePath = await findMarkdownFile(sourceDir, "index");
   if (homePath) {
-    const fm = await extractFrontmatter(homePath);
+    const fm = await readFrontmatter(homePath);
     pages.push({
       slug: "",
       label: fm.title || "Home",
@@ -113,11 +94,27 @@ async function collectPages(sourceDir: string): Promise<PageInfo[]> {
     });
   }
 
+  async function processAutogenerate(
+    directory: string,
+  ): Promise<void> {
+    const dirPath = path.join(sourceDir, directory);
+    for (const filePath of await getMarkdownFiles(dirPath)) {
+      const fm = await readFrontmatter(filePath);
+      const fileName = path.basename(filePath).replace(/\.(md|mdx)$/, "");
+      const slug = fileName === "index" ? directory : `${directory}/${fileName}`;
+      pages.push({
+        slug,
+        label: fm.title || fileName,
+        description: fm.description,
+      });
+    }
+  }
+
   async function processItem(item: SidebarItem): Promise<void> {
     if (item.slug) {
       const filePath = await findMarkdownFile(sourceDir, item.slug);
       if (filePath) {
-        const fm = await extractFrontmatter(filePath);
+        const fm = await readFrontmatter(filePath);
         pages.push({
           slug: item.slug,
           label: item.label,
@@ -127,23 +124,7 @@ async function collectPages(sourceDir: string): Promise<PageInfo[]> {
     }
 
     if (item.autogenerate) {
-      const dirPath = path.join(sourceDir, item.autogenerate.directory);
-      const files = await getFilesInDirectory(dirPath);
-
-      for (const filePath of files) {
-        const fm = await extractFrontmatter(filePath);
-        const fileName = path.basename(filePath).replace(/\.(md|mdx)$/, "");
-        const slug =
-          fileName === "index"
-            ? item.autogenerate.directory
-            : `${item.autogenerate.directory}/${fileName}`;
-
-        pages.push({
-          slug,
-          label: fm.title || fileName,
-          description: fm.description,
-        });
-      }
+      await processAutogenerate(item.autogenerate.directory);
     }
 
     if (item.items) {
@@ -161,23 +142,7 @@ async function collectPages(sourceDir: string): Promise<PageInfo[]> {
     }
 
     if (section.autogenerate) {
-      const dirPath = path.join(sourceDir, section.autogenerate.directory);
-      const files = await getFilesInDirectory(dirPath);
-
-      for (const filePath of files) {
-        const fm = await extractFrontmatter(filePath);
-        const fileName = path.basename(filePath).replace(/\.(md|mdx)$/, "");
-        const slug =
-          fileName === "index"
-            ? section.autogenerate.directory
-            : `${section.autogenerate.directory}/${fileName}`;
-
-        pages.push({
-          slug,
-          label: fm.title || fileName,
-          description: fm.description,
-        });
-      }
+      await processAutogenerate(section.autogenerate.directory);
     }
   }
 
@@ -188,58 +153,59 @@ async function collectPages(sourceDir: string): Promise<PageInfo[]> {
   return pages;
 }
 
+/** Generate the llms.txt index content */
 function generateLlmsTxt(baseUrl: string, pages: PageInfo[]): string {
-  let content = GRAFT_DESCRIPTION;
-
-  for (const page of pages) {
+  const lines = pages.map((page) => {
     const url = page.slug ? `${baseUrl}${page.slug}.md` : `${baseUrl}index.md`;
     const description = page.description ? `: ${page.description}` : "";
-    content += `- [${page.label}](${url})${description}\n`;
+    return `- [${page.label}](${url})${description}`;
+  });
+  return GRAFT_DESCRIPTION + lines.join("\n") + "\n";
+}
+
+/** Copy all markdown files from source to dest, converting .mdx to .md */
+async function copyMarkdownFiles(
+  sourceDir: string,
+  destDir: string,
+): Promise<number> {
+  const files = await fg("**/*.{md,mdx}", { cwd: sourceDir });
+
+  for (const file of files) {
+    const srcPath = path.join(sourceDir, file);
+    const destPath = path.join(destDir, file.replace(/\.mdx$/, ".md"));
+    await fs.mkdir(path.dirname(destPath), { recursive: true });
+    await fs.copyFile(srcPath, destPath);
   }
 
-  return content;
+  return files.length;
 }
 
 export default function llmifyPlugin(): AstroIntegration {
+  let siteUrl: string;
+
   return {
     name: "llmify",
     hooks: {
+      "astro:config:done": ({ config }) => {
+        siteUrl = config.site?.toString() ?? "";
+        if (!siteUrl.endsWith("/")) {
+          siteUrl += "/";
+        }
+      },
       "astro:build:done": async ({ dir, logger }) => {
         const sourceDir = path.resolve("./src/content/docs");
         const destDir = dir.pathname;
-        const baseUrl = "https://graft.rs/";
 
-        // Copy markdown files
-        const copyFiles = async (src: string, dest: string) => {
-          const entries = await fs.readdir(src, { withFileTypes: true });
+        // Copy markdown files to dist
+        const fileCount = await copyMarkdownFiles(sourceDir, destDir);
+        logger.info(`Copied ${fileCount} markdown files to dist`);
 
-          for (const entry of entries) {
-            const srcPath = path.join(src, entry.name);
-
-            if (entry.isDirectory()) {
-              const destPath = path.join(dest, entry.name);
-              await fs.mkdir(destPath, { recursive: true });
-              await copyFiles(srcPath, destPath);
-            } else if (entry.name.endsWith(".mdx")) {
-              const destPath = path.join(
-                dest,
-                entry.name.replace(/\.mdx$/, ".md"),
-              );
-              await fs.copyFile(srcPath, destPath);
-            } else if (entry.name.endsWith(".md")) {
-              const destPath = path.join(dest, entry.name);
-              await fs.copyFile(srcPath, destPath);
-            }
-          }
-        };
-
-        await copyFiles(sourceDir, destDir);
-        logger.info("Copied markdown files to dist");
-
-        // Generate llms.txt
+        // Generate llms.txt index
         const pages = await collectPages(sourceDir);
-        const llmsTxt = generateLlmsTxt(baseUrl, pages);
-        await fs.writeFile(path.join(destDir, "llms.txt"), llmsTxt);
+        await fs.writeFile(
+          path.join(destDir, "llms.txt"),
+          generateLlmsTxt(siteUrl, pages),
+        );
         logger.info(`Generated llms.txt with ${pages.length} pages`);
       },
     },

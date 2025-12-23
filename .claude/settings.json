@@ -20,7 +20,9 @@
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
-      "Bash(git show:*)"
+      "Bash(git show:*)",
+      "Bash(pnpm astro check:*)",
+      "Bash(pnpm build:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"
