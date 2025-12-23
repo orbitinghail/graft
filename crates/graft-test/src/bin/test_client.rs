@@ -235,7 +235,20 @@ fn main_inner() -> Result<(), TestErr> {
                 );
 
                 // reopen sqlite connection with new volume
-                env.sqlite = Connection::open("main")?;
+                // need to handle errors here since sqlite can read the first page
+                loop {
+                    match Connection::open("main").map_err(WorkloadErr::from) {
+                        Ok(sqlite) => {
+                            env.sqlite = sqlite;
+                            break;
+                        }
+                        Err(err) if err.should_retry() => continue,
+                        Err(err) => return Err(err.into()),
+                    }
+                }
+
+                let snapshot = env.runtime.volume_snapshot(&env.vid)?;
+                tracing::info!(?snapshot, "divergence recovery complete; resuming workload");
             }
             Err(err) if err.should_retry() => {
                 tracing::debug!(%err, "encountered retryable error, retrying");
