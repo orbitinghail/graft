@@ -12,6 +12,7 @@ pub mod rt {
 pub mod core;
 pub mod err;
 pub mod oracle;
+pub mod pagestore;
 pub mod remote;
 pub mod setup;
 pub mod snapshot;
