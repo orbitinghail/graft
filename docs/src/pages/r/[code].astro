@@ -1,0 +1,29 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import { SHORT_CODES } from "src/config/redirects";
+
+export function getStaticPaths() {
+  return SHORT_CODES.map(({ code, dest }) => ({
+    params: { code },
+    props: { dest },
+  }));
+}
+
+const { dest } = Astro.props;
+const replacement = `${Astro.url.origin}${dest}`;
+---
+
+<html>
+  <head>
+    <title>Redirecting...</title>
+    <meta name="robots" content="noindex" />
+    <meta http-equiv="refresh" content={`1; url=${replacement}`} />
+  </head>
+  <body>
+    <p>This page has permanently moved. The new URL is:</p>
+
+    <p><a href={replacement}>{replacement}</a></p>
+
+    <p>You should be automatically redirected in a few seconds...</p>
+  </body>
+</html>

@@ -115,3 +115,17 @@ pragma graft_fork;
 ```
 
 This creates a divergent copy that's independent from the original. The Volume must be fully hydrated before forking.
+
+## Import from Existing Database
+
+You can import an existing SQLite database into Graft using SQLite's `VACUUM INTO` command with a URI filename:
+
+```sql
+-- Open your existing database
+.open /path/to/existing.db
+
+-- Import into a new Graft tag
+vacuum into 'file:mytag?vfs=graft';
+```
+
+This creates a new Graft Volume containing all the data from your existing database. The original database remains unchanged.
