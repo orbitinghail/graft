@@ -3,6 +3,8 @@ title: Databases
 description: Understanding how to connect to different databases using Graft
 ---
 
+import { Aside } from "@astrojs/starlight/components";
+
 When using Graft, each SQLite database maps to a **Volume** - which tracks a local Log (your working copy) with a remote Log (the source of truth in object storage).
 
 You can create or connect to Volumes several ways:
@@ -115,3 +117,23 @@ pragma graft_fork;
 ```
 
 This creates a divergent copy that's independent from the original. The Volume must be fully hydrated before forking.
+
+## Import from Existing Database
+
+You can import an existing SQLite database into Graft using SQLite's `VACUUM INTO` command with a URI filename:
+
+```sql
+-- Open your existing database
+.open /path/to/existing.db
+
+-- Import into a new Graft tag
+VACUUM INTO 'file:mytag?vfs=graft';
+```
+
+This creates a new Graft Volume containing all the data from your existing database. The original database remains unchanged.
+
+<Aside type="note">
+  The vacuum into command will fail if the source database page size is not 4096
+  (4KB). To resolve, run `PRAGMA page_size=4096;` immediately before the `VACUUM
+  INTO` command, and then set the page size back afterwards.
+</Aside>

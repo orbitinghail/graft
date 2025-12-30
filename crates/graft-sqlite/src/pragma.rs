@@ -1,25 +1,15 @@
 use std::{
     fmt::{Display, Write},
     fs::File,
-    io::{Read, Write as IoWrite},
+    io::Write as IoWrite,
     path::PathBuf,
     str::FromStr,
 };
 
-use bytes::{Bytes, BytesMut};
 use graft::core::{
-    LogId, PageCount, PageIdx, VolumeId,
-    commit::Commit,
-    logref::LogRef,
-    lsn::LSNRangeExt,
-    page::{PAGESIZE, Page},
+    LogId, PageIdx, VolumeId, commit::Commit, logref::LogRef, lsn::LSNRangeExt, page::PAGESIZE,
 };
-use graft::{
-    rt::runtime::Runtime,
-    volume::AheadStatus,
-    volume_reader::VolumeRead,
-    volume_writer::{VolumeWrite, VolumeWriter},
-};
+use graft::{rt::runtime::Runtime, volume::AheadStatus, volume_reader::VolumeRead};
 use indoc::{formatdoc, indoc, writedoc};
 use sqlite_plugin::{
     vars::SQLITE_ERROR,
@@ -295,9 +285,10 @@ impl GraftPragma {
                 Ok(Some(out))
             }
 
-            GraftPragma::Import(path) => {
-                let writer = runtime.volume_writer(file.vid.clone())?;
-                volume_import(writer, path).map(Some)
+            GraftPragma::Import(_) => {
+                pragma_err!(
+                    "deprecated: use `vacuum into` instead: https://graft.rs/r/graft_import"
+                )
             }
 
             GraftPragma::Export(path) => volume_export(runtime, file, path).map(Some),
@@ -557,61 +548,6 @@ fn format_volumes(runtime: &Runtime, file: &VolFile) -> Result<String, ErrCtx> {
         )?;
     }
     Ok(f)
-}
-
-fn volume_import(mut writer: VolumeWriter, path: PathBuf) -> Result<String, ErrCtx> {
-    if writer.page_count() > PageCount::ZERO {
-        return pragma_err!("Refusing to import into a non-empty database.");
-    }
-
-    let mut file = File::open(&path)?;
-
-    // Read and write the file in chunks of 64 pages (256KB)
-    const CHUNK_PAGES: usize = 64;
-    const CHUNK_SIZE: usize = CHUNK_PAGES * PAGESIZE.as_usize();
-
-    let mut buffer = vec![0u8; CHUNK_SIZE];
-    let mut page_idx = PageIdx::FIRST;
-    let mut total_pages = 0;
-
-    loop {
-        let bytes_read = file.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break; // EOF
-        }
-
-        // Process each page in the chunk
-        for chunk in buffer[..bytes_read].chunks(PAGESIZE.as_usize()) {
-            let page = if chunk.len() == PAGESIZE.as_usize() {
-                // SAFETY: we just checked that chunk.len() == PAGESIZE
-                unsafe { Page::from_bytes_unchecked(Bytes::copy_from_slice(chunk)) }
-            } else {
-                // Partial page at the end of the file - pad with zeros
-                let mut bytes = BytesMut::from(chunk);
-                bytes.resize(PAGESIZE.as_usize(), 0);
-                // SAFETY: chunk has just been resized to PAGESIZE
-                unsafe { Page::from_bytes_unchecked(bytes.freeze()) }
-            };
-
-            writer.write_page(page_idx, page)?;
-            page_idx = page_idx.saturating_next();
-            total_pages += 1;
-        }
-    }
-
-    let reader = writer.commit()?;
-    let page_count = reader.page_count();
-    assert_eq!(
-        page_count.to_usize(),
-        total_pages,
-        "page count after import does not match expected page count"
-    );
-
-    Ok(format!(
-        "imported {} {}",
-        total_pages,
-        pluralize!(total_pages, "page")
-    ))
 }
 
 fn volume_export(_runtime: &Runtime, file: &VolFile, path: PathBuf) -> Result<String, ErrCtx> {

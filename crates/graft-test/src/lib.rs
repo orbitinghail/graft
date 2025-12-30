@@ -16,7 +16,7 @@ use graft::{
 use graft_sqlite::vfs::GraftVfs;
 use graft_tracing::{SubscriberInitExt, TracingConsumer, setup_tracing_with_writer};
 use precept::dispatch::test::TestDispatch;
-use rusqlite::{Connection, OpenFlags, ToSql};
+use rusqlite::{Connection, ToSql};
 use sqlite_plugin::vfs::{RegisterOpts, register_static};
 use tokio::sync::Notify;
 use tracing_subscriber::fmt::TestWriter;
@@ -97,31 +97,8 @@ impl GraftTestRuntime {
     }
 
     pub fn open_sqlite(&mut self, dbname: &str, remote: Option<LogId>) -> GraftSqliteConn {
-        let vfs_id = self.vfs_id.get_or_insert_with(|| {
-            // generate a 16 byte random ascii CString
-            let vfs_id = {
-                let mut bytes = [0u8; 16];
-                for byte in bytes.iter_mut() {
-                    *byte = rand::random::<u8>() % 26 + b'a';
-                }
-                CString::new(bytes.to_vec()).unwrap()
-            };
-
-            register_static(
-                vfs_id.clone(),
-                GraftVfs::new(self.runtime.clone()),
-                RegisterOpts { make_default: false },
-            )
-            .expect("failed to register vfs");
-            vfs_id
-        });
-        // setup vfs if needed
-        let conn = Connection::open_with_flags_and_vfs(
-            dbname,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-            vfs_id.as_c_str(),
-        )
-        .unwrap();
+        let vfs_id = self.ensure_vfs();
+        let conn = Connection::open(format!("file:{dbname}?vfs={vfs_id}")).unwrap();
         let conn = GraftSqliteConn { conn };
         if let Some(remote) = remote {
             conn.graft_pragma_arg("clone", remote.serialize()).unwrap();
@@ -132,6 +109,28 @@ impl GraftTestRuntime {
     pub fn shutdown(self) -> std::thread::Result<()> {
         self.shutdown_tx.notify_one();
         self.thread.join()
+    }
+
+    /// Ensures the VFS is registered and returns its name.
+    pub fn ensure_vfs(&mut self) -> &str {
+        let vfs_id = self.vfs_id.get_or_insert_with(|| {
+            // generate a 16 byte random ascii CString
+            let vfs_id = {
+                let mut bytes = [0u8; 16];
+                for byte in bytes.iter_mut() {
+                    *byte = rand::random::<u8>() % 26 + b'a';
+                }
+                CString::new(bytes.to_vec()).unwrap()
+            };
+            register_static(
+                vfs_id.clone(),
+                GraftVfs::new(self.runtime.clone()),
+                RegisterOpts { make_default: false },
+            )
+            .expect("failed to register vfs");
+            vfs_id
+        });
+        vfs_id.to_str().unwrap()
     }
 }
 

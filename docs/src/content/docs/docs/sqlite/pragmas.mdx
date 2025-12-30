@@ -3,6 +3,8 @@ title: Pragmas
 description: Interact with the Graft SQLite extension using pragmas
 ---
 
+import { Aside } from "@astrojs/starlight/components";
+
 The application can interact with the Graft SQLite extension using the following [pragma statements].
 
 [pragma statements]: https://www.sqlite.org/pragma.html
@@ -168,13 +170,10 @@ pragma graft_hydrate;
 
 ### `pragma graft_import = "PATH"`
 
-Imports an existing SQLite database file into the current Volume.
-
-```sql
-pragma graft_import = "/path/to/database.db";
-```
-
-Reads a SQLite database file and writes its pages into the current Volume. The Volume must be empty before importing.
+<Aside type="caution">
+  This pragma is deprecated. Refer to the [`import docs`](/r/graft_import) for
+  alternatives.
+</Aside>
 
 ### `pragma graft_export = "PATH"`
 
@@ -187,6 +186,7 @@ pragma graft_export = "/path/to/output.db";
 Reads all pages from the current Volume and writes them to a standard SQLite database file. The exported file can be opened with any SQLite client.
 
 **Important notes:**
+
 - If a file already exists at the target path, it will be overwritten
 - Unlike import, export has no restrictions and can be called at any time
 - Exports the current database state as seen by the connection

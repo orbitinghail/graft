@@ -71,7 +71,7 @@ fn test_sync_and_reset() {
 }
 
 #[test]
-fn test_import_export() {
+fn test_export() {
     graft_test::ensure_test_env();
 
     let mut runtime = GraftTestRuntime::with_memory_remote();
@@ -128,19 +128,78 @@ fn test_import_export() {
         .unwrap();
     assert_eq!(name, "Bob");
 
-    drop(exported_conn);
+    // Cleanup
+    runtime.shutdown().unwrap();
+}
 
-    // Create a new volume and import the exported database
-    let sqlite2 = runtime.open_sqlite("imported", None);
-    sqlite2.graft_pragma_arg("import", export_path_str).unwrap();
+/// Test that VACUUM INTO can be used to import a non-graft SQLite database into Graft.
+/// This is the recommended way to import existing databases as documented at:
+/// https://graft.rs/r/graft_import
+#[test]
+fn test_vacuum_into_import() {
+    graft_test::ensure_test_env();
 
-    // Verify the imported data
-    let count: i64 = sqlite2
+    // Create a regular SQLite database with some data
+    let temp_dir = tempfile::tempdir().unwrap();
+    let source_path = temp_dir.path().join("source.db");
+
+    let source_conn = Connection::open(&source_path).unwrap();
+
+    source_conn
+        .execute_batch(
+            r#"
+            -- set WAL mode on the source db
+            PRAGMA journal_mode=WAL;
+            -- set a too-large page size
+            PRAGMA page_size=8192;
+
+            CREATE TABLE test_data (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                value INTEGER NOT NULL
+            );
+            INSERT INTO test_data (id, name, value) VALUES
+                (1, 'Alice', 100),
+                (2, 'Bob', 200),
+                (3, 'Charlie', 300);
+            "#,
+        )
+        .unwrap();
+
+    // Verify source data
+    let count: i64 = source_conn
         .query_row("SELECT COUNT(*) FROM test_data", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 3);
 
-    let name: String = sqlite2
+    // Create a Graft runtime and ensure the VFS is registered
+    let mut runtime = GraftTestRuntime::with_memory_remote();
+    let vfs_name = runtime.ensure_vfs();
+
+    // Use VACUUM INTO to import the source database into a new Graft volume
+    // Also use the page size pragma right before the vacuum to change the page size
+    let vacuum_uri = format!("file:imported?vfs={vfs_name}");
+    source_conn
+        .execute_batch(&format!(
+            r#"
+            PRAGMA page_size=4096;
+            VACUUM INTO '{vacuum_uri}';
+            "#
+        ))
+        .unwrap();
+
+    drop(source_conn);
+
+    // Open the imported Graft volume and verify the data
+    let sqlite = runtime.open_sqlite("imported", None);
+
+    // Verify the imported data
+    let count: i64 = sqlite
+        .query_row("SELECT COUNT(*) FROM test_data", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 3);
+
+    let name: String = sqlite
         .query_row("SELECT name FROM test_data WHERE id = 2", [], |row| {
             row.get(0)
         })
@@ -148,7 +207,7 @@ fn test_import_export() {
     assert_eq!(name, "Bob");
 
     // Verify we can query all the data
-    let sum: i64 = sqlite2
+    let sum: i64 = sqlite
         .query_row("SELECT SUM(value) FROM test_data", [], |row| row.get(0))
         .unwrap();
     assert_eq!(sum, 600);
