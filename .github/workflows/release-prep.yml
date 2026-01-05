@@ -311,10 +311,10 @@ jobs:
           mv builds/x86_64-pc-windows-msvc/release/graft_ext.dll          dist/windows-x86_64/graft_ext.dll
           mv builds/aarch64-pc-windows-msvc/release/graft_ext.dll         dist/windows-aarch64/graft_ext.dll
           mv builds/libgraft_ext.dylib                                    dist/macos-aarch64/libgraft_ext.dylib
-          mv builds/aarch64-linux-android/release/libgraft_ext.so         dist/android-arm64-v8a/libgraft_ext.so
-          mv builds/armv7-linux-androideabi/release/libgraft_ext.so       dist/android-armeabi-v7a/libgraft_ext.so
+          mv builds/aarch64-linux-android/release/libgraft_ext.so         dist/android-aarch64/libgraft_ext.so
+          mv builds/armv7-linux-androideabi/release/libgraft_ext.so       dist/android-armv7a/libgraft_ext.so
           mv builds/x86_64-linux-android/release/libgraft_ext.so          dist/android-x86_64/libgraft_ext.so
-          mv builds/i686-linux-android/release/libgraft_ext.so            dist/android-x86/libgraft_ext.so
+          mv builds/i686-linux-android/release/libgraft_ext.so            dist/android-i686/libgraft_ext.so
 
       - name: Run SQLite dist
         run: |
