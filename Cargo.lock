@@ -1003,7 +1003,7 @@ dependencies = [
 
 [[package]]
 name = "graft"
-version = "0.2.1"
+version = "0.2.2-rc.1"
 dependencies = [
  "assert_matches",
  "bilrost",
@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "graft-sqlite"
-version = "0.2.1"
+version = "0.2.2-rc.1"
 dependencies = [
  "bytes",
  "enum_dispatch",
