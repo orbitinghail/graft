@@ -53,6 +53,12 @@ for platform in "$DIST_DIR"/*; do
             (cd $DIST_DIR; zip -r "$OUTPUT_DIR/$archive_name" "$libname" >/dev/null)
             ;;
 
+        android-arm64-v8a|android-armeabi-v7a|android-x86_64|android-x86)
+            libname="libgraft_ext.so"
+            archive_name="libgraft-ext-$platform_name.tar.gz"
+            tar -czf "$OUTPUT_DIR/$archive_name" -C "$DIST_DIR/$platform_name" "$libname"
+            ;;
+
         *)
             echo "Unexpected platform directory encountered: $platform_name" >&2
             exit 1

@@ -138,6 +138,20 @@ jobs:
               target/aarch64-apple-ios-sim/release/libgraft_ext.a
               target/aarch64-apple-darwin/release/libgraft_ext.a
 
+          - runs-on: ubuntu-24.04
+            features: dynamic
+            targets:
+              - aarch64-linux-android
+              - armv7-linux-androideabi
+              - x86_64-linux-android
+              - i686-linux-android
+            artifact-name: dynamic-android
+            artifacts: |
+              target/aarch64-linux-android/release/libgraft_ext.so
+              target/armv7-linux-androideabi/release/libgraft_ext.so
+              target/x86_64-linux-android/release/libgraft_ext.so
+              target/i686-linux-android/release/libgraft_ext.so
+
     name: Building ${{ matrix.platform.artifact-name }} artifact
     runs-on: ${{ matrix.platform.runs-on }}
     permissions:
@@ -171,6 +185,13 @@ jobs:
         run: |
           set -euo pipefail
           echo "LIBCLANG_PATH=$(brew --prefix llvm@15)/lib" >> $GITHUB_ENV
+
+      - name: Setup Android NDK
+        if: matrix.platform.artifact-name == 'dynamic-android'
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27d
 
       - name: Static Rustflags
         if: matrix.platform.features == 'static'
@@ -273,12 +294,17 @@ jobs:
       - name: Reorganize build artifacts
         run: |
           mkdir -p dist/{linux,windows,macos}-{x86_64,aarch64}
+          mkdir -p dist/android-{arm64-v8a,armeabi-v7a,x86_64,x86}
           rmdir dist/macos-x86_64
           mv builds/x86_64-unknown-linux-gnu/release/libgraft_ext.so      dist/linux-x86_64/libgraft_ext.so
           mv builds/aarch64-unknown-linux-gnu/release/libgraft_ext.so     dist/linux-aarch64/libgraft_ext.so
           mv builds/x86_64-pc-windows-msvc/release/graft_ext.dll          dist/windows-x86_64/graft_ext.dll
           mv builds/aarch64-pc-windows-msvc/release/graft_ext.dll         dist/windows-aarch64/graft_ext.dll
           mv builds/libgraft_ext.dylib                                    dist/macos-aarch64/libgraft_ext.dylib
+          mv builds/aarch64-linux-android/release/libgraft_ext.so         dist/android-arm64-v8a/libgraft_ext.so
+          mv builds/armv7-linux-androideabi/release/libgraft_ext.so       dist/android-armeabi-v7a/libgraft_ext.so
+          mv builds/x86_64-linux-android/release/libgraft_ext.so          dist/android-x86_64/libgraft_ext.so
+          mv builds/i686-linux-android/release/libgraft_ext.so            dist/android-x86/libgraft_ext.so
 
       - name: Run SQLite dist
         run: |
