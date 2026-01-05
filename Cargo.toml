@@ -39,7 +39,7 @@ precept = { version = "0.2.0" }
 rand = "0.9.2"
 range-set-blaze = "0.4.1"
 reqwest = { version = "0.12.26", default-features = false, features = ["hickory-dns"] }
-rusqlite = "0.37.0"
+rusqlite = "0.38.0"
 serde = "1.0.228"
 splinter-rs = "0.10.1"
 sqlite-plugin = { version = "0.5.0", default-features = false }
