@@ -70,7 +70,7 @@ jobs:
         run: cargo test --doc
 
       - name: Cache SQLite
-        uses: actions/cache@v4
+        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5
         with:
           path: target/sqlite-*/sqlite3
           key: ${{ runner.os }}-sqlite3-${{ hashFiles('tasks/sqlite/*') }}
