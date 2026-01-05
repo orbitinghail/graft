@@ -192,6 +192,16 @@ jobs:
         id: setup-ndk
         with:
           ndk-version: r27d
+          link-to-sdk: true
+          local-cache: true
+
+      # - name: Configure Android CC
+      #   if: matrix.platform.artifact-name == 'dynamic-android'
+      #   run: |
+      #     echo "CC_aarch64_linux_android=aarch64-linux-android21-clang" >> $GITHUB_ENV
+      #     echo "CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang" >> $GITHUB_ENV
+      #     echo "CC_x86_64_linux_android=x86_64-linux-android21-clang" >> $GITHUB_ENV
+      #     echo "CC_i686_linux_android=i686-linux-android21-clang" >> $GITHUB_ENV
 
       - name: Static Rustflags
         if: matrix.platform.features == 'static'
