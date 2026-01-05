@@ -33,7 +33,7 @@ futures = "0.3.31"
 hashbrown = "0.16.0"
 indoc = "2.0.7"
 itertools = "0.14.0"
-opendal = { version = "0.55.0", features = ["services-s3", "services-fs"], git = "https://github.com/carlsverre/opendal", rev = "296f9f69d8de3fc0bace946f71d032ba84cdfee6" }
+opendal = { version = "0.55.0", features = ["services-s3", "services-fs"], git = "https://github.com/carlsverre/opendal", rev = "930fbbf3a5bdca1334324db2f150f5779415bfcf" }
 parking_lot = "0.12.5"
 platform-dirs = "0.3.0"
 precept = { version = "0.2.0" }
