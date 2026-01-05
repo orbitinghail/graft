@@ -1,4 +1,4 @@
-FROM rust:1.91-bullseye AS base
+FROM rust:1.92-bullseye@sha256:182c38f1049c4348a0286392d817d400a6cdb51eebb479d446cd6286bbe6e758 AS base
 
 # increment to force rebuild of all layers
 RUN echo "rebuild-deps: 1"

@@ -33,14 +33,13 @@ futures = "0.3.31"
 hashbrown = "0.16.0"
 indoc = "2.0.7"
 itertools = "0.14.0"
-opendal = { version = "0.55.0", features = ["services-s3", "services-fs"], git = "https://github.com/carlsverre/opendal", rev = "930fbbf3a5bdca1334324db2f150f5779415bfcf" }
 parking_lot = "0.12.5"
 platform-dirs = "0.3.0"
 precept = { version = "0.2.0" }
 rand = "0.9.2"
 range-set-blaze = "0.4.1"
-reqwest = { version = "0.12.26", features = ["hickory-dns"] }
-rusqlite = "0.37.0"
+reqwest = { version = "0.12.24", features = ["hickory-dns"] }
+rusqlite = "0.38.0"
 serde = "1.0.228"
 splinter-rs = "0.10.1"
 sqlite-plugin = { version = "0.5.0", default-features = false }
@@ -58,6 +57,12 @@ tryiter = "0.6.0"
 xxhash-rust = "0.8.15"
 zerocopy = { version = "0.8.27", features = ["derive"] }
 zstd = "0.13.3"
+
+[workspace.dependencies.opendal]
+# version = "0.55.0"
+features = ["services-s3", "services-fs"]
+git = "https://github.com/carlsverre/opendal"
+branch = "bug/complete"
 
 [workspace.lints.clippy]
 disallowed_methods = "deny"
