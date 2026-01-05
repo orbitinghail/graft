@@ -199,10 +199,12 @@ jobs:
       - name: Configure Android CC
         if: matrix.platform.artifact-name == 'dynamic-android'
         run: |
-          echo "CC_aarch64_linux_android=aarch64-linux-android21-clang" >> $GITHUB_ENV
-          echo "CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang" >> $GITHUB_ENV
-          echo "CC_x86_64_linux_android=x86_64-linux-android21-clang" >> $GITHUB_ENV
-          echo "CC_i686_linux_android=i686-linux-android21-clang" >> $GITHUB_ENV
+          TOOLCHAIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "PATH=$TOOLCHAIN:$PATH" >> $GITHUB_ENV
+          echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android21-clang" >> $GITHUB_ENV
+          echo "CC_armv7_linux_androideabi=$TOOLCHAIN/armv7a-linux-androideabi21-clang" >> $GITHUB_ENV
+          echo "CC_x86_64_linux_android=$TOOLCHAIN/x86_64-linux-android21-clang" >> $GITHUB_ENV
+          echo "CC_i686_linux_android=$TOOLCHAIN/i686-linux-android21-clang" >> $GITHUB_ENV
 
       - name: Static Rustflags
         if: matrix.platform.features == 'static'
