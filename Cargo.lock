@@ -1165,6 +1165,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashlink"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea0b22561a9c04a7cb1a302c013e0259cd3b4bb619f145b32f72b8b4bcbed230"
+dependencies = [
+ "hashbrown 0.16.1",
+]
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1653,9 +1662,9 @@ dependencies = [
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.35.0"
+version = "0.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "133c182a6a2c87864fe97778797e46c7e999672690dc9fa3ee8e241aa4a9c13f"
+checksum = "95b4103cffefa72eb8428cb6b47d6627161e51c2739fc5e3b734584157bc642a"
 dependencies = [
  "cc",
  "pkg-config",
@@ -1949,7 +1958,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 [[package]]
 name = "opendal"
 version = "0.55.0"
-source = "git+https://github.com/carlsverre/opendal?rev=930fbbf3a5bdca1334324db2f150f5779415bfcf#930fbbf3a5bdca1334324db2f150f5779415bfcf"
+source = "git+https://github.com/carlsverre/opendal?branch=bug%2Fcomplete#930fbbf3a5bdca1334324db2f150f5779415bfcf"
 dependencies = [
  "ctor",
  "opendal-core",
@@ -1964,7 +1973,7 @@ dependencies = [
 [[package]]
 name = "opendal-core"
 version = "0.55.0"
-source = "git+https://github.com/carlsverre/opendal?rev=930fbbf3a5bdca1334324db2f150f5779415bfcf#930fbbf3a5bdca1334324db2f150f5779415bfcf"
+source = "git+https://github.com/carlsverre/opendal?branch=bug%2Fcomplete#930fbbf3a5bdca1334324db2f150f5779415bfcf"
 dependencies = [
  "anyhow",
  "base64",
@@ -1990,7 +1999,7 @@ dependencies = [
 [[package]]
 name = "opendal-layer-concurrent-limit"
 version = "0.55.0"
-source = "git+https://github.com/carlsverre/opendal?rev=930fbbf3a5bdca1334324db2f150f5779415bfcf#930fbbf3a5bdca1334324db2f150f5779415bfcf"
+source = "git+https://github.com/carlsverre/opendal?branch=bug%2Fcomplete#930fbbf3a5bdca1334324db2f150f5779415bfcf"
 dependencies = [
  "futures",
  "http",
@@ -2001,7 +2010,7 @@ dependencies = [
 [[package]]
 name = "opendal-layer-logging"
 version = "0.55.0"
-source = "git+https://github.com/carlsverre/opendal?rev=930fbbf3a5bdca1334324db2f150f5779415bfcf#930fbbf3a5bdca1334324db2f150f5779415bfcf"
+source = "git+https://github.com/carlsverre/opendal?branch=bug%2Fcomplete#930fbbf3a5bdca1334324db2f150f5779415bfcf"
 dependencies = [
  "log",
  "opendal-core",
@@ -2010,7 +2019,7 @@ dependencies = [
 [[package]]
 name = "opendal-layer-retry"
 version = "0.55.0"
-source = "git+https://github.com/carlsverre/opendal?rev=930fbbf3a5bdca1334324db2f150f5779415bfcf#930fbbf3a5bdca1334324db2f150f5779415bfcf"
+source = "git+https://github.com/carlsverre/opendal?branch=bug%2Fcomplete#930fbbf3a5bdca1334324db2f150f5779415bfcf"
 dependencies = [
  "backon",
  "log",
@@ -2020,7 +2029,7 @@ dependencies = [
 [[package]]
 name = "opendal-layer-timeout"
 version = "0.55.0"
-source = "git+https://github.com/carlsverre/opendal?rev=930fbbf3a5bdca1334324db2f150f5779415bfcf#930fbbf3a5bdca1334324db2f150f5779415bfcf"
+source = "git+https://github.com/carlsverre/opendal?branch=bug%2Fcomplete#930fbbf3a5bdca1334324db2f150f5779415bfcf"
 dependencies = [
  "opendal-core",
  "tokio",
@@ -2029,7 +2038,7 @@ dependencies = [
 [[package]]
 name = "opendal-service-fs"
 version = "0.55.0"
-source = "git+https://github.com/carlsverre/opendal?rev=930fbbf3a5bdca1334324db2f150f5779415bfcf#930fbbf3a5bdca1334324db2f150f5779415bfcf"
+source = "git+https://github.com/carlsverre/opendal?branch=bug%2Fcomplete#930fbbf3a5bdca1334324db2f150f5779415bfcf"
 dependencies = [
  "bytes",
  "log",
@@ -2042,7 +2051,7 @@ dependencies = [
 [[package]]
 name = "opendal-service-s3"
 version = "0.55.0"
-source = "git+https://github.com/carlsverre/opendal?rev=930fbbf3a5bdca1334324db2f150f5779415bfcf#930fbbf3a5bdca1334324db2f150f5779415bfcf"
+source = "git+https://github.com/carlsverre/opendal?branch=bug%2Fcomplete#930fbbf3a5bdca1334324db2f150f5779415bfcf"
 dependencies = [
  "base64",
  "bytes",
@@ -2621,16 +2630,17 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.37.0"
+version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "165ca6e57b20e1351573e3729b958bc62f0e48025386970b6e4d29e7a7e71f3f"
+checksum = "f1c93dd1c9683b438c392c492109cb702b8090b2bfc8fed6f6e4eb4523f17af3"
 dependencies = [
  "bitflags",
  "fallible-iterator",
  "fallible-streaming-iterator",
- "hashlink",
+ "hashlink 0.11.0",
  "libsqlite3-sys",
  "smallvec",
+ "sqlite-wasm-rs",
 ]
 
 [[package]]
@@ -2980,6 +2990,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c8418de47f616a662aec91023fa5a3b4f1b1f3ca017ce98253e42721c16661b"
 dependencies = [
  "bindgen",
+]
+
+[[package]]
+name = "sqlite-wasm-rs"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05e98301bf8b0540c7de45ecd760539b9c62f5772aed172f08efba597c11cd5d"
+dependencies = [
+ "cc",
+ "hashbrown 0.16.1",
+ "js-sys",
+ "thiserror 2.0.17",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -4009,7 +4032,7 @@ checksum = "2462ea039c445496d8793d052e13787f2b90e750b833afee748e601c17621ed9"
 dependencies = [
  "arraydeque",
  "encoding_rs",
- "hashlink",
+ "hashlink 0.10.0",
 ]
 
 [[package]]

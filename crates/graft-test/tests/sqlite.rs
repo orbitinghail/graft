@@ -56,10 +56,10 @@ fn test_sync_and_reset() {
     assert_eq!(status2.local_status.changes(), None);
 
     // verify that node2 sees that the t1 counter is 1 and the t2 counter is 0
-    let t1_counter: u64 = sqlite2
+    let t1_counter: u32 = sqlite2
         .query_row("select counter from t1", [], |row| row.get(0))
         .unwrap();
-    let t2_counter: u64 = sqlite2
+    let t2_counter: u32 = sqlite2
         .query_row("select counter from t2", [], |row| row.get(0))
         .unwrap();
     assert_eq!(t1_counter, 1);
