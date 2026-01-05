@@ -300,8 +300,7 @@ jobs:
 
       - name: Reorganize build artifacts
         run: |
-          mkdir -p dist/{linux,windows,macos}-{x86_64,aarch64}
-          mkdir -p dist/android-{aarch64,x86_64}
+          mkdir -p dist/{linux,windows,macos,android}-{x86_64,aarch64}
           rmdir dist/macos-x86_64
           mv builds/x86_64-unknown-linux-gnu/release/libgraft_ext.so      dist/linux-x86_64/libgraft_ext.so
           mv builds/aarch64-unknown-linux-gnu/release/libgraft_ext.so     dist/linux-aarch64/libgraft_ext.so
