@@ -87,6 +87,8 @@ Optionally, we may use flush or async flush (mmap2 terms) to ensure (or hasten) 
 ## The WAL
 
 > This design is heavily based on the SQLite WAL.
+> reference 1: https://sqlite.org/walformat.html
+> reference 2: https://sqlite.org/fileformat2.html#the_write_ahead_log
 
 Local writes are buffered in a chunked `WAL` stored at `/{LogId}/wal/{epoch}.wal`. Each WAL file contains a WAL header followed by an append only sequence of `Entries`, each composed of a header and Page.
 
