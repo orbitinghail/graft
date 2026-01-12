@@ -47,7 +47,7 @@ Commits are only written to the Log after they have been stored remotely, hence 
 
 ### Commit filtering
 
-Periodically (by default, every 32 commits) we will write a filter to the `commit-filter` folder. A filter is an index of all of page offsets touched by any commit in the chunk range (start-end LSN). Filters never return false-positives, but may return false-negatives.
+Periodically (by default, every 32 commits) we will write a filter to the `commit-filter` folder. A filter is an index of all of page offsets touched by any commit in the chunk range (start-end LSN). Filters may return false-positives, but never return false-negatives.
 
 We will support two kinds of filters:
 
@@ -170,3 +170,278 @@ On other failure:
 2. fetch the Log manifest if missing
 3. if the log has a parent recursively pull the parent up to the branch LogRef of the Parent.
 4.
+
+# Comments
+
+The following comments are from reviewing this design against the current Graft codebase. They highlight areas that may need clarification, potential issues, and integration considerations.
+
+## Epoch Semantics Need Definition
+
+The WAL section mentions "epochs rather than checkpoints" but doesn't define:
+
+- What triggers an epoch transition? Is it tied to remote commits? Client sessions? Time?
+- How does a reader discover the current epoch?
+- Can multiple epochs be live simultaneously (e.g., during a push)?
+- What's the relationship between epoch and the push watermark?
+
+In SQLite, the WAL checkpoint moves pages back to the main database file. In Grove, if epochs are tied to remote commits, then an epoch transition would mean: "all entries in the old epoch have been durably committed to remote, so the old epoch can be discarded." But this needs explicit specification.
+
+## Volume Snapshot Algorithm Incomplete
+
+The section "In order to read from a Volume, a Client must first take a consistent snapshot on both the Log and the WAL" cuts off at "1. Retrieve the". This is a critical algorithm for correctness.
+
+Key questions that need answering:
+
+- How do you atomically capture both log position and WAL position?
+- What ordering guarantees exist between log and WAL reads?
+- How do readers coordinate with the writer (who may be mid-commit)?
+- What's in the "read slots" mentioned in the `.shm` file?
+
+The current architecture uses Fjall's snapshot mechanism for point-in-time consistency. Grove needs an equivalent.
+
+## Push Watermark Storage Location
+
+The pushing algorithm mentions "capture the push watermark for the WAL" but doesn't specify where this watermark is stored. The current architecture stores this in `Volume.sync.local_watermark` persisted in Fjall.
+
+Options for Grove:
+
+1. In the control/shm file (volatile, needs recovery protocol)
+2. In the manifest (remote, requires fetch on startup)
+3. In a separate local file (needs crash-safety)
+4. Derived from comparing WAL entries against remote log (expensive on startup)
+
+The choice affects both normal operation and crash recovery.
+
+## Two-Log Model vs Single-Log Model
+
+The current architecture maintains two LogIds per Volume: `local` and `remote`. The local log accumulates commits that are periodically pushed to create commits in the remote log. This allows local and remote commits to have independent LSN sequences.
+
+Grove appears to collapse this into a single Log with WAL buffering. This is a significant architectural change that affects:
+
+- How `Snapshot` works (currently can span multiple logs for branch scenarios)
+- The `Volume` struct (currently stores both local and remote LogId)
+- The sync point tracking (currently tracks alignment between two logs)
+
+Need to clarify: Is the WAL a replacement for the local log concept? If so, how do WAL entries map to remote LSNs?
+
+## Recovery Mechanism for Partial Commits
+
+The current architecture has explicit `PendingCommit` state that tracks in-flight remote commits, enabling recovery after crashes. Grove mentions "store client provenance (client id, new watermark) in the commit" as an idea.
+
+Considerations:
+
+- If provenance is stored in the remote commit, how does the client discover its own commits after restart?
+- The current architecture checks `commit_hash` to verify identity. Will Grove continue using CommitHash?
+- What happens if a client crashes between segment upload and commit write? The segment is orphaned.
+- What if the client crashes between commit write and local watermark update?
+
+The current `recover_pending_commit` logic in `fjall_storage.rs:518-545` shows the complexity here.
+
+## Shared Memory Control File Needs Specification
+
+The control file is mapped into shared memory but needs more detail:
+
+- What's the exact format? (Header + read slots + write slots + ?)
+- What locking protocol? (POSIX advisory locks? Futex? Custom spinlocks?)
+- How are stale readers detected and evicted?
+- What happens if a process crashes while holding a lock?
+- Is this portable across platforms? (Windows has different shared memory semantics)
+
+SQLite's wal-index uses a specific format with hash tables and frame pointers. Grove's requirements may be simpler but need specification.
+
+## Segment Sparse File Portability
+
+The document mentions "sparse files on compatible filesystems" with regular files as fallback. Considerations:
+
+- How do you detect sparse file support at runtime? (Create test file and check?)
+- Windows NTFS supports sparse files but with different APIs
+- Some network filesystems (NFS, SMB) have varying sparse file support
+- Docker overlay filesystems may not support sparse files efficiently
+- How much space is wasted if sparse files aren't supported? (Full segment size)
+
+The mmap + sparse file approach is elegant but needs careful fallback handling.
+
+## Pull Recursion for Branched Logs
+
+"if the log has a parent recursively pull the parent up to the branch LogRef of the Parent."
+
+For deeply nested branches, this could be expensive:
+
+- Is there a recursion depth limit to prevent stack overflow?
+- Is there caching to avoid re-pulling the same parent commits?
+- Can you do lazy pulling (only pull parent chunks when needed for a page read)?
+- What if the parent log is huge but you only need a small branch?
+
+Consider an iterative approach or explicit branch-chain caching.
+
+## Tag Race Conditions
+
+"Clients may force push tags to the remote if desired."
+
+Tags are mutable references which introduces race conditions:
+
+- What if two clients race to update the same tag?
+- Is there any optimistic concurrency (CAS on tag version)?
+- Can you get a history of tag values? (For debugging/auditing)
+- What happens to clients observing the old tag value? (Stale LogId)
+
+The current architecture only has local tags, so this is new complexity.
+
+## GC Safety with Active Readers
+
+GC "truncates the prefix of any matching log (up to the satisfying checkpoint)" but:
+
+- How do you prevent GC from racing with active readers?
+- What if a client has an open snapshot referencing soon-to-be-GC'd commits?
+- For branched logs, can you GC a parent while children are reading?
+- Is there a "GC lease" or "read lease" mechanism?
+
+The manifest watermarks are mentioned for gated phases, but the read-side coordination needs specification.
+
+## Offline Operation
+
+"Commits are only written to the Log after stored remotely" implies the local commit cache is just that—a cache. But:
+
+- Can you continue working with just the WAL during network partition?
+- How large can the WAL grow before it becomes problematic?
+- Is there a "offline mode" that allows local-only commits?
+- What happens if you're offline for days and accumulate thousands of WAL entries?
+
+The current architecture allows the local log to grow independently of the remote. This flexibility may be important for some use cases.
+
+## Manifest Format and Concurrent Updates
+
+The manifest is atomically updated via CAS, but needs specification:
+
+- What's the serialization format? (Protobuf like other structures?)
+- What fields exactly? (checkpoints list, parent LogRef, GC watermarks, ?)
+- Maximum size constraints?
+- What if CAS fails repeatedly due to contention?
+
+The "optimistic update after checkpoint write" pattern means transient inconsistency is expected. The background reconciliation process needs more detail.
+
+## Integration with Existing Core Types
+
+Good news: Many core types can be reused:
+
+- `LSN`, `LogId`, `VolumeId`, `SegmentId`, `PageIdx` - unchanged
+- `Commit`, `SegmentIdx`, `SegmentFrameIdx` - unchanged
+- `CommitHash` - unchanged
+- `Page`, `PageSet` - unchanged
+- `Snapshot` - may need changes to understand WAL
+
+Types that need changes:
+
+- `Volume` - loses the local/remote log split?
+- `SyncPoint` - replaced by push watermark in control file?
+- `PendingCommit` - replaced by provenance in commits?
+
+The `FjallStorage` trait boundary is clean enough that Grove can implement a compatible interface, but the `Volume` struct changes may propagate widely.
+
+## Migration Path from Fjall
+
+How do existing Fjall-based deployments migrate to Grove?
+
+- Is there a data migration tool?
+- Can you run both side-by-side during transition?
+- Is there version detection in storage format?
+- Can you rollback if Grove has issues?
+
+This is future work but worth considering during design.
+
+## Commit Filter Chunk Boundaries
+
+Filters are written "every 32 commits" but:
+
+- What if there are fewer than 32 commits in the log?
+- Are filters aligned to fixed LSN ranges, or sliding windows?
+- When scanning, how do you know which filter files exist?
+- Can filters become stale if commits are GC'd?
+
+Consider: filters at `/{start}-{end}` with end being exclusive might be cleaner for boundary handling.
+
+## WAL Rollup to Map
+
+"The writers periodically rollup the WAL into this map to keep the WAL from growing too large."
+
+Questions:
+
+- What triggers rollup? (Size threshold? Entry count? Time?)
+- Can rollup happen during active reads?
+- Is the map file durable or reconstructible from WAL?
+- What's the atomicity guarantee during rollup?
+- How does this interact with epochs?
+
+This is effectively a compaction process and needs careful specification.
+
+## Entry Header Compression Extensions
+
+"The Entry header may also support extensions like page compression."
+
+If pages can be compressed in the WAL:
+
+- Is there a per-entry flag indicating compression?
+- What compression algorithm? (zstd like segments?)
+- How does this affect the cumulative checksum calculation?
+- Can compressed and uncompressed entries coexist?
+
+## Salt Purpose and Rotation
+
+"The current WAL salts" are stored in entry headers but:
+
+- What is the purpose of salts? (Detect file corruption? Prevent replay?)
+- How are salts generated and rotated?
+- What happens if salts don't match during read?
+- How do salts interact with epochs?
+
+SQLite uses salts for WAL file identification (to detect when a WAL belongs to a different database). Clarify the purpose here.
+
+## Remote Operation Lock Scope
+
+Both push and pull "take the remote-operation lock for the log" but:
+
+- Is this a process-local lock or cross-process (via control file)?
+- Can reads proceed while the lock is held?
+- What's the lock timeout/deadlock prevention?
+- Can push and pull be concurrent on different logs?
+
+The current architecture uses a mutex in `FjallStorage` for read-write transactions. Grove's scope may be different.
+
+## Segment Checksum Verification Timing
+
+"Each chunk is a zstd frame containing its own checksum. If the chunk fails to decompress then the client simply refetches the chunk."
+
+But:
+
+- Decompression is expensive—can you verify checksum first?
+- What if the remote also has corruption?
+- Is there an outer checksum on the segment header?
+- How do you prevent infinite refetch loops on persistent corruption?
+
+## Branch Creation and Merge Semantics
+
+Branching is mentioned ("A Log may be branched from a parent LogRef") but needs more detail:
+
+- How do you create a branch? (API surface)
+- Can you merge branches? (Or is it one-way only?)
+- What happens if parent and child both advance? (Divergence handling)
+- Can a log have multiple children? (Presumably yes)
+- Can a branch be re-parented?
+
+## Summary
+
+Grove is an ambitious redesign that addresses real limitations in the current architecture:
+
+- Better GC support through manifests
+- Explicit WAL for write buffering
+- Log branching for multi-client scenarios
+- More filesystem-native local storage
+
+The core ideas are sound. The main gaps are in the detailed algorithms for:
+
+1. Snapshot consistency across log and WAL
+2. Epoch lifecycle and transitions
+3. Recovery from partial commit states
+4. Cross-process coordination via control file
+
+I'd suggest completing the WAL section first, as it's the foundation for everything else. The SQLite references are a good starting point, but Grove's epoch-based model (vs checkpoint-based) needs its own specification.
