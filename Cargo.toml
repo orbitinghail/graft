@@ -61,8 +61,8 @@ zstd = "0.13.3"
 [workspace.dependencies.opendal]
 # version = "0.55.0"
 features = ["services-s3", "services-fs"]
-git = "https://github.com/carlsverre/opendal"
-branch = "bug/complete"
+git = "https://github.com/apache/opendal"
+branch = "main"
 
 [workspace.lints.clippy]
 disallowed_methods = "deny"
