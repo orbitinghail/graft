@@ -60,7 +60,8 @@ Commits are only written to the Log after they have been stored remotely, hence 
   /segments
     /{SegmentId} -> serialized segment
   /wal
-    /{epoch}.wal
+    /wal0.wal
+    /wal1.wal
 ```
 
 ### Commit filtering
@@ -148,20 +149,52 @@ Writers start by acquiring a snapshot.
 
 When they want to start writing they take the writer lock.
 
-TODO: how to buffer pages and know when a commit is about to happen?
--> trailer rather than header per entry?
--> write out pages in chunks?
--> separate dedicated empty commit entry?
--> or just give up and buffer all the pages until commit?
+**Page Buffering Strategy**: Buffer all dirty pages in memory until commit time. This approach is chosen because:
 
-Each page is appended to the active WAL in a new entry.
-Then the page index in SHM is updated using two atomic writes:
+1. It simplifies recovery - entries only become visible after their commit entry is durable
+2. It avoids partial transaction state in the WAL
+3. It aligns naturally with the entry format where commit entries are distinguished by non-zero PageCount
+4. Writers already hold the WRITE lock for the duration of their transaction, so we're not blocking others by buffering
 
-- entry index -> page index
-- page hash -> entry index
+At commit time, all buffered pages are written to the WAL as a contiguous batch followed by a commit entry. The commit entry serves as a "trailer" that atomically commits all preceding entries in this batch.
 
-Commit process:
-TODO: update lastEntry in shm, consider switching over to the inactive WAL
+**Write Process**:
+
+1. Acquire the WRITE lock (blocks other writers)
+2. Buffer dirty pages in memory as the transaction proceeds
+3. Track the entry index where this transaction will begin writing
+
+**Commit Process**:
+
+1. Append all buffered pages to the active WAL as entries (PageCount=0 for each):
+   - Write entry header: Page Index, PageCount=0, Salt, Checksum
+   - Write page data
+   - Update the page index in SHM with two atomic writes:
+     - entry index -> page index
+     - page hash -> entry index
+
+2. Append a commit entry (PageCount = volume size in pages):
+   - Write entry header: Page Index of last written page (or 0 if no pages), PageCount=volume_size, Salt, Checksum
+   - No page data follows the commit entry
+
+3. fsync the WAL file
+
+4. Update WALState in SHM:
+   - Compute new lastEntry for the active WAL (lastEntry0 or lastEntry1 based on walIdx)
+   - Update the appropriate lastEntry field atomically
+   - Update the WALState checksum
+   - Write to the inactive buffer slot, then flip the active buffer indicator
+
+5. Consider switching to the inactive WAL:
+   - If active WAL exceeds size threshold AND inactive WAL is checkpointed:
+     a. Set the new salt to the final checksum of the current active WAL
+     b. Flip walIdx to the other WAL
+     c. Reset the new active WAL's lastEntry to 0
+     d. Clear the checkpointed flag
+     e. Update WALState checksum and flip the buffer
+     f. Truncate and reinitialize the new active WAL file with fresh header
+
+6. Release the WRITE lock
 
 ### Pushing
 
