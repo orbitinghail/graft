@@ -8,7 +8,9 @@ A LSN is a strictly sequential monotonic sequence unsigned 64-bit integer starti
 
 A Commit represents a sparse change to a Volume.
 
-A Volume is a sparse set of Pages ordered by PageIdx.
+A Volume is a sparse set of Pages ordered by PageIdx. A Volume has a VolumeName.
+
+A VolumeName is the immutable identity of a Volume. It's a simple alphanumeric string made up of lowercase ASCII a-z, digits 0-9, separators `-` and `_` with a maximum length of 128 bytes. In addition VolumeNames must start with an alphanumeric character and not start with the reserved prefix "graft".
 
 A PageCount represents the number of pages in a Volume.
 
@@ -18,7 +20,7 @@ A Page is a fixed size array of bytes. All Pages in a Volume have the same size.
 
 An Image Commit contains all pages that have been written to the Volume. Because Volumes may be sparse, an Image Commit’s Segment may contain fewer pages than the Volume’s logical page count. Any page not present in the Segment must be treated as empty by the reader.
 
-All of the Logs in a Grove form a tree. A Log may branch off of another log at any point. The Branch point is represented by a `LogRef { LogId, LSN }`.
+All of the Logs in a Grove form a tree. A Log may branch off of another log at any point. The Branch point is represented by a `LogRef { LogId, LSN }` and stored in the first commit in a Log.
 
 **Valid Graft Trees:**
 
@@ -35,29 +37,12 @@ o---o---o ← log a   o---o  ← log d
       o---o ← log c
 ```
 
-A Mark is a named, mutable reference to a LogRef. A Branch is one kind of Mark which tracks the tip of a log.
-
-```
-o---o---o  ← main
-     \
-      o---o---o  ← dev
-```
-
-```rust
-struct Branch {
-    /// The name of the Branch
-    name: String,
-
-    /// The tip of the Branch
-    tip: LogRef,
-}
-```
-
-A Remote is a named reference to remote storage, identified by a URI like `s3://bucket/path/in/bucket?region=us-east-1`.
+A Remote is a named reference to remote storage, identified by a URI like:
+`s3://bucket/path/in/bucket?region=us-east-1`.
 
 A Snapshot is a consistent view of a Volume at a fixed point in time represented by a LogRef. When reading from a snapshot, Provenance may be used to canonicalize the read path.
 
-The Provenance field on a Commit tracks the origin of the Commit. This is used to track equivalence relations between Commits in different logs. If Commit A1's Provenance is Commit B3, this means that the logical state of the Volume at B3 is identical to the state of the volume at A1. This allows Logs to branch off one another and then periodically merge back their changes without creating a DAG.
+The Provenance field on a Commit tracks the origin of the Commit. This is used to track equivalence relations between Commits in different logs. If Commit A1's Provenance is Commit B3, this means that the logical state of the Volume at B3 is identical to the state of the volume at A1. This allows Logs to branch off one another and then periodically merge back their changes.
 
 ```
 Three logs: { a, b, c }. b and c branch from a2.
@@ -71,12 +56,12 @@ a1---a2----------------a3--------a4---a5---a6
         \           /         /
          c1---c2---c3---c4---c5
 
-Thus a Snapshot at c4 can form the canonical read path by following provenance relations.
+Thus a Snapshot at c4 can form the canonical read path by following provenance relations backwards.
 
 a1---a2---a3---c4
 ```
 
-Provenance can also be used to track Commit Images. In this example, the origin/main/images log (d) contains three checkpoints { d1, d2, d3 } which map to { a3, a5, a2 } respectively.
+Provenance can also be used to track Commit Images. In this example, the `origin/main/images` log (d) contains three checkpoints `{ d1, d2, d3 }` which map to `{ a3, a5, a2 }` respectively. When canonicalizing a read path, Snapshots will terminate at the closest reachable Commit Image (via provenance).
 
 ```
        d3                d1             d2 ← origin/main/images
@@ -88,26 +73,43 @@ a1---a2----------------a3--------a4---a5---a6 ← origin/main
          c1---c2---c3---c4---c5 ← main
 ```
 
-A Filter is an index of all of the PageIdxs modified by a sequential range of Commits in a Log. Filters may return false-positives, but never return false-negatives.
+A snapshot at c4 will have the canonical read path: `d1--c4`
 
-# Remote Storage Layout
+A Filter is an index of all of the PageIdxs modified by a sequential range of Commits in a Log. Filters may return false-positives, but never return false-negatives. Filters are purely a performance optimization, and are used to quickly determine if a page was modified by a subset of commits.
+
+# Storage Layout
+
+## Remote Storage Layout
 
 ```
 /root
-  /logs/{LogId}/{LSN} -> Commit
-  /marks/{name} -> Mark
+  /logs/{LogId}/{LSN Bucket}/{LSN} -> Commit
+  /volumes/{name} -> VolumeManifest
   /segments/{hash prefix}/{hash suffix} -> Serialized Segment
 ```
 
-# Local Storage Layout
+## Local Storage Layout
 
 ```
 /root
-  /logs/{LogId}/{LSN} -> Commit
-  /marks/{name} -> Mark
+  /logs/{LogId}/{LSN Bucket}/{LSN} -> Commit
+  /volumes/{name} -> VolumeManifest
   /segments/{hash prefix}/{hash suffix} -> Serialized Segment
   /filters/{LogId}/{start LSN}-{end LSN} -> Filter
 ```
+
+## LSN Bucketing and Serialization
+
+To ensure that we don't run into filesystem/remote storage listing limitations, we shard LSN entries into buckets. For now, buckets have a fixed size of 4096 commits per bucket. A bucket is serialized to a path as a BigEndian u64 encoded to hex (16 digits). A LSN's bucket is calculated as `(lsn - 1) / 4096`.
+
+LSNs are serialized to a path as a BigEndian u64 encoded to hex (16 digits).
+
+As an example, here are the commit paths for LSNs 1, 4096, 4097, and MAX in Log `74ggm5u4pH-49kJcJnhj2ZEu`:
+
+/logs/74ggm5u4pH-49kJcJnhj2ZEu/0000000000000000/0000000000000001 // 1
+/logs/74ggm5u4pH-49kJcJnhj2ZEu/0000000000000000/0000000000001000 // 4096
+/logs/74ggm5u4pH-49kJcJnhj2ZEu/0000000000000001/0000000000001001 // 4097
+/logs/74ggm5u4pH-49kJcJnhj2ZEu/000fffffffffffff/ffffffffffffffff // LSN(MAX)
 
 # Type System
 
@@ -164,22 +166,33 @@ struct SegmentFrameIdx {
     last_pageidx: PageIdx,
 }
 
-enum MarkKind {
-    /// A Branch mark is automatically updated to the tip of a Log as it receives commits.
-    Branch,
-    /// A Tag mark is a stable reference to a LogRef. It can only be moved explicitly via a force push.
-    Tag,
+struct LocalLogs {
+    /// The staging Log contains commits which are ready to be pushed to the
+    /// main Log. Each commit has Provenance to the write Log.
+    staged: LogId,
+
+    /// The write Log receives new commits for a Volume.
+    write: LogId,
 }
 
-struct Mark {
-    /// The name of this mark
+struct VolumeManifest {
+    /// The name of this Volume
     name: String,
-    /// The mark kind
-    kind: MarkKind,
-    /// The LogRef this mark points at to
-    target: LogRef,
+
+    /// The main Log backing this Volume. This is the Volume's source of truth.
+    main: LogId,
+
+    /// A set of zero or more Image Logs. These Logs contain commits with Provenance to main.
+    images: Set<LogId>,
+
+    /// Only used on writers nodes and never pushed to the remote manifest. This
+    /// field tracks the Logs used to write to the main Log and stage commits
+    /// for pushing to the main Log. Both logs are branched from main.
+    local: Option<LocalLogs>,
 }
 ```
+
+# Safety Invariants
 
 # Commit filtering
 
@@ -196,24 +209,8 @@ The filters will allow us to quickly skip over 32 commits at a time. Future opti
 
 # TODO
 
-## How do we track branch sets?
-
-Our write model involves 3 branches. There is the remote branch, the staging branch, and the local branch (names tbd).
-
-Local branches are created as needed if one doesn't already exist. A pull that modifies the remote branch invalidates any active local branches.
-
-Staging branches are created as needed when merging down the local branch in preparation for sync.
-
-The remote branches are created when pushing a log to the remote.
-
-The snapshot code needs to efficiently take a snapshot of a Volume, which must take into account any active local or staging branches. And then it needs to load any provenance pointers between those three branches.
-
-It seems like the mark system may need to track this relationship. The relationship we are creating is "upwards" I think... in the sense that provenance points downwards, which requires landing in A before B while B points back at A.
-
-So when user checks out branch main, we would ideally learn about any active staging or local branches for main when we read the main mark. Also same thing with image branches. This implies that mark relationships should also be pushable.
-
 ## How do we efficiently track provenance?
 
 - an in-memory index would probably be ok?
 - provenance is an optimization, not required for correctness
-- probably need to load provenance from mark relationships and incrementally update them as the various logs change
+- for every named volume, we will need to load all of the relevant logs and index provenance relationships between commits. Each provenance relationship is an edge in a DAG.
