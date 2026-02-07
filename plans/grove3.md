@@ -192,8 +192,6 @@ struct VolumeManifest {
 }
 ```
 
-# Safety Invariants
-
 # Commit filtering
 
 Periodically (by default, every 32 commits) we will write a Filter to the `filters` folder. A Filter is an index of all of the PageIdxs modified by a sequential range of Commits in a Log. Filters may return false-positives, but never return false-negatives.
@@ -207,6 +205,28 @@ We need two kinds of filters due to `BinaryFuse8`'s construction being fallible 
 
 The filters will allow us to quickly skip over 32 commits at a time. Future optimizations may include dynamically varying the number of commits based on statistics or configuration.
 
+# Safety Invariants
+
+## Conditional Manifest Writes
+
+Every write to `/volumes/{name}` must be conditional on the version that was read (for example ETag, generation token, or filesystem lock token). Unconditional overwrites are invalid.
+
+## Deterministic Manifest Merge
+
+When concurrent updates are merged, `images` is merged by set union (`remote ∪ local`) and serialized in deterministic order (sorted by `LogId`) so retries are stable and idempotent.
+
+## Canonical Volume Name Encoding
+
+Volume names are canonicalized to lowercase before persistence and must start and end with an alphanumeric character (`[a-z0-9]`). This prevents ambiguous keys across filesystems/object stores.
+
+## Atomic Log Append
+
+All commits to a Log must be written via atomic exclusive create at `LSN(tip + 1)`. A write to any existing LSN or any non-tip LSN is invalid and must fail with conflict.
+
+## Shared Main Log Is Allowed
+
+Multiple Volume manifests may reference the same main `LogId` by design. Correctness relies on atomic append semantics on the underlying log store, not exclusive ownership of main.
+
 # TODO
 
 ## How do we efficiently track provenance?
@@ -214,3 +234,74 @@ The filters will allow us to quickly skip over 32 commits at a time. Future opti
 - an in-memory index would probably be ok?
 - provenance is an optimization, not required for correctness
 - for every named volume, we will need to load all of the relevant logs and index provenance relationships between commits. Each provenance relationship is an edge in a DAG.
+
+### DAG index sketch (per Volume)
+
+Build and maintain an in-memory DAG index per opened Volume. The index is append-friendly and can be incrementally updated as manifests/log tips change.
+
+```rust
+struct CommitKey {
+    log: LogId,
+    lsn: LSN,
+}
+
+struct DagNode {
+    key: CommitKey,
+    // Commit's parent in the same log (lsn - 1), if present.
+    parent: Option<CommitKey>,
+    // Optional equivalence edge to another log.
+    provenance: Option<CommitKey>,
+    is_image: bool,
+}
+
+struct VolumeDagIndex {
+    // All indexed commits by identity.
+    nodes: HashMap<CommitKey, DagNode>,
+
+    // Reverse edges for traversal and invalidation.
+    children_by_parent: HashMap<CommitKey, SmallVec<[CommitKey; 2]>>,
+    children_by_provenance: HashMap<CommitKey, SmallVec<[CommitKey; 2]>>,
+
+    // Fast tip tracking for active logs in this Volume.
+    tip_by_log: HashMap<LogId, LSN>,
+
+    // Image candidates reachable by canonical walk.
+    image_commits: HashSet<CommitKey>,
+
+    // Optional memoization of canonical predecessor:
+    // "from this commit, next hop on canonical path is X".
+    canonical_next: HashMap<CommitKey, CommitKey>,
+}
+```
+
+### Incremental update strategy
+
+1. Read `VolumeManifest`.
+2. For each referenced log (`main`, `images`, and local logs if present), pull unseen commits `(last_indexed_lsn+1..=tip)`.
+3. Insert new `DagNode`s and update reverse indexes.
+4. If a commit has `provenance`, add edge `commit -> provenance`.
+5. Invalidate `canonical_next` entries for affected descendants (via reverse maps), then lazily recompute on demand.
+
+### Core queries
+
+1. **Canonical read path from snapshot `S`**
+   - Walk backwards from `S` choosing:
+     - provenance hop when present (equivalence shortcut), otherwise
+     - in-log parent hop.
+   - Stop at nearest reachable `is_image` commit (or log start).
+   - Memoize hops in `canonical_next`.
+
+2. **Closest reachable image commit from `S`**
+   - Same traversal as above, first node with `is_image == true` wins.
+   - Tie-breaker when multiple candidates are discovered at same depth:
+     lexicographically smallest `(log, lsn)` for deterministic behavior.
+
+3. **Is commit `A` equivalent to commit `B`**
+   - Canonicalize both to their reduced path heads (or full canonical chains hash).
+   - Equal canonical head/hash implies equivalent logical state.
+
+### Persistence and rebuild
+
+- Index is a cache: correctness must not depend on it.
+- On restart, rebuild from manifest + logs; optionally persist checkpoints
+  (`tip_by_log`, compacted `canonical_next`) to reduce warmup time.
