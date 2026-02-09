@@ -216,7 +216,7 @@ jobs:
               --target $target
           done
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ${{ matrix.platform.artifact-name }}
           path: ${{ matrix.platform.artifacts }}
@@ -236,7 +236,7 @@ jobs:
           persist-credentials: false
 
       - name: Download artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: static-apple
           path: input/
@@ -254,7 +254,7 @@ jobs:
             -output libgraft_ext.xcframework
 
       - name: Upload universal library artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: libgraft_ext.xcframework
           path: libgraft_ext.xcframework
@@ -289,7 +289,7 @@ jobs:
           chmod +x sqlite-dist
 
       - name: Download dynamic artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: dynamic-*
           path: builds/
@@ -316,7 +316,7 @@ jobs:
           ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version ${VERSION}
 
       - name: Download apple-universal libgraft_ext.xcframework artifact
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: libgraft_ext.xcframework
           path: dist/libgraft_ext.xcframework
@@ -344,7 +344,7 @@ jobs:
           files: distx/archives/*
 
       - name: Upload distx
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: distx
           path: distx/
