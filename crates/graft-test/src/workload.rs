@@ -4,7 +4,7 @@ use graft::{
     remote::RemoteErr,
     rt::runtime::Runtime,
 };
-use rand::Rng;
+use rand::{Rng, RngExt};
 use rusqlite::Connection;
 
 #[derive(Debug, thiserror::Error)]

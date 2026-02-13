@@ -1,5 +1,6 @@
 use bytes::BytesMut;
 use rand::{
+    RngExt,
     Rng,
     distr::{
         StandardUniform,
