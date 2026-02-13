@@ -1,7 +1,6 @@
 use bytes::BytesMut;
 use rand::{
-    RngExt,
-    Rng,
+    Rng, RngExt,
     distr::{
         StandardUniform,
         uniform::{self, SampleBorrow, SampleUniform, UniformInt, UniformSampler},
