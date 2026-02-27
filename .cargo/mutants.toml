@@ -1,0 +1,4 @@
+exclude_re = ["impl Debug", "impl Display", "pretty_print_tree"]
+exclude_globs = ["testutil.rs", "either.rs"]
+test_tool = "nextest"
+minimum_test_timeout = 1

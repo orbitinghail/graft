@@ -1,0 +1,34 @@
+[package]
+name = "graft-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+graft-core = { path = "../graft-core" }
+graft-proto = { path = "../graft-proto" }
+splinter = { path = "../splinter" }
+precept = { path = "../precept" }
+
+bytes = { workspace = true }
+culprit = { workspace = true }
+crossbeam = { workspace = true }
+fjall = { workspace = true, features = ["bytes"] }
+lsm-tree = { workspace = true, features = ["bytes"] }
+parking_lot = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+static_assertions = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tryiter = { workspace = true }
+ureq = { workspace = true }
+http = {workspace = true}
+url = { workspace = true }
+zerocopy = { workspace = true }
+
+[dev-dependencies]
+graft-core = { path = "../graft-core", features = ["testutil"] }
+graft-tracing = { path = "../graft-tracing" }
+graft-test = { path = "../graft-test" }
+clap = { workspace = true, features = ["derive"] }

@@ -1,0 +1,26 @@
+[package]
+name = "graft-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+splinter = { path = "../splinter" }
+
+culprit = { workspace = true }
+bs58 = { workspace = true }
+bytes = { workspace = true }
+foldhash = { workspace = true }
+hashbrown = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+static_assertions = { workspace = true }
+thiserror = { workspace = true }
+zerocopy = { workspace = true }
+assert_matches = { workspace = true }
+
+[dev-dependencies]
+graft-test = { path = "../graft-test" }
+
+[features]
+default = []
+testutil = []

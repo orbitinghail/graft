@@ -1,0 +1,107 @@
+-- Load the memvfs extension and open a new connection using it
+-- The memvfs extension is located at crates/sqlite-plugin/examples/memvfs.rs
+.load libmemvfs
+(27) open: path=Some("main.db"), opts=OpenOpts { flags: 262, kind: MainDb, mode: ReadWrite { create: Create }, delete_on_close: false }
+(27) read: file=Some("main.db"), offset=0, len=100
+.open main.db
+
+(27) pragma: file=Some("main.db"), pragma=Pragma { name: "database_list", arg: None }
+.databases
+main: main.db r/w
+.vfsinfo
+vfs.zName      = "mem"
+vfs.iVersion   = 3
+vfs.szOsFile   = 56
+vfs.mxPathname = 512
+.vfsname
+
+.log stderr
+
+(27) access: path=main.db-journal, flags=Exists
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+(27) write: file=Some("main.db"), offset=0, len=4096
+(27) write: file=Some("main.db"), offset=4096, len=4096
+(27) sync: file=Some("main.db")
+CREATE TABLE t1(a, b);
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+(27) write: file=Some("main.db"), offset=0, len=4096
+(27) write: file=Some("main.db"), offset=4096, len=4096
+(27) sync: file=Some("main.db")
+INSERT INTO t1 VALUES(1, 2);
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+(27) write: file=Some("main.db"), offset=0, len=4096
+(27) write: file=Some("main.db"), offset=4096, len=4096
+(27) sync: file=Some("main.db")
+INSERT INTO t1 VALUES(3, 4);
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+SELECT * FROM t1;
++---+---+
+| a | b |
++---+---+
+| 1 | 2 |
+| 3 | 4 |
++---+---+
+(27) pragma: file=Some("main.db"), pragma=Pragma { name: "hello_vfs", arg: Some("1234") }
+pragma hello_vfs=1234;
+
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+(27) write: file=Some("main.db"), offset=0, len=4096
+(27) write: file=Some("main.db"), offset=4096, len=4096
+(27) sync: file=Some("main.db")
+vacuum;
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+(27) write: file=Some("main.db"), offset=0, len=4096
+(27) write: file=Some("main.db"), offset=4096, len=4096
+(27) sync: file=Some("main.db")
+drop table t1;
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+(27) write: file=Some("main.db"), offset=0, len=4096
+(27) sync: file=Some("main.db")
+(27) file_size: file=Some("main.db")
+(27) truncate: file=Some("main.db"), size=4096
+vacuum;
+
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+(27) access: path=main.db-journal, flags=Exists
+(27) read: file=Some("main.db"), offset=24, len=16
+(27) access: path=main.db-wal, flags=Exists
+(27) file_size: file=Some("main.db")
+select * from dbstat;
++---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
+|     name      | path | pageno | pagetype | ncell | payload | unused | mx_payload | pgoffset | pgsize |
++---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
+| sqlite_schema | /    | 1      | leaf     | 0     | 0       | 3988   | 0          | 0        | 4096   |
++---------------+------+--------+----------+-------+---------+--------+------------+----------+--------+
+(27) close: file=Some("main.db")
+
+SQLite Exit Code = 0

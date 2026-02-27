@@ -1,0 +1,20 @@
+[package]
+name = "splinter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+culprit = { workspace = true }
+bytes = { workspace = true }
+either = { workspace = true }
+thiserror = { workspace = true }
+zerocopy = { workspace = true, features = ["derive"] }
+itertools = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+roaring = { workspace = true }
+
+[[bench]]
+name = "bitmaps"
+harness = false

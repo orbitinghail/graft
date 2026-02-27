@@ -1,0 +1,4 @@
+/target
+Dockerfile
+*.md
+justfile
