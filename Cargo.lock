@@ -2861,9 +2861,9 @@ dependencies = [
 
 [[package]]
 name = "splinter-rs"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4eb03ba0a59c1ad0c2dfeecc135116e8b94d8e8e67fa501a38af873dfc7a293"
+checksum = "ec260c3b3c366b149ba8cc264497b5d03ef38a9efd14923dffd931a641365096"
 dependencies = [
  "assert_matches",
  "bitvec",
@@ -3330,9 +3330,9 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "u24"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2ff2222e7c3f4df7e99f0caff2cffc92cd70570a53e87731bf9844092e22e61"
+checksum = "1f3ad99188ca534c9d64fca4f6db75521ff55ce3b4d10c821d695a90f996d159"
 dependencies = [
  "num",
  "range-set-blaze",
