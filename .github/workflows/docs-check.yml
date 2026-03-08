@@ -43,11 +43,21 @@ jobs:
           pnpm install
           pnpm build
 
+      - name: Cache lychee results
+        uses: actions/cache@v4
+        with:
+          path: docs/.lycheecache
+          key: ${{ runner.os }}-lychee-${{ hashFiles('docs/pnpm-lock.yaml', 'docs/src/**', 'docs/public/**', 'docs/astro.config.mjs') }}
+          restore-keys: |
+            ${{ runner.os }}-lychee-
+
       - name: Check links
         uses: lycheeverse/lychee-action@a8c4c7cb88f0c7386610c35eb25108e448569cb0 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           workingDirectory: docs
-          args: --user-agent 'curl/8.13.0' --no-progress --remap "https://graft.rs file://$PWD/dist" --fallback-extensions html --exclude-path "llms-.*\.txt" --root-dir $PWD/dist dist
+          args: --user-agent 'curl/8.13.0' --cache --max-cache-age 7d --max-concurrency 4 --no-progress --remap "https://graft.rs file://$PWD/dist" --fallback-extensions html --exclude-path "llms-.*\.txt" --root-dir $PWD/dist dist
           failIfEmpty: true
           format: markdown
           jobSummary: true
