@@ -57,7 +57,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           workingDirectory: docs
-          args: --user-agent 'curl/8.13.0' --cache --max-cache-age 7d --max-concurrency 4 --no-progress --remap "https://graft.rs file://$PWD/dist" --fallback-extensions html --exclude-path "llms-.*\.txt" --root-dir $PWD/dist dist
+          args: >-
+            --user-agent 'curl/8.13.0'
+            --cache
+            --max-cache-age 7d
+            --cache-exclude-status 429
+            --accept 429
+            --max-concurrency 4
+            --no-progress
+            --remap "https://graft.rs file://$PWD/dist"
+            --fallback-extensions html
+            --exclude-path "llms-.*\.txt"
+            --root-dir $PWD/dist
+            --host-stats
+            --host-request-interval 500ms
+            dist
           failIfEmpty: true
           format: markdown
           jobSummary: true
