@@ -164,7 +164,7 @@ jobs:
       - name: Install Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.4.7"
+          ruby-version: "3.4.8"
 
       - name: Get GitHub Bot User ID
         id: get-bot-id
