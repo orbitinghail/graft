@@ -62,7 +62,7 @@ jobs:
             --cache
             --max-cache-age 7d
             --cache-exclude-status 429
-            --accept 429
+            --accept '100..=103,200..=299,429'
             --max-concurrency 4
             --no-progress
             --remap "https://graft.rs file://$PWD/dist"
