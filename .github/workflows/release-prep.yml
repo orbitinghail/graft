@@ -19,7 +19,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
@@ -86,7 +86,7 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
 
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
@@ -171,7 +171,7 @@ jobs:
           targets: ${{ join(matrix.platform.targets, ',') }}
 
       - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
@@ -230,7 +230,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
@@ -267,7 +267,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           token: ${{secrets.GITHUB_TOKEN}}
           persist-credentials: false
