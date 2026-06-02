@@ -13,8 +13,8 @@
   "dependencies": {
     "@astrojs/check": "^0.9.6",
     "@astrojs/sitemap": "^3.7.0",
-    "@astrojs/starlight": "^0.37.6",
-    "@astrojs/starlight-docsearch": "^0.6.1",
+    "@astrojs/starlight": "^0.39.2",
+    "@astrojs/starlight-docsearch": "^0.7.0",
     "astro": "^6.0.0",
     "fast-glob": "^3.3.3",
     "js-yaml": "^4.1.1",

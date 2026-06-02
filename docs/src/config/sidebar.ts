@@ -2,7 +2,7 @@
 
 // Types for llmify plugin to traverse the sidebar structure
 export interface SidebarItem {
-  label: string;
+  label?: string;
   slug?: string;
   items?: SidebarItem[];
   autogenerate?: { directory: string };
@@ -45,13 +45,13 @@ export const sidebar = [
       { label: "Pragmas", slug: "docs/sqlite/pragmas" },
       {
         label: "Using with...",
-        autogenerate: { directory: "docs/sqlite/usage" },
+        items: [{ autogenerate: { directory: "docs/sqlite/usage" } }],
       },
     ],
   },
   {
     label: "Internals",
     collapsed: true,
-    autogenerate: { directory: "docs/internals" },
+    items: [{ autogenerate: { directory: "docs/internals" } }],
   },
 ];
