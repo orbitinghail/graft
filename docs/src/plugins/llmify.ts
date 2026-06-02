@@ -113,7 +113,7 @@ async function collectPages(sourceDir: string): Promise<PageInfo[]> {
         const fm = await readFrontmatter(filePath);
         pages.push({
           slug: item.slug,
-          label: item.label,
+          label: item.label ?? item.slug,
           description: fm.description,
         });
       }

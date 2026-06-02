@@ -7,3 +7,5 @@ minimumReleaseAge: 4320
 minimumReleaseAgeExclude:
   # Renovate security update: wrangler@4.59.1
   - wrangler@4.59.1
+  # Renovate security update: astro@6.1.10
+  - astro@6.1.10
