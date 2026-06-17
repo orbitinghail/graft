@@ -75,12 +75,11 @@ jobs:
         run: echo "COMMIT_SUMMARY=$(git show-branch)" >> "$GITHUB_OUTPUT"
 
       - name: Run Antithesis Tests
-        uses: antithesishq/antithesis-trigger-action@f6221e2ba819fe0ac3e36bd67a281fa439a03fba # v0.10
+        uses: antithesishq/antithesis-trigger-action@80a5e9be591d303bf3c83e3ecbdc00102ad9de90 # v0.11
         with:
           notebook_name: basic_test
           tenant: orbitinghail
-          username: orbitinghail
-          password: ${{ secrets.ANTITHESIS_PASSWORD }}
+          api_key: ${{ secrets.ANTITHESIS_API_KEY }}
           github_token: ${{ secrets.GH_ANTITHESIS_PAT }}
           config_image: ${{ env.REGISTRY }}/config:${{github.sha}}
           images: ${{ env.REGISTRY }}/test_client:${{github.sha}}
