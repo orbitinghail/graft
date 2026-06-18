@@ -9,3 +9,5 @@ minimumReleaseAgeExclude:
   - wrangler@4.59.1
   # Renovate security update: astro@6.1.10 || 6.4.6
   - astro@6.1.10 || 6.4.6
+  # Renovate security update: js-yaml@4.2.0
+  - js-yaml@4.2.0
