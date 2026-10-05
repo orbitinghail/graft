@@ -47,7 +47,7 @@ jobs:
           persist-credentials: false
 
       - name: Build test client image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           platforms: linux/amd64
           context: .
@@ -60,7 +60,7 @@ jobs:
           target: test_client
 
       - name: Build antithesis config image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           platforms: linux/amd64
           context: tests/antithesis
